@@ -6032,6 +6032,10 @@ import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
 // loading an HDR file. Drop-in cinematic look upgrade.
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { Reflector } from "three/addons/objects/Reflector.js";
+// WebXR — lets the user enter immersive VR on a Quest / Vision Pro / any
+// WebXR-capable headset. The button only appears if the browser supports
+// the WebXR Device API (we hide it gracefully otherwise).
+import { VRButton } from "three/addons/webxr/VRButton.js";
 
 // Scratch vectors reused every frame for the spatial audio listener update
 // (avoids per-frame allocation in the render hot path).
@@ -6116,6 +6120,10 @@ function makeRenderer(container) {
   // Honour real physical light units so reflections from the environment map
   // aren't double-bright vs. direct lights.
   renderer.useLegacyLights = false;
+  // Enable WebXR — required for VRButton.createButton() to actually start a
+  // session when the user clicks "ENTER VR". Browsers without WebXR support
+  // simply ignore this flag.
+  renderer.xr.enabled = true;
   return renderer;
 }
 
@@ -6862,7 +6870,15 @@ class Hands {
 
 function unmount() {
   if (!active) return;
+  // Stop both the rAF and the WebXR animation loop drivers
   cancelAnimationFrame(active.raf);
+  if (active.renderer) {
+    try { active.renderer.setAnimationLoop(null); } catch {}
+    // End any active VR session so the headset returns to the home view
+    if (active.renderer.xr && active.renderer.xr.isPresenting) {
+      try { active.renderer.xr.getSession()?.end(); } catch {}
+    }
+  }
   window.removeEventListener("resize", active.onResize);
   // Scene-specific dispose first so it can clean up its own listeners /
   // HUD elements before the renderer is torn down.
@@ -7150,9 +7166,16 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         });
       } catch {}
     }
-    composer.render();
-    raf = requestAnimationFrame(tick);
-    if (active) active.raf = raf;
+    // In VR mode, the post-process composer must NOT be used — XR requires
+    // the renderer to render directly into the headset's framebuffer with
+    // per-eye stereo rendering. Fall back to plain renderer.render() while
+    // a VR session is active. When the session ends, the composer chain
+    // takes over again automatically.
+    if (renderer.xr.isPresenting) {
+      renderer.render(scene, camera);
+    } else {
+      composer.render();
+    }
   }
 
   function onResize() {
@@ -7179,8 +7202,43 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // visible grip feedback when the user touches an interactive object.
   window.PhobiaFX = window.PhobiaFX || {};
   window.PhobiaFX.firePulse = () => { if (hands) hands.fireAction(); };
-  raf = requestAnimationFrame(tick);
-  active.raf = raf;
+  // Drive the animation loop via setAnimationLoop so WebXR works correctly
+  // (XR sessions require this method instead of requestAnimationFrame).
+  // Three.js routes the loop through requestAnimationFrame in non-XR mode
+  // and through the XR compositor's frame timing in immersive mode.
+  renderer.setAnimationLoop(tick);
+
+  // ----- VR button -----
+  // Adds an "ENTER VR" button into the stage that starts a WebXR session
+  // when clicked (and the device + browser support it). Hidden gracefully
+  // on devices without WebXR. We attach it to the stage rather than the
+  // body so it stays inside the scene's UI region.
+  try {
+    const vrButton = VRButton.createButton(renderer);
+    if (vrButton) {
+      vrButton.style.position = "absolute";
+      vrButton.style.bottom = "16px";
+      vrButton.style.left = "50%";
+      vrButton.style.transform = "translateX(-50%)";
+      vrButton.style.zIndex = "9";
+      container.appendChild(vrButton);
+      // Track the button so unmount() can remove it
+      active.overlays.push(vrButton);
+    }
+  } catch (e) {
+    // Some browsers (no WebXR support) throw — silently ignore
+  }
+
+  // ----- Suppress mouse-look while in VR -----
+  // When XR is presenting, FPControls' yaw/pitch must NOT be applied — the
+  // headset's pose is already driving camera orientation. We add a session
+  // listener to flip a flag on the controls.
+  renderer.xr.addEventListener("sessionstart", () => {
+    if (controls) controls.enabled = false;
+  });
+  renderer.xr.addEventListener("sessionend", () => {
+    if (controls) controls.enabled = true;
+  });
 }
 
 // ---------- Helpers ----------
