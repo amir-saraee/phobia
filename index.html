@@ -6036,6 +6036,9 @@ import { Reflector } from "three/addons/objects/Reflector.js";
 // WebXR-capable headset. The button only appears if the browser supports
 // the WebXR Device API (we hide it gracefully otherwise).
 import { VRButton } from "three/addons/webxr/VRButton.js";
+// XRControllerModelFactory provides the visible controller mesh that
+// matches the user's actual hardware (Quest Touch, Vision Pro, Index, etc.).
+import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
 
 // Scratch vectors reused every frame for the spatial audio listener update
 // (avoids per-frame allocation in the render hot path).
@@ -7239,6 +7242,76 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   renderer.xr.addEventListener("sessionend", () => {
     if (controls) controls.enabled = true;
   });
+
+  // ----- VR controllers (Quest Touch / Vision Pro / etc.) -----
+  // Each controller is a tracked Object3D the headset positions in world
+  // space. We attach a visible controller mesh + a laser pointer ray so the
+  // user can physically aim at things in the scene. Trigger ("select")
+  // fires a virtual click at whatever the laser is pointing at — this maps
+  // controller input to the same onClick + onPointerUpInteract handlers
+  // that already drive every interactive object in the app.
+  const controllerModelFactory = new XRControllerModelFactory();
+  const xrControllers = [];
+  const xrLasers = [];
+  for (let i = 0; i < 2; i++) {
+    const controller = renderer.xr.getController(i);
+    scene.add(controller);
+    xrControllers.push(controller);
+    // Visible controller model (matches actual hardware via the factory)
+    const grip = renderer.xr.getControllerGrip(i);
+    grip.add(controllerModelFactory.createControllerModel(grip));
+    scene.add(grip);
+    // Laser pointer — a thin line from the controller forward, ~2m long.
+    // Fades to transparent at the tip so it doesn't dominate the view.
+    const laserGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(0, 0, -2),
+    ]);
+    const laser = new THREE.Line(
+      laserGeo,
+      new THREE.LineBasicMaterial({ color: 0x7cd1c5, transparent: true, opacity: 0.65 })
+    );
+    laser.scale.z = 1;
+    controller.add(laser);
+    xrLasers.push(laser);
+    // Reticle dot at the laser tip — small ring that grows when hovering
+    // an interactive object (helps the user aim).
+    const reticle = new THREE.Mesh(
+      new THREE.RingGeometry(0.025, 0.035, 16),
+      new THREE.MeshBasicMaterial({ color: 0x7cd1c5, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+    );
+    reticle.position.z = -2;
+    controller.add(reticle);
+
+    // ----- Trigger handling -----
+    // On `selectstart` we cast a ray from the controller forward and hand
+    // the hit to whatever the renderer would have called for a normal
+    // canvas click — the scene's onClick fn or the universal hands pulse.
+    const ctrlRay = new THREE.Raycaster();
+    const tempMat = new THREE.Matrix4();
+    controller.addEventListener("selectstart", () => {
+      // Build a ray from the controller's world position forward
+      tempMat.identity().extractRotation(controller.matrixWorld);
+      ctrlRay.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+      ctrlRay.ray.direction.set(0, 0, -1).applyMatrix4(tempMat);
+      // Universal pulse so the hand (or controller-tip) acknowledges the click
+      if (hands) hands.fireAction();
+      // Forward to the scene's onClick handler with controls + scene as
+      // arguments, mirroring what onCanvasClick does. The scene can use
+      // the renderer.xr.lastControllerRay if it wants the actual ray.
+      if (onClickFn) {
+        try { onClickFn(controls, hands, scene); } catch (err) { console.warn(err); }
+      }
+      // Stash the ray so scene-specific raycaster handlers can pick it up
+      // (added a getter on PhobiaFX so scenes don't need to know about XR).
+      window.PhobiaFX = window.PhobiaFX || {};
+      window.PhobiaFX.lastControllerRay = {
+        origin: ctrlRay.ray.origin.clone(),
+        direction: ctrlRay.ray.direction.clone(),
+      };
+      window.PhobiaFX.lastControllerRayT = performance.now();
+    });
+  }
 }
 
 // ---------- Helpers ----------

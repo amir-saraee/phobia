@@ -4,7 +4,7 @@
 // Fox.glb) are cached on first successful fetch so the dog scene works
 // offline after the user has opened it once.
 
-const VERSION = "stepup-v3.4";
+const VERSION = "stepup-v3.5";
 const SHELL = [
   "./",
   "./index.html",
