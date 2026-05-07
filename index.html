@@ -6828,13 +6828,20 @@ class Hands {
       hand.rotation.y += (baseRot.y + (targetRotY - baseRot.y) * this.gestureStrength - hand.rotation.y) * 0.18;
       hand.rotation.z += (baseRot.z + (targetRotZ - baseRot.z) * this.gestureStrength - hand.rotation.z) * 0.18;
 
-      // Curl fingers
-      const curl = fingerCurl * this.gestureStrength;
+      // Curl fingers — base curl from the gesture, plus a brief universal
+      // squeeze whenever actionPulse > 0 so EVERY click on an interactive
+      // object produces visible grip feedback (not just clicks during pet
+      // / brush / touch states). The pulse decays over ~0.7 s.
+      const pulseCurl = this.actionPulse * 0.5;
+      const curl = (fingerCurl * this.gestureStrength) + pulseCurl;
       for (const finger of hand.userData.fingers) {
         const distal = finger.userData.distal;
         finger.rotation.x = curl * 1.2;
         if (distal) distal.rotation.x = curl * 1.4;
       }
+      // Universal pulse: hand jiggles up slightly with the squeeze so
+      // even idle hands react visibly to a click.
+      hand.position.y += this.actionPulse * 0.018 * (side === 1 ? 1 : 0.5);
     });
   }
 
@@ -7167,6 +7174,11 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     pointerListeners: { onPointerDownTrack, onPointerUpInteract },
     sceneResult: result,
   };
+  // Expose a global "fire a hand pulse" hook so scene-specific click
+  // handlers (which bypass the renderer's onCanvasClick) can still trigger
+  // visible grip feedback when the user touches an interactive object.
+  window.PhobiaFX = window.PhobiaFX || {};
+  window.PhobiaFX.firePulse = () => { if (hands) hands.fireAction(); };
   raf = requestAnimationFrame(tick);
   active.raf = raf;
 }
@@ -8577,12 +8589,153 @@ function setupWater(scene, camera, level) {
           <div class="trust-pct">0.0 m</div>
         </div>
         <div class="trust-bar"><div class="trust-bar-fill"></div></div>
-        <div class="trust-hint">Walk forward to wade · step back any time</div>
+        <div class="trust-hint">Walk forward to wade · pick up a pebble · click water to skip</div>
       `;
       stage.appendChild(hud);
     }
     wadeDepthHud = hud;
   }, 80);
+
+  // ----- Pebbles on the sand (pick up + throw) -----
+  // Real human action: grab a stone, throw it into the water, watch the
+  // splash + ripple. Even on the lowest rungs ("toes in puddle") the user
+  // can do this, which gives them an empowering reason to step closer.
+  const pebbles = [];
+  let heldPebble = null;
+  let heldPebbleMesh = null;     // visible mesh in user's hand (camera-attached)
+  function buildPebble(rxBase, ryBase, rzBase) {
+    const geo = new THREE.SphereGeometry(0.06 + Math.random() * 0.05, 10, 8);
+    const mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color().setHSL(0.07 + Math.random() * 0.05, 0.18, 0.30 + Math.random() * 0.18),
+      roughness: 0.95, metalness: 0.0,
+    });
+    const p = new THREE.Mesh(geo, mat);
+    p.scale.set(1, 0.55, 1.1);
+    p.position.set(rxBase, ryBase, rzBase);
+    p.rotation.set(Math.random(), Math.random(), Math.random());
+    p.castShadow = true;
+    p.userData.pickable = true;
+    return p;
+  }
+  // Scatter 6 pebbles on the dry shore in front of the user (z > shoreZ).
+  // Sandy floor is at y = -1, pebble half-height ≈ 0.04 (after y-scale 0.55).
+  for (let i = 0; i < 6; i++) {
+    const px = (Math.random() - 0.5) * 5.5;
+    const pz = shoreZ + 0.3 + Math.random() * 1.6;   // dry sand
+    const pebble = buildPebble(px, -0.96, pz);
+    scene.add(pebble);
+    pebbles.push(pebble);
+  }
+
+  // Build the visible held-pebble mesh once, reused per pickup.
+  function showHeldPebble(sourcePebble) {
+    if (heldPebbleMesh) {
+      camera.remove(heldPebbleMesh);
+      heldPebbleMesh = null;
+    }
+    // Clone the source pebble's material color so the held one matches
+    const heldGeo = new THREE.SphereGeometry(0.07, 12, 10);
+    const heldMat = new THREE.MeshStandardMaterial({
+      color: sourcePebble.material.color.getHex(),
+      roughness: 0.95,
+    });
+    heldPebbleMesh = new THREE.Mesh(heldGeo, heldMat);
+    heldPebbleMesh.scale.set(1, 0.55, 1.1);
+    // Position in front-right of camera (right hand position)
+    heldPebbleMesh.position.set(0.16, -0.20, -0.32);
+    camera.add(heldPebbleMesh);
+    if (!scene.children.includes(camera)) scene.add(camera);
+  }
+  function hideHeldPebble() {
+    if (heldPebbleMesh) {
+      camera.remove(heldPebbleMesh);
+      heldPebbleMesh.geometry.dispose();
+      heldPebbleMesh.material.dispose();
+      heldPebbleMesh = null;
+    }
+  }
+
+  // Active flying pebble (the one the user just threw)
+  let flyingPebble = null;     // { mesh, vel: Vector3 }
+
+  // Raycaster for picking up pebbles
+  const wRaycaster = new THREE.Raycaster();
+  const wMouse = new THREE.Vector2();
+  let wCanvas = null;
+  let wDownX = 0, wDownY = 0, wDownT = 0, wPid = -1;
+  function bindWaterClicks() {
+    wCanvas = document.querySelector("#stage canvas");
+    if (!wCanvas) return;
+    wCanvas.addEventListener("pointerdown", (e) => {
+      wDownX = e.clientX; wDownY = e.clientY;
+      wDownT = performance.now(); wPid = e.pointerId;
+    });
+    wCanvas.addEventListener("pointerup", (e) => {
+      if (e.pointerId !== wPid) return;
+      const dx = e.clientX - wDownX, dy = e.clientY - wDownY;
+      if (Math.hypot(dx, dy) > 6 || performance.now() - wDownT > 350) return;
+      const rect = wCanvas.getBoundingClientRect();
+      wMouse.x = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+      wMouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      wRaycaster.setFromCamera(wMouse, camera);
+      // First check: did we click an unheld pebble?
+      const pebbleHits = wRaycaster.intersectObjects(pebbles, false);
+      if (pebbleHits.length > 0 && !heldPebble) {
+        const target = pebbleHits[0].object;
+        heldPebble = target;
+        target.visible = false;
+        showHeldPebble(target);
+        if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
+        if (window.PhobiaVoice && Math.random() < 0.4) {
+          window.PhobiaVoice.speak("A small stone in your hand. Notice the weight.");
+        }
+        return;
+      }
+      // Second check: if holding a pebble + clicked anywhere on the water
+      // surface, throw it. Default click already spawns a splash ring; the
+      // pebble adds a real arcing throw with a heavier splash on landing.
+      if (heldPebble) {
+        // Compute target world position from the click ray hitting y=waterY
+        const ray = wRaycaster.ray;
+        if (ray.direction.y < -0.05) {
+          const t2 = (waterY - ray.origin.y) / ray.direction.y;
+          const tx = ray.origin.x + ray.direction.x * t2;
+          const tz = ray.origin.z + ray.direction.z * t2;
+          // Spawn a flying pebble at hand position
+          const flyMesh = new THREE.Mesh(
+            new THREE.SphereGeometry(0.07, 12, 10),
+            heldPebbleMesh.material.clone()
+          );
+          flyMesh.scale.set(1, 0.55, 1.1);
+          const startW = new THREE.Vector3();
+          heldPebbleMesh.getWorldPosition(startW);
+          flyMesh.position.copy(startW);
+          scene.add(flyMesh);
+          // Throw velocity — gravity-driven arc to (tx, waterY, tz)
+          const ddx = tx - startW.x, ddz = tz - startW.z;
+          const dist = Math.hypot(ddx, ddz);
+          const T = Math.max(0.5, dist * 0.20);
+          const g = 9.8;
+          const vy = (g * T / 2) + 1.6;
+          flyingPebble = {
+            mesh: flyMesh,
+            vel: new THREE.Vector3(ddx / T, vy, ddz / T),
+            target: { x: tx, z: tz },
+          };
+          // Remove the source pebble + clear held state
+          scene.remove(heldPebble);
+          heldPebble.geometry.dispose();
+          heldPebble.material.dispose();
+          const idx = pebbles.indexOf(heldPebble);
+          if (idx >= 0) pebbles.splice(idx, 1);
+          heldPebble = null;
+          hideHeldPebble();
+          if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
+        }
+      }
+    });
+  }
+  setTimeout(bindWaterClicks, 60);
 
   resultObj = {
     controls: {
@@ -8708,12 +8861,66 @@ function setupWater(scene, camera, level) {
       for (const w of seaweed) {
         w.rotation.z = Math.sin(t * 0.8 + w.userData.phase) * 0.15;
       }
+      // ---- Flying pebble physics ----
+      // Gravity-driven arc; on contact with water surface, spawn a bigger
+      // splash ring + spatial splash sound + scare nearby fish, then sink
+      // and remove after 1 s.
+      if (flyingPebble) {
+        const fp = flyingPebble;
+        fp.vel.y -= 9.8 * dtFish;
+        fp.mesh.position.x += fp.vel.x * dtFish;
+        fp.mesh.position.y += fp.vel.y * dtFish;
+        fp.mesh.position.z += fp.vel.z * dtFish;
+        fp.mesh.rotation.x += dtFish * 8;
+        fp.mesh.rotation.z += dtFish * 6;
+        if (fp.mesh.position.y <= waterY + 0.02) {
+          // Splash — spawn a larger ring than a normal click, plus a smaller
+          // secondary ring for that "kerplunk" double-ripple look.
+          const sx = fp.mesh.position.x, sz = fp.mesh.position.z;
+          for (const radius of [0.10, 0.06]) {
+            const ring = new THREE.Mesh(
+              new THREE.RingGeometry(radius, radius * 1.4, 32),
+              splashMat.clone()
+            );
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.set(sx, waterY + 0.012, sz);
+            scene.add(ring);
+            splashes.push({ mesh: ring, t0: t });
+          }
+          if (window.PhobiaAudio && window.PhobiaAudio.splash) {
+            try { window.PhobiaAudio.splash(1.3, { x: sx, y: waterY + 0.05, z: sz }); } catch {}
+          }
+          // Scare nearby fish with a wider radius than a normal click
+          for (const f of fish) {
+            const dxf = f.position.x - sx;
+            const dzf = f.position.z - sz;
+            if (Math.hypot(dxf, dzf) < 6) f.userData.scared = 1.0;
+          }
+          // Pebble sinks below the surface, then remove
+          fp.mesh.position.y = waterY - 0.05;
+          setTimeout(() => {
+            if (!flyingPebble || flyingPebble.mesh !== fp.mesh) return;
+            scene.remove(fp.mesh);
+            fp.mesh.geometry.dispose(); fp.mesh.material.dispose();
+            flyingPebble = null;
+          }, 1000);
+          flyingPebble.landed = true;
+          flyingPebble = null;
+        }
+      }
     },
     dispose() {
       const stage = document.getElementById("stage");
       if (stage) {
         const hud = stage.querySelector(".trust-hud");
         if (hud) hud.remove();
+      }
+      // Clean up held pebble + flying pebble + scattered pebbles on unmount
+      if (heldPebbleMesh) {
+        camera.remove(heldPebbleMesh);
+        heldPebbleMesh.geometry.dispose();
+        heldPebbleMesh.material.dispose();
+        heldPebbleMesh = null;
       }
     },
   };
@@ -9726,6 +9933,16 @@ function setupDogs(scene, camera, level) {
   // known, then reset to a future time after each approach attempt.
   let autoApproachEnabled = false;
   let nextAutoApproach = 0;
+  // Autonomous wandering — dog moves to a random spot in the room every
+  // 12-25 s when calm and trust is at least 0.2. Different from auto-approach
+  // (which targets the player) — wandering targets random nearby positions
+  // so the dog reads as "having its own agenda" rather than always orbiting
+  // the user.
+  let nextWander = 0;
+  // Sniffing — dog briefly lowers its head + walks slowly while sniffing.
+  // Independent of wander; can chain after a wander or trigger spontaneously.
+  let sniffActive = false;
+  let sniffEndsAt = 0;
 
   // ----- Fetchable item -----
   // A single live "item" the dog can fetch. It can be a TREAT (small biscuit)
@@ -9940,6 +10157,8 @@ function setupDogs(scene, camera, level) {
 
   function handleWorldClick(hit, alt) {
     if (intensity === "barking") return;
+    // Visible grip feedback for every interactive click
+    if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
     // Did we click on the dog (or any of its parts)?
     let p = hit.object;
     let hitDog = false;
@@ -10131,6 +10350,41 @@ function setupDogs(scene, camera, level) {
           }
         }
         nextAutoApproach = t + 18 + Math.random() * 14;   // ~18-32s between attempts
+      }
+
+      // ---- Autonomous wandering & sniffing ----
+      // The dog has an "internal life" — it occasionally walks to a random
+      // spot in the room as if interested in something. Sometimes that walk
+      // turns into a sniff (head lowers, walk slows). This is the cumulative
+      // signal that the dog is a creature, not a button-driven puppet.
+      if (nextWander === 0) nextWander = t + 8 + Math.random() * 6;
+      if (trust > 0.2 && intensity !== "barking"
+          && dogCtrl.state === "idle"
+          && fetchPhase === "idle"
+          && t > nextWander) {
+        // Pick a random target within the visible room (inside the walls)
+        // but not RIGHT on top of the player so it doesn't conflict with the
+        // approach behaviour.
+        const targetX = (Math.random() - 0.5) * 4.0;
+        const targetZ = -2 - Math.random() * 4;
+        // 40% chance the dog sniffs at the target instead of just standing
+        if (Math.random() < 0.4) {
+          sniffActive = true;
+          sniffEndsAt = t + 2.5 + Math.random() * 2.0;
+        }
+        dogCtrl.walkTo(targetX, targetZ);
+        nextWander = t + 12 + Math.random() * 13;
+      }
+      // Drive sniff: while active, force the head pitch DOWN as if sniffing
+      // the floor. The DogController normally tracks the player; we override
+      // by setting headPitch directly each frame.
+      if (sniffActive) {
+        if (t > sniffEndsAt) {
+          sniffActive = false;
+        } else {
+          // Gentle head bob like a real dog scanning a scent trail
+          dogCtrl.headPitch = 0.55 + Math.sin(t * 5) * 0.08;
+        }
       }
 
       // ---- Heart particles ----
@@ -10778,8 +11032,100 @@ function setupEnclosed(scene, camera, level) {
   }
   let doorTargetAngle = 0;
 
-  // MRI-style tube for the smallest level
-  if (size <= 0.2) {
+  // ----- Elevator-style call panel on the wall (mid-rungs only) -----
+  // For the elevator + closet rungs (0.30 < size < 0.85), add a real button
+  // panel beside the door. Floor buttons light up when clicked, the door
+  // briefly opens after a short delay, and an indicator light shows the
+  // current floor — gives the user something tangible to do while inside
+  // the small room.
+  let elevatorPanel = null;
+  let elevatorButtons = [];
+  let currentFloor = 1;
+  let nextFloor = 1;
+  let floorChangeT = 0;
+  if (size > 0.30 && size <= 0.80) {
+    elevatorPanel = new THREE.Group();
+    // Backplate
+    const backplate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, 0.55, 0.02),
+      new THREE.MeshStandardMaterial({ color: 0xc8ccd2, metalness: 0.6, roughness: 0.3 })
+    );
+    elevatorPanel.add(backplate);
+    // Floor indicator window at the top (small black rectangle with the digit)
+    const indicator = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.12, 0.06),
+      new THREE.MeshBasicMaterial({ color: 0x141416 })
+    );
+    indicator.position.set(0, 0.20, 0.012);
+    elevatorPanel.add(indicator);
+    // The digit itself (canvas texture so we can update it dynamically)
+    const digitCanvas = document.createElement("canvas");
+    digitCanvas.width = 64; digitCanvas.height = 32;
+    const digitTex = new THREE.CanvasTexture(digitCanvas);
+    digitTex.colorSpace = THREE.SRGBColorSpace;
+    const digit = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.10, 0.05),
+      new THREE.MeshBasicMaterial({ map: digitTex, transparent: true })
+    );
+    digit.position.set(0, 0.20, 0.013);
+    elevatorPanel.add(digit);
+    function paintDigit(num) {
+      const ctx = digitCanvas.getContext("2d");
+      ctx.fillStyle = "#141416";
+      ctx.fillRect(0, 0, 64, 32);
+      ctx.fillStyle = "#ff8a3a";
+      ctx.font = "bold 26px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(num), 32, 17);
+      digitTex.needsUpdate = true;
+    }
+    paintDigit(currentFloor);
+    elevatorPanel.userData = { paintDigit };
+
+    // Six floor buttons in a 2×3 grid below the indicator
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 2; col++) {
+        const floor = row * 2 + col + 1;
+        const btnGroup = new THREE.Group();
+        const btn = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.025, 0.025, 0.012, 16),
+          new THREE.MeshStandardMaterial({
+            color: 0x2a2c30, metalness: 0.7, roughness: 0.4,
+            emissive: 0x000000, emissiveIntensity: 0,
+          })
+        );
+        btn.rotation.x = Math.PI / 2;
+        btnGroup.add(btn);
+        // Number label on top of the button — canvas texture
+        const labelCanvas = document.createElement("canvas");
+        labelCanvas.width = 32; labelCanvas.height = 32;
+        const lctx = labelCanvas.getContext("2d");
+        lctx.fillStyle = "#ffffff";
+        lctx.font = "bold 18px sans-serif";
+        lctx.textAlign = "center";
+        lctx.textBaseline = "middle";
+        lctx.fillText(String(floor), 16, 18);
+        const labelTex = new THREE.CanvasTexture(labelCanvas);
+        labelTex.colorSpace = THREE.SRGBColorSpace;
+        const label = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.04, 0.04),
+          new THREE.MeshBasicMaterial({ map: labelTex, transparent: true })
+        );
+        label.position.set(0, 0, 0.008);
+        btnGroup.add(label);
+        btnGroup.position.set(-0.038 + col * 0.076, 0.05 - row * 0.08, 0.012);
+        btnGroup.userData.floor = floor;
+        btnGroup.userData.btn = btn;
+        elevatorPanel.add(btnGroup);
+        elevatorButtons.push(btnGroup);
+      }
+    }
+    // Position the panel on the right wall, next to the door
+    elevatorPanel.position.set(roomW / 2 - 0.05, 0.0, -roomD / 2 + 0.5);
+    elevatorPanel.rotation.y = -Math.PI / 2;
+    scene.add(elevatorPanel);
+  }
     const tube = new THREE.Mesh(
       new THREE.CylinderGeometry(0.42, 0.42, 3.2, 32, 1, true),
       new THREE.MeshStandardMaterial({
@@ -10888,13 +11234,39 @@ function setupEnclosed(scene, camera, level) {
       eMouse.x = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
       eMouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       eRaycaster.setFromCamera(eMouse, camera);
+      // First: did the user click an elevator button?
+      if (elevatorPanel) {
+        const buttonHits = eRaycaster.intersectObjects(elevatorButtons, true);
+        if (buttonHits.length > 0) {
+          // Walk up the parent chain to find the btnGroup with userData.floor
+          let g = buttonHits[0].object;
+          while (g && g.userData.floor === undefined) g = g.parent;
+          if (g && g.userData.floor) {
+            const floor = g.userData.floor;
+            // Light the button (orange emissive) and set the next-floor target
+            g.userData.btn.material.emissive.setHex(0xff8a3a);
+            g.userData.btn.material.emissiveIntensity = 1.0;
+            nextFloor = floor;
+            floorChangeT = 2.5;       // takes ~2.5 s to reach the floor
+            if (window.PhobiaAudio && window.PhobiaAudio.indicatorClick) {
+              try { window.PhobiaAudio.indicatorClick(); } catch {}
+            }
+            if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
+            if (window.PhobiaVoice) {
+              window.PhobiaVoice.speak(`Floor ${floor}. The lift is moving. Breathe through the small space.`);
+            }
+            return;
+          }
+        }
+      }
+      // Otherwise: door click toggle
       const hits = eRaycaster.intersectObject(doorPivot, true);
       if (hits.length === 0) return;
       // Toggle door state on click
       doorTargetAngle = (doorTargetAngle === 0) ? -1.4 : 0;
-      // Spatialise the creak from the door's actual world position
       const doorPos = doorPivot.getWorldPosition(new THREE.Vector3());
       if (window.PhobiaAudio) window.PhobiaAudio.doorCreak({ x: doorPos.x, y: doorPos.y, z: doorPos.z });
+      if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
       if (window.PhobiaVoice) {
         window.PhobiaVoice.speak(doorTargetAngle === 0
           ? "Closed. The air in here is the same air as outside."
@@ -10972,6 +11344,39 @@ function setupEnclosed(scene, camera, level) {
         if (pos.array[i * 3 + 1] < -roomH / 2) pos.array[i * 3 + 1] = roomH / 2;
       }
       pos.needsUpdate = true;
+
+      // ---- Elevator floor-change tick ----
+      // While floorChangeT > 0, the cabin is "moving" — add a subtle vertical
+      // shake and slowly hand off to the new floor. When the timer hits 0,
+      // the indicator updates + the door opens automatically.
+      if (floorChangeT > 0) {
+        floorChangeT = Math.max(0, floorChangeT - (dt || 0.016));
+        // Cabin sway while moving
+        camera.position.x += Math.sin(t * 7) * 0.004;
+        camera.position.y += Math.sin(t * 9) * 0.005;
+        if (floorChangeT === 0) {
+          // Arrived at new floor — update the indicator + open the door
+          currentFloor = nextFloor;
+          if (elevatorPanel && elevatorPanel.userData.paintDigit) {
+            elevatorPanel.userData.paintDigit(currentFloor);
+          }
+          // Reset all button emissives back to dark
+          for (const b of elevatorButtons) {
+            b.userData.btn.material.emissive.setHex(0x000000);
+            b.userData.btn.material.emissiveIntensity = 0;
+          }
+          // Auto-open the door (triumphal moment) — close after 5 s
+          doorTargetAngle = -1.4;
+          setTimeout(() => { doorTargetAngle = 0; }, 5000);
+          if (window.PhobiaAudio) {
+            const doorPos = doorPivot.getWorldPosition(new THREE.Vector3());
+            window.PhobiaAudio.doorCreak({ x: doorPos.x, y: doorPos.y, z: doorPos.z });
+          }
+          if (window.PhobiaVoice) {
+            window.PhobiaVoice.speak(`Arrived at floor ${currentFloor}. The doors are opening.`);
+          }
+        }
+      }
 
       // Subtle breathing camera + nervous glances at small sizes (additive)
       camera.position.y += Math.sin(t * 1.2) * 0.015;
@@ -12171,31 +12576,59 @@ function setupSpeaking(scene, camera, level) {
   }
 
   // ----- Speech notes (paper on the lectern top) -----
-  // A printed page with a few visible lines, slightly tilted toward the user.
-  // Clicking — or tilting the camera down to look at it — locks attention to
-  // your bullet points (we just play a calming voice cue).
+  // A printed page with a REAL speech printed on it — readable lines the
+  // user can actually deliver. The current line highlights as the user holds
+  // the speak button, and advances over time so they can see their progress.
+  // The script is a short, gentle "introduce yourself" speech appropriate to
+  // the rung's audience size.
+  const speechLines = [
+    "Good evening, everyone.",
+    "Thank you for being here today.",
+    "I'd like to share a small idea with you.",
+    "It's something I've been thinking about for a while.",
+    "Sometimes the things that scare us the most",
+    "are the things that change us the most.",
+    "A pause is not weakness — it's pace.",
+    "I'm grateful you stayed to listen.",
+    "Thank you.",
+  ];
+  let currentLine = 0;          // index into speechLines
+  let lineProgress = 0;         // 0..1 within the current line
+  function drawNoteCanvas() {
+    const c = noteCanvas;
+    const ctx = nctx;
+    ctx.fillStyle = "#fbf8f0";
+    ctx.fillRect(0, 0, 256, 360);
+    // Header bar
+    ctx.fillStyle = "#3a4a6a";
+    ctx.fillRect(20, 24, 216, 4);
+    ctx.fillStyle = "#3a4a6a";
+    ctx.font = "bold 14px sans-serif";
+    ctx.fillText("My speech", 30, 18);
+    // Render the speech lines
+    ctx.font = "14px sans-serif";
+    for (let i = 0; i < speechLines.length; i++) {
+      const y = 56 + i * 26;
+      // Highlight bar for the current line
+      if (i === currentLine) {
+        ctx.fillStyle = "rgba(255, 220, 100, 0.55)";
+        ctx.fillRect(20, y - 14, 216, 22);
+        // Progress bar within the highlight
+        ctx.fillStyle = "rgba(124, 45, 18, 0.85)";
+        ctx.fillRect(20, y + 8, 216 * lineProgress, 2);
+      }
+      // The text itself
+      ctx.fillStyle = i < currentLine ? "#9a9a8a" : (i === currentLine ? "#1a1a1a" : "#3a3a3a");
+      ctx.fillText(speechLines[i], 28, y);
+    }
+    noteTex.needsUpdate = true;
+  }
   const noteCanvas = document.createElement("canvas");
   noteCanvas.width = 256; noteCanvas.height = 360;
   const nctx = noteCanvas.getContext("2d");
-  nctx.fillStyle = "#fbf8f0";
-  nctx.fillRect(0, 0, 256, 360);
-  // Header bar
-  nctx.fillStyle = "#3a4a6a";
-  nctx.fillRect(20, 24, 216, 4);
-  // A few "lines of text"
-  nctx.fillStyle = "#3a3a3a";
-  for (let line = 0; line < 14; line++) {
-    const y = 56 + line * 22;
-    const w = 130 + Math.random() * 90;
-    nctx.fillRect(28, y, w, 2.5);
-  }
-  // A bullet near the top
-  nctx.fillStyle = "#7c2d12";
-  nctx.fillRect(20, 60, 4, 4);
-  nctx.fillRect(20, 102, 4, 4);
-  nctx.fillRect(20, 144, 4, 4);
   const noteTex = new THREE.CanvasTexture(noteCanvas);
   noteTex.colorSpace = THREE.SRGBColorSpace;
+  drawNoteCanvas();
   const notes = new THREE.Mesh(
     new THREE.PlaneGeometry(0.36, 0.50),
     new THREE.MeshStandardMaterial({ map: noteTex, roughness: 0.9 })
@@ -12234,28 +12667,78 @@ function setupSpeaking(scene, camera, level) {
   friendly.castShadow = true;
   scene.add(friendly);
 
+  // Detailed audience members — proper humanoid figures with neck + head +
+  // torso + shoulders + arms. Each person gets a randomised skin tone, hair
+  // colour, and clothing colour so the rows read as real distinct people
+  // instead of identical silhouettes.
   const audience = new THREE.Group();
+  const audienceMembers = [];     // [{ root, head, hair, mood }]
   const numRows = Math.ceil(2 + crowd * 14);
-  const rowSpacing = 1.3;
-  const seatSpacing = 0.7;
+  const rowSpacing = 1.4;
+  const seatSpacing = 0.85;
   const baseY = -1;
-  const audienceMat = new THREE.MeshStandardMaterial({ color: 0x1a1f2a, roughness: 1.0 });
-  // Simple seated silhouette: a body + a head
-  const seatedGeo = new THREE.SphereGeometry(0.18, 10, 8);
-  const torsoGeo  = new THREE.CylinderGeometry(0.18, 0.22, 0.55, 10);
+  // Skin / hair / shirt palette — varied so the crowd feels diverse
+  const skinTones = [0xe8b794, 0xd4a07a, 0xb88863, 0x8a6442, 0x6a4a30, 0x5a3a22];
+  const hairTones = [0x1a1410, 0x3a2418, 0x5a3a22, 0x8b6238, 0xa97442, 0xd4a86b, 0x9aa6b2];
+  const shirtTones = [0x2c4a6e, 0x4a3a55, 0x6a3a3a, 0x3a5a3a, 0x4a4a55, 0x6a5a3a, 0x4a2c2a, 0x2c5a6e];
+
+  function buildAudienceMember() {
+    const person = new THREE.Group();
+    const skinHex = skinTones[Math.floor(Math.random() * skinTones.length)];
+    const hairHex = hairTones[Math.floor(Math.random() * hairTones.length)];
+    const shirtHex = shirtTones[Math.floor(Math.random() * shirtTones.length)];
+    const skinM = new THREE.MeshStandardMaterial({ color: skinHex, roughness: 0.85 });
+    const hairM = new THREE.MeshStandardMaterial({ color: hairHex, roughness: 1.0 });
+    const shirtM = new THREE.MeshStandardMaterial({ color: shirtHex, roughness: 0.95 });
+    // Torso
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, 0.40, 6, 10), shirtM);
+    torso.position.y = 0.35;
+    torso.castShadow = true;
+    person.add(torso);
+    // Shoulders (round caps)
+    for (const sx of [-1, 1]) {
+      const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.10, 10, 8), shirtM);
+      shoulder.position.set(sx * 0.18, 0.55, 0);
+      person.add(shoulder);
+    }
+    // Neck
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.10, 10), skinM);
+    neck.position.y = 0.66;
+    person.add(neck);
+    // Head
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 14, 12), skinM);
+    head.scale.set(0.95, 1.05, 0.95);
+    head.position.y = 0.82;
+    head.castShadow = true;
+    person.add(head);
+    // Hair cap (short style for everyone — keeps poly count low)
+    const hair = new THREE.Mesh(
+      new THREE.SphereGeometry(0.135, 14, 12, 0, Math.PI * 2, 0, Math.PI * 0.55),
+      hairM
+    );
+    hair.scale.copy(head.scale);
+    hair.position.copy(head.position);
+    person.add(hair);
+    // Tiny eyes (so the figure reads as facing forward)
+    for (const sx of [-1, 1]) {
+      const eye = new THREE.Mesh(
+        new THREE.SphereGeometry(0.013, 8, 6),
+        new THREE.MeshBasicMaterial({ color: 0x141014 })
+      );
+      eye.position.set(sx * 0.04, 0.83, 0.115);
+      person.add(eye);
+    }
+    return { root: person, head, hair, mood: 0 };
+  }
+
   for (let row = 0; row < numRows; row++) {
     const colCount = 2 + Math.floor(crowd * 14);
     for (let col = -colCount; col <= colCount; col++) {
-      // Skip "missing" seats randomly at sparse crowds
       if (Math.random() > Math.min(1, 0.3 + crowd * 1.0)) continue;
-      const torso = new THREE.Mesh(torsoGeo, audienceMat);
-      torso.position.set(col * seatSpacing, baseY + 0.3, -3 - row * rowSpacing);
-      torso.castShadow = true;
-      audience.add(torso);
-      const head = new THREE.Mesh(seatedGeo, audienceMat);
-      head.position.set(col * seatSpacing, baseY + 0.7, -3 - row * rowSpacing);
-      head.castShadow = true;
-      audience.add(head);
+      const m = buildAudienceMember();
+      m.root.position.set(col * seatSpacing, baseY, -3 - row * rowSpacing);
+      audience.add(m.root);
+      audienceMembers.push(m);
     }
   }
   scene.add(audience);
@@ -12416,14 +12899,19 @@ function setupSpeaking(scene, camera, level) {
       if (controls) speakingControls = controls;
       const d = dt || 0.016;
       // Subtle audience murmur — tiny head movements (smaller when "speaking")
+      // Each member has their own head we can rotate independently of the
+      // body, so the murmur reads as people looking around / nodding rather
+      // than the whole body twisting.
       const settle = (speakingPressed || pauseSilence > 0.5) ? 0.2 : 1.0;
-      audience.children.forEach((mesh, i) => {
-        mesh.rotation.y = Math.sin(t * 0.5 + i * 0.7) * 0.05 * settle;
-        // A few audience members occasionally nod when the speaker has built
-        // some confidence. Gives the user back a felt audience response.
-        if (i % 5 === 0 && confidence > 0.3) {
-          mesh.rotation.x = Math.sin(t * 0.8 + i) * 0.05 * (confidence - 0.2);
+      audienceMembers.forEach((m, i) => {
+        m.head.rotation.y = Math.sin(t * 0.5 + i * 0.7) * 0.10 * settle;
+        // High-confidence speakers earn nods from a chunk of the crowd
+        if (i % 4 === 0 && confidence > 0.3) {
+          m.head.rotation.x = Math.sin(t * 0.9 + i) * 0.10 * (confidence - 0.2);
         }
+        // Hair follows the head rotation
+        m.hair.rotation.y = m.head.rotation.y;
+        m.hair.rotation.x = m.head.rotation.x;
       });
       // Friendly face — nods when the user is actively speaking
       if (friendlyHead) {
@@ -12436,6 +12924,29 @@ function setupSpeaking(scene, camera, level) {
       camera.position.y += Math.sin(t * 1.6) * 0.012 * (0.4 + crowd) * sway;
       camera.rotation.z += Math.sin(t * 0.7) * 0.004 * crowd * sway;
       if (pauseSilence > 0) pauseSilence = Math.max(0, pauseSilence - d * 0.25);
+      // ---- Speech progression ----
+      // While the user holds the speak button, the current line on the page
+      // fills its progress bar at a rate tied to its character count (rough
+      // proxy for reading time, ~14 chars per second). When the bar fills,
+      // we advance to the next line. When the script ends, voice + applause
+      // cue trigger and the line resets so the user can speak again.
+      if (speakingPressed && currentLine < speechLines.length) {
+        const charsPerSec = 14;
+        const lineDuration = Math.max(1.2, speechLines[currentLine].length / charsPerSec);
+        lineProgress += d / lineDuration;
+        if (lineProgress >= 1) {
+          lineProgress = 0;
+          currentLine++;
+          if (currentLine >= speechLines.length) {
+            // Speech finished — earn full confidence + a celebratory cue
+            confidence = Math.min(1, confidence + 0.30);
+            if (window.PhobiaVoice) {
+              window.PhobiaVoice.speak("You finished it. Notice how the room is still here.");
+            }
+          }
+        }
+        drawNoteCanvas();
+      }
       // Confidence grows slowly while speaking, decays slowly when not
       if (speakingPressed) {
         confidence = Math.min(1, confidence + d * 0.02);
