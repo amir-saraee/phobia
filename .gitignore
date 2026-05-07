@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Claude Code local settings
+.claude/
+
+# Editor / IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Node (if added later)
+node_modules/
