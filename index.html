@@ -7141,6 +7141,55 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     const dt = Math.min(0.05, (now - lastTime) / 1000);
     lastTime = now;
     if (controls) controls.update(dt);
+
+    // ---- VR thumbstick locomotion + snap-turn ----
+    // When in an immersive session, read the controllers' thumbstick axes:
+    //   Left stick: smooth locomotion (strafe + forward), aligned to the
+    //               headset's facing direction.
+    //   Right stick: snap-turn 30° in the direction of a flick > 0.7.
+    // Snap-turn (vs smooth-turn) is the comfort default — smooth rotation
+    // is the #1 cause of VR motion sickness.
+    if (renderer.xr.isPresenting) {
+      const session = renderer.xr.getSession();
+      if (session && session.inputSources) {
+        for (const src of session.inputSources) {
+          if (!src.gamepad || !src.gamepad.axes || src.gamepad.axes.length < 4) continue;
+          const ax = src.gamepad.axes;
+          // Trackpad axes are sometimes 0,1; thumbstick is 2,3 — both check
+          const stickX = ax[2] !== undefined ? ax[2] : ax[0];
+          const stickY = ax[3] !== undefined ? ax[3] : ax[1];
+          if (src.handedness === "left") {
+            if (Math.abs(stickX) > 0.15 || Math.abs(stickY) > 0.15) {
+              // Forward = headset's horizontal facing direction
+              const xrCam = renderer.xr.getCamera();
+              const dir = _audVec1.set(0, 0, -1).applyQuaternion(xrCam.quaternion);
+              dir.y = 0;
+              if (dir.lengthSq() > 0.0001) dir.normalize();
+              const right = _audVec2.set(dir.z, 0, -dir.x);
+              const speed = 1.6 * dt;
+              camera.position.addScaledVector(dir, -stickY * speed);
+              camera.position.addScaledVector(right, stickX * speed);
+              // Respect walkable scene bounds when present
+              if (controls && controls.opts && controls.opts.bounds) {
+                const b = controls.opts.bounds;
+                camera.position.x = Math.max(b.minX, Math.min(b.maxX, camera.position.x));
+                camera.position.z = Math.max(b.minZ, Math.min(b.maxZ, camera.position.z));
+              }
+            }
+          } else if (src.handedness === "right") {
+            // Snap-turn — only triggers once per flick (waits for the stick
+            // to return to centre before another turn)
+            if (Math.abs(stickX) > 0.7 && !active._lastSnapTurn) {
+              camera.rotation.y -= Math.sign(stickX) * (Math.PI / 6);
+              active._lastSnapTurn = true;
+            } else if (Math.abs(stickX) < 0.3) {
+              active._lastSnapTurn = false;
+            }
+          }
+        }
+      }
+    }
+
     if (updateFn) updateFn(t, controls, dt);
     // Interaction probe: scene tells us what gesture is appropriate right now
     if (interactFn && hands) {
