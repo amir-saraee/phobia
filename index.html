@@ -11817,6 +11817,180 @@ function setupNeedles(scene, camera, level) {
   }
   scene.add(syringe);
 
+  // ----- Visible nurse character holding the syringe -----
+  // Procedural humanoid in pale-blue scrubs standing near the tray. The
+  // syringe's z-position drives the nurse's z-position so they appear to
+  // step closer with the rung. At low rungs the nurse is across the room;
+  // at the highest rung they're right in front of the user with the
+  // syringe held in their hand.
+  const nurseGroup = new THREE.Group();
+  const scrubColor = 0x4a8fb8;     // pale clinical blue
+  const scrubTrim  = 0x365a7c;
+  const nurseSkin  = 0xe6c5a8;     // lighter palette so the nurse reads as a clinician under fluorescents
+  const nurseHair  = 0x3a2418;
+  const scrubMat = new THREE.MeshStandardMaterial({ color: scrubColor, roughness: 0.95 });
+  const trimMat  = new THREE.MeshStandardMaterial({ color: scrubTrim,  roughness: 0.95 });
+  const nurseSkinMat = new THREE.MeshStandardMaterial({ color: nurseSkin, roughness: 0.85 });
+  const nurseHairMat = new THREE.MeshStandardMaterial({ color: nurseHair, roughness: 1.0 });
+  // Torso (scrubs top)
+  const nurseTorso = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.20, 0.55, 8, 14), scrubMat
+  );
+  nurseTorso.position.y = 0.55;
+  nurseTorso.castShadow = true;
+  nurseGroup.add(nurseTorso);
+  // V-neckline trim (a small dark patch at the throat)
+  const neckline = new THREE.Mesh(
+    new THREE.BoxGeometry(0.16, 0.04, 0.04), trimMat
+  );
+  neckline.position.set(0, 0.86, 0.16);
+  nurseGroup.add(neckline);
+  // Neck
+  const nurseNeck = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.075, 0.10, 12), nurseSkinMat
+  );
+  nurseNeck.position.y = 0.92;
+  nurseGroup.add(nurseNeck);
+  // Head
+  const nurseHead = new THREE.Mesh(
+    new THREE.SphereGeometry(0.13, 16, 12), nurseSkinMat
+  );
+  nurseHead.scale.set(0.95, 1.05, 0.95);
+  nurseHead.position.y = 1.10;
+  nurseHead.castShadow = true;
+  nurseGroup.add(nurseHead);
+  // Hair (pulled-back bun-ish — close-fit cap)
+  const nurseHairCap = new THREE.Mesh(
+    new THREE.SphereGeometry(0.135, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55),
+    nurseHairMat
+  );
+  nurseHairCap.scale.copy(nurseHead.scale);
+  nurseHairCap.position.copy(nurseHead.position);
+  nurseGroup.add(nurseHairCap);
+  // Bun on the back of the head
+  const bun = new THREE.Mesh(
+    new THREE.SphereGeometry(0.06, 12, 10), nurseHairMat
+  );
+  bun.position.set(0, 1.06, -0.10);
+  nurseGroup.add(bun);
+  // Eyes (dark dots)
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(
+      new THREE.SphereGeometry(0.014, 10, 8),
+      new THREE.MeshBasicMaterial({ color: 0x141014 })
+    );
+    eye.position.set(sx * 0.04, 1.12, 0.115);
+    nurseGroup.add(eye);
+  }
+  // Soft smile
+  const nurseSmile = new THREE.Mesh(
+    new THREE.TorusGeometry(0.025, 0.004, 6, 12, Math.PI),
+    new THREE.MeshBasicMaterial({ color: 0x8a4a4a })
+  );
+  nurseSmile.rotation.z = Math.PI;
+  nurseSmile.position.set(0, 1.06, 0.12);
+  nurseGroup.add(nurseSmile);
+  // Shoulders (rounded caps)
+  for (const sx of [-1, 1]) {
+    const shoulder = new THREE.Mesh(
+      new THREE.SphereGeometry(0.10, 12, 10), scrubMat
+    );
+    shoulder.position.set(sx * 0.22, 0.86, 0);
+    nurseGroup.add(shoulder);
+  }
+  // Right arm reaching toward the syringe — articulated upper + forearm
+  // The hand will visibly grip the syringe so the user sees a person
+  // performing the procedure, not a floating instrument.
+  const nurseRightArmRoot = new THREE.Group();
+  nurseRightArmRoot.position.set(-0.22, 0.85, 0);   // right shoulder (mirrored: nurse faces user)
+  nurseRightArmRoot.rotation.z = 0.3;
+  nurseRightArmRoot.rotation.x = -0.4;              // arm angled forward
+  nurseGroup.add(nurseRightArmRoot);
+  const upperArm = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.07, 0.28, 8, 12), scrubMat
+  );
+  upperArm.position.set(0, -0.14, 0);
+  upperArm.castShadow = true;
+  nurseRightArmRoot.add(upperArm);
+  // Cuff (slightly darker band)
+  const cuff = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.075, 0.075, 0.025, 12), trimMat
+  );
+  cuff.position.set(0, -0.30, 0);
+  nurseRightArmRoot.add(cuff);
+  // Forearm
+  const forearmGroup = new THREE.Group();
+  forearmGroup.position.set(0, -0.31, 0);
+  forearmGroup.rotation.x = 0.5;                     // forearm bent forward
+  nurseRightArmRoot.add(forearmGroup);
+  const nurseForearm = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.055, 0.24, 8, 12), nurseSkinMat
+  );
+  nurseForearm.position.set(0, -0.12, 0);
+  forearmGroup.add(nurseForearm);
+  // Hand (palm) — this is where the syringe attaches
+  const nurseHand = new THREE.Mesh(
+    new THREE.SphereGeometry(0.06, 12, 10), nurseSkinMat
+  );
+  nurseHand.scale.set(0.85, 0.55, 1.1);
+  nurseHand.position.set(0, -0.27, 0);
+  forearmGroup.add(nurseHand);
+  // Left arm — relaxed at the side
+  const nurseLeftArm = new THREE.Group();
+  nurseLeftArm.position.set(0.22, 0.85, 0);
+  nurseLeftArm.rotation.z = -0.1;
+  nurseGroup.add(nurseLeftArm);
+  const leftUpper = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.07, 0.30, 8, 12), scrubMat
+  );
+  leftUpper.position.set(0, -0.16, 0);
+  nurseLeftArm.add(leftUpper);
+  const leftForearm = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.055, 0.26, 8, 12), nurseSkinMat
+  );
+  leftForearm.position.set(0, -0.46, 0);
+  nurseLeftArm.add(leftForearm);
+  const leftHand = new THREE.Mesh(
+    new THREE.SphereGeometry(0.06, 12, 10), nurseSkinMat
+  );
+  leftHand.scale.set(0.85, 0.55, 1.1);
+  leftHand.position.set(0, -0.62, 0);
+  nurseLeftArm.add(leftHand);
+  // Trousers + shoes
+  for (const sx of [-1, 1]) {
+    const leg = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.085, 0.55, 8, 12), trimMat
+    );
+    leg.position.set(sx * 0.10, 0.05, 0);
+    leg.castShadow = true;
+    nurseGroup.add(leg);
+    const shoe = new THREE.Mesh(
+      new THREE.BoxGeometry(0.10, 0.06, 0.20),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 })
+    );
+    shoe.position.set(sx * 0.10, -0.30, 0.05);
+    shoe.castShadow = true;
+    nurseGroup.add(shoe);
+  }
+  // Position the nurse so they're holding the syringe — a step behind it
+  // so it appears in their right hand. The nurse stands at the same Z as
+  // the syringe, offset slightly to the right and BEHIND it so the syringe
+  // sits in the nurse's hand pointing toward the camera.
+  nurseGroup.position.set(0.85, -1.0, syringeZ + 0.4);
+  // Face the user
+  nurseGroup.rotation.y = -0.4;
+  scene.add(nurseGroup);
+
+  // Re-parent the syringe to the nurse's hand so they move together. We
+  // want the syringe to track the nurse's right hand exactly so it never
+  // drifts off the palm. Inside the local hand frame we position the
+  // syringe so the needle points away from the nurse and toward the camera.
+  scene.remove(syringe);
+  forearmGroup.add(syringe);
+  // Clear the previous absolute syringe position; place inside the hand
+  syringe.position.set(0, -0.30, 0);
+  syringe.rotation.set(0, -1.0, 0);    // angle the needle toward the user
+
   // The user's arm + hand. Visible from the second rung on so they can
   // see themselves making a fist as the syringe approaches.
   let armGroup = null;
@@ -11919,15 +12093,16 @@ function setupNeedles(scene, camera, level) {
   let fistTarget = 0;
   let fistHeld = false;
   let needleAdvance = 0;      // 0..1 — how far the needle has progressed
-  // Spawn position offset for the syringe so we can drive it from the update
-  // loop. Captured once.
-  const syringeBaseX = syringe.position.x;
-  const syringeBaseY = syringe.position.y;
-  const syringeBaseZ = syringe.position.z;
-  // Final approach target — just above the patch on the arm
-  const syringeApproachX = 0.20;
-  const syringeApproachY = -0.42;
-  const syringeApproachZ = -0.74;
+  // The NURSE moves toward the user (not the syringe alone). This is the
+  // realistic motion: the clinician approaches with the syringe in hand.
+  // Capture the nurse's resting position; approach target is right beside
+  // the user's arm.
+  const nurseBaseX = nurseGroup.position.x;
+  const nurseBaseY = nurseGroup.position.y;
+  const nurseBaseZ = nurseGroup.position.z;
+  const nurseApproachX = 0.55;     // stands slightly right of user
+  const nurseApproachY = -1.0;     // ground level unchanged
+  const nurseApproachZ = -0.50;    // close to the user's arm
   // Gripping is only enabled at proximity ≥ 0.35 (when the hand is visible)
   function bindNeedleHold() {
     const canvasDom = document.querySelector("#stage canvas");
@@ -12083,11 +12258,15 @@ function setupNeedles(scene, camera, level) {
           }
         }
       }
-      // Position syringe from base → approach × needleAdvance, then retreat
+      // Position the NURSE (with syringe in hand) from base → approach
+      // × needleAdvance, then retreat. The syringe is parented to the
+      // nurse's forearm so it follows automatically.
       const adv = needleAdvance * (1 - withdraw);
-      syringe.position.x = syringeBaseX + (syringeApproachX - syringeBaseX) * adv;
-      syringe.position.y = syringeBaseY + (syringeApproachY - syringeBaseY) * adv;
-      syringe.position.z = syringeBaseZ + (syringeApproachZ - syringeBaseZ) * adv;
+      nurseGroup.position.x = nurseBaseX + (nurseApproachX - nurseBaseX) * adv;
+      nurseGroup.position.y = nurseBaseY + (nurseApproachY - nurseBaseY) * adv;
+      nurseGroup.position.z = nurseBaseZ + (nurseApproachZ - nurseBaseZ) * adv;
+      // Nurse turns to face the user as they approach
+      nurseGroup.rotation.y = -0.4 + adv * -0.4;
       // Plunger depresses slightly when fully in
       if (adv > 0.95) {
         plunger.position.x = -0.10 + (adv - 0.95) * 0.4 * 0.05;
@@ -13053,18 +13232,124 @@ function setupDriving(scene, camera, level) {
   const dashboard = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.5, 0.6), dashMat);
   dashboard.position.set(0, -0.55, -0.45);
   scene.add(dashboard);
-  // Cluster (panel with two glow circles for speedometer + RPM)
-  const cluster = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.18, 0.05), new THREE.MeshStandardMaterial({ color: 0x202024 }));
-  cluster.position.set(0, -0.42, -0.4);
-  scene.add(cluster);
-  for (const sx of [-1, 1]) {
-    const dial = new THREE.Mesh(
-      new THREE.RingGeometry(0.04, 0.06, 18),
-      new THREE.MeshBasicMaterial({ color: 0x7cd1c5 })
-    );
-    dial.position.set(sx * 0.2, -0.42, -0.37);
-    scene.add(dial);
+
+  // ----- Real instrument cluster -----
+  // Two analogue dials (speedometer + fuel/RPM) painted on a CanvasTexture
+  // so we can re-render the needle positions live every frame. Tachometer
+  // shows engine RPM (driven by the accelerator pedal); speedometer shows
+  // current speed in km/h. Indicator lamps below light up on signal /
+  // brake / hazard.
+  const clusterPanel = new THREE.Mesh(
+    new THREE.BoxGeometry(0.96, 0.22, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x0a0c10, roughness: 0.7 })
+  );
+  clusterPanel.position.set(0, -0.42, -0.4);
+  scene.add(clusterPanel);
+  // Two dial canvases — speedo (left), tach (right)
+  function makeDialCanvas() {
+    const c = document.createElement("canvas");
+    c.width = c.height = 192;
+    return c;
   }
+  function paintDial(c, opts) {
+    const ctx = c.getContext("2d");
+    const cx = 96, cy = 96, R = 78;
+    ctx.fillStyle = "#0a0c10";
+    ctx.beginPath(); ctx.arc(cx, cy, R + 6, 0, Math.PI * 2); ctx.fill();
+    // Outer rim
+    ctx.strokeStyle = "#3a3a40"; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(cx, cy, R + 4, 0, Math.PI * 2); ctx.stroke();
+    // Tick marks (major every 10°, minor every 2°) over a 270° arc
+    // Arc from -225° to +45° (sweeping clockwise from bottom-left)
+    const startA = Math.PI * 1.25;     // -225° = 135° + 90° ... actually 5π/4
+    const sweep = Math.PI * 1.5;       // 270°
+    for (let i = 0; i <= opts.maxTicks; i++) {
+      const a = startA + (i / opts.maxTicks) * sweep;
+      const isMajor = i % opts.majorEvery === 0;
+      const tickLen = isMajor ? 12 : 6;
+      ctx.strokeStyle = isMajor ? "#e8eef6" : "#7a8090";
+      ctx.lineWidth = isMajor ? 2 : 1;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * (R - tickLen), cy + Math.sin(a) * (R - tickLen));
+      ctx.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
+      ctx.stroke();
+      // Label on major ticks
+      if (isMajor) {
+        ctx.fillStyle = "#e8eef6";
+        ctx.font = "bold 14px sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        const lblR = R - 26;
+        const labelVal = Math.round(i * opts.maxValue / opts.maxTicks);
+        ctx.fillText(String(labelVal), cx + Math.cos(a) * lblR, cy + Math.sin(a) * lblR);
+      }
+    }
+    // Centre + label
+    ctx.fillStyle = "#7cd1c5";
+    ctx.font = "bold 11px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(opts.label, cx, cy + 30);
+    // Needle
+    const needleA = startA + Math.max(0, Math.min(1, opts.value)) * sweep;
+    ctx.strokeStyle = opts.needleColor || "#ff8a3a";
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(needleA) * (R - 18), cy + Math.sin(needleA) * (R - 18));
+    ctx.stroke();
+    // Centre cap
+    ctx.fillStyle = "#3a3a40";
+    ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill();
+  }
+  const speedoCanvas = makeDialCanvas();
+  const tachCanvas   = makeDialCanvas();
+  const speedoTex = new THREE.CanvasTexture(speedoCanvas);
+  speedoTex.colorSpace = THREE.SRGBColorSpace;
+  const tachTex = new THREE.CanvasTexture(tachCanvas);
+  tachTex.colorSpace = THREE.SRGBColorSpace;
+  // Initial paint
+  paintDial(speedoCanvas, { value: 0, maxValue: 200, maxTicks: 10, majorEvery: 1, label: "km/h" });
+  paintDial(tachCanvas,   { value: 0, maxValue: 8,   maxTicks: 8,  majorEvery: 1, label: "RPM × 1k", needleColor: "#ff5544" });
+  speedoTex.needsUpdate = true;
+  tachTex.needsUpdate = true;
+  const speedoMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.18, 0.18),
+    new THREE.MeshStandardMaterial({
+      map: speedoTex, transparent: true,
+      emissive: 0xffffff, emissiveMap: speedoTex, emissiveIntensity: 0.6,
+    })
+  );
+  speedoMesh.position.set(-0.20, -0.42, -0.37);
+  scene.add(speedoMesh);
+  const tachMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.18, 0.18),
+    new THREE.MeshStandardMaterial({
+      map: tachTex, transparent: true,
+      emissive: 0xffffff, emissiveMap: tachTex, emissiveIntensity: 0.6,
+    })
+  );
+  tachMesh.position.set(0.20, -0.42, -0.37);
+  scene.add(tachMesh);
+
+  // Indicator lamps — three small emissive squares between the dials.
+  // Left = left turn signal, Center = brake, Right = right turn signal.
+  const lampMatLeft  = new THREE.MeshStandardMaterial({ color: 0x202024, emissive: 0x000000 });
+  const lampMatBrake = new THREE.MeshStandardMaterial({ color: 0x202024, emissive: 0x000000 });
+  const lampMatRight = new THREE.MeshStandardMaterial({ color: 0x202024, emissive: 0x000000 });
+  const lampLeft = new THREE.Mesh(new THREE.PlaneGeometry(0.025, 0.025), lampMatLeft);
+  lampLeft.position.set(-0.05, -0.50, -0.37);
+  scene.add(lampLeft);
+  const lampBrake = new THREE.Mesh(new THREE.PlaneGeometry(0.025, 0.025), lampMatBrake);
+  lampBrake.position.set(0, -0.50, -0.37);
+  scene.add(lampBrake);
+  const lampRight = new THREE.Mesh(new THREE.PlaneGeometry(0.025, 0.025), lampMatRight);
+  lampRight.position.set(0.05, -0.50, -0.37);
+  scene.add(lampRight);
+  // Track when the indicator was last triggered so we can blink it
+  let indicatorEndsAt = 0;
+  let indicatorSide = 0;       // -1 left, +1 right, 0 off
+  // Throttle for dial canvas repaints — 10 Hz instead of 60 Hz for perf
+  let dashT = 0;
   // Steering wheel — wrapped in a group so we can rotate it as one unit when
   // the user drags it. The whole wheel tilts at Pi/2.4 to match a real driving
   // posture; the inner Group rotation about its z-axis is the "steering".
@@ -13228,6 +13513,9 @@ function setupDriving(scene, camera, level) {
             if (window.PhobiaAudio && window.PhobiaAudio.indicatorClick) {
               for (let i = 0; i < 4; i++) setTimeout(() => window.PhobiaAudio.indicatorClick(), i * 600);
             }
+            // Blink the right-turn indicator lamp on the cluster for ~3 s
+            indicatorSide = 1;
+            indicatorEndsAt = performance.now() / 1000 + 3.0;
             if (window.PhobiaVoice) window.PhobiaVoice.speak("Indicator on. You are signalling. Good.");
             break;
           case "brake":
@@ -13426,6 +13714,46 @@ function setupDriving(scene, camera, level) {
       if (controls) {
         camera.rotation.z += (-steerInput * 0.04 - camera.rotation.z) * 0.1;
       }
+      // ---- Live dashboard updates ----
+      // The dial canvases are repainted every few frames so the needle
+      // tracks the actual driving state in real time without burning the
+      // GPU. Speed = base speed × accelBoost (1..1.5 from accelerator pedal),
+      // tach roughly proportional to speed but with engine resonance.
+      const repaintEvery = 0.10;        // 10 Hz canvas repaint
+      dashT += d;
+      if (dashT > repaintEvery) {
+        dashT = 0;
+        const speedKmh = (40 + speed * 90) * accelBoost * brakeFactor;
+        const tachVal  = (1.5 + speed * 4) * accelBoost * (brakeFactor < 0.5 ? 0.5 : 1.0);
+        paintDial(speedoCanvas, {
+          value: Math.min(1, speedKmh / 200),
+          maxValue: 200, maxTicks: 10, majorEvery: 1, label: "km/h",
+        });
+        paintDial(tachCanvas, {
+          value: Math.min(1, tachVal / 8),
+          maxValue: 8, maxTicks: 8, majorEvery: 1, label: "RPM × 1k",
+          needleColor: "#ff5544",
+        });
+        speedoTex.needsUpdate = true;
+        tachTex.needsUpdate = true;
+      }
+      // Indicator lamp blink — ~2 Hz amber while active
+      if (indicatorEndsAt > t) {
+        const on = Math.sin(t * Math.PI * 4) > 0;
+        const target = on ? 0xff8a30 : 0x000000;
+        if (indicatorSide === 1)  lampMatRight.emissive.setHex(target);
+        if (indicatorSide === -1) lampMatLeft.emissive.setHex(target);
+        const intensity = on ? 1 : 0;
+        if (indicatorSide === 1)  lampMatRight.emissiveIntensity = intensity;
+        if (indicatorSide === -1) lampMatLeft.emissiveIntensity = intensity;
+      } else {
+        lampMatLeft.emissive.setHex(0x000000);
+        lampMatRight.emissive.setHex(0x000000);
+      }
+      // Brake lamp — solid red while either brake is held
+      const brakeOn = brakePressed > 0.30 || brakeFactor < 0.5;
+      lampMatBrake.emissive.setHex(brakeOn ? 0xff3030 : 0x000000);
+      lampMatBrake.emissiveIntensity = brakeOn ? 1 : 0;
     },
   };
 }
