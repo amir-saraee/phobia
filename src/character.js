@@ -179,122 +179,255 @@ function hexToInt(hex) {
   return parseInt(hex.replace("#", ""), 16);
 }
 
-// Render an SVG avatar for the given character.
-// `size` is the rendered width in pixels (height is auto).
+// Render an SVG avatar for the given character. Polished portrait look:
+// shaded face with subtle highlight + shadow gradients, refined eyes with
+// iris detail, soft cheek blush, layered hair styles with highlights, and
+// a vignette behind the character so the SVG works on any background.
+// `size` is the rendered width in pixels (height is auto, ~1.2× size).
 function avatarSVG(c, size = 80) {
   if (!c) c = defaultCharacter();
   const skin = skinHex(c);
   const hair = hairHex(c);
   const top  = topHex(c);
-  const skinShadow = shadeColor(skin, -0.18);
-  const topShadow  = shadeColor(top,  -0.22);
+  const eye  = eyeHex(c);
+  const skinShadow = shadeColor(skin, -0.20);
+  const skinDeep   = shadeColor(skin, -0.32);
+  const skinLight  = shadeColor(skin, 0.10);
+  const skinBlush  = shadeColor(skin, -0.05);
+  const topShadow  = shadeColor(top,  -0.28);
+  const topLight   = shadeColor(top,  0.10);
+  const hairLight  = shadeColor(hair, 0.18);
+  const hairDeep   = shadeColor(hair, -0.22);
+  const eyeRim     = shadeColor(eye,  -0.30);
 
-  // Hair on top of the head — different paths per style
-  let hairLayer = "";
-  switch (c.hairStyle) {
-    case "short":
-      hairLayer = `
-        <path d="M28 36 Q30 18 50 16 Q72 18 72 36 L72 44 Q66 38 60 38 L40 38 Q34 38 28 44 Z" fill="${hair}"/>
-        <path d="M30 38 Q40 30 50 30 Q60 30 70 38 L70 42 L62 36 L50 34 L38 36 L30 42 Z" fill="${shadeColor(hair, 0.12)}" opacity=".8"/>`;
-      break;
-    case "long":
-      hairLayer = `
-        <path d="M22 38 Q22 18 50 14 Q78 18 78 38 L78 88 Q72 84 70 80 L70 50 L30 50 L30 80 Q28 84 22 88 Z" fill="${hair}"/>`;
-      break;
-    case "buzz":
-      hairLayer = `<path d="M30 36 Q34 22 50 20 Q66 22 70 36 L68 40 L32 40 Z" fill="${hair}" opacity=".85"/>`;
-      break;
-    case "pony":
-      hairLayer = `
-        <path d="M28 36 Q30 18 50 16 Q72 18 72 36 L72 44 L28 44 Z" fill="${hair}"/>
-        <path d="M62 40 Q86 50 80 78 L72 76 Q72 60 70 50 Z" fill="${hair}"/>`;
-      break;
-    case "curly":
-      hairLayer = `
-        <circle cx="32" cy="32" r="9" fill="${hair}"/>
-        <circle cx="42" cy="22" r="9" fill="${hair}"/>
-        <circle cx="55" cy="20" r="9" fill="${hair}"/>
-        <circle cx="68" cy="30" r="9" fill="${hair}"/>
-        <path d="M28 36 L72 36 L72 44 L28 44 Z" fill="${hair}"/>`;
-      break;
-    case "bald":
-      hairLayer = `<path d="M34 30 Q40 26 50 26 Q60 26 66 30" stroke="${shadeColor(skin, -0.15)}" stroke-width="1" fill="none"/>`;
-      break;
-  }
+  // Unique gradient IDs per render so multiple avatars on the page don't
+  // collide. Uses a simple hash of skin+hair+top to keep IDs stable for the
+  // same character.
+  const gid = "av" + (
+    (skin + hair + top + eye + (c.hairStyle || "") + (c.glasses || "") + (c.facialHair || ""))
+      .split("").reduce((h, ch) => ((h << 5) - h + ch.charCodeAt(0)) | 0, 0) & 0xffff
+  ).toString(16);
+
+  // Hair styles — each rendered with a base + highlight pass for volume
+  const hairLayer = (() => {
+    const base = `fill="url(#${gid}HairGrad)"`;
+    switch (c.hairStyle) {
+      case "short":
+        return `
+          <path d="M28 38 Q26 18 50 14 Q74 18 72 38 L72 46 Q66 40 60 40 L40 40 Q34 40 28 46 Z" ${base}/>
+          <path d="M30 40 Q40 30 50 30 Q60 30 70 40 L70 44 L62 38 L50 36 L38 38 L30 44 Z" fill="${hairLight}" opacity=".7"/>
+          <!-- Strands at the temple -->
+          <path d="M28 38 Q24 32 30 24" stroke="${hairDeep}" stroke-width="1.4" fill="none" opacity=".8" stroke-linecap="round"/>
+          <path d="M72 38 Q76 32 70 24" stroke="${hairDeep}" stroke-width="1.4" fill="none" opacity=".8" stroke-linecap="round"/>`;
+      case "long":
+        return `
+          <path d="M22 40 Q20 18 50 12 Q80 18 78 40 L78 92 Q72 88 70 84 L70 52 L30 52 L30 84 Q28 88 22 92 Z" ${base}/>
+          <!-- Highlight stripes down the long hair -->
+          <path d="M28 50 Q26 70 24 88" stroke="${hairLight}" stroke-width="1.5" fill="none" opacity=".5"/>
+          <path d="M72 50 Q74 70 76 88" stroke="${hairLight}" stroke-width="1.5" fill="none" opacity=".5"/>
+          <!-- Bangs -->
+          <path d="M30 38 Q40 28 50 28 Q60 28 70 38 L66 42 Q58 36 50 36 Q42 36 34 42 Z" fill="${hairLight}" opacity=".55"/>`;
+      case "buzz":
+        return `
+          <path d="M30 38 Q34 22 50 20 Q66 22 70 38 L68 42 L32 42 Z" fill="${hair}" opacity=".90"/>
+          <!-- Texture dots for buzz cut -->
+          <g fill="${hairLight}" opacity=".5">
+            ${[34, 42, 50, 58, 66].map((x, i) => [22 + i*2, 30 + (i%2)*2].map(y => `<circle cx="${x}" cy="${y}" r=".8"/>`).join("")).join("")}
+          </g>`;
+      case "pony":
+        return `
+          <path d="M28 38 Q26 18 50 14 Q74 18 72 38 L72 46 L28 46 Z" ${base}/>
+          <path d="M30 40 Q40 32 50 32 Q60 32 70 40 L68 44 L32 44 Z" fill="${hairLight}" opacity=".6"/>
+          <!-- Pony tail with movement -->
+          <path d="M62 42 Q88 50 82 80 Q78 86 72 80 Q72 64 70 52 Z" ${base}/>
+          <path d="M68 50 Q82 58 78 76" stroke="${hairLight}" stroke-width="1.5" fill="none" opacity=".5"/>`;
+      case "curly":
+        return `
+          <g ${base}>
+            <circle cx="30" cy="32" r="10"/>
+            <circle cx="42" cy="22" r="10"/>
+            <circle cx="56" cy="20" r="10"/>
+            <circle cx="70" cy="30" r="10"/>
+            <circle cx="36" cy="38" r="8"/>
+            <circle cx="64" cy="38" r="8"/>
+          </g>
+          <g fill="${hairLight}" opacity=".6">
+            <circle cx="34" cy="28" r="3"/>
+            <circle cx="48" cy="20" r="3"/>
+            <circle cx="62" cy="22" r="3"/>
+          </g>`;
+      case "bald":
+        return `
+          <ellipse cx="50" cy="32" rx="20" ry="6" fill="${skinLight}" opacity=".4"/>
+          <path d="M34 30 Q40 26 50 26 Q60 26 66 30" stroke="${skinShadow}" stroke-width=".8" fill="none" opacity=".5"/>`;
+      default: return "";
+    }
+  })();
 
   return `
-    <svg viewBox="0 0 100 110" width="${size}" height="${Math.round(size * 1.1)}" xmlns="http://www.w3.org/2000/svg">
-      <!-- Drop shadow -->
-      <ellipse cx="50" cy="106" rx="22" ry="3" fill="rgba(0,0,0,.35)"/>
-      <!-- Top / shirt -->
-      <path d="M20 110 Q20 78 36 72 L64 72 Q80 78 80 110 Z" fill="${top}"/>
-      <path d="M20 110 Q20 92 36 86 L36 108 L20 108 Z" fill="${topShadow}" opacity=".6"/>
-      <!-- Neck -->
-      <path d="M42 58 L42 72 Q50 78 58 72 L58 58 Z" fill="${skinShadow}"/>
-      <!-- Head -->
-      <ellipse cx="50" cy="44" rx="22" ry="24" fill="${skin}"/>
-      <!-- Cheek shading -->
-      <ellipse cx="40" cy="50" rx="4" ry="3" fill="${skinShadow}" opacity=".35"/>
-      <ellipse cx="60" cy="50" rx="4" ry="3" fill="${skinShadow}" opacity=".35"/>
-      <!-- Hair (drawn after head so it sits on top) -->
+    <svg viewBox="0 0 100 120" width="${size}" height="${Math.round(size * 1.2)}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <!-- Soft circular vignette behind the portrait so the avatar reads
+             cleanly against any background. -->
+        <radialGradient id="${gid}Bg" cx=".5" cy=".48" r=".55">
+          <stop offset="0" stop-color="${shadeColor(top, -0.15)}" stop-opacity=".55"/>
+          <stop offset=".75" stop-color="${shadeColor(top, -0.45)}" stop-opacity=".15"/>
+          <stop offset="1" stop-color="${shadeColor(top, -0.45)}" stop-opacity="0"/>
+        </radialGradient>
+        <!-- Face shading: light from upper-left, shadow on lower-right.
+             Subtle but enough to give the head dimensional depth. -->
+        <linearGradient id="${gid}FaceGrad" x1="0.25" y1="0.2" x2="0.85" y2="0.95">
+          <stop offset="0" stop-color="${skinLight}"/>
+          <stop offset=".55" stop-color="${skin}"/>
+          <stop offset="1" stop-color="${skinShadow}"/>
+        </linearGradient>
+        <linearGradient id="${gid}HairGrad" x1="0.3" y1="0.1" x2="0.7" y2="0.9">
+          <stop offset="0" stop-color="${hairLight}"/>
+          <stop offset=".5" stop-color="${hair}"/>
+          <stop offset="1" stop-color="${hairDeep}"/>
+        </linearGradient>
+        <!-- Shirt: vertical light/shadow gradient suggesting fabric folds. -->
+        <linearGradient id="${gid}TopGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="${topLight}"/>
+          <stop offset=".55" stop-color="${top}"/>
+          <stop offset="1" stop-color="${topShadow}"/>
+        </linearGradient>
+        <!-- Iris radial: lighter rim, darker centre near the pupil. -->
+        <radialGradient id="${gid}EyeGrad" cx=".5" cy=".5" r=".55">
+          <stop offset="0" stop-color="${shadeColor(eye, 0.18)}"/>
+          <stop offset=".7" stop-color="${eye}"/>
+          <stop offset="1" stop-color="${eyeRim}"/>
+        </radialGradient>
+      </defs>
+
+      <!-- Background vignette -->
+      <circle cx="50" cy="56" r="48" fill="url(#${gid}Bg)"/>
+      <!-- Soft floor shadow -->
+      <ellipse cx="50" cy="116" rx="26" ry="3" fill="rgba(0,0,0,.32)"/>
+
+      <!-- Shoulders / shirt -->
+      <path d="M16 120 Q16 80 36 74 L64 74 Q84 80 84 120 Z" fill="url(#${gid}TopGrad)"/>
+      <!-- Shirt fold detail (mid-line) -->
+      <path d="M50 80 L50 120" stroke="${topShadow}" stroke-width="1" opacity=".35"/>
+      <!-- Shirt collar V -->
+      <path d="M40 76 L50 84 L60 76 Q56 80 50 80 Q44 80 40 76 Z" fill="${topShadow}" opacity=".55"/>
+
+      <!-- Neck (slightly recessed shadow) -->
+      <path d="M42 58 L42 74 Q50 78 58 74 L58 58 Z" fill="${skinDeep}"/>
+      <ellipse cx="50" cy="74" rx="8" ry="1.5" fill="${skinDeep}" opacity=".55"/>
+
+      <!-- Head with gradient shading -->
+      <ellipse cx="50" cy="44" rx="22" ry="25" fill="url(#${gid}FaceGrad)"/>
+      <!-- Cheek blush — soft, warm tone -->
+      <ellipse cx="38" cy="52" rx="4.5" ry="3.2" fill="#e8a48a" opacity=".30"/>
+      <ellipse cx="62" cy="52" rx="4.5" ry="3.2" fill="#e8a48a" opacity=".30"/>
+      <!-- Subtle face contour (jawline shadow) -->
+      <path d="M30 50 Q34 64 50 68 Q66 64 70 50" stroke="${skinShadow}" stroke-width="1" fill="none" opacity=".25"/>
+
+      <!-- Hair on top of head -->
       ${hairLayer}
-      <!-- Eyebrows -->
-      <path d="M37 41 Q42 39 47 41" stroke="${shadeColor(hair, -0.2)}" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-      <path d="M53 41 Q58 39 63 41" stroke="${shadeColor(hair, -0.2)}" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-      <!-- Eye whites -->
-      <ellipse cx="42" cy="46" rx="3.2" ry="2.4" fill="#fff"/>
-      <ellipse cx="58" cy="46" rx="3.2" ry="2.4" fill="#fff"/>
-      <!-- Iris -->
-      <circle cx="42" cy="46" r="2.0" fill="${eyeHex(c)}"/>
-      <circle cx="58" cy="46" r="2.0" fill="${eyeHex(c)}"/>
-      <!-- Pupils -->
-      <circle cx="42" cy="46" r="1.0" fill="#1a1006"/>
-      <circle cx="58" cy="46" r="1.0" fill="#1a1006"/>
-      <!-- Eye highlights -->
-      <circle cx="42.6" cy="45.5" r=".5" fill="#fff"/>
-      <circle cx="58.6" cy="45.5" r=".5" fill="#fff"/>
+
+      <!-- Eyebrows: thicker and slightly arched -->
+      <path d="M37 40 Q42 38 47 41" stroke="${hairDeep}" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+      <path d="M53 41 Q58 38 63 40" stroke="${hairDeep}" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+
+      <!-- Eyes: sclera with soft inner shadow, iris with radial gradient,
+           pupil, two highlights for that "alive" wet-eye look. -->
+      <ellipse cx="42" cy="46" rx="3.6" ry="2.6" fill="#fff"/>
+      <ellipse cx="58" cy="46" rx="3.6" ry="2.6" fill="#fff"/>
+      <ellipse cx="42" cy="44.5" rx="3.4" ry="1.4" fill="#000" opacity=".10"/>
+      <ellipse cx="58" cy="44.5" rx="3.4" ry="1.4" fill="#000" opacity=".10"/>
+      <circle cx="42" cy="46.5" r="2.2" fill="url(#${gid}EyeGrad)"/>
+      <circle cx="58" cy="46.5" r="2.2" fill="url(#${gid}EyeGrad)"/>
+      <circle cx="42" cy="46.5" r="1.0" fill="#0a0608"/>
+      <circle cx="58" cy="46.5" r="1.0" fill="#0a0608"/>
+      <circle cx="42.7" cy="45.7" r=".7" fill="#fff"/>
+      <circle cx="58.7" cy="45.7" r=".7" fill="#fff"/>
+      <circle cx="41.3" cy="47.3" r=".25" fill="#fff" opacity=".7"/>
+      <circle cx="57.3" cy="47.3" r=".25" fill="#fff" opacity=".7"/>
+      <!-- Subtle eyelid line above each eye -->
+      <path d="M38.5 44 Q42 43 45.5 44" stroke="${shadeColor(skin, -0.35)}" stroke-width=".8" fill="none" opacity=".45" stroke-linecap="round"/>
+      <path d="M54.5 44 Q58 43 61.5 44" stroke="${shadeColor(skin, -0.35)}" stroke-width=".8" fill="none" opacity=".45" stroke-linecap="round"/>
+
       <!-- Glasses overlay -->
       ${renderGlasses(c)}
-      <!-- Facial hair -->
+
+      <!-- Nose: minimal — a soft shadow + a tiny tip highlight -->
+      <path d="M48 50 Q47 56 50 58 Q53 56 52 50" stroke="${skinDeep}" stroke-width=".7" fill="none" opacity=".4" stroke-linecap="round"/>
+      <ellipse cx="50" cy="56" rx="1" ry=".4" fill="${skinLight}" opacity=".5"/>
+
+      <!-- Facial hair (under the mouth so the mouth sits on top of beards) -->
       ${renderFacialHair(c, skin, hair)}
-      <!-- Mouth -->
-      <path d="M44 56 Q50 59 56 56" stroke="#5a3a30" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+
+      <!-- Mouth: lips with a hint of a smile -->
+      <path d="M43 60 Q50 64 57 60" stroke="${shadeColor(skin, -0.40)}" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+      <path d="M44 60.5 Q50 62.8 56 60.5" stroke="#c46a5a" stroke-width="1" fill="none" opacity=".55" stroke-linecap="round"/>
+      <!-- Tiny lower-lip highlight -->
+      <path d="M46 62 Q50 63 54 62" stroke="${skinLight}" stroke-width=".6" fill="none" opacity=".5" stroke-linecap="round"/>
     </svg>
   `;
 }
 
 function renderGlasses(c) {
-  const stroke = "#1a1410";
+  // Refined glasses: subtle gradient on the lens to read like glass, thin
+  // metallic-feeling frames, gentle reflection highlight.
+  const frame = "#1a1410";
+  const reflect = "rgba(255,255,255,.18)";
   if (c.glasses === "round") {
     return `
-      <circle cx="42" cy="46" r="5" fill="rgba(255,255,255,0.05)" stroke="${stroke}" stroke-width="1.4"/>
-      <circle cx="58" cy="46" r="5" fill="rgba(255,255,255,0.05)" stroke="${stroke}" stroke-width="1.4"/>
-      <line x1="47" y1="46" x2="53" y2="46" stroke="${stroke}" stroke-width="1.2"/>
+      <circle cx="42" cy="46.5" r="5.6" fill="rgba(160,200,220,.08)" stroke="${frame}" stroke-width="1.4"/>
+      <circle cx="58" cy="46.5" r="5.6" fill="rgba(160,200,220,.08)" stroke="${frame}" stroke-width="1.4"/>
+      <path d="M40 44.5 Q42 43.5 44 44.5" stroke="${reflect}" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <path d="M56 44.5 Q58 43.5 60 44.5" stroke="${reflect}" stroke-width="1" fill="none" stroke-linecap="round"/>
+      <line x1="47.5" y1="46.5" x2="52.5" y2="46.5" stroke="${frame}" stroke-width="1.2"/>
+      <!-- Temple arms (sides) -->
+      <line x1="36.5" y1="46" x2="30" y2="44" stroke="${frame}" stroke-width="1.2" stroke-linecap="round"/>
+      <line x1="63.5" y1="46" x2="70" y2="44" stroke="${frame}" stroke-width="1.2" stroke-linecap="round"/>
     `;
   }
   if (c.glasses === "square") {
     return `
-      <rect x="37" y="42" width="10" height="8" rx="1.5" fill="rgba(255,255,255,0.05)" stroke="${stroke}" stroke-width="1.4"/>
-      <rect x="53" y="42" width="10" height="8" rx="1.5" fill="rgba(255,255,255,0.05)" stroke="${stroke}" stroke-width="1.4"/>
-      <line x1="47" y1="46" x2="53" y2="46" stroke="${stroke}" stroke-width="1.2"/>
+      <rect x="36.5" y="42.5" width="11" height="8.5" rx="1.5" fill="rgba(160,200,220,.08)" stroke="${frame}" stroke-width="1.4"/>
+      <rect x="52.5" y="42.5" width="11" height="8.5" rx="1.5" fill="rgba(160,200,220,.08)" stroke="${frame}" stroke-width="1.4"/>
+      <path d="M38 44 L40 44" stroke="${reflect}" stroke-width="1" stroke-linecap="round"/>
+      <path d="M54 44 L56 44" stroke="${reflect}" stroke-width="1" stroke-linecap="round"/>
+      <line x1="47.5" y1="46.5" x2="52.5" y2="46.5" stroke="${frame}" stroke-width="1.2"/>
+      <!-- Temple arms -->
+      <line x1="36" y1="46" x2="30" y2="44" stroke="${frame}" stroke-width="1.2" stroke-linecap="round"/>
+      <line x1="64" y1="46" x2="70" y2="44" stroke="${frame}" stroke-width="1.2" stroke-linecap="round"/>
     `;
   }
   return "";
 }
 
-function renderFacialHair(c, skinHex, hairHex) {
-  const colour = shadeColor(hairHex, -0.1);
+function renderFacialHair(c, skin, hair) {
+  // Beard / stubble / moustache rendered with gradient-aware colour and
+  // softer edges to integrate with the new shaded face.
+  const colour     = shadeColor(hair, -0.12);
+  const colourDeep = shadeColor(hair, -0.30);
   if (c.facialHair === "stubble") {
-    return `<path d="M40 58 Q50 64 60 58 L58 62 Q50 66 42 62 Z" fill="${colour}" opacity=".55"/>`;
+    return `
+      <path d="M40 60 Q50 66 60 60 L58 64 Q50 68 42 64 Z" fill="${colour}" opacity=".40"/>
+      <!-- Stubble dots — fine speckle effect -->
+      <g fill="${colourDeep}" opacity=".35">
+        ${[42, 45, 48, 51, 54, 57].map((x, i) => [62 + (i%2), 65 + (i%2)*1.2].map(y => `<circle cx="${x}" cy="${y}" r=".3"/>`).join("")).join("")}
+      </g>
+    `;
   }
   if (c.facialHair === "beard") {
     return `
-      <path d="M37 56 Q40 70 50 72 Q60 70 63 56 Q60 62 50 64 Q40 62 37 56 Z" fill="${colour}"/>
-      <path d="M44 60 Q50 64 56 60" stroke="#5a3a30" stroke-width="1.4" fill="none"/>
+      <path d="M35 56 Q38 72 50 74 Q62 72 65 56 Q62 64 50 66 Q38 64 35 56 Z" fill="${colour}"/>
+      <!-- Beard texture lines -->
+      <path d="M40 62 Q42 68 44 70" stroke="${colourDeep}" stroke-width=".7" fill="none" opacity=".5"/>
+      <path d="M50 64 L50 72" stroke="${colourDeep}" stroke-width=".7" fill="none" opacity=".5"/>
+      <path d="M60 62 Q58 68 56 70" stroke="${colourDeep}" stroke-width=".7" fill="none" opacity=".5"/>
     `;
   }
   if (c.facialHair === "moustache") {
-    return `<path d="M42 55 Q46 53 50 55 Q54 53 58 55 Q54 57 50 56 Q46 57 42 55 Z" fill="${colour}"/>`;
+    return `
+      <path d="M40 58 Q44 56 50 58 Q56 56 60 58 Q56 61 50 60 Q44 61 40 58 Z" fill="${colour}"/>
+      <path d="M42 58.5 Q46 57.5 50 58.5 Q54 57.5 58 58.5" stroke="${colourDeep}" stroke-width=".5" fill="none" opacity=".7"/>
+    `;
   }
   return "";
 }
@@ -342,55 +475,92 @@ function viewCharacterCreator(existing, allPhobias) {
 
   return `
     <div class="creator">
+      <div class="creator-intro">
+        <h2>Meet yourself.</h2>
+        <p class="lead-sm">This character walks every step with you. The skin, the hair, the shirt — that's what you'll see in third-person on every rooftop, in every room. Make them yours.</p>
+      </div>
+
       <div class="creator-grid">
         <div class="creator-preview">
-          <div class="avatar-large" id="avatarPreview" data-fallback-svg='${avatarSVG(c, 220).replace(/'/g, "&apos;")}'>${avatarSVG(c, 220)}</div>
+          <div class="avatar-stage">
+            <div class="avatar-large" id="avatarPreview" data-fallback-svg='${avatarSVG(c, 240).replace(/'/g, "&apos;")}'>${avatarSVG(c, 240)}</div>
+            <button type="button" class="preview-randomise" id="creatorRandomTop" title="Shuffle appearance"><span aria-hidden="true">🎲</span></button>
+          </div>
           <input class="char-name-input" id="charName" type="text" maxlength="24"
                  placeholder="Your name (optional)" value="${(c.name || "").replace(/"/g, "&quot;")}"/>
+          <div class="creator-section-label">Coach voice</div>
           <div class="char-preset-row">
-            <button type="button" class="preset-btn ${(c.voicePreset || "calm") === "calm" ? "selected" : ""}" data-preset="calm" title="Slower pace, more grounding">Calm voice</button>
+            <button type="button" class="preset-btn ${(c.voicePreset || "calm") === "calm" ? "selected" : ""}" data-preset="calm" title="Slower pace, more grounding">Calm</button>
             <button type="button" class="preset-btn ${c.voicePreset === "encouraging" ? "selected" : ""}" data-preset="encouraging" title="Warmer, affirming">Encouraging</button>
             <button type="button" class="preset-btn ${c.voicePreset === "brief" ? "selected" : ""}" data-preset="brief" title="Quicker, fewer words">Brief</button>
           </div>
         </div>
-        <div class="creator-form">
-          <h2>Make yourself at home.</h2>
-          <p class="lead-sm">A character to walk this with you. You can change anything later.</p>
 
-          <div class="creator-row">
-            <label>Skin</label>
-            <div class="swatches" data-group="skinTone">${swatch(SKIN_TONES, c.skinTone, "skinTone")}</div>
+        <div class="creator-form">
+          <div class="creator-section">
+            <div class="creator-section-head">
+              <span class="creator-section-num">1</span>
+              <h3>Skin &amp; complexion</h3>
+            </div>
+            <div class="creator-row">
+              <label>Skin tone</label>
+              <div class="swatches" data-group="skinTone">${swatch(SKIN_TONES, c.skinTone, "skinTone")}</div>
+            </div>
           </div>
-          <div class="creator-row">
-            <label>Hair colour</label>
-            <div class="swatches" data-group="hairColor">${swatch(HAIR_COLORS, c.hairColor, "hairColor")}</div>
+
+          <div class="creator-section">
+            <div class="creator-section-head">
+              <span class="creator-section-num">2</span>
+              <h3>Hair</h3>
+            </div>
+            <div class="creator-row">
+              <label>Colour</label>
+              <div class="swatches" data-group="hairColor">${swatch(HAIR_COLORS, c.hairColor, "hairColor")}</div>
+            </div>
+            <div class="creator-row">
+              <label>Style</label>
+              <div class="swatches text" data-group="hairStyle">${swatch(HAIR_STYLES, c.hairStyle, "hairStyle")}</div>
+            </div>
           </div>
-          <div class="creator-row">
-            <label>Hair style</label>
-            <div class="swatches text" data-group="hairStyle">${swatch(HAIR_STYLES, c.hairStyle, "hairStyle")}</div>
+
+          <div class="creator-section">
+            <div class="creator-section-head">
+              <span class="creator-section-num">3</span>
+              <h3>Face</h3>
+            </div>
+            <div class="creator-row">
+              <label>Eyes</label>
+              <div class="swatches" data-group="eyeColor">${swatch(EYE_COLORS, c.eyeColor, "eyeColor")}</div>
+            </div>
+            <div class="creator-row">
+              <label>Glasses</label>
+              <div class="swatches text" data-group="glasses">${swatch(GLASSES, c.glasses, "glasses")}</div>
+            </div>
+            <div class="creator-row">
+              <label>Facial hair</label>
+              <div class="swatches text" data-group="facialHair">${swatch(FACIAL_HAIR, c.facialHair, "facialHair")}</div>
+            </div>
           </div>
-          <div class="creator-row">
-            <label>Shirt</label>
-            <div class="swatches" data-group="topColor">${swatch(TOP_COLORS, c.topColor, "topColor")}</div>
-          </div>
-          <div class="creator-row">
-            <label>Eyes</label>
-            <div class="swatches" data-group="eyeColor">${swatch(EYE_COLORS, c.eyeColor, "eyeColor")}</div>
-          </div>
-          <div class="creator-row">
-            <label>Glasses</label>
-            <div class="swatches text" data-group="glasses">${swatch(GLASSES, c.glasses, "glasses")}</div>
-          </div>
-          <div class="creator-row">
-            <label>Facial hair</label>
-            <div class="swatches text" data-group="facialHair">${swatch(FACIAL_HAIR, c.facialHair, "facialHair")}</div>
+
+          <div class="creator-section">
+            <div class="creator-section-head">
+              <span class="creator-section-num">4</span>
+              <h3>Clothing</h3>
+            </div>
+            <div class="creator-row">
+              <label>Shirt</label>
+              <div class="swatches" data-group="topColor">${swatch(TOP_COLORS, c.topColor, "topColor")}</div>
+            </div>
           </div>
         </div>
       </div>
 
       <div class="creator-phobias">
-        <h3>Which fears are on your mind?</h3>
-        <p class="lead-sm">Pick one or several. The first one becomes your primary — you can change it from your profile.</p>
+        <div class="creator-section-head">
+          <span class="creator-section-num">5</span>
+          <h3>Which fears are on your mind?</h3>
+        </div>
+        <p class="lead-sm">Pick one or several. The first becomes your primary — you can change it from your profile.</p>
         <div class="phobia-grid">${phobiaOptions}</div>
       </div>
 
@@ -559,16 +729,16 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
   const cancel = document.getElementById("creatorCancel");
   if (cancel && onCancel) cancel.addEventListener("click", onCancel);
 
-  // "Surprise me" — randomise everything except name + chosen phobias
-  const random = document.getElementById("creatorRandom");
-  if (random) random.addEventListener("click", () => {
+  // "Surprise me" — randomise everything except name + chosen phobias.
+  // Same handler is wired to BOTH the bottom "Surprise me" action button
+  // and the small dice icon over the preview frame.
+  function shuffleAppearance() {
     const r = randomCharacter();
     Object.assign(state, {
       skinTone: r.skinTone, hairColor: r.hairColor, hairStyle: r.hairStyle,
       topColor: r.topColor, eyeColor: r.eyeColor, glasses: r.glasses,
       facialHair: r.facialHair, voicePreset: r.voicePreset,
     });
-    // Reflect in the swatch UI
     root.querySelectorAll(".swatches").forEach(group => {
       const family = group.dataset.group;
       const id = state[family];
@@ -576,7 +746,11 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
     });
     root.querySelectorAll(".preset-btn").forEach(b => b.classList.toggle("selected", b.dataset.preset === state.voicePreset));
     rerender();
-  });
+  }
+  const random = document.getElementById("creatorRandom");
+  if (random) random.addEventListener("click", shuffleAppearance);
+  const randomTop = document.getElementById("creatorRandomTop");
+  if (randomTop) randomTop.addEventListener("click", shuffleAppearance);
 }
 
 window.Character = {

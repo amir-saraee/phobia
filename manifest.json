@@ -1,7 +1,7 @@
 {
-  "name": "Step Up — Gradual Phobia Exposure",
-  "short_name": "Step Up",
-  "description": "Face fears one rung at a time. Voice-guided, 3D, in your own time.",
+  "name": "Mira — A mindful path through what frightens you",
+  "short_name": "Mira",
+  "description": "A mindful exposure practice space. Walk gently toward what frightens you, at your own pace.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
