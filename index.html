@@ -25,6 +25,14 @@ if ("serviceWorker" in navigator) {
 <script src="src/i18n.js" defer></script>
 <script src="src/character.js" defer></script>
 <script src="src/phobia-info.js" defer></script>
+<!-- Realism / atmosphere / creature libraries — pure procedural, no asset
+     downloads. They expose globals (PhobiaRealism, PhobiaAtmosphere,
+     PhobiaCreatures, PhobiaAvatar3D) that read window.THREE lazily inside
+     their factory fns, so they tolerate the module script booting later. -->
+<script src="src/realism.js" defer></script>
+<script src="src/atmosphere.js" defer></script>
+<script src="src/creatures.js" defer></script>
+<script src="src/avatar3d.js" defer></script>
 <script type="importmap">
 {
   "imports": {
@@ -7872,6 +7880,13 @@ import { VRButton } from "three/addons/webxr/VRButton.js";
 // matches the user's actual hardware (Quest Touch, Vision Pro, Index, etc.).
 import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
 
+// Expose THREE on window so the deferred realism / creatures / atmosphere
+// scripts (which can't use ESM imports because they're regular <script src>
+// tags) can read it. Their factory functions defer geometry/material work
+// until first call, so it's fine that this assignment runs after their
+// own script bodies — they just need it available by the time scenes mount.
+window.THREE = THREE;
+
 // Scratch vectors reused every frame for the spatial audio listener update
 // (avoids per-frame allocation in the render hot path).
 const _audVec1 = new THREE.Vector3();
@@ -8468,18 +8483,29 @@ class Body {
     // each material: pants slightly rough, shoes shiny-but-leathery,
     // shirt cotton-rough, skin sub-surface-ish.
     const emissive = (hex, amt = 0.04) => new THREE.Color(hex).multiplyScalar(amt);
-    const pants = new THREE.MeshStandardMaterial({
-      color: o.pantsColor, roughness: 0.92, emissive: emissive(o.pantsColor, 0.03),
-    });
+    // Convert numeric hex to "#rrggbb" for the realism module — its texture
+    // cache is keyed by string so the same colour shares a single set of
+    // generated maps across every body part using it.
+    const toHex = (n) => "#" + (typeof n === "number" ? n.toString(16).padStart(6, "0") : String(n).replace("#", ""));
+    const PR = window.PhobiaRealism;
+    const pants = (PR && PR.fabricMaterial)
+      ? PR.fabricMaterial(toHex(o.pantsColor), "denim")
+      : new THREE.MeshStandardMaterial({
+          color: o.pantsColor, roughness: 0.92, emissive: emissive(o.pantsColor, 0.03),
+        });
     const shoes = new THREE.MeshStandardMaterial({
       color: o.shoeColor, roughness: 0.50, metalness: 0.08, emissive: emissive(o.shoeColor, 0.02),
     });
-    const shirt = new THREE.MeshStandardMaterial({
-      color: o.shirtColor, roughness: 0.88, emissive: emissive(o.shirtColor, 0.04),
-    });
-    const skin  = new THREE.MeshStandardMaterial({
-      color: o.skinColor, roughness: 0.72, emissive: emissive(o.skinColor, 0.05),
-    });
+    const shirt = (PR && PR.fabricMaterial)
+      ? PR.fabricMaterial(toHex(o.shirtColor), "cotton")
+      : new THREE.MeshStandardMaterial({
+          color: o.shirtColor, roughness: 0.88, emissive: emissive(o.shirtColor, 0.04),
+        });
+    const skin  = (PR && PR.skinMaterial)
+      ? PR.skinMaterial(toHex(o.skinColor))
+      : new THREE.MeshStandardMaterial({
+          color: o.skinColor, roughness: 0.72, emissive: emissive(o.skinColor, 0.05),
+        });
     const shirtFold = new THREE.MeshStandardMaterial({
       color: new THREE.Color(o.shirtColor).multiplyScalar(0.78), roughness: 0.95
     });
@@ -8642,10 +8668,14 @@ class Body {
     }
 
     // Hair — layered on top of the skull, geometry varies by style.
-    const hairMat = new THREE.MeshStandardMaterial({
-      color: o.hairColor, roughness: 1.0,
-      emissive: new THREE.Color(o.hairColor).multiplyScalar(0.04),
-    });
+    // PBR streak normal map (when realism module loaded) gives the hair
+    // visible directional shading instead of reading as a paint cap.
+    const hairMat = (PR && PR.hairMaterial)
+      ? PR.hairMaterial(toHex(o.hairColor))
+      : new THREE.MeshStandardMaterial({
+          color: o.hairColor, roughness: 1.0,
+          emissive: new THREE.Color(o.hairColor).multiplyScalar(0.04),
+        });
     // Pony-tail / long hair gets a separate "hair-back" group that flutters
     // independently in the wind. Initialise to nothing for "bald".
     this.hair = new THREE.Group();
@@ -11550,6 +11580,23 @@ function setupHeights(scene, camera, level) {
   platform.receiveShadow = true;
   scene.add(platform);
 
+  // Wind-blown dust drifting around the rooftop edge — only visible at
+  // the upper rungs where the user is high up. Catches the directional
+  // sun + sells the "actually outdoors at altitude" feeling.
+  let _heightDust = null;
+  if (h > 0.3 && window.PhobiaAtmosphere && window.PhobiaAtmosphere.createDustMotes) {
+    const dustColor = (tod === "twilight") ? 0x9aacc8
+                    : (tod === "golden")   ? 0xffd9a8
+                    :                         0xfff5dd;
+    _heightDust = window.PhobiaAtmosphere.createDustMotes({
+      count: 140, bounds: { x: 18, y: 6, z: 18 },
+      origin: [0, cameraY - 0.5, platCenterZ - 2],
+      color: dustColor, size: 0.07, opacity: 0.40,
+      drift: 0.16,
+    });
+    if (_heightDust) scene.add(_heightDust);
+  }
+
   // ---------- Rooftop access (compact, off-centre) ----------
   // A small access structure to the LEFT side of the back of the platform —
   // OFF the camera-behind-character axis so the third-person camera doesn't
@@ -12406,6 +12453,10 @@ function setupHeights(scene, camera, level) {
     update(t, controls, dt) {
       // Capture for command-bar handlers
       if (controls) storedActiveControls = controls;
+      const _hd = dt || 0.016;
+      if (_heightDust && _heightDust.userData && _heightDust.userData.update) {
+        _heightDust.userData.update(_hd, t);
+      }
 
       // Auto "Look down" animation — smoothly drive pitch to the target,
       // hold for a moment, then return. Implemented as a 0..1 timer.
@@ -14443,6 +14494,18 @@ function setupDogs(scene, camera, level) {
   rug.position.set(0, -0.99, -2.2);
   rug.receiveShadow = true;
   scene.add(rug);
+
+  // Sunbeam dust motes — drift through the warm window light. Subtle but
+  // does enormous work selling the "real sun-warmed living room" mood.
+  let _dogDust = null;
+  if (window.PhobiaAtmosphere && window.PhobiaAtmosphere.createDustMotes) {
+    _dogDust = window.PhobiaAtmosphere.createDustMotes({
+      count: 130, bounds: { x: 8, y: 4, z: 10 },
+      origin: [0, 1.2, -2], color: 0xffe4b8, size: 0.05, opacity: 0.40,
+      drift: 0.12,
+    });
+    if (_dogDust) scene.add(_dogDust);
+  }
   // Rug border (slightly darker)
   const rugBorder = new THREE.Mesh(
     new THREE.RingGeometry(0, 0, 64),
@@ -15232,6 +15295,9 @@ function setupDogs(scene, camera, level) {
     update(t, controls, dt) {
       if (controls) { dogsControls = controls; storedActiveControls = controls; }
       const d = dt || 0.016;
+      if (_dogDust && _dogDust.userData && _dogDust.userData.update) {
+        _dogDust.userData.update(d, t);
+      }
       petPulse = Math.max(0, petPulse - d);
       // Drive the dog's lean-into-pet from the petPulse so the dog actually
       // reacts to contact instead of just absorbing clicks silently.
@@ -15777,12 +15843,31 @@ function setupSpiders(scene, camera, level) {
   );
   wall.position.set(0, 4, -8);
   wall.receiveShadow = true;
+
+  // Dust motes drifting in the room — they catch the key light and read as
+  // "real air", grounding the scene as a physical room instead of a void.
+  // Atmosphere module is purely additive, so unmount comes for free with
+  // the scene's standard cleanup (scene.traverse + dispose).
+  let _dust = null;
+  if (window.PhobiaAtmosphere && window.PhobiaAtmosphere.createDustMotes) {
+    _dust = window.PhobiaAtmosphere.createDustMotes({
+      count: 180, bounds: { x: 12, y: 4, z: 14 },
+      origin: [0, 1, -3], color: 0xfff5dd, size: 0.05, opacity: 0.45,
+    });
+    if (_dust) scene.add(_dust);
+  }
   scene.add(wall);
 
-  // Build spider
+  // Build spider — chitin PBR materials when available so the body picks up
+  // visible bristle / micro-pebble normal detail under the room light, with
+  // a graceful fallback to flat MeshStandard for first-paint resilience.
   const spider = new THREE.Group();
-  const black = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.45, metalness: 0.05 });
-  const blackish = new THREE.MeshStandardMaterial({ color: 0x14080a, roughness: 0.5 });
+  const black = (window.PhobiaRealism && window.PhobiaRealism.chitinMaterial)
+    ? window.PhobiaRealism.chitinMaterial("#0a0a0a")
+    : new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.45, metalness: 0.05 });
+  const blackish = (window.PhobiaRealism && window.PhobiaRealism.chitinMaterial)
+    ? window.PhobiaRealism.chitinMaterial("#14080a")
+    : new THREE.MeshStandardMaterial({ color: 0x14080a, roughness: 0.5 });
 
   // Abdomen
   const abdomen = new THREE.Mesh(new THREE.SphereGeometry(0.5, 24, 18), black);
@@ -16149,6 +16234,24 @@ function setupSpiders(scene, camera, level) {
       });
       spider.position.y = -0.7 + Math.sin(t * 1.3) * 0.006;
       eyeMat.emissiveIntensity = 0.12 + Math.sin(t * (1.5 + size * 2)) * 0.08;
+      // Spider tracks the user's position with its body — at close range
+      // the cephalothorax actively orients toward the camera so the user
+      // *feels* watched. Real arachnophobia trigger.
+      if (controls) {
+        const dxS = controls.position.x - spider.position.x;
+        const dzS = controls.position.z - spider.position.z;
+        const distS = Math.hypot(dxS, dzS);
+        if (distS > 0.3) {
+          const targetYaw = Math.atan2(dxS, dzS);
+          // Damped follow so the body turn looks natural, not snappy
+          const yawDelta = (targetYaw - spider.rotation.y + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+          spider.rotation.y += yawDelta * Math.min(1, d * 1.2 * (size * 0.7 + 0.3));
+        }
+      }
+      // Drift the dust motes — keeps the room feeling lived-in.
+      if (_dust && _dust.userData && _dust.userData.update) {
+        _dust.userData.update(d, t);
+      }
 
       // Highest rungs: a sudden short crawl forward, then a small retreat
       if (size > 0.7) {
@@ -16714,8 +16817,11 @@ function setupFlying(scene, camera, level) {
   engine.position.set(-4.0, -0.05, -4.2);
   scene.add(engine);
 
-  // Seat in front of you (the back of someone else's seat)
-  const seatMat = new THREE.MeshStandardMaterial({ color: 0x4a4055, roughness: 0.85 });
+  // Seat in front of you (the back of someone else's seat) — fabric PBR
+  // weave makes the airline seat read as upholstery, not a paint-block.
+  const seatMat = (window.PhobiaRealism && window.PhobiaRealism.fabricMaterial)
+    ? window.PhobiaRealism.fabricMaterial("#4a4055", "cotton")
+    : new THREE.MeshStandardMaterial({ color: 0x4a4055, roughness: 0.85 });
   const seatBack = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.4, 0.15), seatMat);
   seatBack.position.set(0, 0.2, -1.2);
   seatBack.castShadow = true;
@@ -17072,10 +17178,23 @@ function setupNeedles(scene, camera, level) {
   const scrubTrim  = 0x365a7c;
   const nurseSkin  = 0xe6c5a8;     // lighter palette so the nurse reads as a clinician under fluorescents
   const nurseHair  = 0x3a2418;
-  const scrubMat = new THREE.MeshStandardMaterial({ color: scrubColor, roughness: 0.95 });
-  const trimMat  = new THREE.MeshStandardMaterial({ color: scrubTrim,  roughness: 0.95 });
-  const nurseSkinMat = new THREE.MeshStandardMaterial({ color: nurseSkin, roughness: 0.85 });
-  const nurseHairMat = new THREE.MeshStandardMaterial({ color: nurseHair, roughness: 1.0 });
+  // PBR upgrade — fabric weave on the scrubs (cotton), skin pores on the
+  // nurse's face/hands, hair streak normals on the bun. The nurse is
+  // *right in the user's face* during the close-up rungs of needles, so
+  // the fidelity bump matters more here than almost anywhere else.
+  const __PR = window.PhobiaRealism;
+  const scrubMat = (__PR && __PR.fabricMaterial)
+    ? __PR.fabricMaterial("#4a8fb8", "cotton")
+    : new THREE.MeshStandardMaterial({ color: scrubColor, roughness: 0.95 });
+  const trimMat  = (__PR && __PR.fabricMaterial)
+    ? __PR.fabricMaterial("#365a7c", "cotton")
+    : new THREE.MeshStandardMaterial({ color: scrubTrim,  roughness: 0.95 });
+  const nurseSkinMat = (__PR && __PR.skinMaterial)
+    ? __PR.skinMaterial("#e6c5a8")
+    : new THREE.MeshStandardMaterial({ color: nurseSkin, roughness: 0.85 });
+  const nurseHairMat = (__PR && __PR.hairMaterial)
+    ? __PR.hairMaterial("#3a2418")
+    : new THREE.MeshStandardMaterial({ color: nurseHair, roughness: 1.0 });
   // Torso (scrubs top)
   const nurseTorso = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.20, 0.55, 8, 14), scrubMat
@@ -17586,6 +17705,17 @@ function setupSnakes(scene, camera, level) {
     stone.castShadow = true;
     scene.add(stone);
   }
+  // Pollen drifting through the meadow — sells "outside in spring/summer"
+  // far better than a flat green plane. Light yellow particles biased to
+  // float gently UPWARD (the drift sign in createPollen is negative).
+  let _snakePollen = null;
+  if (window.PhobiaAtmosphere && window.PhobiaAtmosphere.createPollen) {
+    _snakePollen = window.PhobiaAtmosphere.createPollen({
+      count: 110, bounds: { x: 14, y: 3, z: 14 },
+      origin: [0, 1.5, -3],
+    });
+    if (_snakePollen) scene.add(_snakePollen);
+  }
 
   // Snake — a tube along a curve, animated to move slightly
   const snakePoints = [];
@@ -17599,10 +17729,14 @@ function setupSnakes(scene, camera, level) {
   }
   const snakeCurve = new THREE.CatmullRomCurve3(snakePoints);
   const snakeGeo = new THREE.TubeGeometry(snakeCurve, 64, 0.05 + size * 0.03, 12, false);
-  const snakeMat = new THREE.MeshStandardMaterial({
-    color: 0x4a6028, roughness: 0.6,
-    emissive: 0x1a2010, emissiveIntensity: 0.1,
-  });
+  // Snake skin — diamond-scale PBR maps when available (visible reptile
+  // texture instead of a flat green tube).
+  const snakeMat = (window.PhobiaRealism && window.PhobiaRealism.scaleMaterial)
+    ? window.PhobiaRealism.scaleMaterial("#4a6028", { emissiveHex: 0x1a2010 })
+    : new THREE.MeshStandardMaterial({
+        color: 0x4a6028, roughness: 0.6,
+        emissive: 0x1a2010, emissiveIntensity: 0.1,
+      });
   const snake = new THREE.Mesh(snakeGeo, snakeMat);
   snake.castShadow = true;
 
@@ -17802,6 +17936,9 @@ function setupSnakes(scene, camera, level) {
     update(t, controls, dt) {
       if (controls) snakesControls = controls;
       const dtN = dt || 0.016;
+      if (_snakePollen && _snakePollen.userData && _snakePollen.userData.update) {
+        _snakePollen.userData.update(dtN, t);
+      }
       // ---- Feed fear state from proximity to the snake ----
       if (controls && window.PhobiaFear) {
         const dxs = controls.position.x - snake.position.x;
@@ -18082,16 +18219,34 @@ function setupSpeaking(scene, camera, level) {
   // Audience — silhouettes seated in rows. Count scales with crowd.
   // Friendly face — a single audience member front and centre, slightly more
   // detailed and a touch closer. Nods while the user holds the "speak" button.
+  // Skin + fabric PBR so they read as a real, warm presence right in the
+  // user's eyeline (the audience member they look at while speaking).
+  const __PR_speak = window.PhobiaRealism;
   const friendly = new THREE.Group();
   const friendlyHead = new THREE.Mesh(
-    new THREE.SphereGeometry(0.22, 14, 12),
-    new THREE.MeshStandardMaterial({ color: 0xd4a07a, roughness: 0.9 })
+    new THREE.SphereGeometry(0.22, 18, 14),
+    (__PR_speak && __PR_speak.skinMaterial)
+      ? __PR_speak.skinMaterial("#d4a07a")
+      : new THREE.MeshStandardMaterial({ color: 0xd4a07a, roughness: 0.9 })
   );
+  friendlyHead.scale.set(0.95, 1.05, 0.95);
   friendlyHead.position.y = 0.7;
   friendly.add(friendlyHead);
+  // Hair cap so the friendly face has a recognisable silhouette
+  const friendlyHair = new THREE.Mesh(
+    new THREE.SphereGeometry(0.225, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.55),
+    (__PR_speak && __PR_speak.hairMaterial)
+      ? __PR_speak.hairMaterial("#3a2418")
+      : new THREE.MeshStandardMaterial({ color: 0x3a2418, roughness: 1.0 })
+  );
+  friendlyHair.scale.copy(friendlyHead.scale);
+  friendlyHair.position.copy(friendlyHead.position);
+  friendly.add(friendlyHair);
   const friendlyTorso = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.22, 0.28, 0.6, 12),
-    new THREE.MeshStandardMaterial({ color: 0x2c9d96, roughness: 0.9 })
+    new THREE.CylinderGeometry(0.22, 0.28, 0.6, 14),
+    (__PR_speak && __PR_speak.fabricMaterial)
+      ? __PR_speak.fabricMaterial("#2c9d96", "cotton")
+      : new THREE.MeshStandardMaterial({ color: 0x2c9d96, roughness: 0.9 })
   );
   friendlyTorso.position.y = 0.3;
   friendly.add(friendlyTorso);
@@ -18125,13 +18280,29 @@ function setupSpeaking(scene, camera, level) {
   const shirtTones = [0x2c4a6e, 0x4a3a55, 0x6a3a3a, 0x3a5a3a, 0x4a4a55, 0x6a5a3a, 0x4a2c2a, 0x2c5a6e];
 
   function buildAudienceMember() {
+    // If the upgraded creature builder is loaded, defer to it — gives each
+    // audience member skin pores, fabric weave, varied body proportions,
+    // glasses chance, and idle head sway. Falls back to the old layout
+    // below if the realism scripts haven't booted yet.
+    if (window.PhobiaCreatures && window.PhobiaCreatures.buildAudienceMember) {
+      const root = window.PhobiaCreatures.buildAudienceMember();
+      // The contract used by the rest of speaking-scene code is { root, head, hair, mood }.
+      const head = root.userData && root.userData.head;
+      return { root, head, hair: null, mood: 0 };
+    }
     const person = new THREE.Group();
     const skinHex = skinTones[Math.floor(Math.random() * skinTones.length)];
     const hairHex = hairTones[Math.floor(Math.random() * hairTones.length)];
     const shirtHex = shirtTones[Math.floor(Math.random() * shirtTones.length)];
-    const skinM = new THREE.MeshStandardMaterial({ color: skinHex, roughness: 0.85 });
-    const hairM = new THREE.MeshStandardMaterial({ color: hairHex, roughness: 1.0 });
-    const shirtM = new THREE.MeshStandardMaterial({ color: shirtHex, roughness: 0.95 });
+    const skinM  = (window.PhobiaRealism && window.PhobiaRealism.skinMaterial)
+      ? window.PhobiaRealism.skinMaterial("#" + skinHex.toString(16).padStart(6, "0"))
+      : new THREE.MeshStandardMaterial({ color: skinHex, roughness: 0.85 });
+    const hairM  = (window.PhobiaRealism && window.PhobiaRealism.hairMaterial)
+      ? window.PhobiaRealism.hairMaterial("#" + hairHex.toString(16).padStart(6, "0"))
+      : new THREE.MeshStandardMaterial({ color: hairHex, roughness: 1.0 });
+    const shirtM = (window.PhobiaRealism && window.PhobiaRealism.fabricMaterial)
+      ? window.PhobiaRealism.fabricMaterial("#" + shirtHex.toString(16).padStart(6, "0"), "cotton")
+      : new THREE.MeshStandardMaterial({ color: shirtHex, roughness: 0.95 });
     // Torso
     const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, 0.40, 6, 10), shirtM);
     torso.position.y = 0.35;
@@ -18347,14 +18518,19 @@ function setupSpeaking(scene, camera, level) {
       // than the whole body twisting.
       const settle = (speakingPressed || pauseSilence > 0.5) ? 0.2 : 1.0;
       audienceMembers.forEach((m, i) => {
+        if (!m.head) return;
         m.head.rotation.y = Math.sin(t * 0.5 + i * 0.7) * 0.10 * settle;
         // High-confidence speakers earn nods from a chunk of the crowd
         if (i % 4 === 0 && confidence > 0.3) {
           m.head.rotation.x = Math.sin(t * 0.9 + i) * 0.10 * (confidence - 0.2);
         }
-        // Hair follows the head rotation
-        m.hair.rotation.y = m.head.rotation.y;
-        m.hair.rotation.x = m.head.rotation.x;
+        // Hair follows the head rotation (legacy audience builds had a
+        // separate hair group; the new builder bakes hair onto the head so
+        // it rotates implicitly — guard for either case).
+        if (m.hair) {
+          m.hair.rotation.y = m.head.rotation.y;
+          m.hair.rotation.x = m.head.rotation.x;
+        }
       });
       // Friendly face — nods when the user is actively speaking
       if (friendlyHead) {
@@ -19150,15 +19326,29 @@ function setupStorms(scene, camera, level) {
     scene.add(puddle);
   }
 
-  // Trees (silhouettes)
+  // Trees (silhouettes) — bark normal map when the realism module is
+  // available, plus low-poly tree builder for ones close to the porch.
   for (let i = 0; i < 16; i++) {
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 2, 6),
-      new THREE.MeshStandardMaterial({ color: 0x141a18 }));
+      (window.PhobiaRealism && window.PhobiaRealism.barkMaterial)
+        ? window.PhobiaRealism.barkMaterial("#141a18")
+        : new THREE.MeshStandardMaterial({ color: 0x141a18 }));
     const leaves = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6),
-      new THREE.MeshStandardMaterial({ color: 0x1a2418 }));
+      new THREE.MeshStandardMaterial({ color: 0x1a2418, flatShading: true }));
     trunk.position.set((Math.random() - 0.5) * 80, 0, -8 - Math.random() * 50);
     leaves.position.set(trunk.position.x, 1.6, trunk.position.z);
     scene.add(trunk); scene.add(leaves);
+  }
+  // A drifting fog plane in front of the porch — catches the lightning
+  // flash in a dramatic way (the flash silhouettes the rain through fog,
+  // mimicking how a real storm reads from inside a porch).
+  let _stormFog = null;
+  if (window.PhobiaAtmosphere && window.PhobiaAtmosphere.createFogPlane) {
+    _stormFog = window.PhobiaAtmosphere.createFogPlane({
+      width: 24, height: 6, color: 0x495466, opacity: 0.13,
+      origin: [0, 1.5, -8],
+    });
+    if (_stormFog) scene.add(_stormFog);
   }
 
   // Porch roof (we're under shelter)
@@ -19423,6 +19613,9 @@ function setupStorms(scene, camera, level) {
     update(t, controls, dt) {
       if (controls) stormsControls = controls;
       const d = dt || 0.016;
+      if (_stormFog && _stormFog.userData && _stormFog.userData.update) {
+        _stormFog.userData.update(d, t);
+      }
       // Animate rain
       const pos = rain.geometry.attributes.position;
       for (let i = 0; i < N; i++) {
@@ -19578,6 +19771,20 @@ function setupDark(scene, camera, level) {
   shelf.position.set(2, -0.1, -3);
   scene.add(shelf);
 
+  // Floating dust motes — when the flashlight or candle catches them they
+  // shimmer, which gives the dark room real depth instead of feeling like
+  // a flat black box. Quietly absent at the lowest dim levels (where the
+  // user is asked just to sit with the dark) — gentle gating via opacity.
+  let _darkDust = null;
+  if (window.PhobiaAtmosphere && window.PhobiaAtmosphere.createDustMotes) {
+    _darkDust = window.PhobiaAtmosphere.createDustMotes({
+      count: 90, bounds: { x: 5, y: 2.4, z: 6 },
+      origin: [0, 0.5, -2], color: 0xffe7b5, size: 0.04,
+      opacity: 0.30 * (1 - dim * 0.5),
+    });
+    if (_darkDust) scene.add(_darkDust);
+  }
+
   camera.fov = 70;
   camera.updateProjectionMatrix();
 
@@ -19710,6 +19917,9 @@ function setupDark(scene, camera, level) {
     surface: "soft",   // carpeted dim room
     update(t, controls, dt) {
       const d = dt || 0.016;
+      if (_darkDust && _darkDust.userData && _darkDust.userData.update) {
+        _darkDust.userData.update(d, t);
+      }
       // Flashlight on while held — brighter, narrower
       const target = flashlightHeld ? (1.6 * (1 - dim * 0.4)) : (0.7 * (1 - dim * 0.6));
       flashlight.intensity += (target - flashlight.intensity) * 0.12;
@@ -19758,6 +19968,15 @@ function setupDark(scene, camera, level) {
 //   - Two-segment legs (thigh + shin + foot)
 //   - Subtle idle animation hooks exposed via group.userData.animate
 function buildAvatarFigure(c) {
+  // If the v2 parametric builder is loaded AND the character has any of
+  // the new attributes (bodyType / ageGroup / eyeShape / jawShape /
+  // noseShape), prefer it — it returns a full figure with PBR materials
+  // and the new variation knobs wired in.
+  if (window.PhobiaAvatar3D && window.PhobiaAvatar3D.buildFigure
+      && c && (c.bodyType || c.ageGroup || c.eyeShape || c.jawShape || c.noseShape)) {
+    const fig = window.PhobiaAvatar3D.buildFigure(c);
+    if (fig) return fig;
+  }
   const group = new THREE.Group();
   const skin   = (c && c.skinHex)  ? c.skinHex  : "#e8b794";
   const hair   = (c && c.hairHex)  ? c.hairHex  : "#4a2c18";
@@ -19770,12 +19989,18 @@ function buildAvatarFigure(c) {
   const hairShadow = new THREE.Color(hair).multiplyScalar(0.78).getHex();
   const shirtFold = new THREE.Color(shirt).multiplyScalar(0.78).getHex();
 
-  const skinM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(skin),   roughness: 0.78, metalness: 0.0 });
+  // PBR materials — skin pores, fabric weave, hair streak normals — when
+  // the realism module is loaded. Falls back to flat MeshStandard if not.
+  const PR = window.PhobiaRealism;
+  const skinM   = (PR && PR.skinMaterial)   ? PR.skinMaterial(skin)
+    : new THREE.MeshStandardMaterial({ color: new THREE.Color(skin), roughness: 0.78, metalness: 0.0 });
   const skinShM = new THREE.MeshStandardMaterial({ color: skinShadow, roughness: 0.85 });
-  const hairM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(hair),   roughness: 1.0 });
+  const hairM   = (PR && PR.hairMaterial)   ? PR.hairMaterial(hair)
+    : new THREE.MeshStandardMaterial({ color: new THREE.Color(hair), roughness: 1.0 });
   const hairShM = new THREE.MeshStandardMaterial({ color: hairShadow, roughness: 1.0 });
   const browM   = new THREE.MeshStandardMaterial({ color: hairShadow, roughness: 1.0 });
-  const shirtM  = new THREE.MeshStandardMaterial({ color: new THREE.Color(shirt),  roughness: 0.85 });
+  const shirtM  = (PR && PR.fabricMaterial) ? PR.fabricMaterial(shirt, "cotton")
+    : new THREE.MeshStandardMaterial({ color: new THREE.Color(shirt), roughness: 0.85 });
   const shirtFoldM = new THREE.MeshStandardMaterial({ color: shirtFold, roughness: 0.85 });
   const irisM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(eye),    roughness: 0.25, metalness: 0.18 });
   const eyeWhiteM = new THREE.MeshStandardMaterial({ color: 0xfff4ea, roughness: 0.30 });
