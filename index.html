@@ -434,15 +434,17 @@ if ("serviceWorker" in navigator) {
     backdrop-filter: blur(6px); pointer-events: none;
   }
   .stage .camera-toggle {
-    position: absolute; top: 12px; left: 12px; z-index: 7;
+    position: absolute; top: 14px; left: 14px; z-index: 7;
     background: linear-gradient(135deg, rgba(124,209,197,.85), rgba(165,180,252,.85));
     color: #0b1020;
     border: 1px solid rgba(255,255,255,.30);
-    padding: 8px 16px; border-radius: 999px;
-    font-size: 13px; font-weight: 700; letter-spacing: .3px;
+    padding: 8px 14px; border-radius: 999px;
+    font-size: 12px; font-weight: 700; letter-spacing: .2px;
     cursor: pointer; backdrop-filter: blur(8px);
     box-shadow: 0 4px 20px rgba(124,209,197,.35);
-    display: flex; align-items: center; gap: 8px;
+    display: inline-flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+    max-width: calc(100% - 28px);
     transition: background .15s ease, transform .08s ease, box-shadow .2s ease;
   }
   .stage .camera-toggle::before {
@@ -724,25 +726,25 @@ if ("serviceWorker" in navigator) {
      visible during exposure so the user can silence voice / sound any
      time without diving into Settings. */
   .stage .stage-quick-bar {
-    position: absolute; top: 10px; right: 10px; z-index: 8;
-    display: flex; gap: 6px;
+    position: absolute; top: 14px; right: 14px; z-index: 8;
+    display: flex; gap: 8px;
   }
   .stage .stage-quick-btn {
-    width: 36px; height: 36px; flex: 0 0 36px;
+    width: 38px; height: 38px; flex: 0 0 38px;
     border-radius: 999px;
-    background: rgba(10, 14, 28, .55);
-    border: 1px solid rgba(124,209,197,.35);
+    background: rgba(10, 14, 28, .65);
+    border: 1px solid rgba(124,209,197,.40);
     color: var(--text);
     font-size: 16px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer;
-    backdrop-filter: blur(6px);
-    transition: background .15s ease, color .15s ease;
+    backdrop-filter: blur(8px);
+    transition: background .15s ease, color .15s ease, transform .12s ease;
   }
-  /* On very narrow screens, slightly smaller buttons so all four still fit. */
+  .stage .stage-quick-btn:hover { transform: scale(1.06); }
   @media (max-width: 480px) {
-    .stage .stage-quick-bar { gap: 4px; }
-    .stage .stage-quick-btn { width: 32px; height: 32px; flex: 0 0 32px; font-size: 14px; }
+    .stage .stage-quick-bar { top: 10px; right: 10px; gap: 6px; }
+    .stage .stage-quick-btn { width: 34px; height: 34px; flex: 0 0 34px; font-size: 14px; }
   }
   .stage .stage-quick-btn:hover { background: rgba(124,209,197,.18); }
   .stage .stage-quick-btn.muted { color: #ff8a8a; border-color: rgba(255,138,138,.45); }
@@ -2170,33 +2172,64 @@ if ("serviceWorker" in navigator) {
   }
   .stage .tutorial-card .actions { justify-content: flex-end; margin-top: 0; }
 
-  /* Achievement toast */
+  /* Achievement toast — compact pill that slides up from bottom-right
+     instead of taking over the page. Was a 420 px panel at the bottom-
+     center which felt heavy after every small win; now it's a discreet
+     ~280 px chip that gets out of the way fast. */
   .achievement-toast {
-    position: fixed; left: 50%; bottom: 24px; z-index: 200;
-    transform: translate(-50%, 30px);
+    position: fixed; right: var(--space-4); bottom: var(--space-4);
+    z-index: 200;
+    transform: translateX(120%);
     opacity: 0;
-    background: linear-gradient(135deg, #1a2547, var(--panel-3));
-    border: 1px solid rgba(124,209,197,.45);
-    border-radius: 14px;
-    padding: 14px 18px;
-    box-shadow: 0 10px 40px rgba(0,0,0,.5), 0 0 30px rgba(124,209,197,.18);
-    display: flex; align-items: center; gap: 14px;
-    transition: transform .35s cubic-bezier(.2,.9,.2,1), opacity .35s;
+    background: linear-gradient(135deg, rgba(26, 37, 71, .96), rgba(20, 28, 48, .96));
+    border: 1px solid rgba(124,209,197,.40);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-4);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(10px);
+    display: flex; align-items: center; gap: var(--space-3);
+    transition: transform .35s cubic-bezier(.22,1.4,.4,1), opacity .25s ease;
     color: var(--text);
-    max-width: min(420px, 90vw);
+    max-width: min(320px, calc(100vw - var(--space-8)));
+    pointer-events: none;
   }
-  .achievement-toast.show { transform: translate(-50%, 0); opacity: 1; }
+  .achievement-toast.show {
+    transform: translateX(0); opacity: 1;
+  }
   .ach-icon {
-    font-size: 28px; line-height: 1;
-    width: 44px; height: 44px;
+    font-size: 20px; line-height: 1;
+    width: 32px; height: 32px;
     display: flex; align-items: center; justify-content: center;
-    background: rgba(124,209,197,.12);
+    background: rgba(124,209,197,.14);
     border-radius: 50%;
     flex-shrink: 0;
   }
-  .ach-text { display: flex; flex-direction: column; }
-  .ach-text strong { font-size: 14px; color: var(--accent); letter-spacing: .3px; }
-  .ach-text span { font-size: 13px; color: #cbd5e1; }
+  .ach-text { display: flex; flex-direction: column; min-width: 0; }
+  .ach-text strong {
+    font-size: var(--text-xs);
+    color: var(--accent);
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  .ach-text span {
+    font-size: var(--text-sm);
+    color: #cbd5e1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 240px;
+  }
+  @media (max-width: 480px) {
+    .achievement-toast {
+      right: var(--space-3); bottom: var(--space-3);
+      padding: 6px var(--space-3);
+      gap: var(--space-2);
+    }
+    .ach-icon { width: 28px; height: 28px; font-size: 16px; }
+    .ach-text span { font-size: var(--text-xs); max-width: 180px; }
+  }
 
   /* Smooth scene fade-in when canvas mounts */
   .stage canvas { animation: stage-fade .6s ease-out; }
@@ -2243,12 +2276,14 @@ if ("serviceWorker" in navigator) {
   /* Floating "show controls" / "hide controls" toggle that lives in the
      scene UI when the bar is collapsible. */
   .stage .cmd-toggle {
-    position: absolute; right: 12px; bottom: 12px; z-index: 7;
-    background: rgba(10, 14, 28, .65); color: var(--text);
-    border: 1px solid rgba(255,255,255,.20);
-    padding: 6px 12px; border-radius: 999px;
+    position: absolute; right: 14px; bottom: 14px; z-index: 7;
+    background: rgba(10, 14, 28, .70); color: var(--text);
+    border: 1px solid rgba(255,255,255,.22);
+    padding: 7px 14px; border-radius: 999px;
     font-size: 12px; font-weight: 600;
-    cursor: pointer; backdrop-filter: blur(6px);
+    white-space: nowrap;
+    max-width: calc(100% - 28px);
+    cursor: pointer; backdrop-filter: blur(8px);
     transition: background .15s ease, transform .08s ease;
   }
   .stage .cmd-toggle:hover { background: rgba(20, 28, 48, .85); }
@@ -2353,17 +2388,26 @@ if ("serviceWorker" in navigator) {
     position: absolute; left: 50%; bottom: 80px; z-index: 7;
     transform: translateX(-50%);
     background: rgba(10, 14, 28, .80); color: var(--text);
-    border: 1px solid rgba(165,180,252,.45);
-    padding: 10px 18px; border-radius: 12px;
-    font-size: 14px; font-weight: 500; line-height: 1.4;
+    border: 1px solid rgba(165,180,252,.40);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-sm); font-weight: 500; line-height: 1.35;
     backdrop-filter: blur(8px);
-    box-shadow: 0 6px 24px rgba(0,0,0,.35);
-    max-width: 420px; text-align: center;
+    box-shadow: var(--shadow-sm);
+    max-width: min(360px, 80%); text-align: center;
     opacity: 0; pointer-events: none;
     transition: opacity .35s ease, transform .35s ease;
   }
   .stage .ctx-prompt.visible {
     opacity: 1; transform: translateX(-50%) translateY(-4px);
+  }
+  @media (max-width: 480px) {
+    .stage .ctx-prompt {
+      bottom: 64px;
+      font-size: var(--text-xs);
+      padding: 6px var(--space-3);
+      max-width: 90%;
+    }
   }
   .cmd-btn {
     background: var(--panel-2);
@@ -3740,12 +3784,23 @@ window.PhobiaNarrator = PhobiaNarrator;
 
 // ---------- Voice guidance (Web Speech Synthesis) ----------
 // A calm therapist-style narrator that delivers grounding cues during exposure.
+// MUTED BY DEFAULT — voice quality varies wildly by browser/OS and many users
+// prefer the silence. The user can toggle voice on via the in-stage 🗣️ pill
+// or in Settings. Captions still fire when voice is muted, so the prompts are
+// readable on screen even with no audio. Once the user explicitly toggles it
+// (either way), their preference persists in localStorage.
 const PhobiaVoice = (() => {
   const synth = typeof window !== "undefined" && window.speechSynthesis;
   let voice = null;
-  let muted = false;
+  let muted = true;     // default: silent
   let voiceRate = 0.85;
-  try { muted = localStorage.getItem("fobia.voiceMuted") === "1"; } catch {}
+  try {
+    // Honour saved preference (either "1" muted or "0" unmuted). If the key
+    // isn't set yet (new user), default to muted via the line above.
+    const stored = localStorage.getItem("fobia.voiceMuted");
+    if (stored === "0") muted = false;
+    else if (stored === "1") muted = true;
+  } catch {}
 
   function pickVoice() {
     if (!synth) return;
@@ -6035,24 +6090,19 @@ function mountExposure(phobiaKey, levelIdx) {
     const aMuted = window.PhobiaAudio && window.PhobiaAudio.isMuted();
     const theater = isTheater();
     const full = isFullscreen();
+    // Only the two essential controls — voice mute + sound mute. Theater +
+    // fullscreen were visual clutter that crowded the canvas corner; users
+    // who want fullscreen can use the browser's native option (F11).
     quickBar.innerHTML = `
       <button class="stage-quick-btn ${vMuted ? "muted" : ""}" id="quickVoice"
-        title="${vMuted ? "Voice muted — click to unmute" : "Mute voice guidance"}"
-        aria-label="${vMuted ? "Voice muted" : "Mute voice"}">${vMuted ? "🗣️̸" : "🗣️"}</button>
+        title="${vMuted ? "Voice guidance muted — click to unmute" : "Mute voice guidance"}"
+        aria-label="${vMuted ? "Voice muted" : "Mute voice"}">${vMuted ? "🔇" : "🗣️"}</button>
       <button class="stage-quick-btn ${aMuted ? "muted" : ""}" id="quickAudio"
-        title="${aMuted ? "Sound muted — click to unmute" : "Mute scene sound"}"
-        aria-label="${aMuted ? "Sound muted" : "Mute sound"}">${aMuted ? "🔇" : "🔊"}</button>
-      <button class="stage-quick-btn ${theater ? "active" : ""}" id="quickTheater"
-        title="${theater ? "Exit theater mode" : "Theater mode (bigger stage)"}"
-        aria-label="${theater ? "Exit theater mode" : "Theater mode"}">🎬</button>
-      <button class="stage-quick-btn ${full ? "active" : ""}" id="quickFull"
-        title="${full ? "Exit fullscreen" : "Fullscreen"}"
-        aria-label="${full ? "Exit fullscreen" : "Fullscreen"}">${full ? "⛶" : "⛶"}</button>
+        title="${aMuted ? "Scene sound muted — click to unmute" : "Mute scene sound"}"
+        aria-label="${aMuted ? "Sound muted" : "Mute sound"}">${aMuted ? "🔈" : "🔊"}</button>
     `;
     const v = quickBar.querySelector("#quickVoice");
     const a = quickBar.querySelector("#quickAudio");
-    const th = quickBar.querySelector("#quickTheater");
-    const fs = quickBar.querySelector("#quickFull");
     if (v) v.onclick = () => {
       const next = !window.PhobiaVoice.isMuted();
       window.PhobiaVoice.setMuted(next);
@@ -6066,22 +6116,6 @@ function mountExposure(phobiaKey, levelIdx) {
       const ab = document.getElementById("audioBtn");
       if (ab) ab.textContent = next ? "🔇" : "🔊";
       refreshQuickBar();
-    };
-    if (th) th.onclick = () => {
-      stage.classList.toggle("theater");
-      // Force the renderer to resize to the new stage dimensions
-      window.dispatchEvent(new Event("resize"));
-      refreshQuickBar();
-    };
-    if (fs) fs.onclick = () => {
-      try {
-        if (isFullscreen()) {
-          (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-        } else {
-          (stage.requestFullscreen || stage.webkitRequestFullscreen).call(stage);
-        }
-      } catch (e) { console.warn("Fullscreen failed:", e); }
-      // Resize will be triggered by the fullscreenchange event below
     };
   }
   // Re-render the icons when fullscreen state changes (e.g. user pressed Esc)
@@ -8080,9 +8114,13 @@ class FPControls {
     let savedMode = "fp";
     try { savedMode = localStorage.getItem("fobia.cameraMode") || "fp"; } catch {}
     this.cameraMode = savedMode === "tp" ? "tp" : "fp";
-    this.tpDistance = 3.4;     // metres behind the head — open-world spacing
-    this.tpHeight = 0.95;      // metres above the head — looks down on character
-    this.tpShoulder = 0.45;    // lateral over-the-shoulder offset (right of player)
+    this.tpDistance = 4.5;     // metres behind the head — wider framing so
+                                // the whole character + immediate environment
+                                // both fit in view (was 3.4)
+    this.tpHeight = 0.55;      // metres above head — gentler down-tilt (was 0.95)
+                                // so we look AT the character, not down on top of them
+    this.tpShoulder = 0.10;    // tiny over-the-shoulder bias — was 0.45 which
+                                // pushed the character too far left in frame
     this.tpBlend = this.cameraMode === "tp" ? 1 : 0;
     // Smoothed camera position for damped follow — populated lazily on the
     // first TP-mode update so the initial position snaps without lag.
@@ -8300,14 +8338,15 @@ class FPControls {
     this.camera.position.set(cx, cy, cz);
 
     if (this.tpBlend > 0.001) {
-      // Look at a target slightly above the character's hips (1.0 m up from
-      // feet ≈ chest height) so the framing puts the character in the lower
-      // 2/3 of the screen. The look-target also pitches slightly with the
-      // user's pitch so they can aim the camera up/down past the character.
-      const lookYBase = this.position.y - 0.55;     // approx chest height
-      const lookX = this.position.x + sinY * 0.5 + sideX * 0.4;
-      const lookY = lookYBase + sinP * tpDist * 0.6;
-      const lookZ = this.position.z + cosY * 0.5 + sideZ * 0.4;
+      // Look at a target at roughly the character's chest height. Aiming
+      // slightly LOWER than chest centres the character vertically in the
+      // frame — was overshooting upward and putting the character in the
+      // bottom third. The look-target also pitches with the user's pitch
+      // so they can aim the camera up/down past the character.
+      const lookYBase = this.position.y - 0.75;     // approx chest height
+      const lookX = this.position.x + sinY * 0.3;   // less yaw bias
+      const lookY = lookYBase + sinP * tpDist * 0.55;
+      const lookZ = this.position.z + cosY * 0.3;
       // Damp the look-target too so framing changes are smooth
       if (!this._tpSmoothLook) {
         this._tpSmoothLook = new THREE.Vector3(lookX, lookY, lookZ);
@@ -10742,7 +10781,12 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   cameraToggle.title = "Toggle first-person / third-person (V)";
   function refreshCameraLabel() {
     if (!controls) return;
-    cameraToggle.textContent = controls.cameraMode === "tp" ? "1st person" : "3rd person";
+    // Show CURRENT mode + a hint that it's tappable. The previous label
+    // ("1st person") was the mode you'd switch TO — confusing on first
+    // contact. New format is "View: 3rd ⇄" so the user instantly sees
+    // both their current mode and that the chip is interactive.
+    const inTP = controls.cameraMode === "tp";
+    cameraToggle.innerHTML = `View: ${inTP ? "3rd" : "1st"} <span style="opacity:.7">⇄</span>`;
   }
   refreshCameraLabel();
   // Mark that the user has explicitly toggled the camera mode. Session-scoped
