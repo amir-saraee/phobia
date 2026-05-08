@@ -33,6 +33,7 @@ if ("serviceWorker" in navigator) {
 <script src="src/atmosphere.js" defer></script>
 <script src="src/creatures.js" defer></script>
 <script src="src/avatar3d.js" defer></script>
+<script src="src/skinned-humanoid.js" defer></script>
 <script type="importmap">
 {
   "imports": {
@@ -8798,7 +8799,16 @@ class Body {
       brow.position.set(sx * 0.001, 0.030, 0.015);
       brow.rotation.z = sx * -0.10;
       eyeGroup.add(brow);
-      this.eyes.push({ group: eyeGroup, lid });
+      // Cache base brow rotation/position so the reactive-face routine
+      // can additively tilt it without losing the rest pose. Cache the
+      // base lid scaleY too so blinks compose with fear-widen.
+      const browBaseRotZ = sx * -0.10;
+      const browBaseY = 0.030;
+      this.eyes.push({
+        group: eyeGroup, lid, brow,
+        side: sx, browBaseRotZ, browBaseY,
+        lidBaseY: 0.05,
+      });
     }
 
     // Nose — short rounded prism
@@ -8820,6 +8830,11 @@ class Body {
     mouth.position.set(0, -0.057, 0.107);
     this.head.add(mouth);
     this.mouth = mouth;
+    // Cache the mouth's resting transform so the fear-reactive face routine
+    // can drop the lower lip + scale up the mouth opening additively.
+    this._mouthBase = {
+      y: mouth.position.y, rotX: mouth.rotation.x, scaleY: 1, scaleX: 1,
+    };
 
     // Optional glasses
     if (o.glasses === "round" || o.glasses === "square") {
@@ -9196,6 +9211,60 @@ class Body {
       this.shoulders.forEach(s => { s.mesh.position.y = this.opts.chestTopY - 0.06 + bob; });
     }
 
+    // ---------- Skeletal-feeling rig additions ----------
+    // The Body class doesn't use SkinnedMesh + Bones — it composes
+    // independent meshes — but real human walking has four extra cues
+    // beyond the leg-arm swing the keyframes already provide:
+    //   1. Hip drop (Trendelenburg)  — the swing-side hip drops as the
+    //      stance leg supports body weight; without this the pelvis looks
+    //      stapled to the spine.
+    //   2. Pelvis-shoulder counter-rotation — pelvis rotates one way while
+    //      the shoulder line rotates the other (single biggest "real
+    //      walking" cue you can give a procedural body).
+    //   3. Lateral weight shift — body sways side-to-side as weight
+    //      transfers between legs.
+    //   4. Idle weight shift — when standing still, weight rocks slowly
+    //      from one foot to the other every few seconds.
+    // Each is additive on top of the existing walk cycle so it composes
+    // with crouch, reach, lean, etc. We cache base positions/rotations on
+    // first frame so the additions don't compound across frames.
+    if (walkAmt > 0.02) {
+      // ---- Walking gait additions ----
+      const walkMag = Math.min(1, walkAmt);
+      // Pelvis (chest+hip line) yaws +/- around the body's vertical axis
+      // in sync with the leg swing. Shoulders counter-rotate.
+      const pelvisYaw = Math.sin(walkPhase) * 0.10 * walkMag;
+      const shoulderYaw = -pelvisYaw * 0.85;
+      if (this.chest) this.chest.rotation.y = shoulderYaw;
+      // Hip drop — sin(walkPhase) is +1 when right leg forward; the
+      // *swing* leg is the forward one, so the hip on the swing side
+      // drops by ~3 cm. Apply by tilting the chest's roll (z rotation).
+      const hipRoll = Math.sin(walkPhase) * 0.05 * walkMag;
+      if (this.chest) this.chest.rotation.z = hipRoll;
+      // Lateral weight shift — body's whole-group x sways with each step
+      // (positive when stance is right leg). Caps at ~2 cm.
+      const lateralShift = Math.sin(walkPhase + Math.PI / 2) * 0.02 * walkMag;
+      this.group.position.x += lateralShift;
+      // Tiny vertical bob beyond the existing camera bob — the body
+      // itself rises and falls with each step.
+      const stepBob = Math.abs(Math.sin(walkPhase)) * 0.012 * walkMag;
+      this.group.position.y += stepBob;
+    } else if (this.chest) {
+      // ---- Idle-stance additions ----
+      // When standing still, weight slowly shifts from one foot to the
+      // other every ~6-8 s. Hip drops on the *unweighted* side, body
+      // sways laterally, and the head subtly turns to follow the shift.
+      this._idleShiftPhase = (this._idleShiftPhase || 0) + (1 / 60) * 0.20;
+      const idleAmt = Math.max(0, 1 - (walkAmt || 0));
+      const slowShift = Math.sin(this._idleShiftPhase) * idleAmt;
+      this.chest.rotation.z = slowShift * 0.04;       // lean left/right
+      this.chest.rotation.y = 0;                       // no walk twist
+      // Tiny lateral sway — barely perceptible
+      this.group.position.x += slowShift * 0.012;
+      // The "idle stance" head bob is already handled by the existing
+      // breathing code; we don't duplicate it here.
+    }
+
     // ---------- Wind flutter (hair + scarf) ----------
     // The phase increments at a rate proportional to wind exposure so a calm
     // room has nearly-still cloth and a windy ledge has obvious flap. Caller
@@ -9242,6 +9311,65 @@ class Body {
       for (const e of this.eyes) {
         if (e.lid) e.lid.scale.y = lidY;
       }
+    }
+
+    // ---------- Reactive face — drives expression off PhobiaFear.suds ----------
+    // Fear (0..100) translates to micro-expression on the user's avatar so
+    // their character visibly *feels* what they feel: eyes widen, brows
+    // arch up at the inside (the universal "alarm" cue), mouth parts.
+    // Only meaningful when head is visible (third-person) but the maths
+    // is cheap so we always run it — the renderer ignores hidden nodes.
+    let fearLevel = 0;
+    if (window.PhobiaFear && typeof window.PhobiaFear.suds === "number") {
+      fearLevel = Math.max(0, Math.min(1, window.PhobiaFear.suds / 100));
+    }
+    // Damp the visible reaction so frame-to-frame fear flicker doesn't
+    // jitter the face — humans don't change expression every 16 ms.
+    if (this._fearVisual === undefined) this._fearVisual = 0;
+    this._fearVisual += (fearLevel - this._fearVisual) * Math.min(1, (1 / 60) * 2.2);
+    const fv = this._fearVisual;
+
+    // Eyes — widen by *lowering* the lid baseline so the visible sclera
+    // is taller than usual. Compose with the existing blink so blinks
+    // still fully close the eye even when widened.
+    if (this.eyes && this.eyes.length === 2 && fv > 0.02) {
+      const widenAmt = fv * 0.04;        // up to 4 cm of extra opening at SUDS 100
+      const browLift = fv * 0.012;
+      const browArchInside = fv * 0.55;  // inside edge of the brow tilts UP
+      for (const e of this.eyes) {
+        if (e.lid) {
+          // Subtract from current lid scale only when not blinking — use the
+          // base 0.05 plus blink contribution we already wrote, then shave
+          // a touch more so the eye reads as wider.
+          e.lid.scale.y = Math.max(0.02, e.lid.scale.y - widenAmt * 0.5);
+        }
+        if (e.brow && typeof e.browBaseRotZ === "number") {
+          // Inside-edge raise: tilt brow rotation.z so its inner end goes up.
+          // For the left eye (side=-1), we rotate +z to raise the inside.
+          // For the right eye (side=+1), we rotate -z. browBaseRotZ already
+          // tilts outward; add a fear-driven inside-up component.
+          e.brow.rotation.z = e.browBaseRotZ + e.side * browArchInside;
+          if (typeof e.browBaseY === "number") {
+            e.brow.position.y = e.browBaseY + browLift;
+          }
+        }
+      }
+    }
+    // Mouth — drops at the corners (fear face) and opens slightly. Composed
+    // additively from the cached rest pose so it returns when fear drops.
+    if (this.mouth && this._mouthBase) {
+      const drop = fv * 0.012;
+      const open = fv * 0.6;
+      this.mouth.position.y = this._mouthBase.y - drop;
+      this.mouth.rotation.x = this._mouthBase.rotX - fv * 0.18;
+      this.mouth.scale.y = this._mouthBase.scaleY * (1 + open);
+      this.mouth.scale.x = this._mouthBase.scaleX * (1 + fv * 0.10);
+    }
+    // Subtle head pull-back when fear is high (real freeze-response cue —
+    // the head retreats from the threat by a couple of cm). Composed on
+    // top of the existing crouch / head-turn drivers.
+    if (this.head && fv > 0.05) {
+      this.head.rotation.x -= fv * 0.05;     // chin tucks slightly up
     }
   }
 
@@ -14128,20 +14256,47 @@ class DogController {
     // Ears — perk up when the dog is looking right at the player (alert
     // posture), droop when sitting quietly. Real dogs ear-perk is one of
     // the strongest "this is a real dog reacting to me" signals.
+    //
+    // Fear-mirror: when the human's fear (PhobiaFear.suds) is high, the
+    // dog reads the human as agitated and goes fully alert too. This is a
+    // real cue — a dog can smell adrenaline + see your posture. The
+    // therapeutic implication is visible: when YOU calm down, the dog
+    // visibly calms down with you, closing the alarm loop.
     if (p.ears && p.ears.length === 2) {
       const playerHeadDx = this.camera.position.x - this.dog.position.x;
       const playerHeadDz = this.camera.position.z - this.dog.position.z;
       const playerDist = Math.hypot(playerHeadDx, playerHeadDz);
-      const alert = this.state === "bark" ? 1.0
-                  : (this.state === "walking" ? 0.5
-                  : (playerDist < 2.5 ? 0.7 : 0.2));
+      let humanFear = 0;
+      if (window.PhobiaFear && typeof window.PhobiaFear.suds === "number") {
+        humanFear = Math.max(0, Math.min(1, window.PhobiaFear.suds / 100));
+      }
+      // Smoothed copy so the dog's ears don't twitch frame-by-frame
+      this._humanFearSm = (this._humanFearSm || 0) + (humanFear - (this._humanFearSm || 0)) * Math.min(1, dt * 1.6);
+      const baseAlert = this.state === "bark" ? 1.0
+                      : (this.state === "walking" ? 0.5
+                      : (playerDist < 2.5 ? 0.7 : 0.2));
+      // Lift the alert level when the human is fearful — caps at 1.0 so a
+      // fully-relaxed dog still goes pricked-up alert under high SUDS.
+      const alert = Math.max(baseAlert, this._humanFearSm * 0.95);
       const earTilt = -0.05 - alert * 0.40;        // -0.05 (relaxed) to -0.45 (perked)
       for (let i = 0; i < 2; i++) {
         p.ears[i].rotation.x += (earTilt - p.ears[i].rotation.x) * 0.10;
-        // Subtle ear twitch when alert (a real ear-flick once every ~3 s)
-        if (alert > 0.6 && Math.random() < 0.003) {
+        // Ear twitch frequency rises with alertness — a real ear-flick
+        // once every ~3 s when alert, ~1 s when in alarm.
+        const twitchChance = 0.003 + Math.max(0, alert - 0.6) * 0.020;
+        if (alert > 0.6 && Math.random() < twitchChance) {
           p.ears[i].rotation.x -= 0.18;
         }
+      }
+      // Body posture — when humanFear is high, dog body braces (less
+      // breathing flex, slight forward lean). Visible "freeze and watch".
+      if (this._humanFearSm > 0.4 && p.body) {
+        const brace = (this._humanFearSm - 0.4) / 0.6;
+        // Reduce breathing amplitude (already computed above by overwriting
+        // body.scale.y / scale.x — we layer a tiny pitch lean on the head)
+        if (p.head) p.head.rotation.x = -brace * 0.10;
+      } else if (p.head) {
+        p.head.rotation.x += (0 - p.head.rotation.x) * 0.05;
       }
     }
 
@@ -18025,7 +18180,23 @@ function setupSnakes(scene, camera, level) {
       snake.position.z = baseSnakeZ - retreat * 1.5;
       // Gentle wave motion of the snake
       snake.scale.y = (0.7 + size * 0.5) * (1 + Math.sin(t * 1.5) * 0.02);
-      snake.rotation.y = Math.sin(t * 0.6) * 0.05;
+      // Snake head tracks the user's extended hand. When the palm comes
+      // close, the head turns toward it — a real predator-prey
+      // interaction cue. The yaw aim is in the snake's local frame
+      // (the snake itself rotates around y to face the path); we lerp
+      // toward the target so the turn looks alive, not snappy.
+      const palmLocal = palmWorld.clone().sub(snake.position);
+      const handAimYaw = Math.atan2(palmLocal.x, palmLocal.z);
+      // Body sway baseline — keeps the natural undulation when not tracking
+      const bodySway = Math.sin(t * 0.6) * 0.05;
+      // Track strength rises as the hand approaches sniffing distance
+      const trackStrength = Math.max(0, Math.min(1, 1 - (headWorldDist - 0.3) / 1.6))
+                          * (extension > 0.4 ? 1 : extension * 2);
+      const targetSnakeYaw = bodySway * (1 - trackStrength) + handAimYaw * trackStrength;
+      snake.rotation.y += (targetSnakeYaw - snake.rotation.y) * Math.min(1, dtN * 3.0);
+      // Head pitch — at close range the head lifts a touch (curious lift)
+      const headLift = trackStrength * 0.10;
+      head.position.y = (snake.position.y + 0.05) + headLift;
       // Tongue flicker — much faster while sniffing the user's hand
       if (tongue) {
         const flickerSpeed = sniffing ? 18 : (8 - stillness * 4);
@@ -18372,6 +18543,11 @@ function setupSpeaking(scene, camera, level) {
   let pauseSilence = 0;            // 0..1 — temporary "pause" silence
   let confidence = 0.0;            // 0..1 — grows with sustained speaking + sips
   let speakingControls = null;
+  // Audience attention level (0..1) — closure-scoped so it persists across
+  // frames. Damped follows a target driven by speaking / pause / confidence
+  // so the crowd's collective "lock onto the speaker" reads as a real,
+  // physically observable shift in the room rather than a snap.
+  let _audAttn = 0;
   function wireSpeakingCmds() {
     const bar = document.querySelector('.scene-cmd-bar[data-scene="speaking"]');
     if (!bar || bar.dataset.wired === "1") return;
@@ -18517,16 +18693,49 @@ function setupSpeaking(scene, camera, level) {
       // body, so the murmur reads as people looking around / nodding rather
       // than the whole body twisting.
       const settle = (speakingPressed || pauseSilence > 0.5) ? 0.2 : 1.0;
+      // ---- Audience attention model ----
+      // The "attention" value is how locked-in the crowd is on the speaker.
+      // It rises with confident speech, spikes during a pause (pauses earn
+      // attention — the room leans in to see what comes next), and decays
+      // back to "natural sway" otherwise. When attention is high, every
+      // head rotates toward the lectern; when low, heads sway randomly.
+      // _audAttn is closure-scoped so it persists across frames.
+      const targetAttn = pauseSilence > 0.4 ? 1.0
+                       : speakingPressed   ? 0.55 + confidence * 0.3
+                       :                      Math.max(0, confidence - 0.15);
+      _audAttn += (targetAttn - _audAttn) * Math.min(1, d * 1.8);
       audienceMembers.forEach((m, i) => {
         if (!m.head) return;
-        m.head.rotation.y = Math.sin(t * 0.5 + i * 0.7) * 0.10 * settle;
+        // Each member's natural-resting head sway (when attention is low)
+        const sway = Math.sin(t * 0.5 + i * 0.7) * 0.10 * settle;
+        // Attention-driven look-toward-speaker. Aim point is the lectern at
+        // (0, 0, -0.6); each member's seat is at (root.x, baseY, root.z).
+        // Yaw toward the lectern from each seat. Add a small per-person
+        // jitter so heads don't all snap in perfect unison.
+        const seatX = m.root.position.x;
+        const seatZ = m.root.position.z;
+        // Vector from seat to lectern in audience-local space (audience
+        // group is at scene origin so seat positions ARE world). Audience
+        // rows face the speaker who sits at z > seatZ (audience is at
+        // negative z, speaker around z=0). yaw=0 means head facing -z.
+        const dxS = 0 - seatX;
+        const dzS = -0.6 - seatZ;        // lectern z relative to seat
+        const aimYaw = Math.atan2(dxS, -dzS);    // rotation around y to face lectern
+        // Per-person jitter so the lock-in isn't robotic
+        const jitter = Math.sin(t * 1.3 + i * 0.41) * 0.04;
+        const lockedYaw = aimYaw + jitter;
+        const lockedPitch = -0.04 + Math.sin(t * 0.7 + i) * 0.02;
+        // Blend natural sway → locked-on-speaker by attention
+        m.head.rotation.y = sway * (1 - _audAttn) + lockedYaw * _audAttn;
         // High-confidence speakers earn nods from a chunk of the crowd
+        let nodX = 0;
         if (i % 4 === 0 && confidence > 0.3) {
-          m.head.rotation.x = Math.sin(t * 0.9 + i) * 0.10 * (confidence - 0.2);
+          nodX = Math.sin(t * 0.9 + i) * 0.10 * (confidence - 0.2);
         }
-        // Hair follows the head rotation (legacy audience builds had a
-        // separate hair group; the new builder bakes hair onto the head so
-        // it rotates implicitly — guard for either case).
+        m.head.rotation.x = nodX + lockedPitch * _audAttn;
+        // Legacy audience builds had a separate hair group; the new
+        // creature builder bakes hair onto the head so it rotates
+        // implicitly — guard for either case.
         if (m.hair) {
           m.hair.rotation.y = m.head.rotation.y;
           m.hair.rotation.x = m.head.rotation.x;
@@ -19968,10 +20177,22 @@ function setupDark(scene, camera, level) {
 //   - Two-segment legs (thigh + shin + foot)
 //   - Subtle idle animation hooks exposed via group.userData.animate
 function buildAvatarFigure(c) {
-  // If the v2 parametric builder is loaded AND the character has any of
-  // the new attributes (bodyType / ageGroup / eyeShape / jawShape /
-  // noseShape), prefer it — it returns a full figure with PBR materials
-  // and the new variation knobs wired in.
+  // Tiered builder selection:
+  //   1. Skinned humanoid (true SkinnedMesh + Bones with joint deformation)
+  //      — opt-in via c.useSkinned === true. Used by the character creator
+  //      preview by default. The walking animation is bone-driven so knees
+  //      and elbows actually deform across joints.
+  //   2. Parametric v2 figure with PBR materials + body/age/eye/jaw/nose
+  //      shape knobs.
+  //   3. Legacy buildAvatarFigure (this function) — geometry-primitive
+  //      figure that's been the default since the first commit.
+  if (c && c.useSkinned !== false
+      && window.PhobiaSkinned && window.PhobiaSkinned.buildFigure) {
+    try {
+      const fig = window.PhobiaSkinned.buildFigure(c);
+      if (fig) return fig;
+    } catch (e) { /* fall through to v2 / legacy */ }
+  }
   if (window.PhobiaAvatar3D && window.PhobiaAvatar3D.buildFigure
       && c && (c.bodyType || c.ageGroup || c.eyeShape || c.jawShape || c.noseShape)) {
     const fig = window.PhobiaAvatar3D.buildFigure(c);
