@@ -441,16 +441,25 @@
     const THREE = window.THREE;
     if (!THREE) return null;
     const maps = makeScaleMaps(baseHex);
-    return new THREE.MeshStandardMaterial({
+    // Snake skin needs three things real reptiles have:
+    //   - clearcoat: scales are wet-looking and reflect a sharp highlight
+    //   - iridescence: subtle rainbow shimmer on dark snake bodies
+    //   - high normal: each scale ridge catches light independently
+    // Combined, the snake reads as living tissue, not painted plastic.
+    return new THREE.MeshPhysicalMaterial({
       color: 0xffffff,
       map: maps.color,
       normalMap: maps.normal,
-      normalScale: new THREE.Vector2(1.0, 1.0),
+      normalScale: new THREE.Vector2(1.2, 1.2),
       roughnessMap: maps.roughness,
-      roughness: opts.roughness ?? 0.55,
-      metalness: 0.10,
+      roughness: opts.roughness ?? 0.45,
+      metalness: 0.12,
       emissive: opts.emissiveHex ? new THREE.Color(opts.emissiveHex) : new THREE.Color(0x080a05),
       emissiveIntensity: 0.18,
+      clearcoat: 0.6,
+      clearcoatRoughness: 0.30,
+      iridescence: 0.25,
+      iridescenceIOR: 1.4,
     });
   }
 
@@ -542,14 +551,25 @@
     const THREE = window.THREE;
     if (!THREE) return null;
     const maps = makeChitinMaps(baseHex);
-    return new THREE.MeshStandardMaterial({
+    // PhysicalMaterial + sheen + clearcoat: spiders have urticating hairs
+    // that catch light at grazing angles, AND a glossy carapace. Sheen
+    // gives the soft fuzz halo, clearcoat gives the wet shell sheen on
+    // top — together they make the body read as a real arthropod, not a
+    // plastic blob. The dark sheen color keeps it subtle (the highlights
+    // never wash out the silhouette).
+    return new THREE.MeshPhysicalMaterial({
       color: 0xffffff,
       map: maps.color,
       normalMap: maps.normal,
-      normalScale: new THREE.Vector2(0.85, 0.85),
+      normalScale: new THREE.Vector2(0.95, 0.95),
       roughnessMap: maps.roughness,
-      roughness: opts.roughness ?? 0.45,
-      metalness: 0.15,
+      roughness: opts.roughness ?? 0.55,
+      metalness: 0.10,
+      clearcoat: 0.5,
+      clearcoatRoughness: 0.35,
+      sheen: 0.7,
+      sheenColor: new THREE.Color(0x6a4a3a),
+      sheenRoughness: 0.55,
     });
   }
 
