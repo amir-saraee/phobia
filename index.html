@@ -18282,30 +18282,77 @@ function setupDriving(scene, camera, level) {
   roof.position.set(0, 0.55, -0.4);
   scene.add(roof);
 
-  // Other cars — generated as boxes with red tail lights
+  // Other cars — proper procedural vehicles (lower body + cabin + glass + four
+  // wheels + head/tail lights) instead of plain boxes, so the traffic reads as
+  // real cars on the road. Local origin is at the wheel-contact (ground) plane,
+  // so each is just dropped onto the road at y = -1. A few become lorries on
+  // the higher-traffic rungs ("lorries to your left").
+  function buildTrafficCar(isLorry) {
+    const g = new THREE.Group();
+    const paint = new THREE.MeshStandardMaterial({
+      color: new THREE.Color().setHSL(Math.random(), 0.45, isLorry ? 0.52 : 0.42),
+      roughness: 0.45, metalness: 0.45,
+    });
+    const glass = new THREE.MeshStandardMaterial({ color: 0x0e1218, roughness: 0.12, metalness: 0.6 });
+    const tyre  = new THREE.MeshStandardMaterial({ color: 0x141519, roughness: 0.9 });
+    const wide = isLorry ? 2.1 : 1.75;
+    const len  = isLorry ? 7.0 : 4.3;
+    const wheelR = isLorry ? 0.5 : 0.34;
+    // Wheels (origin y=0 = ground; wheel bottoms touch the road)
+    const wheelGeo = new THREE.CylinderGeometry(wheelR, wheelR, isLorry ? 0.3 : 0.24, 16);
+    const wx = wide / 2 - 0.04, wz = len / 2 - (isLorry ? 1.3 : 1.05);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const w = new THREE.Mesh(wheelGeo, tyre);
+      w.rotation.z = Math.PI / 2;
+      w.position.set(sx * wx, wheelR, sz * wz);
+      g.add(w);
+    }
+    // Lower body
+    const lowH = isLorry ? 1.1 : 0.64;
+    const lowY = wheelR + lowH / 2 + 0.02;
+    const lower = new THREE.Mesh(new THREE.BoxGeometry(wide, lowH, len), paint);
+    lower.position.y = lowY; lower.castShadow = true; g.add(lower);
+    if (isLorry) {
+      // Cab at the front (-z) + tall cargo box behind it
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(wide, 1.25, 1.9), paint);
+      cab.position.set(0, lowY + lowH / 2 + 0.6, -len / 2 + 1.1); cab.castShadow = true; g.add(cab);
+      const cabWin = new THREE.Mesh(new THREE.BoxGeometry(wide * 0.98, 0.6, 0.12), glass);
+      cabWin.position.set(0, lowY + lowH / 2 + 0.8, -len / 2 + 0.18); g.add(cabWin);
+      const cargo = new THREE.Mesh(new THREE.BoxGeometry(wide * 0.98, 1.9, len - 2.6), paint);
+      cargo.position.set(0, lowY + lowH / 2 + 0.95, 0.7); cargo.castShadow = true; g.add(cargo);
+    } else {
+      // Cabin / greenhouse with a glass band
+      const cabH = 0.6;
+      const cabY = lowY + lowH / 2 + cabH / 2 - 0.02;
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(wide * 0.9, cabH, len * 0.5), paint);
+      cab.position.set(0, cabY, -0.15); cab.castShadow = true; g.add(cab);
+      const win = new THREE.Mesh(new THREE.BoxGeometry(wide * 0.92, cabH * 0.72, len * 0.5 * 0.94), glass);
+      win.position.set(0, cabY + 0.02, -0.15); g.add(win);
+    }
+    // Tail lights (rear = +z, the side you see while following)
+    for (const sx of [-1, 1]) {
+      const tl = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.16, 0.06), new THREE.MeshBasicMaterial({ color: 0xff3322 }));
+      tl.position.set(sx * (wide / 2 - 0.32), lowY + 0.05, len / 2 - 0.02);
+      g.add(tl);
+    }
+    // Head lights (front = -z)
+    for (const sx of [-1, 1]) {
+      const hl = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.14, 0.05), new THREE.MeshBasicMaterial({ color: 0xfff6d8 }));
+      hl.position.set(sx * (wide / 2 - 0.32), lowY, -len / 2 + 0.02);
+      g.add(hl);
+    }
+    return g;
+  }
+
   const otherCars = [];
   if (traffic > 0.05) {
     const carCount = 3 + Math.floor(traffic * 14);
     for (let i = 0; i < carCount; i++) {
-      const car = new THREE.Group();
-      const body = new THREE.Mesh(
-        new THREE.BoxGeometry(1.7, 1.3, 4.2),
-        new THREE.MeshStandardMaterial({
-          color: new THREE.Color().setHSL(Math.random(), 0.4, 0.4),
-          roughness: 0.6, metalness: 0.3,
-        })
-      );
-      body.position.y = 0.4;
-      body.castShadow = true;
-      car.add(body);
-      // Tail lights
-      for (const sx of [-0.7, 0.7]) {
-        const tail = new THREE.Mesh(new THREE.SphereGeometry(0.15), new THREE.MeshBasicMaterial({ color: 0xff5544 }));
-        tail.position.set(sx, 0.5, 2.0);
-        car.add(tail);
-      }
       const lane = (i % 3) - 1;        // -1, 0, 1
-      car.position.set(lane * 3.2, -0.4, -8 - Math.random() * 200);
+      // Lorries appear on busier rungs, biased to the left lane.
+      const isLorry = traffic > 0.6 && (lane === -1 ? i % 2 === 0 : i % 4 === 0);
+      const car = buildTrafficCar(isLorry);
+      car.position.set(lane * 3.2, -1, -8 - Math.random() * 200);
       car.userData.relSpeed = 1 + Math.random() * 4;
       car.userData.lane = lane;
       scene.add(car);
