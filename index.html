@@ -12506,6 +12506,8 @@ function setupHeights(scene, camera, level) {
       // up on the roof. They can flip to first-person any time. We respect
       // any saved preference — only override the default if there isn't one.
       preferredCameraMode: "tp",
+      // Over-the-shoulder framing so the avatar doesn't block the edge/view.
+      tpShoulder: 0.55, tpDistance: 4.2, tpHeight: 0.5,
     },
     // (No NPC — the user's own character is the only character in the scene.)
     // Collidable objects the TP camera should not clip through (the penthouse,
@@ -13565,6 +13567,8 @@ function setupWater(scene, camera, level) {
       speed: 0.9,                     // wading is slower than walking
       lookSpeed: 0.004,
       preferredCameraMode: "tp",
+      // Over-the-shoulder framing so the avatar doesn't block the water ahead.
+      tpShoulder: 0.6, tpDistance: 3.9, tpHeight: 0.45,
     },
     hands: { skinColor: 0xd4a07a, sleeveColor: 0x4a5d8a },
     bloom: { strength: 0.3, threshold: 0.95 },
@@ -13633,7 +13637,7 @@ function setupWater(scene, camera, level) {
         const lookDownAmt = Math.max(0, Math.min(1, -controls.pitch / 0.6));
         window.PhobiaFear.setInput("gaze", lookDownAmt * 0.5 * fearProx);
         const isAway = depth < 0.05;
-        window.PhobiaFear.bumpAvoidance(d, isAway);
+        window.PhobiaFear.bumpAvoidance(dt || 0.016, isAway);
       }
 
       // ---- Body posture by water depth ----
@@ -15853,6 +15857,13 @@ function setupSpiders(scene, camera, level) {
     onClick(controls) {},
     update(t, controls, dt) {
       if (controls) spiderControls = controls;
+      // Small no-overlap collider so you can't stand inside the spider — but
+      // small enough that you can still step right up to observe it.
+      if (controls && controls.setObstacles && jarPhase === "idle") {
+        controls.setObstacles([{ x: spider.position.x, z: spider.position.z, r: 0.3 }]);
+      } else if (controls && controls.setObstacles) {
+        controls.setObstacles(null);
+      }
       const d = dt || 0.016;
       // ---- Feed fear state from proximity to the spider ----
       // Without this, the in-zone hold timer would count wall-clock for the
@@ -17537,6 +17548,11 @@ function setupSnakes(scene, camera, level) {
     surface: "grass",   // outdoor path with grass + dirt
     update(t, controls, dt) {
       if (controls) snakesControls = controls;
+      // Small no-overlap collider around the coiled snake — you can still get
+      // close enough to extend a hand, just can't walk through it.
+      if (controls && controls.setObstacles) {
+        controls.setObstacles([{ x: snake.position.x, z: snake.position.z, r: 0.35 }]);
+      }
       const dtN = dt || 0.016;
       // ---- Feed fear state from proximity to the snake ----
       if (controls && window.PhobiaFear) {
