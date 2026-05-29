@@ -8253,6 +8253,11 @@ class FPControls {
                                 // so we look AT the character, not down on top of them
     this.tpShoulder = 0.10;    // tiny over-the-shoulder bias — was 0.45 which
                                 // pushed the character too far left in frame
+    // Solid obstacles the player can't walk through (props, the dog). Each is
+    // {x, z, r}; scenes set them via setObstacles(). The player has its own
+    // body radius so it stops a little short rather than overlapping.
+    this.obstacles = null;
+    this.bodyRadius = 0.30;
     this.tpBlend = this.cameraMode === "tp" ? 1 : 0;
     // Smoothed camera position for damped follow — populated lazily on the
     // first TP-mode update so the initial position snaps without lag.
@@ -8313,6 +8318,11 @@ class FPControls {
     this.camera.rotation.x = this.pitch;
     this.camera.rotation.z = 0;
 
+    // Remember where we were so we can advance the walk cycle by actual
+    // distance travelled (grounded stride, no foot-skating) and detect motion
+    // even when collision blocks a key press.
+    const _prevX = this.position.x, _prevZ = this.position.z;
+
     // Walking. In "walkable" mode the user moves freely within `bounds`. In
     // "lookOnly" mode WASD/arrows still allow a small lean (±0.6 m around
     // the starting position) so users on a keyboard can shift weight without
@@ -8359,11 +8369,34 @@ class FPControls {
       }
     }
 
-    // Walk-bob: vertical/lateral bounce timed to footstep cadence (~2 Hz)
+    // ---- Collision: push the player out of solid obstacles (props, the dog)
+    // so you can't walk through them. Resolved every frame (also handles a
+    // moving obstacle bumping a stationary player). Then re-clamp to bounds.
+    if (this.obstacles && this.obstacles.length) {
+      for (const o of this.obstacles) {
+        const dx = this.position.x - o.x, dz = this.position.z - o.z;
+        const d = Math.hypot(dx, dz);
+        const min = o.r + this.bodyRadius;
+        if (d < min && d > 1e-4) {
+          this.position.x = o.x + (dx / d) * min;
+          this.position.z = o.z + (dz / d) * min;
+        }
+      }
+      const b = this.opts.bounds;
+      if (b) {
+        this.position.x = Math.max(b.minX, Math.min(b.maxX, this.position.x));
+        this.position.z = Math.max(b.minZ, Math.min(b.maxZ, this.position.z));
+      }
+    }
+
+    // Walk cycle advances by DISTANCE moved (not time), so the legs swing in
+    // lockstep with the ground and the feet don't slide. ~0.62 m per half-step.
+    const _movedDist = Math.hypot(this.position.x - _prevX, this.position.z - _prevZ);
+    movingNow = movingNow && _movedDist > 1e-4;
     if (this._walkAmt == null) this._walkAmt = 0;
     if (this._walkPhase == null) this._walkPhase = 0;
     this._walkAmt += ((movingNow ? 1 : 0) - this._walkAmt) * Math.min(1, dt * 5);
-    if (movingNow) this._walkPhase += dt * Math.PI * 4; // 2 Hz
+    this._walkPhase += (_movedDist / 0.62) * Math.PI;   // distance-driven stride
     this.moving = movingNow;
 
     // ---- Camera placement ----
@@ -8518,6 +8551,11 @@ class FPControls {
   // the camera doesn't clip through them. Pass an array of THREE.Object3D.
   setCollisionScene(objects) {
     this._collisionScene = Array.isArray(objects) ? objects : null;
+  }
+  // Solid circle obstacles {x,z,r} the player can't walk through (props + the
+  // dog). Scenes refresh this each frame so moving obstacles work too.
+  setObstacles(list) {
+    this.obstacles = Array.isArray(list) ? list : null;
   }
   toggleCameraMode() {
     this.setCameraMode(this.cameraMode === "tp" ? "fp" : "tp");
@@ -10398,6 +10436,13 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // walls / structures the scene declared as collidable.
       if (result.collisionObjects && controls.setCollisionScene) {
         controls.setCollisionScene(result.collisionObjects);
+      }
+      // Per-scene third-person framing overrides (e.g. the dog scene biases the
+      // camera over the shoulder so the dog isn't hidden behind the avatar).
+      if (result.controls) {
+        if (result.controls.tpShoulder != null) controls.tpShoulder = result.controls.tpShoulder;
+        if (result.controls.tpDistance != null) controls.tpDistance = result.controls.tpDistance;
+        if (result.controls.tpHeight != null)   controls.tpHeight   = result.controls.tpHeight;
       }
       // Cinematic intro: start the TP smoothed position from a wider /
       // higher angle so the damped follow naturally dollies in to the
@@ -13942,6 +13987,13 @@ class DogController {
     this.followPlayer = false;
     this.minDistance = 0.9;     // how close the dog wants to be when following
     this.baseY = dog.position.y;
+    // ---- Locomotion (grounded: clip playback is matched to ground speed so
+    // the paws plant instead of sliding). Scene sets these from the dog size.
+    this.walkSpeed = 1.0;       // m/s — overwritten by the scene from dog height
+    this.strideSpeed = 0.95;    // ground speed the Walk clip implies at timeScale 1
+    this.radius = 0.35;         // collision radius (overwritten from dog size)
+    this.obstacles = null;      // [{x,z,r}] static props the dog walks around
+    this.bounds = null;         // {minX,maxX,minZ,maxZ} room limits
     // External hooks the scene writes — kept for interface compatibility.
     this.petAmount = 0; this._petAmountSm = 0;
     this.tailWag = 0;           // scene increments this; folded into clip speed
@@ -14035,6 +14087,25 @@ class DogController {
     while (dy < -Math.PI) dy += Math.PI * 2;
     return cur + dy * Math.min(1, k);
   }
+  // Push a desired (x,z) out of static obstacles and clamp to room bounds so
+  // the dog never walks through props or walls.
+  _resolve(x, z) {
+    const obs = this.obstacles;
+    if (obs) {
+      for (const o of obs) {
+        const dx = x - o.x, dz = z - o.z;
+        const d = Math.hypot(dx, dz);
+        const min = o.r + this.radius;
+        if (d < min && d > 1e-4) { x = o.x + (dx / d) * min; z = o.z + (dz / d) * min; }
+      }
+    }
+    const b = this.bounds;
+    if (b) {
+      x = Math.max(b.minX + this.radius, Math.min(b.maxX - this.radius, x));
+      z = Math.max(b.minZ + this.radius, Math.min(b.maxZ - this.radius, z));
+    }
+    return { x, z };
+  }
 
   update(t, dt) {
     const p = this.parts;
@@ -14061,12 +14132,27 @@ class DogController {
       const dx = this.followTarget.x - this.dog.position.x;
       const dz = this.followTarget.z - this.dog.position.z;
       const dist = Math.hypot(dx, dz);
-      if (dist > 0.28) {
-        const speed = 1.5 * d;
-        this.dog.position.x += (dx / dist) * speed;
-        this.dog.position.z += (dz / dist) * speed;
+      if (dist > 0.22) {
+        // Don't overshoot the target this frame; ease down as we arrive so the
+        // feet slow with the body instead of stopping dead.
+        const step = Math.min(dist, this.walkSpeed * Math.min(1, dist / 0.6) * d);
+        let nx = this.dog.position.x + (dx / dist) * step;
+        let nz = this.dog.position.z + (dz / dist) * step;
+        const r = this._resolve(nx, nz);
+        nx = r.x; nz = r.z;
+        const moved = Math.hypot(nx - this.dog.position.x, nz - this.dog.position.z);
+        this.dog.position.x = nx;
+        this.dog.position.z = nz;
         this.targetYaw = Math.atan2(dx, dz);                    // face travel dir
         this.dog.rotation.y = this._easeYaw(this.dog.rotation.y, this.targetYaw, d * 6);
+        // GROUND THE FEET: play the Walk clip at the speed implied by how fast
+        // the dog actually moves, so the paws plant on the floor instead of
+        // skating. (Self-correcting — slows as the dog eases into the target.)
+        if (this._action) {
+          const actualSpeed = moved / Math.max(0.0001, d);
+          const ts = Math.max(0.45, Math.min(2.4, actualSpeed / Math.max(0.05, this.strideSpeed)));
+          this._action.timeScale += (ts - this._action.timeScale) * Math.min(1, d * 12);
+        }
         // Footstep cadence read off the Walk clip's playhead.
         const bucket = Math.floor((this._action ? this._action.time : 0) * 2);
         if (bucket !== this._walkBucket) {
@@ -14102,9 +14188,10 @@ class DogController {
     }
     this.headPitch *= 0.86;
 
-    // ---- Clip speed perk-up when petted ----
-    if (this._action && (this.state === "idle" || this.state === "walking")) {
-      const tgt = this.state === "walking" ? 1.0 : 1.0 + this._petAmountSm * 0.3;
+    // ---- Clip speed perk-up when petted (idle only; walking timeScale is
+    // driven by ground speed above so the feet stay planted) ----
+    if (this._action && this.state === "idle") {
+      const tgt = 1.0 + this._petAmountSm * 0.3;
       this._action.timeScale += (tgt - this._action.timeScale) * 0.1;
     }
 
@@ -14137,34 +14224,42 @@ function setupDogs(scene, camera, level) {
   scene.background = new THREE.Color(0xd7bd98);
   scene.fog = new THREE.Fog(0xd7bd98, 16, 42);
 
-  // Sun streaming in through a window (warm key light)
-  const key = new THREE.DirectionalLight(0xffe9c4, 1.45);
-  key.position.set(5, 9, 3);
-  key.target.position.set(0, 0, -3);
+  // Sun streaming in through a window (warm key light) — higher + more to the
+  // front so it rakes across the room and models the dog's form with a clear
+  // light/shadow side instead of looking flat.
+  const key = new THREE.DirectionalLight(0xffe9c4, 2.0);
+  key.position.set(4.5, 8, 5);
+  key.target.position.set(0, -0.4, -2);
   key.castShadow = !IS_LOW_POWER;
   if (key.castShadow) {
-    key.shadow.mapSize.set(IS_LOW_POWER ? 512 : 1024, IS_LOW_POWER ? 512 : 1024);
-    key.shadow.camera.left = -8;  key.shadow.camera.right = 8;
-    key.shadow.camera.top = 8;    key.shadow.camera.bottom = -8;
-    key.shadow.camera.far = 30;
-    key.shadow.bias = -0.0004;
+    key.shadow.mapSize.set(IS_LOW_POWER ? 1024 : 2048, IS_LOW_POWER ? 1024 : 2048);
+    key.shadow.camera.left = -7;  key.shadow.camera.right = 7;
+    key.shadow.camera.top = 7;    key.shadow.camera.bottom = -7;
+    key.shadow.camera.near = 0.5; key.shadow.camera.far = 26;
+    key.shadow.bias = -0.0003;
+    key.shadow.normalBias = 0.02;
+    if (key.shadow.radius !== undefined) key.shadow.radius = 4;   // soft penumbra
   }
   scene.add(key); scene.add(key.target);
-  // Warm room bounce
-  const fill = new THREE.PointLight(0xffe4b8, 0.35, 25);
-  fill.position.set(-3, 3, 1);
+  // Natural sky/ground fill — replaces flat ambient with a gradient that lifts
+  // shadows realistically (warm from above, cooler bounce from the floor).
+  scene.add(new THREE.HemisphereLight(0xfff3df, 0xb59a73, 0.65));
+  // Warm front fill from the player's side so the dog's face (which turns to
+  // watch you) is lit, not lost in shadow.
+  const fill = new THREE.PointLight(0xffe9cf, 0.45, 22);
+  fill.position.set(-1.5, 2.6, 4.5);
   scene.add(fill);
-  // Cool fill from the opposite side (sky bounce through the window)
-  const fillBack = new THREE.PointLight(0xa6c5e8, 0.22, 18);
-  fillBack.position.set(3, 3, 4);
+  // Cool rim from the window side for a little separation from the wall.
+  const fillBack = new THREE.PointLight(0xbcd2ef, 0.28, 18);
+  fillBack.position.set(3.5, 3.2, -3);
   scene.add(fillBack);
-  // Ambient lifts shadows so the dog never disappears into them
-  scene.add(new THREE.AmbientLight(0xfff1e0, 0.36));
+  // A small ambient floor so nothing is pure black.
+  scene.add(new THREE.AmbientLight(0xfff1e0, 0.18));
 
   // Floor (light oak planks)
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(40, 40),
-    new THREE.MeshStandardMaterial({ map: makeWoodTexture(), color: 0xcaa478, roughness: 0.85 })
+    new THREE.MeshStandardMaterial({ map: makeWoodTexture(), color: 0xd2ad7e, roughness: 0.8 })
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -1;
@@ -14663,6 +14758,25 @@ function setupDogs(scene, camera, level) {
   }
 
   const dogCtrl = new DogController(dog, scene, camera);
+  // ---- Solid props the dog + player walk around (circle colliders) ----
+  // The water bowl is intentionally NOT a collider (it's flat, and the dog
+  // needs to reach it to drink).
+  const dogObstacles = [
+    { x: -3.6, z: -2.0, r: 0.45 },   // houseplant + pot
+    { x: -2.6, z: -2.5, r: 0.60 },   // treat side table
+    { x:  2.6, z: -2.5, r: 0.85 },   // dog bed
+  ];
+  // Grounded locomotion + collision, scaled to the dog's size. strideSpeed is
+  // the ground speed the Walk clip implies at timeScale 1 — the controller
+  // matches the clip to actual speed so the paws plant (no skating).
+  // strideSpeed = the Walk clip's natural ground speed at timeScale 1 (measured
+  // ≈1.9 m/s per unit height); walkSpeed = a believable walk pace. The
+  // controller plays the clip at walkSpeed/strideSpeed so the paws stay planted.
+  dogCtrl.walkSpeed   = 0.85 + dogHeight * 0.55;
+  dogCtrl.strideSpeed = 1.9 * dogHeight;
+  dogCtrl.radius      = 0.26 + dogHeight * 0.22;
+  dogCtrl.obstacles   = dogObstacles;
+  dogCtrl.bounds      = { minX: -4.0, maxX: 4.0, minZ: -5.0, maxZ: 3.5 };
   // The "barking" intensity keeps the dog at distance — it doesn't follow.
   // For calm/alert rungs we DELAY the follow-the-player behaviour by ~6 s.
   // In those first seconds the dog is happily doing its own thing (sniffing,
@@ -14916,13 +15030,20 @@ function setupDogs(scene, camera, level) {
       initialPos: [0, 1.55, 4.0],
       initialYaw: 0,
       initialPitch: dogPitch * 0.5,    // gentler tilt — looking ahead, not down
-      bounds: { minX: -2.5, maxX: 2.5, minZ: minZ, maxZ: 4.5 },
-      speed: 1.6,
+      bounds: { minX: -3.4, maxX: 3.4, minZ: minZ, maxZ: 4.5 },
+      speed: 1.45,
       lookSpeed: 0.0035,
       // Default to third-person so the user sees themselves enter the room
       // and approach the dog. Persists per-scene after first use.
       preferredCameraMode: "tp",
+      // Bias the third-person camera over the shoulder + a touch lower/closer so
+      // the dog ahead isn't hidden behind the avatar.
+      tpShoulder: 0.62,
+      tpDistance: 3.9,
+      tpHeight: 0.42,
     },
+    // Walls/large props the third-person camera shouldn't clip through.
+    collisionObjects: [wall],
     // (No NPC — the user's own character is the only character in the scene.)
     // Gentle bloom + a high threshold so only the window/sunbeam glow, not the
     // whole sunlit wall.
@@ -14968,6 +15089,15 @@ function setupDogs(scene, camera, level) {
       // reacts to contact instead of just absorbing clicks silently.
       dogCtrl.petAmount = petPulse;
       dogCtrl.update(t, d);
+
+      // Keep the player from walking through the props or the dog. Rebuilt each
+      // frame so the dog (a moving obstacle) is always current.
+      if (controls && controls.setObstacles) {
+        controls.setObstacles([
+          ...dogObstacles,
+          { x: dog.position.x, z: dog.position.z, r: dogCtrl.radius + 0.05 },
+        ]);
+      }
 
       // ---- Feed the unified Fear state ----
       // Proximity to the dog drives the bulk of the fear input. At the
