@@ -1,10 +1,17 @@
-// Step Up — Service worker
-// A conservative cache-first strategy for the app shell, network-first for
-// CDN modules so users get updates when online. Big binary models (Khronos
-// Fox.glb) are cached on first successful fetch so the dog scene works
-// offline after the user has opened it once.
+// Mira — Service worker (network-first for shell during active development)
+//
+// Strategy:
+//   - Same-origin requests: NETWORK-FIRST. Try the server first; if the request
+//     succeeds, refresh the cache copy and return the fresh response. Only fall
+//     back to cache when offline. This means HTML / JS / CSS updates always
+//     show on reload — no stale-cache surprise during development.
+//   - Cross-origin (CDN) requests: NETWORK-FIRST with cache fallback. Same
+//     principle for unpkg / jsdelivr.
+//
+// If you want true offline-only optimised loads, switch back to cache-first
+// later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "stepup-v3.6";
+const VERSION = "mira-v8.1-real-creatures";
 const SHELL = [
   "./",
   "./index.html",
@@ -12,6 +19,12 @@ const SHELL = [
   "./icon.svg",
   "./src/character.js",
   "./src/phobia-info.js",
+  // Real rigged creature models (Quaternius, CC0) used by the dog / spider /
+  // snake scenes. Precached so those scenes work fully offline once installed.
+  "./assets/models/ShibaInu.gltf",
+  "./assets/models/Husky.gltf",
+  "./assets/models/Spider.glb",
+  "./assets/models/Snake.glb",
 ];
 
 self.addEventListener("install", (event) => {
@@ -36,25 +49,18 @@ self.addEventListener("fetch", (event) => {
   const isSameOrigin = url.origin === self.location.origin;
   const isCDN = /unpkg\.com|cdn\.jsdelivr\.net|threejs\.org/.test(url.hostname);
 
-  if (isSameOrigin) {
-    // Cache-first for our own shell
-    event.respondWith(
-      caches.match(req).then((cached) => cached || fetch(req).then((res) => {
+  // Bypass everything else (chrome-extension://, blob://, etc.)
+  if (!isSameOrigin && !isCDN) return;
+
+  // Network-first for both. Always try the server, refresh the cache, fall
+  // back to cache only on network failure.
+  event.respondWith(
+    fetch(req).then((res) => {
+      if (res && res.status === 200 && res.type !== "opaque") {
         const copy = res.clone();
-        caches.open(VERSION).then((cache) => cache.put(req, copy));
-        return res;
-      }).catch(() => cached))
-    );
-  } else if (isCDN) {
-    // Network-first with cache fallback for CDN assets — large binaries cached after first hit
-    event.respondWith(
-      fetch(req).then((res) => {
-        if (res && res.status === 200 && res.type !== "opaque") {
-          const copy = res.clone();
-          caches.open(VERSION).then((cache) => cache.put(req, copy));
-        }
-        return res;
-      }).catch(() => caches.match(req))
-    );
-  }
+        caches.open(VERSION).then((cache) => cache.put(req, copy)).catch(() => {});
+      }
+      return res;
+    }).catch(() => caches.match(req))
+  );
 });
