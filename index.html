@@ -1387,7 +1387,7 @@ if ("serviceWorker" in navigator) {
   }
   .creator-grid {
     display: grid;
-    grid-template-columns: minmax(240px, 280px) 1fr;
+    grid-template-columns: minmax(290px, 360px) 1fr;
     gap: var(--space-8);
     margin-bottom: var(--space-8);
     align-items: start;
@@ -1400,8 +1400,9 @@ if ("serviceWorker" in navigator) {
   .avatar-stage {
     position: relative;
     width: 100%;
-    max-width: 280px;
-    aspect-ratio: 1 / 1.05;
+    max-width: 360px;
+    aspect-ratio: 1 / 1.1;
+    cursor: grab;
     background:
       radial-gradient(60% 50% at 50% 35%, rgba(124,209,197,.18) 0%, transparent 70%),
       linear-gradient(180deg, #1d2a4a 0%, #14182a 100%);
@@ -1430,6 +1431,10 @@ if ("serviceWorker" in navigator) {
     width: 100%; height: 100%;
     object-fit: contain;
     border-radius: var(--radius-md);
+  }
+  .avatar-hint {
+    margin-top: 10px; font-size: 11.5px; color: var(--muted);
+    letter-spacing: .2px; opacity: .85;
   }
   /* The dice button on the preview — quick "shuffle appearance" */
   .preview-randomise {
@@ -20649,6 +20654,19 @@ const AvatarPreview = (() => {
     scene.add(floor);
     let figure = buildAvatarFigure(character);
     scene.add(figure);
+    // Drag-to-rotate: grab the figure and spin it. The slow turntable auto-spin
+    // pauses while dragging and resumes (from wherever you left it) on release.
+    let dragging = false, lastX = 0, pid = null;
+    const el = renderer.domElement;
+    el.style.cursor = "grab";
+    el.style.touchAction = "none";
+    const onDown = (e) => { dragging = true; lastX = e.clientX; pid = e.pointerId; el.style.cursor = "grabbing"; try { el.setPointerCapture(pid); } catch {} };
+    const onMove = (e) => { if (!dragging) return; figure.rotation.y += (e.clientX - lastX) * 0.012; lastX = e.clientX; };
+    const onUp = () => { if (!dragging) return; dragging = false; el.style.cursor = "grab"; try { el.releasePointerCapture(pid); } catch {} };
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
     let raf = 0;
     let last = performance.now();
     let elapsed = 0;
@@ -20658,8 +20676,8 @@ const AvatarPreview = (() => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       elapsed += dt;
-      // Slow turntable rotation
-      figure.rotation.y += dt * 0.55;
+      // Slow turntable rotation (paused while the user is dragging)
+      if (!dragging) figure.rotation.y += dt * 0.30;
       // Run idle animation (breathing, blinking, head sway, arm sway)
       if (figure.userData && typeof figure.userData.animate === "function") {
         try { figure.userData.animate(elapsed); } catch {}
@@ -20672,6 +20690,10 @@ const AvatarPreview = (() => {
       renderer, scene, camera, raf,
       cleanup() {
         cancelAnimationFrame(raf);
+        el.removeEventListener("pointerdown", onDown);
+        el.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        el.removeEventListener("pointercancel", onUp);
         scene.traverse(o => {
           if (o.geometry) o.geometry.dispose();
           if (o.material) {
@@ -20683,6 +20705,7 @@ const AvatarPreview = (() => {
         if (renderer.domElement.parentNode) renderer.domElement.parentNode.removeChild(renderer.domElement);
       },
       update(newChar) {
+        const yaw = figure.rotation.y;   // keep the user's chosen angle across edits
         scene.remove(figure);
         figure.traverse(o => {
           if (o.geometry) o.geometry.dispose();
@@ -20692,6 +20715,7 @@ const AvatarPreview = (() => {
           }
         });
         figure = buildAvatarFigure(newChar);
+        figure.rotation.y = yaw;
         scene.add(figure);
       },
     };

@@ -496,6 +496,7 @@ function viewCharacterCreator(existing, allPhobias) {
             <div class="avatar-large" id="avatarPreview" data-fallback-svg='${avatarSVG(c, 240).replace(/'/g, "&apos;")}'>${avatarSVG(c, 240)}</div>
             <button type="button" class="preview-randomise" id="creatorRandomTop" title="Shuffle appearance"><span aria-hidden="true">🎲</span></button>
           </div>
+          <div class="avatar-hint">↔ drag to rotate · 🎲 shuffle</div>
           <input class="char-name-input" id="charName" type="text" maxlength="24"
                  placeholder="Your name (optional)" value="${(c.name || "").replace(/"/g, "&quot;")}"/>
           <div class="creator-section-label">Coach voice</div>
