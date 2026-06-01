@@ -9,17 +9,10 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" type="image/svg+xml" href="icon.svg" />
 <link rel="apple-touch-icon" href="icon.svg" />
-<<<<<<< HEAD
 <title>Mira — A mindful path through what frightens you</title>
 <meta name="description" content="Mira is a mindful exposure practice space. Walk gently toward what frightens you, at your own pace. Built on real CBT principles." />
 <meta property="og:title" content="Mira" />
 <meta property="og:description" content="A mindful path through what frightens you." />
-=======
-<title>Mira — A focused phobia simulator</title>
-<meta name="description" content="Mira is a focused phobia simulator. Confront heights, spiders, dogs, snakes, enclosed spaces, or public speaking in a safe 3D scene — at your own pace, with a clinician-style ladder." />
-<meta property="og:title" content="Mira — phobia simulator" />
-<meta property="og:description" content="Confront the fear that's holding you back — in a controlled 3D scene, at your own pace." />
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
 <meta name="format-detection" content="telephone=no" />
 <script>
 // Register the service worker as soon as possible — only over https or localhost
@@ -32,15 +25,6 @@ if ("serviceWorker" in navigator) {
 <script src="src/i18n.js" defer></script>
 <script src="src/character.js" defer></script>
 <script src="src/phobia-info.js" defer></script>
-<!-- Realism / atmosphere / creature libraries — pure procedural, no asset
-     downloads. They expose globals (PhobiaRealism, PhobiaAtmosphere,
-     PhobiaCreatures, PhobiaAvatar3D) that read window.THREE lazily inside
-     their factory fns, so they tolerate the module script booting later. -->
-<script src="src/realism.js" defer></script>
-<script src="src/atmosphere.js" defer></script>
-<script src="src/creatures.js" defer></script>
-<script src="src/avatar3d.js" defer></script>
-<script src="src/skinned-humanoid.js" defer></script>
 <script type="importmap">
 {
   "imports": {
@@ -313,7 +297,6 @@ if ("serviceWorker" in navigator) {
   .intensity i.on { background: linear-gradient(180deg, var(--accent), var(--accent-2)); }
 
   /* Exposure page — panel with no padding so the stage can extend edge-to-edge.
-<<<<<<< HEAD
      The header + step-controls handle their own padding. The header is kept
      single-row and compact: every pixel above the scene is a pixel the user
      doesn't see the scene with. */
@@ -324,12 +307,6 @@ if ("serviceWorker" in navigator) {
     align-items: center;
     gap: var(--space-3);
     flex-wrap: wrap;
-=======
-     The header + step-controls handle their own padding. */
-  .exposure-panel { padding: 0; overflow: hidden; }
-  .exposure-header {
-    padding: var(--space-5) var(--space-6) var(--space-3);
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   }
   .exposure-header .badge {
     display: inline-block;
@@ -341,7 +318,6 @@ if ("serviceWorker" in navigator) {
     font-size: var(--text-xs);
     font-weight: 600;
     letter-spacing: .4px;
-<<<<<<< HEAD
     flex: 0 0 auto;
   }
   .exposure-header h2 {
@@ -349,20 +325,11 @@ if ("serviceWorker" in navigator) {
     font-size: var(--text-lg);
     line-height: 1.2;
     flex: 0 0 auto;
-=======
-    margin-bottom: var(--space-3);
-  }
-  .exposure-header h2 {
-    margin: 0 0 var(--space-2);
-    font-size: var(--text-xl);
-    line-height: 1.25;
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   }
   .exposure-header p {
     margin: 0;
     color: var(--muted);
     font-size: var(--text-sm);
-<<<<<<< HEAD
     flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
@@ -381,23 +348,6 @@ if ("serviceWorker" in navigator) {
   .stage-wrap { margin: 0 -28px; }
   .stage {
     height: clamp(360px, 78vh, 900px);
-=======
-  }
-  @media (max-width: 600px) {
-    .exposure-header { padding: var(--space-4) var(--space-4) var(--space-2); }
-    .exposure-header h2 { font-size: var(--text-lg); }
-  }
-
-  /* Stage (the simulation canvas) — taller by default for a more immersive
-     framing. Scales with the viewport so on big monitors the canvas is
-     properly large, on small viewports the controls stay reachable. */
-  .stage-wrap { margin: 0 -28px; }
-  .stage {
-    /* clamp(min, ideal, max): minimum 320 px, ideal 60vh, capped at 720 px
-       so the canvas never grows past a comfortable visual ceiling on huge
-       displays. */
-    height: clamp(320px, 60vh, 720px);
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
     overflow: hidden; position: relative;
@@ -494,15 +444,7 @@ if ("serviceWorker" in navigator) {
     backdrop-filter: blur(6px); pointer-events: none;
   }
   .stage .camera-toggle {
-<<<<<<< HEAD
     position: absolute; top: 14px; left: 14px; z-index: 7;
-=======
-    /* Bottom-left so it never overlaps the trust HUD or context prompts at
-       the top of the canvas. left:40px clears the stage-wrap bleed. The
-       controls-hint lives at the bottom-centre, so the toggle and hint
-       sit on different ends of the same row without colliding. */
-    position: absolute; bottom: 14px; left: 40px; z-index: 7;
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     background: linear-gradient(135deg, rgba(124,209,197,.85), rgba(165,180,252,.85));
     color: #0b1020;
     border: 1px solid rgba(255,255,255,.30);
@@ -512,11 +454,7 @@ if ("serviceWorker" in navigator) {
     box-shadow: 0 4px 20px rgba(124,209,197,.35);
     display: inline-flex; align-items: center; gap: 6px;
     white-space: nowrap;
-<<<<<<< HEAD
     max-width: calc(100% - 28px);
-=======
-    max-width: calc(100% - 80px);
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     transition: background .15s ease, transform .08s ease, box-shadow .2s ease;
   }
   .stage .camera-toggle::before {
@@ -683,34 +621,16 @@ if ("serviceWorker" in navigator) {
     75%  { transform: translate(-.25px, .5px); }
   }
 
-  /* Controls hint overlay
-     The stage-wrap has a -28px (or -14/-22px on smaller breakpoints) margin
-     to bleed the canvas past the panel padding. The panel itself has
-     overflow:hidden, so absolute children at left:10px get clipped — the
-     HUD has to stay INSIDE the visible panel area. We shift hud anchors
-     past the bleed. */
+  /* Controls hint overlay */
   .stage .controls-hint {
-    position: absolute; left: 40px; right: 40px; bottom: 14px; z-index: 6;
-    max-width: calc(100% - 80px);
-    background: rgba(10, 14, 28, .65); color: var(--accent);
+    position: absolute; left: 12px; bottom: 12px; z-index: 6;
+    background: rgba(10, 14, 28, .55); color: var(--accent);
     border: 1px solid rgba(124,209,197,.35);
-    padding: 6px 14px; border-radius: 999px;
-    font-size: 12px; font-weight: 600; letter-spacing: .25px;
-    backdrop-filter: blur(8px);
+    padding: 5px 11px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; letter-spacing: .35px;
+    backdrop-filter: blur(6px);
     transition: opacity 1s ease;
     pointer-events: none;
-    /* Centre the hint horizontally — it's a one-line cue, not a banner. */
-    width: max-content; margin: 0 auto;
-    text-align: center;
-    /* Wrap on narrow screens rather than spilling past the panel. */
-    white-space: normal;
-  }
-  @media (max-width: 600px) {
-    .stage .controls-hint {
-      left: 24px; right: 24px;
-      max-width: calc(100% - 48px);
-      font-size: 11px;
-    }
   }
 
   /* Breath HUD for the flying scene — bottom-centre of the stage. A soft
@@ -756,19 +676,17 @@ if ("serviceWorker" in navigator) {
      balls, and shares treats. Subtle on purpose so it doesn't compete
      with the scene itself. */
   .stage .trust-hud {
-    /* left:40px clears the stage-wrap's -28px bleed plus a 12px inset so the
-       hud always sits inside the visible panel. */
-    position: absolute; top: 14px; left: 40px; z-index: 7;
+    position: absolute; top: 10px; left: 10px; z-index: 7;
     min-width: 160px; max-width: 240px;
     /* Reserve space for the quick-bar on the right so the two HUDs never
-       collide on narrow screens. Quick-bar + bleed ≈ 160 px on the right. */
-    max-width: calc(100% - 200px);
+       collide on narrow screens (the quick-bar is ~190 px wide). */
+    max-width: calc(100% - 220px);
     padding: 9px 12px;
-    background: rgba(10, 14, 28, .65);
+    background: rgba(10, 14, 28, .55);
     border: 1px solid rgba(124,209,197,.35);
     border-radius: 12px;
     color: var(--text);
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(6px);
     font-size: 12px; font-weight: 600;
     pointer-events: none;
   }
@@ -776,18 +694,14 @@ if ("serviceWorker" in navigator) {
      overlaps the quick-bar. Truncates long dog names with ellipsis. */
   @media (max-width: 480px) {
     .stage .trust-hud {
-      top: 10px; left: 24px;
-      min-width: 110px;
-      max-width: calc(100% - 150px);
-      padding: 6px 9px;
+      min-width: 120px;
+      max-width: calc(100% - 200px);
+      padding: 7px 10px;
       font-size: 11px;
     }
     .stage .trust-hud .trust-name {
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      max-width: 70px;
-    }
-    .stage .trust-hud .trust-hint {
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 80px;
     }
   }
   .stage .trust-hud .trust-row {
@@ -822,13 +736,7 @@ if ("serviceWorker" in navigator) {
      visible during exposure so the user can silence voice / sound any
      time without diving into Settings. */
   .stage .stage-quick-bar {
-<<<<<<< HEAD
     position: absolute; top: 14px; right: 14px; z-index: 8;
-=======
-    /* right:40px clears the stage-wrap's -28px bleed so the buttons never
-       sit outside the panel's overflow:hidden boundary. */
-    position: absolute; top: 14px; right: 40px; z-index: 8;
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     display: flex; gap: 8px;
   }
   .stage .stage-quick-btn {
@@ -845,11 +753,7 @@ if ("serviceWorker" in navigator) {
   }
   .stage .stage-quick-btn:hover { transform: scale(1.06); }
   @media (max-width: 480px) {
-<<<<<<< HEAD
     .stage .stage-quick-bar { top: 10px; right: 10px; gap: 6px; }
-=======
-    .stage .stage-quick-bar { top: 10px; right: 24px; gap: 6px; }
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     .stage .stage-quick-btn { width: 34px; height: 34px; flex: 0 0 34px; font-size: 14px; }
   }
   .stage .stage-quick-btn:hover { background: rgba(124,209,197,.18); }
@@ -2279,15 +2183,9 @@ if ("serviceWorker" in navigator) {
   .stage .tutorial-card .actions { justify-content: flex-end; margin-top: 0; }
 
   /* Achievement toast — compact pill that slides up from bottom-right
-<<<<<<< HEAD
      instead of taking over the page. Was a 420 px panel at the bottom-
      center which felt heavy after every small win; now it's a discreet
      ~280 px chip that gets out of the way fast. */
-=======
-     instead of taking over the page. Tap-dismissible: the JS sets
-     pointer-events:auto on the actual element so a click anywhere closes
-     it. The small × on the right is a visual hint that it's dismissible. */
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   .achievement-toast {
     position: fixed; right: var(--space-4); bottom: var(--space-4);
     z-index: 200;
@@ -2297,7 +2195,6 @@ if ("serviceWorker" in navigator) {
     border: 1px solid rgba(124,209,197,.40);
     border-left: 3px solid var(--accent);
     border-radius: var(--radius-md);
-<<<<<<< HEAD
     padding: var(--space-2) var(--space-4);
     box-shadow: var(--shadow);
     backdrop-filter: blur(10px);
@@ -2309,33 +2206,6 @@ if ("serviceWorker" in navigator) {
   }
   .achievement-toast.show {
     transform: translateX(0); opacity: 1;
-=======
-    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
-    box-shadow: var(--shadow);
-    backdrop-filter: blur(10px);
-    display: flex; align-items: center; gap: var(--space-3);
-    transition: transform .35s cubic-bezier(.22,1.4,.4,1), opacity .25s ease, box-shadow .2s ease;
-    color: var(--text);
-    max-width: min(320px, calc(100vw - var(--space-8)));
-  }
-  .achievement-toast:hover { box-shadow: 0 12px 36px rgba(124,209,197,.30); }
-  .achievement-toast.show {
-    transform: translateX(0); opacity: 1;
-  }
-  .achievement-toast .toast-close {
-    margin-left: auto;
-    width: 22px; height: 22px;
-    display: inline-flex; align-items: center; justify-content: center;
-    border: none; background: transparent;
-    color: var(--muted);
-    font-size: 16px; line-height: 1;
-    cursor: pointer; border-radius: 999px;
-    flex-shrink: 0;
-  }
-  .achievement-toast .toast-close:hover {
-    color: var(--text);
-    background: rgba(255,255,255,.08);
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   }
   .ach-icon {
     font-size: 20px; line-height: 1;
@@ -2414,26 +2284,15 @@ if ("serviceWorker" in navigator) {
     border-top: none;
   }
   /* Floating "show controls" / "hide controls" toggle that lives in the
-<<<<<<< HEAD
      scene UI when the bar is collapsible. */
   .stage .cmd-toggle {
     position: absolute; right: 14px; bottom: 14px; z-index: 7;
-=======
-     scene UI when the bar is collapsible. right:40px clears the stage-wrap
-     bleed so the button never gets clipped by the panel's overflow:hidden. */
-  .stage .cmd-toggle {
-    position: absolute; right: 40px; bottom: 14px; z-index: 7;
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     background: rgba(10, 14, 28, .70); color: var(--text);
     border: 1px solid rgba(255,255,255,.22);
     padding: 7px 14px; border-radius: 999px;
     font-size: 12px; font-weight: 600;
     white-space: nowrap;
-<<<<<<< HEAD
     max-width: calc(100% - 28px);
-=======
-    max-width: calc(100% - 80px);
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     cursor: pointer; backdrop-filter: blur(8px);
     transition: background .15s ease, transform .08s ease;
   }
@@ -2499,25 +2358,14 @@ if ("serviceWorker" in navigator) {
   }
   /* Achievement toast — slides in from the right when the player hits a
      milestone (first time at the edge, first pet, etc.). Auto-dismisses
-<<<<<<< HEAD
      after 3.5 s. Stack-friendly: multiple toasts queue vertically. */
   .stage .achievement-toast {
     position: absolute; right: 12px; top: 12px; z-index: 8;
-=======
-     after a short window AND is click/tap-dismissible. Only one toast on
-     screen at a time so the user is never reading a column of pills mid-fear. */
-  .stage .achievement-toast {
-    position: absolute; right: 56px; top: 14px; z-index: 8;
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     background: linear-gradient(135deg, rgba(28,38,64,.95), rgba(20,28,48,.95));
     color: var(--text);
     border: 1px solid rgba(165,180,252,.35);
     border-left: 3px solid var(--accent);
-<<<<<<< HEAD
     padding: 10px 16px; border-radius: 10px;
-=======
-    padding: 10px 16px 10px 14px; border-radius: 10px;
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     font-size: 13px; font-weight: 500;
     backdrop-filter: blur(10px);
     box-shadow: 0 6px 28px rgba(0,0,0,.45);
@@ -2526,20 +2374,11 @@ if ("serviceWorker" in navigator) {
     opacity: 0;
     max-width: 300px;
     display: flex; align-items: center; gap: 10px;
-<<<<<<< HEAD
-=======
-    /* Dismissible — click anywhere on the toast to close immediately. */
-    cursor: pointer; pointer-events: auto;
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   }
   .stage .achievement-toast.visible {
     transform: translateX(0);
     opacity: 1;
   }
-<<<<<<< HEAD
-=======
-  .stage .achievement-toast:hover { box-shadow: 0 8px 32px rgba(124,209,197,.30); }
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   .stage .achievement-toast .achievement-icon {
     font-size: 22px; line-height: 1;
     filter: drop-shadow(0 0 8px rgba(124,209,197,.4));
@@ -2552,30 +2391,9 @@ if ("serviceWorker" in navigator) {
     text-transform: uppercase; letter-spacing: .8px;
     font-weight: 700;
   }
-<<<<<<< HEAD
   /* Soft contextual prompt that fades in when the player crosses a
      character-driven event boundary (reached the edge, dog noticed you,
      etc.). No buttons — informational only. */
-=======
-  .stage .achievement-toast .toast-close {
-    margin-left: auto;
-    width: 22px; height: 22px;
-    display: inline-flex; align-items: center; justify-content: center;
-    border: none; background: transparent;
-    color: var(--muted);
-    font-size: 16px; line-height: 1;
-    cursor: pointer; border-radius: 999px;
-    flex-shrink: 0;
-  }
-  .stage .achievement-toast .toast-close:hover {
-    color: var(--text);
-    background: rgba(255,255,255,.08);
-  }
-  /* Soft contextual prompt that fades in when the player crosses a
-     character-driven event boundary (reached the edge, dog noticed you,
-     etc.). Tap-dismissible so the user can clear it instantly if they're
-     trying to focus on the scene. */
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   .stage .ctx-prompt {
     position: absolute; left: 50%; bottom: 80px; z-index: 7;
     transform: translateX(-50%);
@@ -2587,21 +2405,12 @@ if ("serviceWorker" in navigator) {
     backdrop-filter: blur(8px);
     box-shadow: var(--shadow-sm);
     max-width: min(360px, 80%); text-align: center;
-<<<<<<< HEAD
     opacity: 0; pointer-events: none;
-=======
-    opacity: 0;
-    cursor: pointer; pointer-events: auto;
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     transition: opacity .35s ease, transform .35s ease;
   }
   .stage .ctx-prompt.visible {
     opacity: 1; transform: translateX(-50%) translateY(-4px);
   }
-<<<<<<< HEAD
-=======
-  .stage .ctx-prompt:hover { background: rgba(20, 28, 48, .85); }
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   @media (max-width: 480px) {
     .stage .ctx-prompt {
       bottom: 64px;
@@ -2693,9 +2502,7 @@ if ("serviceWorker" in navigator) {
     button { min-height: 44px; }  /* Apple's recommended touch target */
   }
 
-  /* Closed captions for voice guidance. Tap-dismissible so a user who
-     wants the scene-only experience can hide the current line without
-     turning captions off entirely. */
+  /* Closed captions for voice guidance */
   .stage .captions {
     position: absolute; left: 50%; bottom: 56px; z-index: 7;
     transform: translateX(-50%);
@@ -2708,7 +2515,7 @@ if ("serviceWorker" in navigator) {
     pointer-events: none;
     border-left: 3px solid var(--accent);
   }
-  .stage .captions.show { opacity: 1; pointer-events: auto; cursor: pointer; }
+  .stage .captions.show { opacity: 1; }
 
   /* Heights scene */
   .scene-heights .ground { transition: transform 1.2s ease; }
@@ -2775,11 +2582,7 @@ if ("serviceWorker" in navigator) {
     /* Stage caption / step-controls inset matches the panel inner padding
        so action buttons (Pause, Continue, etc.) line up with the rest of
        the panel content without clipping. */
-<<<<<<< HEAD
     .stage { height: clamp(320px, 65vh, 640px); }
-=======
-    .stage { height: clamp(280px, 50vh, 480px); }
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     .stage-caption, .step-controls { padding-left: 14px; padding-right: 14px; }
     .app { padding: 16px 14px 64px; }
     .stage-wrap { margin: 0 -14px; }
@@ -3920,7 +3723,6 @@ const PhobiaNarrator = (() => {
       ],
     },
     spiders: {
-<<<<<<< HEAD
       arrival: ["You see the spider across the room. It's where it is."],
       walking: ["You're walking closer. Notice your breath."],
       close: ["You're close to it. It hasn't moved toward you."],
@@ -3943,110 +3745,6 @@ const PhobiaNarrator = (() => {
       panic: ["You're safe. You can step back to shore any time."],
       avoidance: ["You stepped back. Good."],
       habituation: ["Lower fear than last time."],
-=======
-      arrival: [
-        "You see the spider across the room. It's where it is.",
-        "There it is. Just where it was. Your eyes are doing the work.",
-      ],
-      walking: [
-        "You're walking closer. Notice your breath.",
-        "One step. Then the next. The spider has not moved.",
-      ],
-      close: [
-        "You're close to it. It hasn't moved toward you.",
-        "Look at the legs. Eight slow legs, not coming for you.",
-      ],
-      panic: [
-        "You're safe. The spider is small. You can step back.",
-        "It is busy being a spider. You are busy being you.",
-      ],
-      avoidance: [
-        "You stepped back. That's allowed.",
-        "Take a breath. When you're ready, try one step closer.",
-      ],
-      habituation: [
-        "Your fear was lower this time. Real progress.",
-        "You held longer than last time. Your body is learning.",
-      ],
-    },
-    snakes: {
-      arrival: [
-        "The snake is on the path ahead. It's coiled, calm.",
-        "There it is, just resting. Notice the air on your face.",
-      ],
-      walking: [
-        "Walking closer. Slow breath.",
-        "Each step is a tiny experiment. The snake has not moved.",
-      ],
-      close: [
-        "You're close. The snake hasn't moved.",
-        "Look at the patterns, the stillness. It is not coming for you.",
-      ],
-      panic: [
-        "You're safe. You can walk back any time.",
-        "It's more afraid of you than you are of it. Stay. Breathe.",
-      ],
-      avoidance: [
-        "You stepped back. There's no rush.",
-        "Whenever you're ready, step closer again. The path is yours.",
-      ],
-      habituation: [
-        "Lower fear than last time. Your body is learning.",
-        "You stayed longer than last time. The freeze is loosening.",
-      ],
-    },
-    enclosed: {
-      arrival: [
-        "You're inside the room. The walls are still.",
-        "Notice the air. There is plenty of it.",
-      ],
-      walking: [
-        "You can move. The walls are not closing.",
-        "Touch a wall if it helps. Solid, still, your touch.",
-      ],
-      close: [
-        "The doors are closed. You are still breathing. That is the test.",
-        "Eyes on one fixed point. The room is the same as a moment ago.",
-      ],
-      panic: [
-        "You can leave. You chose to be here. That choice is still yours.",
-        "Slow breath in for four. Slower breath out for six. The walls are still.",
-      ],
-      avoidance: [
-        "Pause. Breathe. Try staying for a few more counts when you're ready.",
-        "You stepped out. Good. The next round can be a little longer.",
-      ],
-      habituation: [
-        "You held longer than last time. The first 30 seconds were the hardest.",
-        "Lower fear than last time. The space feels smaller than it is.",
-      ],
-    },
-    speaking: {
-      arrival: [
-        "You're at the lectern. The room is waiting.",
-        "Take a breath before you start. Silence is yours, not theirs.",
-      ],
-      walking: [
-        "Begin when you're ready. The first sentence is the hardest.",
-        "Find one friendly face. Speak to that face first.",
-      ],
-      close: [
-        "They're listening. That's their job. Yours is to breathe.",
-        "Pause. Your pause is shorter than it feels.",
-      ],
-      panic: [
-        "You can stop, sip water, breathe. None of this is a failure.",
-        "The shaky voice is your body, not your worth. Keep going.",
-      ],
-      avoidance: [
-        "You stepped back from the moment. That's fine. Try one sentence next.",
-        "Take a sip. Find your face in the audience. Begin again.",
-      ],
-      habituation: [
-        "Steadier voice than last time. The body learns by doing.",
-        "You held longer than last time. The fear is shrinking.",
-      ],
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     },
   };
   function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
@@ -4104,29 +3802,8 @@ window.PhobiaNarrator = PhobiaNarrator;
 const PhobiaVoice = (() => {
   const synth = typeof window !== "undefined" && window.speechSynthesis;
   let voice = null;
-<<<<<<< HEAD
   let muted = true;     // default: silent
   let voiceRate = 0.85;
-=======
-  let sceneVoice = null;     // overridden when setScene() picks a phobia-specific voice
-  let muted = true;     // default: silent
-  let voiceRate = 0.85;
-  // Per-phobia tone profile: rate, pitch, and a list of preferred voice names
-  // tried in order. Pitch + rate spreads are deliberately wide — even when
-  // the browser only exposes a single English TTS voice (common on Linux /
-  // Chrome OS), the same voice will sound noticeably different per phobia
-  // because the rate goes from 0.74 (snakes) to 1.02 (speaking), pitch from
-  // 0.78 to 1.12. The user hears a different "voice" for each session.
-  const TONE_PROFILES = {
-    heights:  { rate: 0.78, pitch: 0.85, voices: ["Samantha", "Karen", "Allison", "Google US English"] },
-    spiders:  { rate: 0.92, pitch: 1.00, voices: ["Tessa", "Moira", "Karen", "Microsoft Aria"] },
-    dogs:     { rate: 0.96, pitch: 1.10, voices: ["Allison", "Samantha", "Microsoft Jenny", "Google UK English Female"] },
-    snakes:   { rate: 0.74, pitch: 0.78, voices: ["Moira", "Karen", "Microsoft Zira", "Samantha"] },
-    enclosed: { rate: 0.82, pitch: 0.92, voices: ["Karen", "Samantha", "Microsoft Aria", "Google US English"] },
-    speaking: { rate: 1.02, pitch: 1.08, voices: ["Tessa", "Allison", "Microsoft Jenny", "Google UK English Female"] },
-  };
-  let currentProfile = null;
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   try {
     // Honour saved preference (either "1" muted or "0" unmuted). If the key
     // isn't set yet (new user), default to muted via the line above.
@@ -4139,7 +3816,7 @@ const PhobiaVoice = (() => {
     if (!synth) return;
     const voices = synth.getVoices();
     if (!voices.length) return;
-    // Default voice — used until setScene() picks a phobia-specific one.
+    // Prefer calm female English voices known to ship with major browsers.
     const preferOrder = [
       "Samantha", "Karen", "Moira", "Tessa", "Allison",
       "Google UK English Female", "Google US English",
@@ -4159,17 +3836,6 @@ const PhobiaVoice = (() => {
     if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = pickVoice;
   }
 
-  function setScene(phobiaKey) {
-    currentProfile = TONE_PROFILES[phobiaKey] || null;
-    if (!synth || !currentProfile) { sceneVoice = null; return; }
-    const voices = synth.getVoices() || [];
-    sceneVoice = null;
-    for (const name of currentProfile.voices) {
-      const v = voices.find(v => v.name && v.name.includes(name));
-      if (v) { sceneVoice = v; return; }
-    }
-  }
-
   function speak(text, opts = {}) {
     // Always emit caption event for closed captions, even when muted
     try {
@@ -4184,7 +3850,6 @@ const PhobiaVoice = (() => {
     try { synth.cancel(); } catch {}
     try {
       const u = new SpeechSynthesisUtterance(text);
-<<<<<<< HEAD
       if (voice) u.voice = voice;
       // Calm therapist tone — slightly slower than default (0.85), slightly
       // lower pitch (0.92) for warmth, gentle volume so it doesn't compete
@@ -4192,23 +3857,6 @@ const PhobiaVoice = (() => {
       // bad opt doesn't make the browser refuse to speak.
       u.rate = Math.max(0.1, Math.min(10, opts.rate || voiceRate));
       u.pitch = Math.max(0, Math.min(2, opts.pitch != null ? opts.pitch : 0.92));
-=======
-      // Prefer the scene-specific voice if setScene() found one, otherwise
-      // fall back to the global default.
-      if (sceneVoice) u.voice = sceneVoice;
-      else if (voice) u.voice = voice;
-      // Resolve rate + pitch — explicit opts win, then the scene profile,
-      // then a calm-therapist default. Each utterance gets a tiny random
-      // jitter (±3% rate, ±4% pitch) so back-to-back lines within a session
-      // don't sound identical — adds a subtle "human" quality even when the
-      // browser only ships one TTS voice.
-      const profileRate = currentProfile ? currentProfile.rate : voiceRate;
-      const profilePitch = currentProfile ? currentProfile.pitch : 0.92;
-      const rateJitter  = (Math.random() - 0.5) * 0.06;
-      const pitchJitter = (Math.random() - 0.5) * 0.08;
-      u.rate = Math.max(0.1, Math.min(10, (opts.rate || profileRate) + rateJitter));
-      u.pitch = Math.max(0, Math.min(2, (opts.pitch != null ? opts.pitch : profilePitch) + pitchJitter));
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
       u.volume = Math.max(0, Math.min(1, opts.volume == null ? 0.85 : opts.volume));
       synth.speak(u);
     } catch (e) {
@@ -4224,7 +3872,7 @@ const PhobiaVoice = (() => {
   }
   function setRate(r) { voiceRate = r; }
 
-  return { speak, stop, setMuted, isMuted: () => muted, setRate, setScene, hasVoice: () => !!synth };
+  return { speak, stop, setMuted, isMuted: () => muted, setRate, hasVoice: () => !!synth };
 })();
 window.PhobiaVoice = PhobiaVoice;
 
@@ -4238,12 +3886,12 @@ const VOICE_LINES = {
     ["The wind is real. So is your grip.", "Let the discomfort come. It always passes."],
     ["A long drop. Your body might react.", "Stay with it. You are safe right where you stand."],
   ],
-  spiders: [
-    ["A tiny dot. Maybe a spider, maybe not.", "Just look. Curiosity, not fear."],
-    ["Small spider. Across the room.", "Notice the legs. Notice your breath."],
-    ["Medium spider, halfway closer.", "Soften your gaze. It is not coming for you."],
-    ["A large spider, near your foot.", "You can step back any time. For now, just stay."],
-    ["At eye level. Legs twitching.", "Look at it. Really look. The fear will rise. Then settle."],
+  water: [
+    ["Just your feet. Cool. Quiet.", "You can step out any time."],
+    ["Knee deep. The bottom is right there.", "Wiggle your toes. Notice you are held."],
+    ["Waist deep. The water moves around you.", "You are still in control. Slow breath."],
+    ["No floor under you. Treading.", "Trust your arms and legs. They know what to do."],
+    ["Open water. Nothing visible below.", "Notice fear, then notice your breath. Both can exist."],
   ],
   dogs: [
     ["A drawing of a dog. Just a picture.", "Look at the shapes. The colours. Nothing more."],
@@ -4252,12 +3900,12 @@ const VOICE_LINES = {
     ["A large dog, close. You can hear it breathe.", "Stay. Breathe through your nose. Soft jaw."],
     ["Right in front of you. Big sound.", "It cannot reach you here. Notice the urge to flee. Stay."],
   ],
-  snakes: [
-    ["A picture of a snake.", "Just paper and ink. Look at the patterns."],
-    ["A snake behind glass.", "It cannot reach you. Look at how it moves."],
-    ["A snake across the path.", "It is more afraid of you. Stand still and watch."],
-    ["Coiled, watching.", "Steady breath. You are larger than it imagines."],
-    ["Close. Alert. Tongue flicking.", "Even now, you are safe. Stay. Notice the urge to run."],
+  spiders: [
+    ["A tiny dot. Maybe a spider, maybe not.", "Just look. Curiosity, not fear."],
+    ["Small spider. Across the room.", "Notice the legs. Notice your breath."],
+    ["Medium spider, halfway closer.", "Soften your gaze. It is not coming for you."],
+    ["A large spider, near your foot.", "You can step back any time. For now, just stay."],
+    ["At eye level. Legs twitching.", "Look at it. Really look. The fear will rise. Then settle."],
   ],
   enclosed: [
     ["A spacious room. Doors visible.", "Notice the air. There is plenty of it."],
@@ -4266,6 +3914,27 @@ const VOICE_LINES = {
     ["A storage closet. Walls almost touching.", "You are not stuck. You chose to be here."],
     ["Inside a tube. Don't move.", "The walls are not closing. Your breath is yours. Stay with it."],
   ],
+  flying: [
+    ["Watching planes from the gate.", "Tens of thousands of these take off safely every day."],
+    ["Walking the aisle to your seat.", "Notice the carpet, the rows, the people. Just normal."],
+    ["Seated. Engines humming.", "Slow breath. Feel the seat under you."],
+    ["Takeoff. Pressure in your chest.", "This sensation is acceleration, not danger. It will pass."],
+    ["Bumps in the air. Sign on.", "Turbulence is air, not a fall. The plane is built for this."],
+  ],
+  needles: [
+    ["A syringe across the room.", "It is just metal and plastic. Notice your breath."],
+    ["The nurse picks it up.", "This is routine. Hundreds of times a day in this clinic."],
+    ["The dose is drawn.", "You can look away. Your job is to breathe."],
+    ["The needle approaches your arm.", "A small pinch is coming. Soft jaw, soft shoulders."],
+    ["The injection.", "Less than a second. Then it is over. Notice the relief."],
+  ],
+  snakes: [
+    ["A picture of a snake.", "Just paper and ink. Look at the patterns."],
+    ["A snake behind glass.", "It cannot reach you. Look at how it moves."],
+    ["A snake across the path.", "It is more afraid of you. Stand still and watch."],
+    ["Coiled, watching.", "Steady breath. You are larger than it imagines."],
+    ["Close. Alert. Tongue flicking.", "Even now, you are safe. Stay. Notice the urge to run."],
+  ],
   speaking: [
     ["An empty room.", "Hear your own voice. It is yours. It belongs."],
     ["A small group of friends.", "They want you to do well. Look at one face."],
@@ -4273,13 +3942,30 @@ const VOICE_LINES = {
     ["A roomful of strangers.", "The fear is in your body, not in the room. Speak slowly."],
     ["A packed auditorium.", "Spotlight, silence. You can begin. You can pause. You are okay."],
   ],
+  driving: [
+    ["Parked. Engine running.", "Notice your hands on the wheel. They know what to do."],
+    ["A quiet street.", "Eyes ahead. Eyes mirror. Eyes ahead. Steady."],
+    ["A city avenue.", "Other drivers are predictable. Most of the time. So are you."],
+    ["A highway. Sustained speed.", "Speed feels different than it is. Your body is built for this."],
+    ["Rain on the motorway.", "Slow your shoulders. Loosen your grip. The road is still there."],
+  ],
+  storms: [
+    ["A grumble far away.", "Far. Notice how far. Count the seconds between flash and sound."],
+    ["The front is coming.", "Wind, flashes. Your house is solid. The lightning seeks the ground."],
+    ["The storm is overhead.", "Loud. Bright. Brief. Each strike lasts less than a second."],
+    ["A strike nearby.", "Your body jumps. That's normal. The strike is already over."],
+    ["Right above you.", "Flash and crack together. You are inside, you are dry. It will pass."],
+  ],
+  dark: [
+    ["A dim room.", "Notice how much you can still see. Your eyes are adjusting."],
+    ["Curtains drawn.", "Silver and shadow. Your room is the same as in daylight."],
+    ["Lights off.", "Listen. Breathe. Nothing has changed except the light."],
+    ["A hallway at night.", "What you cannot see is mostly what was there during the day."],
+    ["Total dark.", "Sound and breath. Your body knows where it is."],
+  ],
 };
 
 // ---------- Data: phobias and exposure ladders ----------
-// We deliberately ship a small, focused set of the most-recognised phobias.
-// Each one has a polished 3D scene, character-driven interactions, and a
-// first-person + third-person camera. Adding more phobias later means adding
-// the same level of polish — not multiplying scenes.
 const PHOBIAS = {
   heights: {
     name: "Acrophobia",
@@ -4296,20 +3982,20 @@ const PHOBIAS = {
     sceneClass: "scene-heights",
     render: renderHeights
   },
-  spiders: {
-    name: "Arachnophobia",
-    label: "Spiders",
-    icon: spiderIcon(),
-    blurb: "Fear of spiders — the legs, the sudden movement.",
+  water: {
+    name: "Aquaphobia",
+    label: "Water",
+    icon: waterIcon(),
+    blurb: "Fear of water — depth, submersion, open water.",
     levels: [
-      { title: "A tiny dot, far",     desc: "Could be a spider. Too small to tell.", size: 0.15 },
-      { title: "Small spider, still", desc: "On the floor across the room.",          size: 0.35 },
-      { title: "Medium spider",       desc: "Halfway across. Not moving (yet).",      size: 0.55 },
-      { title: "Large spider, close", desc: "Near your foot. You can see its eyes.",  size: 0.80 },
-      { title: "On the wall by you",  desc: "Right at eye level. Legs twitch.",       size: 1.00 }
+      { title: "Toes in the puddle",  desc: "Shallow water on tiles. Just your feet.", level: 0.10 },
+      { title: "Knee-deep wading",    desc: "Calm shallows. You can see the bottom.", level: 0.30 },
+      { title: "Waist-deep water",    desc: "Light current. Hands brush the surface.", level: 0.55 },
+      { title: "Chest-deep, no floor",desc: "Treading water. The bottom is gone.", level: 0.80 },
+      { title: "Open water, deep",    desc: "Surrounded by blue. Nothing visible below.", level: 1.00 }
     ],
-    sceneClass: "scene-approach",
-    render: renderSpider
+    sceneClass: "scene-water",
+    render: renderWater
   },
   dogs: {
     name: "Cynophobia",
@@ -4330,20 +4016,20 @@ const PHOBIAS = {
     sceneClass: "scene-approach",
     render: renderDog
   },
-  snakes: {
-    name: "Ophidiophobia",
-    label: "Snakes",
-    icon: snakeIcon(),
-    blurb: "Fear of snakes — sudden movement, the way they slide.",
+  spiders: {
+    name: "Arachnophobia",
+    label: "Spiders",
+    icon: spiderIcon(),
+    blurb: "Fear of spiders — the legs, the sudden movement.",
     levels: [
-      { title: "A picture in a book", desc: "Just a still image of a coiled snake.", size: 0.20 },
-      { title: "Behind glass",        desc: "A small snake at the zoo. Curled up.",  size: 0.40 },
-      { title: "On a path nearby",    desc: "Across the trail. Slow movement.",      size: 0.60 },
-      { title: "Coiled on a rock",    desc: "A few metres away. Looking at you.",    size: 0.85 },
-      { title: "Close, alert",        desc: "Right there. Tongue flicking.",         size: 1.00 }
+      { title: "A tiny dot, far",     desc: "Could be a spider. Too small to tell.", size: 0.15 },
+      { title: "Small spider, still", desc: "On the floor across the room.",          size: 0.35 },
+      { title: "Medium spider",       desc: "Halfway across. Not moving (yet).",      size: 0.55 },
+      { title: "Large spider, close", desc: "Near your foot. You can see its eyes.",  size: 0.80 },
+      { title: "On the wall by you",  desc: "Right at eye level. Legs twitch.",       size: 1.00 }
     ],
     sceneClass: "scene-approach",
-    render: renderSnake
+    render: renderSpider
   },
   enclosed: {
     name: "Claustrophobia",
@@ -4360,6 +4046,51 @@ const PHOBIAS = {
     sceneClass: "scene-enclosed",
     render: renderEnclosed
   },
+  flying: {
+    name: "Aviophobia",
+    label: "Flying",
+    icon: planeIcon(),
+    blurb: "Fear of flying — turbulence, altitude, being trapped in a plane.",
+    levels: [
+      { title: "Airport gate",        desc: "Watching planes through the window.",   stage: 0.10 },
+      { title: "Boarding the cabin",  desc: "Walking down the aisle to your seat.",  stage: 0.30 },
+      { title: "Seated, doors closed",desc: "Engines on. Cabin lights dim.",         stage: 0.55 },
+      { title: "Takeoff",             desc: "Acceleration pushes you back.",         stage: 0.80 },
+      { title: "Mid-flight turbulence", desc: "Cabin shakes. The seat-belt sign chimes.", stage: 1.00 }
+    ],
+    sceneClass: "scene-flying",
+    render: renderFlying
+  },
+  needles: {
+    name: "Trypanophobia",
+    label: "Needles",
+    icon: syringeIcon(),
+    blurb: "Fear of needles — injections, blood draws, medical procedures.",
+    levels: [
+      { title: "Syringe on a tray",   desc: "Across the room. Sealed in a wrapper.", proximity: 0.15 },
+      { title: "Nurse picks it up",   desc: "Removing the cap. Standard procedure.", proximity: 0.35 },
+      { title: "Drawing the dose",    desc: "Filling the barrel. You can look away.", proximity: 0.55 },
+      { title: "Approaching your arm",desc: "Antiseptic on the skin. A small pinch is coming.", proximity: 0.80 },
+      { title: "The injection",       desc: "Brief sting. You can breathe through it.", proximity: 1.00 }
+    ],
+    sceneClass: "scene-needles",
+    render: renderNeedles
+  },
+  snakes: {
+    name: "Ophidiophobia",
+    label: "Snakes",
+    icon: snakeIcon(),
+    blurb: "Fear of snakes — sudden movement, the way they slide.",
+    levels: [
+      { title: "A picture in a book", desc: "Just a still image of a coiled snake.", size: 0.20 },
+      { title: "Behind glass",        desc: "A small snake at the zoo. Curled up.",  size: 0.40 },
+      { title: "On a path nearby",    desc: "Across the trail. Slow movement.",      size: 0.60 },
+      { title: "Coiled on a rock",    desc: "A few metres away. Looking at you.",    size: 0.85 },
+      { title: "Close, alert",        desc: "Right there. Tongue flicking.",         size: 1.00 }
+    ],
+    sceneClass: "scene-approach",
+    render: renderSnake
+  },
   speaking: {
     name: "Glossophobia",
     label: "Public speaking",
@@ -4374,6 +4105,51 @@ const PHOBIAS = {
     ],
     sceneClass: "scene-speaking",
     render: renderSpeaking
+  },
+  driving: {
+    name: "Vehophobia",
+    label: "Driving",
+    icon: carIcon(),
+    blurb: "Fear of driving — losing control, the speed, the other cars.",
+    levels: [
+      { title: "Parked, engine on",  desc: "Sat behind the wheel. Foot on the brake.", traffic: 0.0,  speed: 0.0 },
+      { title: "Quiet residential",  desc: "Empty side street. 30 km/h.",              traffic: 0.20, speed: 0.30 },
+      { title: "City avenue",        desc: "Cars in front and behind. Traffic lights.",traffic: 0.55, speed: 0.55 },
+      { title: "Highway lane",       desc: "Sustained speed. Lorries to your left.",   traffic: 0.75, speed: 0.85 },
+      { title: "Motorway in rain",   desc: "Spray on the windshield. Reduced visibility.", traffic: 0.85, speed: 1.00 }
+    ],
+    sceneClass: "scene-driving",
+    render: renderDriving
+  },
+  storms: {
+    name: "Astraphobia",
+    label: "Thunderstorms",
+    icon: stormIcon(),
+    blurb: "Fear of thunder and lightning — the bright flash, the boom that follows.",
+    levels: [
+      { title: "Distant rumble",     desc: "A grumble far away. Soft rain.",          intensity: 0.15 },
+      { title: "Approaching front",  desc: "Wind picks up. Flashes visible.",         intensity: 0.35 },
+      { title: "Storm overhead",     desc: "Flash and thunder seconds apart.",        intensity: 0.65 },
+      { title: "Strikes nearby",     desc: "Loud, sudden. The room briefly lights up.", intensity: 0.85 },
+      { title: "Directly overhead",  desc: "Flash and crack at the same moment.",     intensity: 1.00 }
+    ],
+    sceneClass: "scene-storms",
+    render: renderStorms
+  },
+  dark: {
+    name: "Nyctophobia",
+    label: "The dark",
+    icon: moonIcon(),
+    blurb: "Fear of the dark — what might be in the room you can't see.",
+    levels: [
+      { title: "Dim room",           desc: "Soft lamp. You can see most things.",     dimness: 0.20 },
+      { title: "Curtains drawn",     desc: "One small light source. Long shadows.",   dimness: 0.45 },
+      { title: "Lights off",         desc: "Only your eyes adjusting to silver.",     dimness: 0.70 },
+      { title: "Hallway at night",   desc: "Almost no light. You hear your own breath.", dimness: 0.88 },
+      { title: "Total dark",         desc: "Nothing visible. Only sound.",            dimness: 1.00 }
+    ],
+    sceneClass: "scene-dark",
+    render: renderDark
   }
 };
 
@@ -4500,6 +4276,9 @@ const MILESTONES = [
     desc: "Climbed every rung of a phobia.",
     check: () => Object.entries(PHOBIAS).some(([k, p]) =>
       state.progress[k] && state.progress[k].highestCompleted >= p.levels.length - 1) },
+  { id: "custom_ladder",  title: "Architect",            icon: "🛠",
+    desc: "Built your own custom ladder.",
+    check: () => Object.keys(loadCustomPhobias()).length > 0 },
   { id: "three_phobias",  title: "Multi-fear practice",  icon: "🌐",
     desc: "Worked on three different fears.",
     check: () => Object.keys(state.progress).filter(k => state.progress[k].highestCompleted >= 0).length >= 3 },
@@ -4618,38 +4397,24 @@ function thisWeekSessions(phobiaKey) {
 function showAchievement(title, desc, icon = "🏆") {
   const t = document.createElement("div");
   t.className = "achievement-toast";
-  // Tap-anywhere-to-dismiss + an explicit × for keyboard / screen-reader
-  // discoverability. The whole pill is a click target; the inner button
-  // is just a visual hint, not a separate handler.
   t.innerHTML = `
     <span class="ach-icon">${icon}</span>
     <div class="ach-text">
       <strong>${title}</strong>
       <span>${desc}</span>
     </div>
-    <button class="toast-close" aria-label="Dismiss notification" tabindex="-1">×</button>
   `;
-  t.style.cursor = "pointer";
-  t.style.pointerEvents = "auto";
   document.body.appendChild(t);
-  // Cap on-screen toasts: only one at a time. Newer toasts replace older
-  // ones rather than stacking — phobia work is psychologically delicate;
-  // a column of "+points" pills is the wrong texture.
+  // Stagger if multiple toasts at once
   const existing = document.querySelectorAll(".achievement-toast");
   if (existing.length > 1) {
-    existing.forEach((el, i) => { if (i < existing.length - 1) el.remove(); });
+    t.style.bottom = (24 + (existing.length - 1) * 78) + "px";
   }
-  // setTimeout instead of rAF — rAF is paused when the tab is hidden, which
-  // would leave the toast translated off-screen indefinitely.
-  setTimeout(() => t.classList.add("show"), 16);
-  let dismissT = null;
-  function dismiss() {
-    if (dismissT) { clearTimeout(dismissT); dismissT = null; }
+  requestAnimationFrame(() => t.classList.add("show"));
+  setTimeout(() => {
     t.classList.remove("show");
     setTimeout(() => t.remove(), 350);
-  }
-  t.addEventListener("click", dismiss);
-  dismissT = setTimeout(dismiss, 2800);
+  }, 4200);
 }
 
 // ---------- Routing ----------
@@ -4983,6 +4748,7 @@ function openMenu() {
       <li><button data-go="select">${window.t ? window.t("menu.allFears") : "✦ All fears"}</button></li>
       ${ch ? `<li><button data-go="ladder" data-phobia="${ch.primaryPhobia || ""}">${window.t ? window.t("menu.continueLadder") : "▶ Continue your ladder"}</button></li>` : ""}
       <li><button data-go="insights">${window.t ? window.t("menu.yourProgress") : "📊 Your progress"}</button></li>
+      <li><button data-go="custom">${window.t ? window.t("menu.customLadder") : "＋ Build a custom ladder"}</button></li>
     </ul>
     <div class="menu-divider"></div>
     <ul class="menu-list">
@@ -5173,6 +4939,13 @@ function openSettings() {
     </div>
     <div class="row">
       <div>
+        <label>Custom ladder</label>
+        <div class="small">Build your own phobia and rungs.</div>
+      </div>
+      <button class="btn-ghost" id="customBtn" style="padding:6px 12px;font-size:12px;">Build</button>
+    </div>
+    <div class="row">
+      <div>
         <label>Replay onboarding tour</label>
         <div class="small">See the 4-step intro the next time you start a rung.</div>
       </div>
@@ -5315,6 +5088,7 @@ function openSettings() {
   // Export your data
   drawer.querySelector("#exportBtn").onclick = () => exportData();
   drawer.querySelector("#importBtn").onclick = () => importData();
+  drawer.querySelector("#customBtn").onclick = () => { close(); go("custom"); };
   drawer.querySelector("#replayTourBtn").onclick = (e) => {
     try { localStorage.removeItem("fobia.tutorialSeen"); } catch {}
     const note = document.createElement("div");
@@ -5468,15 +5242,13 @@ function viewWelcome() {
     `;
   }).join("");
 
-  const phobiaCount = Object.keys(PHOBIAS).length;
   return `
     <div class="hero">
       <div class="floaters">
+        <div class="floater" style="font-size:34px">🌊</div>
         <div class="floater" style="font-size:34px">🕷</div>
-        <div class="floater" style="font-size:34px">🐕</div>
         <div class="floater" style="font-size:34px">🏙</div>
       </div>
-<<<<<<< HEAD
       <span class="eyebrow">A mindful path · backed by CBT</span>
       <h1 class="huge">Face what frightens you, gently.</h1>
       <p class="lead">
@@ -5487,19 +5259,6 @@ function viewWelcome() {
       </p>
       <div class="actions">
         <button class="btn-primary" data-action="begin">Begin</button>
-=======
-      <span class="eyebrow">Phobia simulator · gradual exposure · 3D + voice-guided</span>
-      <h1 class="huge">A space built for one thing — facing your phobia.</h1>
-      <p class="lead">
-        Mira is not a meditation app. It is a focused practice ground for
-        people who want to confront a specific fear — heights, spiders,
-        dogs, snakes, enclosed spaces, public speaking — in a safe,
-        controlled simulation. Walk in as yourself. Step toward the fear
-        at your own pace. Watch your body learn it is safe.
-      </p>
-      <div class="actions">
-        <button class="btn-primary" data-action="begin">Choose your phobia</button>
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
         <button class="btn-ghost" id="howItWorksBtn">How a session works</button>
       </div>
     </div>
@@ -5507,7 +5266,6 @@ function viewWelcome() {
     <div class="pillars">
       <div class="pillar">
         <h4>You stay in control</h4>
-<<<<<<< HEAD
         <p>Pause, breathe, or leave any step. Nothing locks. Nothing surprises you.</p>
       </div>
       <div class="pillar">
@@ -5532,17 +5290,6 @@ function viewWelcome() {
         <div class="cs-icons" aria-hidden="true">
           <span>🧘</span><span>🌬️</span><span>🌱</span>
         </div>
-=======
-        <p>Pause, step back, or leave any rung. Nothing locks. Nothing surprises you.</p>
-      </div>
-      <div class="pillar">
-        <h4>Your body learns calm</h4>
-        <p>Anxiety naturally falls when you stay with it. Each rung asks you to hold a little longer.</p>
-      </div>
-      <div class="pillar">
-        <h4>Built on real science</h4>
-        <p>Gradual exposure with inhibitory learning — the method clinicians use for specific phobias.</p>
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
       </div>
     </div>
 
@@ -5551,7 +5298,7 @@ function viewWelcome() {
       <div class="character-callout-row">
         <div class="character-callout-text">
           <h3>First, make yourself.</h3>
-          <p>Pick a name, a face, what you wear. The character walks every scene with you — your skin tone is the hand on the railing, your shirt is what the dog sees. Switch between first-person and over-the-shoulder any time.</p>
+          <p>Pick a name, a face, what you wear, what fears you want to work on. The character walks every scene with you — your skin tone is the hand on the railing, your shirt is what you wear into the cabin. You can change anything later.</p>
           <div class="actions" style="margin-top:8px">
             <button class="btn-primary" data-action="begin">Create your character</button>
           </div>
@@ -5563,8 +5310,8 @@ function viewWelcome() {
     </div>` : ""}
 
     <div class="panel" style="margin-top:18px">
-      <h3 style="margin-bottom:6px">${phobiaCount} phobias, deeply built</h3>
-      <p>We picked the most-recognised fears and gave each one a real, character-driven 3D scene — not a stock library. Tap any one to read the clinical science, then start when you're ready.</p>
+      <h3 style="margin-bottom:6px">Nine fears you can work with</h3>
+      <p>Hover any one to read the science behind it. Pick yours when you start.</p>
       <div class="show-grid">${phobiaCards}</div>
     </div>
 
@@ -5575,28 +5322,28 @@ function viewWelcome() {
           <div class="journey-num">1</div>
           <div class="journey-text">
             <strong>Pick a rung</strong>
-            <span>Each phobia has 5 rungs from easy to intense. The ladder shows what to expect at each one.</span>
+            <span>Each phobia has 5 rungs from easy to intense. Ladder shows what to expect at each one.</span>
           </div>
         </div>
         <div class="journey-step">
           <div class="journey-num">2</div>
           <div class="journey-text">
-            <strong>Step into the scene</strong>
-            <span>3D scene loads. Walk forward as your character — first-person or over-the-shoulder. A calm voice grounds you.</span>
+            <strong>3 second countdown · breath cue</strong>
+            <span>Get ready. Notice your body before the scene appears.</span>
           </div>
         </div>
         <div class="journey-step">
           <div class="journey-num">3</div>
           <div class="journey-text">
-            <strong>Stay with it</strong>
-            <span>The hold timer asks you to hold long enough for the anxiety curve to fall. Press Esc any time to ground.</span>
+            <strong>Hold the exposure</strong>
+            <span>Look around in 3D. A calm voice grounds you. The hold timer recommends staying just long enough for the anxiety curve to fall.</span>
           </div>
         </div>
         <div class="journey-step">
           <div class="journey-num">4</div>
           <div class="journey-text">
             <strong>Rate · breathe · climb</strong>
-            <span>Self-rate your anxiety on the SUDS scale. If it's high, a box-breath helps. When ready, the next rung.</span>
+            <span>Self-rate your anxiety on the SUDS scale. If it's high, take a guided box-breath. When ready, the next rung.</span>
           </div>
         </div>
       </div>
@@ -6073,12 +5820,7 @@ function viewExposure(phobiaKey, levelIdx) {
     // "Tips" toggle for accessibility / touch users who prefer it.
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="dogs">
-<<<<<<< HEAD
         <button class="cmd-btn" data-cmd="sit" title="Keyboard: S"><span class="cmd-icon">🐾</span><span>Settle (S)</span></button>
-=======
-        <button class="cmd-btn" data-cmd="sit" title="Keyboard: S"><span class="cmd-icon">🐾</span><span>Sit (S)</span></button>
-        <button class="cmd-btn" data-cmd="lay" title="Keyboard: L"><span class="cmd-icon">😴</span><span>Lay down (L)</span></button>
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
         <button class="cmd-btn" data-cmd="ball" title="Keyboard: B"><span class="cmd-icon">⚪</span><span>Throw ball (B)</span></button>
         <button class="cmd-btn" data-cmd="treat" title="Keyboard: T"><span class="cmd-icon">🦴</span><span>Give treat (T)</span></button>
         <button class="cmd-btn" data-cmd="call" title="Keyboard: C"><span class="cmd-icon">👋</span><span>Call (C)</span></button>
@@ -6099,7 +5841,6 @@ function viewExposure(phobiaKey, levelIdx) {
         <button class="cmd-btn" data-cmd="coin"><span class="cmd-icon">🪙</span><span>Drop a coin</span></button>
       </div>
     `;
-<<<<<<< HEAD
   } else if (phobiaKey === "water") {
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="water">
@@ -6107,8 +5848,6 @@ function viewExposure(phobiaKey, levelIdx) {
         <button class="cmd-btn" data-cmd="lookdown"><span class="cmd-icon">⤓</span><span>Look down</span></button>
       </div>
     `;
-=======
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   } else if (phobiaKey === "spiders") {
     // Tools that put the user in a calm, empowered position rather than a
     // panic-fight one. "Glass jar" is the real-life humane catch technique
@@ -6122,7 +5861,6 @@ function viewExposure(phobiaKey, levelIdx) {
         <button class="cmd-btn" data-cmd="jar" title="Click the spider to lower the jar"><span class="cmd-icon">🫙</span><span>Glass jar</span></button>
       </div>
     `;
-<<<<<<< HEAD
   } else if (phobiaKey === "flying") {
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="flying">
@@ -6132,8 +5870,6 @@ function viewExposure(phobiaKey, levelIdx) {
         <button class="cmd-btn" data-cmd="breath"><span class="cmd-icon">🫁</span><span>Steady breath</span></button>
       </div>
     `;
-=======
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   } else if (phobiaKey === "speaking") {
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="speaking">
@@ -6152,7 +5888,6 @@ function viewExposure(phobiaKey, levelIdx) {
         <button class="cmd-btn" data-cmd="switch"><span class="cmd-icon">💡</span><span>Light switch</span></button>
       </div>
     `;
-<<<<<<< HEAD
   } else if (phobiaKey === "needles") {
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="needles">
@@ -6161,8 +5896,6 @@ function viewExposure(phobiaKey, levelIdx) {
         <button class="cmd-btn" data-cmd="bandage"><span class="cmd-icon">🩹</span><span>Press bandage</span></button>
       </div>
     `;
-=======
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   } else if (phobiaKey === "snakes") {
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="snakes">
@@ -6172,7 +5905,6 @@ function viewExposure(phobiaKey, levelIdx) {
         <button class="cmd-btn" data-cmd="leaf"><span class="cmd-icon">🍃</span><span>Drop a leaf</span></button>
       </div>
     `;
-<<<<<<< HEAD
   } else if (phobiaKey === "driving") {
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="driving">
@@ -6197,8 +5929,6 @@ function viewExposure(phobiaKey, levelIdx) {
         <button class="cmd-btn" data-cmd="match"><span class="cmd-icon">🔥</span><span>Light a match</span></button>
       </div>
     `;
-=======
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   }
   return `
     <div class="panel exposure-panel">
@@ -6419,15 +6149,6 @@ function mountExposure(phobiaKey, levelIdx) {
   if (captionsEnabled) {
     captions = document.createElement("div");
     captions.className = "captions";
-    captions.setAttribute("role", "status");
-    captions.setAttribute("aria-live", "polite");
-    captions.title = "Tap to dismiss";
-    // Click on a caption hides it immediately. The next voice line will
-    // re-show with new text — we only dismiss the current one.
-    captions.addEventListener("click", () => {
-      captions.classList.remove("show");
-      if (captionsTimer) { clearTimeout(captionsTimer); captionsTimer = null; }
-    });
     stage.appendChild(captions);
   }
   function onVoiceLine(e) {
@@ -6528,28 +6249,16 @@ function mountExposure(phobiaKey, levelIdx) {
     }, 250);
     // Start audio appropriate to this scene
     PhobiaAudio.unlock();
-    // Tune the narrator's voice to this scene's profile (each phobia gets
-    // a distinct rate / pitch / preferred voice so sessions don't all sound
-    // identical). No-op if voice synthesis is unavailable.
-    if (window.PhobiaVoice && PhobiaVoice.setScene) PhobiaVoice.setScene(phobiaKey);
     stageAudio = startSceneAudio(phobiaKey, levelIdx);
     // Start heartbeat for the harder rungs
     if (levelIdx >= 2) {
       stageAudio.push(PhobiaAudio.startHeartbeat(bpm));
     }
-    // Schedule scripted voice cues — strict step-by-step pacing.
-    //   - First line is delayed 6 s after scene start so it doesn't talk over
-    //     the on-screen controls hint. The user gets to read the hint first,
-    //     then a single voice cue arrives, then nothing for ~14 s.
-    //   - Subsequent lines pace 14 s apart so each instruction lands alone.
-    //   - Captions appear only when their voice line plays (one at a time).
-    // We also stash the scene-start time on a global gate so other systems
-    // (context prompts, fear-driven narrator) can suppress themselves during
-    // the first few seconds and avoid stacking guidance.
-    window._sceneStartedAt = Date.now();
+    // Schedule scripted voice cues — about every 14 seconds (slower cadence
+    // so the user has time to actually sit with the previous instruction).
     const lines = (VOICE_LINES[phobiaKey] || [])[levelIdx] || [];
     lines.forEach((line, i) => {
-      const delay = 6000 + i * 14000;
+      const delay = 1400 + i * 14000;
       voiceTimers.push(setTimeout(() => {
         if (timer && timer.isConnected) PhobiaVoice.speak(line);
       }, delay));
@@ -6757,10 +6466,13 @@ function startSceneAudio(phobiaKey, levelIdx) {
       if (levelIdx >= 3) handles.push(A.startBreathing(0.18 + intensity * 0.15));
       break;
     }
-    case "spiders": {
-      handles.push(A.startRoomTone(0.18));
-      handles.push(A.startSkittering());
-      if (levelIdx >= 3) handles.push(A.startBreathing(0.35));
+    case "water": {
+      if (levelIdx >= 4) {
+        handles.push(A.startUnderwater());
+        handles.push(A.startBreathing(0.3));
+      } else {
+        handles.push(A.startWaterLap(0.3 + intensity * 0.7));
+      }
       break;
     }
     case "dogs": {
@@ -6773,10 +6485,10 @@ function startSceneAudio(phobiaKey, levelIdx) {
       if (lv.intensity === "barking") handles.push(A.startBreathing(0.9));
       break;
     }
-    case "snakes": {
-      handles.push(A.startWind(0.2));      // outdoor ambience
-      handles.push(A.startHiss(0.15 + intensity * 0.4));
-      if (levelIdx >= 3) handles.push(A.startBreathing(0.3));
+    case "spiders": {
+      handles.push(A.startRoomTone(0.18));
+      handles.push(A.startSkittering());
+      if (levelIdx >= 3) handles.push(A.startBreathing(0.35));
       break;
     }
     case "enclosed": {
@@ -6787,10 +6499,47 @@ function startSceneAudio(phobiaKey, levelIdx) {
       if (levelIdx >= 1) setTimeout(() => A.doorCreak(), 600);
       break;
     }
+    case "flying": {
+      // Engine pod sits outside the left window — pan the drone to that
+      // position so the user actually hears the engine "out there" instead
+      // of in their ears. Coordinates match the engine mesh in setupFlying.
+      handles.push(A.startEngineDrone(0.4 + intensity * 0.6, { x: -4.0, y: -0.05, z: -4.2 }));
+      if (levelIdx >= 3) handles.push(A.startBreathing(0.3 + intensity * 0.2));
+      // Quiet cabin chatter via room tone (no panning — surrounds you)
+      handles.push(A.startRoomTone(0.15));
+      break;
+    }
+    case "needles": {
+      handles.push(A.startRoomTone(0.18));
+      if (levelIdx >= 2) handles.push(A.startBreathing(0.4 + intensity * 0.2));
+      break;
+    }
+    case "snakes": {
+      handles.push(A.startWind(0.2));      // outdoor ambience
+      handles.push(A.startHiss(0.15 + intensity * 0.4));
+      if (levelIdx >= 3) handles.push(A.startBreathing(0.3));
+      break;
+    }
     case "speaking": {
-      const crowd = (PHOBIAS.speaking?.levels?.[levelIdx]?.crowd);
-      handles.push(A.startAudienceMurmur(crowd != null ? crowd : intensity));
+      handles.push(A.startAudienceMurmur(level.crowd != null ? level.crowd : intensity));
       if (levelIdx >= 2) handles.push(A.startBreathing(0.4 + intensity * 0.25));
+      break;
+    }
+    case "driving": {
+      const speed = level.speed != null ? level.speed : intensity;
+      handles.push(A.startDrivingDrone(speed));
+      if (levelIdx >= 4) handles.push(A.startRain(0.6));
+      if (levelIdx >= 3) handles.push(A.startBreathing(0.35));
+      break;
+    }
+    case "storms": {
+      handles.push(A.startRain(0.4 + intensity * 0.5));
+      if (levelIdx >= 2) handles.push(A.startBreathing(0.35));
+      break;
+    }
+    case "dark": {
+      handles.push(A.startRoomTone(0.3 + intensity * 0.3));
+      if (levelIdx >= 2) handles.push(A.startBreathing(0.4 + intensity * 0.2));
       break;
     }
   }
@@ -6867,6 +6616,29 @@ function renderHeights(el, lv, idx) {
       <!-- vertigo dots -->
       ${h > 0.6 ? '<circle cx="400" cy="180" r="3" fill="rgba(255,255,255,.6)"><animate attributeName="r" values="2;6;2" dur="2s" repeatCount="indefinite"/></circle>' : ''}
     </svg>
+  `;
+}
+
+function renderWater(el, lv) {
+  const fill = lv.level; // 0..1
+  el.innerHTML = `
+    <svg viewBox="0 0 800 360" preserveAspectRatio="xMidYMid slice" style="position:absolute;inset:0">
+      <defs>
+        <linearGradient id="bg" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stop-color="#0c4a6e"/>
+          <stop offset="1" stop-color="#0e7490"/>
+        </linearGradient>
+      </defs>
+      <rect width="800" height="360" fill="url(#bg)"/>
+      ${fill > 0.7 ? Array.from({length: 30}).map((_,i)=>{
+        const x = (i*53)%800, y=(i*97)%360, r=Math.random()*2+0.5;
+        return `<circle cx="${x}" cy="${y}" r="${r}" fill="rgba(255,255,255,.6)"><animate attributeName="cy" from="${y}" to="${y-30}" dur="${3+Math.random()*3}s" repeatCount="indefinite"/></circle>`;
+      }).join("") : ""}
+    </svg>
+    <div class="water-fill" style="height:${fill*100}%"></div>
+    <div class="ripple" style="left:30%;top:${(1-fill)*70+10}%;width:120px;height:120px"></div>
+    <div class="ripple" style="left:60%;top:${(1-fill)*60+15}%;width:80px;height:80px;animation-delay:1.2s"></div>
+    <div class="ripple" style="left:45%;top:${(1-fill)*80+5}%;width:140px;height:140px;animation-delay:2s"></div>
   `;
 }
 
@@ -7050,9 +6822,11 @@ function renderSnake(el, lv) {
 }
 
 // ---------- Icons (SVG) ----------
-// One per phobia we ship. Add a new icon when adding a new scene.
 function heightsIcon() {
   return `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 21l5-9 4 6 4-12 5 15z" stroke="#7cd1c5"/></svg>`;
+}
+function waterIcon() {
+  return `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#7cd1c5" stroke-width="2"><path d="M12 2 C 7 8, 4 12, 4 16 a 8 8 0 0 0 16 0 c 0-4 -3-8 -8 -14z"/></svg>`;
 }
 function dogIcon() {
   return `<svg width="32" height="32" viewBox="0 0 24 24" fill="#7cd1c5"><path d="M4 9 L7 5 L9 7 L15 7 L17 5 L20 9 L20 15 Q20 20 12 20 Q4 20 4 15 Z"/><circle cx="9" cy="12" r="1.2" fill="#0b1020"/><circle cx="15" cy="12" r="1.2" fill="#0b1020"/></svg>`;
@@ -7063,11 +6837,26 @@ function spiderIcon() {
 function roomIcon() {
   return `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#7cd1c5" stroke-width="2"><rect x="4" y="4" width="16" height="16"/><path d="M9 12 h 6"/></svg>`;
 }
+function planeIcon() {
+  return `<svg width="32" height="32" viewBox="0 0 24 24" fill="#7cd1c5"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 1 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1L15 22v-1.5L13 19v-5.5z"/></svg>`;
+}
+function syringeIcon() {
+  return `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#7cd1c5" stroke-width="2" stroke-linecap="round"><path d="M3 21l3-3M5 19l5-5M14 14l-3 3M14 6l4 4M11 9l4 4M16 4l4 4"/></svg>`;
+}
 function snakeIcon() {
   return `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#7cd1c5" stroke-width="2" stroke-linecap="round"><path d="M4 18 Q8 14 12 18 T20 18 Q22 18 22 16 Q22 14 20 14"/><circle cx="20" cy="14" r="1" fill="#7cd1c5"/></svg>`;
 }
 function micIcon() {
   return `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#7cd1c5" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 12 a7 7 0 0 0 14 0M12 19 v 3"/></svg>`;
+}
+function carIcon() {
+  return `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#7cd1c5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 14 l1 -4 a2 2 0 0 1 2 -1 h8 a2 2 0 0 1 2 1 l1 4"/><rect x="3" y="14" width="18" height="5" rx="1"/><circle cx="7" cy="19" r="1.5" fill="#7cd1c5"/><circle cx="17" cy="19" r="1.5" fill="#7cd1c5"/></svg>`;
+}
+function stormIcon() {
+  return `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#7cd1c5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10 a4 4 0 1 1 8 0 h2 a3 3 0 0 1 0 6 h-9 a3 3 0 0 1 0 -6 z"/><path d="M11 14 l-2 4 h3 l-2 4" stroke="#fbbf24" stroke-width="2" fill="none"/></svg>`;
+}
+function moonIcon() {
+  return `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#7cd1c5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8 A8 8 0 1 1 11.2 3 a6 6 0 0 0 9.8 9.8z"/><circle cx="17" cy="6" r=".7" fill="#7cd1c5"/><circle cx="20" cy="9" r=".7" fill="#7cd1c5"/></svg>`;
 }
 
 // ---------- Phobia scene thumbnails ----------
@@ -7124,7 +6913,6 @@ function phobiaThumbnail(key) {
       ${[20, 60, 100, 140, 180].map(x => `<line x1="${x}" y1="100" x2="${x}" y2="120" stroke="#aab2bf" stroke-width="1.2" opacity=".7"/>`).join("")}
     </svg>`,
 
-<<<<<<< HEAD
     water: `<svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
       <defs>
         <linearGradient id="wSky" x1="0" x2="0" y1="0" y2="1">
@@ -7375,151 +7163,6 @@ function phobiaThumbnail(key) {
       <path d="M176 69 L180 70 L184 69" stroke="#c92e2e" stroke-width="1" fill="none" stroke-linecap="round"/>
     </svg>`,
 
-=======
-    dogs: `<svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
-      <defs>
-        <linearGradient id="dgRoom" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stop-color="#f4d8b8"/>
-          <stop offset="1" stop-color="#c8a880"/>
-        </linearGradient>
-        <radialGradient id="dgSun" cx=".15" cy=".2" r=".5">
-          <stop offset="0" stop-color="#fff4d8" stop-opacity=".8"/>
-          <stop offset="1" stop-color="#fff4d8" stop-opacity="0"/>
-        </radialGradient>
-      </defs>
-      <rect width="200" height="120" fill="url(#dgRoom)"/>
-      <rect width="200" height="120" fill="url(#dgSun)"/>
-      <!-- floor -->
-      <rect y="80" width="200" height="40" fill="#a07050"/>
-      <rect y="80" width="200" height="3" fill="#806040"/>
-      <!-- window frame upper-left -->
-      <rect x="14" y="14" width="36" height="32" fill="#88c0e0" opacity=".55"/>
-      <line x1="32" y1="14" x2="32" y2="46" stroke="#7a5a3a" stroke-width="1.4"/>
-      <line x1="14" y1="30" x2="50" y2="30" stroke="#7a5a3a" stroke-width="1.4"/>
-      <rect x="12" y="12" width="40" height="36" fill="none" stroke="#5a4028" stroke-width="2"/>
-      <!-- dog body — golden retriever silhouette -->
-      <ellipse cx="118" cy="84" rx="38" ry="18" fill="#c89060"/>
-      <ellipse cx="118" cy="80" rx="34" ry="13" fill="#d8a070"/>
-      <!-- legs -->
-      <rect x="92" y="86" width="8" height="14" fill="#a87850" rx="2"/>
-      <rect x="108" y="86" width="8" height="14" fill="#a87850" rx="2"/>
-      <rect x="128" y="86" width="8" height="14" fill="#a87850" rx="2"/>
-      <rect x="142" y="86" width="8" height="14" fill="#a87850" rx="2"/>
-      <!-- head -->
-      <ellipse cx="148" cy="68" rx="20" ry="18" fill="#d8a070"/>
-      <!-- ears -->
-      <ellipse cx="138" cy="58" rx="8" ry="14" fill="#a87850" transform="rotate(-12 138 58)"/>
-      <ellipse cx="160" cy="58" rx="8" ry="14" fill="#a87850" transform="rotate(15 160 58)"/>
-      <!-- snout -->
-      <ellipse cx="160" cy="74" rx="9" ry="6" fill="#e8b48a"/>
-      <ellipse cx="166" cy="73" rx="2.5" ry="2" fill="#1a1010"/>
-      <!-- eye -->
-      <circle cx="152" cy="65" r="2.2" fill="#1a1010"/>
-      <circle cx="152.5" cy="64.5" r=".7" fill="#fff"/>
-      <!-- collar -->
-      <ellipse cx="148" cy="85" rx="14" ry="3" fill="#c92e2e"/>
-      <circle cx="148" cy="86" r="1.5" fill="#ddc060"/>
-      <!-- tail wagging -->
-      <path d="M82 78 Q70 72, 76 62" stroke="#c89060" stroke-width="6" fill="none" stroke-linecap="round"/>
-    </svg>`,
-
-    spiders: `<svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
-      <defs>
-        <radialGradient id="spGlow" cx=".5" cy=".5" r=".55">
-          <stop offset="0" stop-color="#2a2a32"/>
-          <stop offset="1" stop-color="#0a0a10"/>
-        </radialGradient>
-      </defs>
-      <rect width="200" height="120" fill="url(#spGlow)"/>
-      <!-- web — radial + concentric -->
-      ${[0, Math.PI/4, Math.PI/2, 3*Math.PI/4, Math.PI, 5*Math.PI/4, 3*Math.PI/2, 7*Math.PI/4].map(a => `<line x1="100" y1="60" x2="${100 + Math.cos(a)*100}" y2="${60 + Math.sin(a)*100}" stroke="#3a3a45" stroke-width=".6" opacity=".6"/>`).join("")}
-      ${[18, 32, 48, 65, 82].map(r => `<circle cx="100" cy="60" r="${r}" fill="none" stroke="#3a3a45" stroke-width=".5" opacity=".55"/>`).join("")}
-      <!-- spider body — abdomen + head -->
-      <ellipse cx="100" cy="68" rx="13" ry="16" fill="#0a0a0e"/>
-      <ellipse cx="100" cy="68" rx="13" ry="16" fill="url(#spGlow)" opacity=".5"/>
-      <!-- subtle markings on abdomen -->
-      <path d="M97 60 L100 75 L103 60" stroke="#5a3a2a" stroke-width="1.2" fill="none" opacity=".7"/>
-      <ellipse cx="100" cy="48" rx="9" ry="8" fill="#0a0a0e"/>
-      <!-- legs (8) -->
-      ${[-1,1].map(s => [
-        `M${100 + s*7},${52} Q${100 + s*30},${42} ${100 + s*44},${52}`,
-        `M${100 + s*8},${58} Q${100 + s*32},${56} ${100 + s*48},${66}`,
-        `M${100 + s*8},${66} Q${100 + s*32},${72} ${100 + s*48},${82}`,
-        `M${100 + s*7},${74} Q${100 + s*28},${88} ${100 + s*42},${100}`,
-      ].map(d => `<path d="${d}" stroke="#0a0a0e" stroke-width="2.2" fill="none" stroke-linecap="round"/>`).join("")).join("")}
-      <!-- eyes -->
-      <circle cx="96" cy="46" r="1.6" fill="#fbbf24"/>
-      <circle cx="104" cy="46" r="1.6" fill="#fbbf24"/>
-      <circle cx="98" cy="50" r=".9" fill="#fbbf24" opacity=".7"/>
-      <circle cx="102" cy="50" r=".9" fill="#fbbf24" opacity=".7"/>
-    </svg>`,
-
-    enclosed: `<svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
-      <defs>
-        <linearGradient id="enWall" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stop-color="#4a4c52"/>
-          <stop offset="1" stop-color="#1a1c20"/>
-        </linearGradient>
-        <radialGradient id="enLight" cx=".5" cy=".18" r=".35">
-          <stop offset="0" stop-color="#ffe4b0" stop-opacity=".7"/>
-          <stop offset="1" stop-color="#ffe4b0" stop-opacity="0"/>
-        </radialGradient>
-      </defs>
-      <rect width="200" height="120" fill="url(#enWall)"/>
-      <!-- vanishing-point perspective box (1-point) -->
-      <polygon points="0,0 200,0 140,40 60,40" fill="#2a2c34" opacity=".85"/>
-      <polygon points="0,120 200,120 140,80 60,80" fill="#2a2c34" opacity=".85"/>
-      <polygon points="0,0 60,40 60,80 0,120" fill="#15171c"/>
-      <polygon points="200,0 140,40 140,80 200,120" fill="#15171c"/>
-      <!-- back wall -->
-      <rect x="60" y="40" width="80" height="40" fill="#3a3c44"/>
-      <!-- ceiling light -->
-      <rect width="200" height="120" fill="url(#enLight)"/>
-      <circle cx="100" cy="22" r="5" fill="#fff5d8" opacity=".85"/>
-      <!-- door at the back -->
-      <rect x="92" y="52" width="16" height="28" fill="#5a3a20"/>
-      <rect x="92" y="52" width="16" height="28" fill="none" stroke="#704a30" stroke-width=".8"/>
-      <circle cx="105" cy="68" r="1" fill="#ddc060"/>
-      <!-- subtle floor lines for depth -->
-      <line x1="0" y1="120" x2="60" y2="80" stroke="#0a0a0e" stroke-width=".4" opacity=".6"/>
-      <line x1="200" y1="120" x2="140" y2="80" stroke="#0a0a0e" stroke-width=".4" opacity=".6"/>
-    </svg>`,
-
-    snakes: `<svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
-      <defs>
-        <linearGradient id="snGrass" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stop-color="#a8c08a"/>
-          <stop offset=".6" stop-color="#5a7c48"/>
-          <stop offset="1" stop-color="#2a3d22"/>
-        </linearGradient>
-        <linearGradient id="snBody" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stop-color="#7a8c44"/>
-          <stop offset="1" stop-color="#3a4a20"/>
-        </linearGradient>
-      </defs>
-      <rect width="200" height="120" fill="url(#snGrass)"/>
-      <!-- dappled sunlight -->
-      <ellipse cx="40" cy="30" rx="38" ry="14" fill="#fce0a8" opacity=".25"/>
-      <ellipse cx="160" cy="20" rx="34" ry="10" fill="#fce0a8" opacity=".18"/>
-      <!-- dirt path -->
-      <path d="M0 90 Q50 78, 100 86 T200 92 L200 120 L0 120 Z" fill="#806040" opacity=".75"/>
-      <path d="M0 92 Q50 80, 100 88 T200 94" stroke="#5a4028" stroke-width=".8" fill="none" opacity=".5"/>
-      <!-- grass blades scattered -->
-      ${[15, 28, 42, 55, 145, 168, 182].map(x => `<line x1="${x}" y1="${85 + (x%9)}" x2="${x+2}" y2="${75 + (x%9)}" stroke="#4a6028" stroke-width="1.5" opacity=".7"/>`).join("")}
-      <!-- snake body — sinuous coil -->
-      <path d="M30 84 Q60 70, 90 82 T140 78 Q160 76, 168 70" stroke="url(#snBody)" stroke-width="9" fill="none" stroke-linecap="round"/>
-      <path d="M30 84 Q60 70, 90 82 T140 78 Q160 76, 168 70" stroke="#a0b070" stroke-width="2" fill="none" stroke-linecap="round" opacity=".6"/>
-      <!-- diamond pattern dashes -->
-      ${[40, 56, 72, 92, 108, 130, 148].map((x,i) => `<circle cx="${x}" cy="${82 - (i%2)*4}" r="2" fill="#2a3618" opacity=".7"/>`).join("")}
-      <!-- head -->
-      <ellipse cx="170" cy="68" rx="6" ry="4" fill="#3a4a20"/>
-      <path d="M173 67 L178 65 L177 68 L181 67" stroke="#3a4a20" stroke-width="1.2" fill="none"/>
-      <!-- eye + tongue -->
-      <circle cx="173" cy="67" r="1" fill="#ddd000"/>
-      <path d="M176 69 L180 70 L184 69" stroke="#c92e2e" stroke-width="1" fill="none" stroke-linecap="round"/>
-    </svg>`,
-
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     speaking: `<svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
       <defs>
         <radialGradient id="spkLight" cx=".5" cy=".15" r=".55">
@@ -7550,7 +7193,6 @@ function phobiaThumbnail(key) {
       ].map(([x,y,r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="#1a1f2a"/><rect x="${x-r-2}" y="${y+2}" width="${(r+2)*2}" height="20" fill="#1a1f2a" rx="3"/>`).join("")}
       <!-- water glass on lectern -->
       <rect x="98" y="48" width="4" height="6" fill="#7cd1c5" opacity=".6" rx=".5"/>
-<<<<<<< HEAD
     </svg>`,
 
     driving: `<svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
@@ -7661,8 +7303,6 @@ function phobiaThumbnail(key) {
       <circle cx="58" cy="48" r=".6" fill="#fff" opacity=".6"/>
       <!-- soft moonlight wash on the floor -->
       <ellipse cx="60" cy="100" rx="32" ry="4" fill="#fce6c8" opacity=".10"/>
-=======
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     </svg>`,
   };
   return T[key] || phobiaIconForFallback(key);
@@ -7673,11 +7313,19 @@ function phobiaIconForFallback(key) {
   return p ? `<svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg"><rect width="200" height="120" fill="var(--panel-3)"/><g transform="translate(84 44) scale(1.3)">${p.icon.replace(/<svg[^>]*>|<\/svg>/g, "")}</g></svg>` : "";
 }
 
-// SVG fallback for the speaking scene — used only if 3D fails to mount.
-// (Heights, dogs, spiders, snakes, enclosed have richer SVG fallbacks above.)
+// SVG fallback renderers for the new phobias (used only if 3D fails)
+function renderFlying(el, lv) {
+  el.innerHTML = `<div style="color:#94a3b8;padding:30px;text-align:center;">Flying scene — 3D loading…</div>`;
+}
+function renderNeedles(el, lv) {
+  el.innerHTML = `<div style="color:#94a3b8;padding:30px;text-align:center;">Needles scene — 3D loading…</div>`;
+}
 function renderSpeaking(el, lv) {
   el.innerHTML = `<div style="color:#94a3b8;padding:30px;text-align:center;">Speaking scene — 3D loading…</div>`;
 }
+function renderDriving(el, lv)  { el.innerHTML = `<div style="color:#94a3b8;padding:30px;text-align:center;">Driving scene — 3D loading…</div>`; }
+function renderStorms(el, lv)   { el.innerHTML = `<div style="color:#94a3b8;padding:30px;text-align:center;">Storms scene — 3D loading…</div>`; }
+function renderDark(el, lv)     { el.innerHTML = `<div style="color:#94a3b8;padding:30px;text-align:center;">Dark scene — 3D loading…</div>`; }
 
 // Apply the saved theme (light or dark) by toggling a body class. CSS uses
 // :root vs body.light-mode overrides for the major colour variables.
@@ -8151,15 +7799,8 @@ function runTutorialTour(stage) {
   function done() {
     try { localStorage.setItem("fobia.tutorialSeen", "1"); } catch {}
     overlay.classList.add("dismiss");
-    document.removeEventListener("keydown", onKey);
     setTimeout(() => overlay.remove(), 350);
   }
-  // Esc closes the tour at any moment — same key the user is told to use
-  // for grounding, so it's already in muscle memory.
-  function onKey(e) {
-    if (e.key === "Escape") { e.preventDefault(); done(); }
-  }
-  document.addEventListener("keydown", onKey);
   // Wait for the layout to settle (countdown overlay sits on top until ~2.4s)
   setTimeout(() => show(i), 3000);
 }
@@ -8259,13 +7900,6 @@ import { VRButton } from "three/addons/webxr/VRButton.js";
 // XRControllerModelFactory provides the visible controller mesh that
 // matches the user's actual hardware (Quest Touch, Vision Pro, Index, etc.).
 import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
-
-// Expose THREE on window so the deferred realism / creatures / atmosphere
-// scripts (which can't use ESM imports because they're regular <script src>
-// tags) can read it. Their factory functions defer geometry/material work
-// until first call, so it's fine that this assignment runs after their
-// own script bodies — they just need it available by the time scenes mount.
-window.THREE = THREE;
 
 // Scratch vectors reused every frame for the spatial audio listener update
 // (avoids per-frame allocation in the render hot path).
@@ -8619,14 +8253,11 @@ class FPControls {
                                 // so we look AT the character, not down on top of them
     this.tpShoulder = 0.10;    // tiny over-the-shoulder bias — was 0.45 which
                                 // pushed the character too far left in frame
-<<<<<<< HEAD
     // Solid obstacles the player can't walk through (props, the dog). Each is
     // {x, z, r}; scenes set them via setObstacles(). The player has its own
     // body radius so it stops a little short rather than overlapping.
     this.obstacles = null;
     this.bodyRadius = 0.30;
-=======
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     this.tpBlend = this.cameraMode === "tp" ? 1 : 0;
     // Smoothed camera position for damped follow — populated lazily on the
     // first TP-mode update so the initial position snaps without lag.
@@ -8921,14 +8552,11 @@ class FPControls {
   setCollisionScene(objects) {
     this._collisionScene = Array.isArray(objects) ? objects : null;
   }
-<<<<<<< HEAD
   // Solid circle obstacles {x,z,r} the player can't walk through (props + the
   // dog). Scenes refresh this each frame so moving obstacles work too.
   setObstacles(list) {
     this.obstacles = Array.isArray(list) ? list : null;
   }
-=======
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   toggleCameraMode() {
     this.setCameraMode(this.cameraMode === "tp" ? "fp" : "tp");
     return this.cameraMode;
@@ -9010,7 +8638,6 @@ class Body {
     // each material: pants slightly rough, shoes shiny-but-leathery,
     // shirt cotton-rough, skin sub-surface-ish.
     const emissive = (hex, amt = 0.04) => new THREE.Color(hex).multiplyScalar(amt);
-<<<<<<< HEAD
     const pants = new THREE.MeshStandardMaterial({
       color: o.pantsColor, roughness: 0.92, emissive: emissive(o.pantsColor, 0.03),
     });
@@ -9023,31 +8650,6 @@ class Body {
     const skin  = new THREE.MeshStandardMaterial({
       color: o.skinColor, roughness: 0.72, emissive: emissive(o.skinColor, 0.05),
     });
-=======
-    // Convert numeric hex to "#rrggbb" for the realism module — its texture
-    // cache is keyed by string so the same colour shares a single set of
-    // generated maps across every body part using it.
-    const toHex = (n) => "#" + (typeof n === "number" ? n.toString(16).padStart(6, "0") : String(n).replace("#", ""));
-    const PR = window.PhobiaRealism;
-    const pants = (PR && PR.fabricMaterial)
-      ? PR.fabricMaterial(toHex(o.pantsColor), "denim")
-      : new THREE.MeshStandardMaterial({
-          color: o.pantsColor, roughness: 0.92, emissive: emissive(o.pantsColor, 0.03),
-        });
-    const shoes = new THREE.MeshStandardMaterial({
-      color: o.shoeColor, roughness: 0.50, metalness: 0.08, emissive: emissive(o.shoeColor, 0.02),
-    });
-    const shirt = (PR && PR.fabricMaterial)
-      ? PR.fabricMaterial(toHex(o.shirtColor), "cotton")
-      : new THREE.MeshStandardMaterial({
-          color: o.shirtColor, roughness: 0.88, emissive: emissive(o.shirtColor, 0.04),
-        });
-    const skin  = (PR && PR.skinMaterial)
-      ? PR.skinMaterial(toHex(o.skinColor))
-      : new THREE.MeshStandardMaterial({
-          color: o.skinColor, roughness: 0.72, emissive: emissive(o.skinColor, 0.05),
-        });
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     const shirtFold = new THREE.MeshStandardMaterial({
       color: new THREE.Color(o.shirtColor).multiplyScalar(0.78), roughness: 0.95
     });
@@ -9210,21 +8812,10 @@ class Body {
     }
 
     // Hair — layered on top of the skull, geometry varies by style.
-<<<<<<< HEAD
     const hairMat = new THREE.MeshStandardMaterial({
       color: o.hairColor, roughness: 1.0,
       emissive: new THREE.Color(o.hairColor).multiplyScalar(0.04),
     });
-=======
-    // PBR streak normal map (when realism module loaded) gives the hair
-    // visible directional shading instead of reading as a paint cap.
-    const hairMat = (PR && PR.hairMaterial)
-      ? PR.hairMaterial(toHex(o.hairColor))
-      : new THREE.MeshStandardMaterial({
-          color: o.hairColor, roughness: 1.0,
-          emissive: new THREE.Color(o.hairColor).multiplyScalar(0.04),
-        });
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     // Pony-tail / long hair gets a separate "hair-back" group that flutters
     // independently in the wind. Initialise to nothing for "bald".
     this.hair = new THREE.Group();
@@ -9347,20 +8938,7 @@ class Body {
       brow.position.set(sx * 0.001, 0.030, 0.015);
       brow.rotation.z = sx * -0.10;
       eyeGroup.add(brow);
-<<<<<<< HEAD
       this.eyes.push({ group: eyeGroup, lid });
-=======
-      // Cache base brow rotation/position so the reactive-face routine
-      // can additively tilt it without losing the rest pose. Cache the
-      // base lid scaleY too so blinks compose with fear-widen.
-      const browBaseRotZ = sx * -0.10;
-      const browBaseY = 0.030;
-      this.eyes.push({
-        group: eyeGroup, lid, brow,
-        side: sx, browBaseRotZ, browBaseY,
-        lidBaseY: 0.05,
-      });
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     }
 
     // Nose — short rounded prism
@@ -9382,14 +8960,6 @@ class Body {
     mouth.position.set(0, -0.057, 0.107);
     this.head.add(mouth);
     this.mouth = mouth;
-<<<<<<< HEAD
-=======
-    // Cache the mouth's resting transform so the fear-reactive face routine
-    // can drop the lower lip + scale up the mouth opening additively.
-    this._mouthBase = {
-      y: mouth.position.y, rotX: mouth.rotation.x, scaleY: 1, scaleX: 1,
-    };
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
 
     // Optional glasses
     if (o.glasses === "round" || o.glasses === "square") {
@@ -9766,63 +9336,6 @@ class Body {
       this.shoulders.forEach(s => { s.mesh.position.y = this.opts.chestTopY - 0.06 + bob; });
     }
 
-<<<<<<< HEAD
-=======
-    // ---------- Skeletal-feeling rig additions ----------
-    // The Body class doesn't use SkinnedMesh + Bones — it composes
-    // independent meshes — but real human walking has four extra cues
-    // beyond the leg-arm swing the keyframes already provide:
-    //   1. Hip drop (Trendelenburg)  — the swing-side hip drops as the
-    //      stance leg supports body weight; without this the pelvis looks
-    //      stapled to the spine.
-    //   2. Pelvis-shoulder counter-rotation — pelvis rotates one way while
-    //      the shoulder line rotates the other (single biggest "real
-    //      walking" cue you can give a procedural body).
-    //   3. Lateral weight shift — body sways side-to-side as weight
-    //      transfers between legs.
-    //   4. Idle weight shift — when standing still, weight rocks slowly
-    //      from one foot to the other every few seconds.
-    // Each is additive on top of the existing walk cycle so it composes
-    // with crouch, reach, lean, etc. We cache base positions/rotations on
-    // first frame so the additions don't compound across frames.
-    if (walkAmt > 0.02) {
-      // ---- Walking gait additions ----
-      const walkMag = Math.min(1, walkAmt);
-      // Pelvis (chest+hip line) yaws +/- around the body's vertical axis
-      // in sync with the leg swing. Shoulders counter-rotate.
-      const pelvisYaw = Math.sin(walkPhase) * 0.10 * walkMag;
-      const shoulderYaw = -pelvisYaw * 0.85;
-      if (this.chest) this.chest.rotation.y = shoulderYaw;
-      // Hip drop — sin(walkPhase) is +1 when right leg forward; the
-      // *swing* leg is the forward one, so the hip on the swing side
-      // drops by ~3 cm. Apply by tilting the chest's roll (z rotation).
-      const hipRoll = Math.sin(walkPhase) * 0.05 * walkMag;
-      if (this.chest) this.chest.rotation.z = hipRoll;
-      // Lateral weight shift — body's whole-group x sways with each step
-      // (positive when stance is right leg). Caps at ~2 cm.
-      const lateralShift = Math.sin(walkPhase + Math.PI / 2) * 0.02 * walkMag;
-      this.group.position.x += lateralShift;
-      // Tiny vertical bob beyond the existing camera bob — the body
-      // itself rises and falls with each step.
-      const stepBob = Math.abs(Math.sin(walkPhase)) * 0.012 * walkMag;
-      this.group.position.y += stepBob;
-    } else if (this.chest) {
-      // ---- Idle-stance additions ----
-      // When standing still, weight slowly shifts from one foot to the
-      // other every ~6-8 s. Hip drops on the *unweighted* side, body
-      // sways laterally, and the head subtly turns to follow the shift.
-      this._idleShiftPhase = (this._idleShiftPhase || 0) + (1 / 60) * 0.20;
-      const idleAmt = Math.max(0, 1 - (walkAmt || 0));
-      const slowShift = Math.sin(this._idleShiftPhase) * idleAmt;
-      this.chest.rotation.z = slowShift * 0.04;       // lean left/right
-      this.chest.rotation.y = 0;                       // no walk twist
-      // Tiny lateral sway — barely perceptible
-      this.group.position.x += slowShift * 0.012;
-      // The "idle stance" head bob is already handled by the existing
-      // breathing code; we don't duplicate it here.
-    }
-
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     // ---------- Wind flutter (hair + scarf) ----------
     // The phase increments at a rate proportional to wind exposure so a calm
     // room has nearly-still cloth and a windy ledge has obvious flap. Caller
@@ -9870,68 +9383,6 @@ class Body {
         if (e.lid) e.lid.scale.y = lidY;
       }
     }
-<<<<<<< HEAD
-=======
-
-    // ---------- Reactive face — drives expression off PhobiaFear.suds ----------
-    // Fear (0..100) translates to micro-expression on the user's avatar so
-    // their character visibly *feels* what they feel: eyes widen, brows
-    // arch up at the inside (the universal "alarm" cue), mouth parts.
-    // Only meaningful when head is visible (third-person) but the maths
-    // is cheap so we always run it — the renderer ignores hidden nodes.
-    let fearLevel = 0;
-    if (window.PhobiaFear && typeof window.PhobiaFear.suds === "number") {
-      fearLevel = Math.max(0, Math.min(1, window.PhobiaFear.suds / 100));
-    }
-    // Damp the visible reaction so frame-to-frame fear flicker doesn't
-    // jitter the face — humans don't change expression every 16 ms.
-    if (this._fearVisual === undefined) this._fearVisual = 0;
-    this._fearVisual += (fearLevel - this._fearVisual) * Math.min(1, (1 / 60) * 2.2);
-    const fv = this._fearVisual;
-
-    // Eyes — widen by *lowering* the lid baseline so the visible sclera
-    // is taller than usual. Compose with the existing blink so blinks
-    // still fully close the eye even when widened.
-    if (this.eyes && this.eyes.length === 2 && fv > 0.02) {
-      const widenAmt = fv * 0.04;        // up to 4 cm of extra opening at SUDS 100
-      const browLift = fv * 0.012;
-      const browArchInside = fv * 0.55;  // inside edge of the brow tilts UP
-      for (const e of this.eyes) {
-        if (e.lid) {
-          // Subtract from current lid scale only when not blinking — use the
-          // base 0.05 plus blink contribution we already wrote, then shave
-          // a touch more so the eye reads as wider.
-          e.lid.scale.y = Math.max(0.02, e.lid.scale.y - widenAmt * 0.5);
-        }
-        if (e.brow && typeof e.browBaseRotZ === "number") {
-          // Inside-edge raise: tilt brow rotation.z so its inner end goes up.
-          // For the left eye (side=-1), we rotate +z to raise the inside.
-          // For the right eye (side=+1), we rotate -z. browBaseRotZ already
-          // tilts outward; add a fear-driven inside-up component.
-          e.brow.rotation.z = e.browBaseRotZ + e.side * browArchInside;
-          if (typeof e.browBaseY === "number") {
-            e.brow.position.y = e.browBaseY + browLift;
-          }
-        }
-      }
-    }
-    // Mouth — drops at the corners (fear face) and opens slightly. Composed
-    // additively from the cached rest pose so it returns when fear drops.
-    if (this.mouth && this._mouthBase) {
-      const drop = fv * 0.012;
-      const open = fv * 0.6;
-      this.mouth.position.y = this._mouthBase.y - drop;
-      this.mouth.rotation.x = this._mouthBase.rotX - fv * 0.18;
-      this.mouth.scale.y = this._mouthBase.scaleY * (1 + open);
-      this.mouth.scale.x = this._mouthBase.scaleX * (1 + fv * 0.10);
-    }
-    // Subtle head pull-back when fear is high (real freeze-response cue —
-    // the head retreats from the threat by a couple of cm). Composed on
-    // top of the existing crouch / head-turn drivers.
-    if (this.head && fv > 0.05) {
-      this.head.rotation.x -= fv * 0.05;     // chin tucks slightly up
-    }
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   }
 
   // Spawn a small dust puff at the planted foot. Surface determines the
@@ -10833,11 +10284,17 @@ function unmount() {
 
 const SETUPS = {
   heights: setupHeights,
-  spiders: setupSpiders,
+  water: setupWater,
   dogs: setupDogs,
-  snakes: setupSnakes,
+  spiders: setupSpiders,
   enclosed: setupEnclosed,
+  flying: setupFlying,
+  needles: setupNeedles,
+  snakes: setupSnakes,
   speaking: setupSpeaking,
+  driving: setupDriving,
+  storms: setupStorms,
+  dark: setupDark,
 };
 
 function mount(phobiaKey, container, level, levelIdx, opts = {}) {
@@ -10868,15 +10325,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   badge.style.display = "none";
   container.appendChild(badge);
 
-  // Controls hint — auto-hides after 11–16s OR when the user clicks/taps it.
-  // The pointer-events override on .show makes the click target work; CSS
-  // keeps it pointer-events: none until the user can actually read it.
+  // Controls hint (autohides after 5s)
   const hint = document.createElement("div");
   hint.className = "controls-hint";
-  hint.title = "Tap to dismiss";
-  hint.style.pointerEvents = "auto";
-  hint.style.cursor = "pointer";
-  hint.addEventListener("click", () => { hint.style.opacity = "0"; });
   container.appendChild(hint);
 
   const scene = new THREE.Scene();
@@ -10986,7 +10437,6 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       if (result.collisionObjects && controls.setCollisionScene) {
         controls.setCollisionScene(result.collisionObjects);
       }
-<<<<<<< HEAD
       // Per-scene third-person framing overrides (e.g. the dog scene biases the
       // camera over the shoulder so the dog isn't hidden behind the avatar).
       if (result.controls) {
@@ -10994,8 +10444,6 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         if (result.controls.tpDistance != null) controls.tpDistance = result.controls.tpDistance;
         if (result.controls.tpHeight != null)   controls.tpHeight   = result.controls.tpHeight;
       }
-=======
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
       // Cinematic intro: start the TP smoothed position from a wider /
       // higher angle so the damped follow naturally dollies in to the
       // over-the-shoulder target over ~1 second. Tiny touch but it's the
@@ -11023,7 +10471,6 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         heights: (IS_TOUCH
           ? "You're on a rooftop. <b>Use the joystick</b> to walk toward the railing — your character will approach the edge."
           : "You're on a rooftop. <b>Press W or ↑</b> to walk toward the railing — your character will approach the edge.") + escNote,
-<<<<<<< HEAD
         dogs: (IS_TOUCH
           ? "You've entered the room. The dog is doing its own thing. <b>Use the joystick</b> to walk closer when ready."
           : "You've entered the room. The dog is doing its own thing. <b>Press W or ↑</b> to walk closer when ready.") + escNote,
@@ -11036,23 +10483,6 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         water: (IS_TOUCH
           ? "You're at the shoreline. <b>Use the joystick</b> to wade in when you're ready."
           : "You're at the shoreline. <b>Press W or ↑</b> to wade in when you're ready.") + escNote,
-=======
-        spiders: (IS_TOUCH
-          ? "The spider is across the room. <b>Use the joystick</b> to walk forward when you're ready."
-          : "The spider is across the room. <b>Press W or ↑</b> to walk forward when you're ready.") + escNote,
-        dogs: (IS_TOUCH
-          ? "You've entered the room. The dog is doing its own thing. <b>Use the joystick</b> to walk closer when ready."
-          : "You've entered the room. The dog is doing its own thing. <b>Press W or ↑</b> to walk closer when ready.") + escNote,
-        snakes: (IS_TOUCH
-          ? "You're on a path. <b>Use the joystick</b> to walk toward the snake at your own pace."
-          : "You're on a path. <b>Press W or ↑</b> to walk toward the snake at your own pace.") + escNote,
-        enclosed: (IS_TOUCH
-          ? "You're inside the room. <b>Drag to look around</b>. The walls are still."
-          : "You're inside the room. <b>Drag to look around</b>. The walls are still.") + escNote,
-        speaking: (IS_TOUCH
-          ? "You're at the lectern. <b>Drag to scan the room</b>. Begin speaking when you're ready."
-          : "You're at the lectern. <b>Drag to scan the room</b>. Begin speaking when you're ready.") + escNote,
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
       };
       const intro = sceneIntros[phobiaKey];
       hint.innerHTML = intro || (IS_TOUCH
@@ -11470,30 +10900,15 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     if (earned[id]) return;       // already shown
     earned[id] = Date.now();
     try { localStorage.setItem("fobia.achievements", JSON.stringify(earned)); } catch {}
-<<<<<<< HEAD
     const toast = document.createElement("div");
     toast.className = "achievement-toast";
     toast.style.top = (12 + achievementOffset) + "px";
-=======
-    // Cap to one toast on screen at a time — exposure work is delicate, a
-    // stack of confetti pills is the wrong vibe.
-    achievementContainer.querySelectorAll(".achievement-toast").forEach(t => t.remove());
-    achievementOffset = 0;
-    const toast = document.createElement("div");
-    toast.className = "achievement-toast";
-    toast.style.top = (12 + achievementOffset) + "px";
-    // The tiny × button is purely a visual hint — the entire toast is
-    // clickable and closing happens on either click via the same handler.
-    // aria-label on the inner button keeps the affordance discoverable to
-    // screen readers without forcing a separate click target.
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     toast.innerHTML = `
       <div class="achievement-icon">${icon || "🏅"}</div>
       <div class="achievement-text">
         <strong>${title || "Milestone"}</strong>
         <span>${message || ""}</span>
       </div>
-<<<<<<< HEAD
     `;
     achievementContainer.appendChild(toast);
     achievementOffset += 70;
@@ -11505,24 +10920,6 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         achievementOffset = Math.max(0, achievementOffset - 70);
       }, 500);
     }, 3500);
-=======
-      <button class="toast-close" aria-label="Dismiss notification" tabindex="-1">×</button>
-    `;
-    achievementContainer.appendChild(toast);
-    // Use setTimeout(0) over rAF — rAF is throttled when the tab is hidden
-    // and the toast would never appear if the user briefly looked away.
-    setTimeout(() => toast.classList.add("visible"), 16);
-    let dismissTimer = null;
-    function dismiss() {
-      if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
-      toast.classList.remove("visible");
-      setTimeout(() => {
-        if (toast.parentNode) toast.parentNode.removeChild(toast);
-      }, 350);
-    }
-    toast.addEventListener("click", dismiss);
-    dismissTimer = setTimeout(dismiss, 2800);
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   }
   window.PhobiaFX = window.PhobiaFX || {};
   window.PhobiaFX.achievement = showAchievement;
@@ -11530,7 +10927,6 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // ----- Contextual prompt overlay -----
   // A soft floating message that fades in when the player crosses a
   // character-driven event boundary — e.g. "You're at the edge", "The dog
-<<<<<<< HEAD
   // notices you". No buttons; informational only. The active scene calls
   // window.PhobiaFX.contextPrompt(text, durationMs) to drive it.
   const ctxPrompt = document.createElement("div");
@@ -11538,52 +10934,14 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   container.appendChild(ctxPrompt);
   let ctxPromptHideT = null;
   function showContextPrompt(text, durationMs = 4500) {
-=======
-  // notices you". Tap-dismissible so a user mid-fear can clear it instantly
-  // rather than waiting for the auto-fade. The active scene calls
-  // window.PhobiaFX.contextPrompt(text, durationMs) to drive it.
-  const ctxPrompt = document.createElement("div");
-  ctxPrompt.className = "ctx-prompt";
-  ctxPrompt.setAttribute("role", "status");
-  ctxPrompt.setAttribute("aria-live", "polite");
-  container.appendChild(ctxPrompt);
-  let ctxPromptHideT = null;
-  function hideContextPrompt() {
-    if (ctxPromptHideT) { clearTimeout(ctxPromptHideT); ctxPromptHideT = null; }
-    ctxPrompt.classList.remove("visible");
-  }
-  ctxPrompt.addEventListener("click", hideContextPrompt);
-  // Settle-in gate: drop any prompts that try to fire during the first 5 s of
-  // the scene so the user reads the controls-hint quietly. The voice line
-  // also waits 6 s, giving us a clean step-by-step rhythm:
-  //   T+0   countdown ends, controls-hint visible
-  //   T+5   first context prompt allowed
-  //   T+6   first voice line (with caption)
-  //   T+19  second voice line, etc.
-  const SETTLE_IN_MS = 5000;
-  // Min spacing between consecutive context prompts so the user never sees
-  // two in quick succession.
-  const PROMPT_MIN_GAP_MS = 4000;
-  let lastPromptAt = 0;
-  function showContextPrompt(text, durationMs = 4500) {
-    const now = Date.now();
-    const startedAt = window._sceneStartedAt || now;
-    if (now - startedAt < SETTLE_IN_MS) return;       // suppressed during settle
-    if (now - lastPromptAt < PROMPT_MIN_GAP_MS) return; // too close to last
-    lastPromptAt = now;
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     if (ctxPromptHideT) { clearTimeout(ctxPromptHideT); ctxPromptHideT = null; }
     ctxPrompt.textContent = text;
     ctxPrompt.classList.add("visible");
     if (durationMs > 0) {
-<<<<<<< HEAD
       ctxPromptHideT = setTimeout(() => {
         ctxPrompt.classList.remove("visible");
         ctxPromptHideT = null;
       }, durationMs);
-=======
-      ctxPromptHideT = setTimeout(hideContextPrompt, durationMs);
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     }
   }
   // Expose globally so scene update() callbacks can fire prompts
@@ -12349,23 +11707,17 @@ function setupHeights(scene, camera, level) {
   for (const tex of [concreteMaps.albedo, concreteMaps.normal, concreteMaps.roughness, concreteMaps.ao]) {
     tex.repeat.set(tilesX, tilesY);
   }
-  // Concrete with a hint of clearcoat — real rooftop concrete has a faint
-  // sealant film that catches a soft sky reflection on overcast days. The
-  // normal map gets a slight bump (0.7 → 0.9) so micro-pebbles read more
-  // clearly under the shallow grazing-angle sun on the roof.
-  const platMat = new THREE.MeshPhysicalMaterial({
+  const platMat = new THREE.MeshStandardMaterial({
     map:          concreteMaps.albedo,
     normalMap:    concreteMaps.normal,
-    normalScale:  new THREE.Vector2(0.9, 0.9),
+    normalScale:  new THREE.Vector2(0.7, 0.7),
     roughnessMap: concreteMaps.roughness,
     roughness:    1.0,                  // multiplied by the map
     aoMap:        concreteMaps.ao,
     aoMapIntensity: 1.0,
     color:        tod === "twilight" ? 0x6e7078 : 0x9a9c9f,
     metalness:    0.0,
-    envMapIntensity: tod === "twilight" ? 0.7 : 0.5,
-    clearcoat:    0.15,
-    clearcoatRoughness: 0.7,
+    envMapIntensity: tod === "twilight" ? 0.6 : 0.4,
   });
   const platform = new THREE.Mesh(new THREE.BoxGeometry(platLen, 0.25, platDepth), platMat);
   platform.position.set(0, cameraY - 1.6, platCenterZ);
@@ -12375,26 +11727,6 @@ function setupHeights(scene, camera, level) {
   platform.receiveShadow = true;
   scene.add(platform);
 
-<<<<<<< HEAD
-=======
-  // Wind-blown dust drifting around the rooftop edge — only visible at
-  // the upper rungs where the user is high up. Catches the directional
-  // sun + sells the "actually outdoors at altitude" feeling.
-  let _heightDust = null;
-  if (h > 0.3 && window.PhobiaAtmosphere && window.PhobiaAtmosphere.createDustMotes) {
-    const dustColor = (tod === "twilight") ? 0x9aacc8
-                    : (tod === "golden")   ? 0xffd9a8
-                    :                         0xfff5dd;
-    _heightDust = window.PhobiaAtmosphere.createDustMotes({
-      count: 140, bounds: { x: 18, y: 6, z: 18 },
-      origin: [0, cameraY - 0.5, platCenterZ - 2],
-      color: dustColor, size: 0.07, opacity: 0.40,
-      drift: 0.16,
-    });
-    if (_heightDust) scene.add(_heightDust);
-  }
-
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   // ---------- Rooftop access (compact, off-centre) ----------
   // A small access structure to the LEFT side of the back of the platform —
   // OFF the camera-behind-character axis so the third-person camera doesn't
@@ -12537,17 +11869,12 @@ function setupHeights(scene, camera, level) {
   fascia.castShadow = true; fascia.receiveShadow = true;
   scene.add(fascia);
 
-  // Brushed steel railing — PhysicalMaterial with a thin clearcoat over the
-  // metal gives the rail that "freshly powder-coated" pop you see on real
-  // rooftop railings. Anisotropy (slight aniso along the cylinder length)
-  // simulates the brushed-grain highlight every steel rail has at sundown.
-  const railMat = new THREE.MeshPhysicalMaterial({
+  // Brushed steel railing — lower roughness for sharper highlights, with the
+  // env map doing the heavy lifting. envMapIntensity > 1 gives a real metal
+  // pop against the sky.
+  const railMat = new THREE.MeshStandardMaterial({
     color: 0x9aa3ad, metalness: 0.92, roughness: 0.28,
-    envMapIntensity: 1.6,
-    clearcoat: 0.4,
-    clearcoatRoughness: 0.18,
-    anisotropy: 0.5,
-    anisotropyRotation: 0,
+    envMapIntensity: 1.4,
   });
   // Segmented top rail — each segment can wobble independently when shaken
   const railSegments = [];
@@ -13175,19 +12502,12 @@ function setupHeights(scene, camera, level) {
       bounds: { minX: -halfLen + 1, maxX: halfLen - 1, minZ: -0.2, maxZ: Math.max(2.0, platDepth - 1.0) },
       speed: 1.4,
       lookSpeed: 0.0035,
-<<<<<<< HEAD
       // Default to third-person so the user immediately SEES their character
       // up on the roof. They can flip to first-person any time. We respect
       // any saved preference — only override the default if there isn't one.
       preferredCameraMode: "tp",
       // Over-the-shoulder framing so the avatar doesn't block the edge/view.
       tpShoulder: 0.55, tpDistance: 4.2, tpHeight: 0.5,
-=======
-      // Default to first-person so the user looks out at the drop with their
-      // own eyes — that's where the fear lives. The toggle stays available
-      // for users who want to see themselves on the rooftop in third-person.
-      preferredCameraMode: "fp",
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     },
     // (No NPC — the user's own character is the only character in the scene.)
     // Collidable objects the TP camera should not clip through (the penthouse,
@@ -13265,10 +12585,6 @@ function setupHeights(scene, camera, level) {
     update(t, controls, dt) {
       // Capture for command-bar handlers
       if (controls) storedActiveControls = controls;
-      const _hd = dt || 0.016;
-      if (_heightDust && _heightDust.userData && _heightDust.userData.update) {
-        _heightDust.userData.update(_hd, t);
-      }
 
       // Auto "Look down" animation — smoothly drive pitch to the target,
       // hold for a moment, then return. Implemented as a 0..1 timer.
@@ -13783,7 +13099,6 @@ function setupHeights(scene, camera, level) {
         }
       }
     },
-<<<<<<< HEAD
     dispose() {
       // Stop the dynamic heartbeat when the scene unmounts so the audio
       // doesn't leak into the next rung.
@@ -14447,18 +13762,23 @@ function setupWater(scene, camera, level) {
         }
       }
     },
-=======
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     dispose() {
-      // Stop the dynamic heartbeat when the scene unmounts so the audio
-      // doesn't leak into the next rung.
-      if (heartHandle && heartHandle.stop) {
-        try { heartHandle.stop(); } catch {}
+      const stage = document.getElementById("stage");
+      if (stage) {
+        const hud = stage.querySelector(".trust-hud");
+        if (hud) hud.remove();
+      }
+      // Clean up held pebble + flying pebble + scattered pebbles on unmount
+      if (heldPebbleMesh) {
+        camera.remove(heldPebbleMesh);
+        heldPebbleMesh.geometry.dispose();
+        heldPebbleMesh.material.dispose();
+        heldPebbleMesh = null;
       }
     },
   };
+  return resultObj;
 }
-
 
 // ---------- Procedural dog model + state machine ----------
 // Built from primitives — full control over every state (sit, walk, bark, eat).
@@ -14602,7 +13922,6 @@ function buildDog(opts = {}) {
   parts.jaw = mouth;        // legacy name the fetch state machine expects
   parts.mouth = mouth;
 
-<<<<<<< HEAD
   const url = DOG_MODELS[breed] || DOG_MODELS.shiba;
   loadGLTF(url).then((gltf) => {
     if (dog.userData.disposed) return;       // scene unmounted before load done
@@ -14640,105 +13959,6 @@ function buildDog(opts = {}) {
 
     dog.add(model);
     parts.model = model;
-=======
-  // Fur — MeshPhysicalMaterial with `sheen` is the single biggest "looks
-  // like fur, not plastic" upgrade. Sheen adds a soft fresnel-driven
-  // highlight at grazing angles that real fur produces (light scattering
-  // through the strand tips). The sheenColor is a warm cream so the rim of
-  // every fur surface picks up a subtle backlight, the way a sunbeam catches
-  // the edge of a real dog. Roughness goes high (0.95) so the body itself
-  // stays matte — only the rim glows.
-  const sheenColor = new THREE.Color(cfg.bellyColor).lerp(new THREE.Color(0xffffff), 0.35);
-  const fur = new THREE.MeshPhysicalMaterial({
-    map:           furMaps.albedo,
-    normalMap:     furMaps.normal,
-    normalScale:   new THREE.Vector2(0.65, 0.65),
-    roughnessMap:  furMaps.roughness,
-    roughness:     0.95,
-    metalness:     0.0,
-    envMapIntensity: 0.45,
-    sheen:         1.0,
-    sheenColor:    sheenColor,
-    sheenRoughness: 0.35,
-  });
-  // Ears use a thinner, slightly transparent material so light bleeds through
-  // the membrane (real ear tissue does this — a key "alive" signal). Sheen
-  // gives the ear edges that backlit-glow look photographers chase.
-  const earFur = new THREE.MeshPhysicalMaterial({
-    map:           earFurMaps.albedo,
-    normalMap:     earFurMaps.normal,
-    normalScale:   new THREE.Vector2(0.55, 0.55),
-    roughnessMap:  earFurMaps.roughness,
-    roughness:     0.95,
-    side:          THREE.DoubleSide,
-    transmission:  0.22,
-    thickness:     0.012,
-    ior:           1.3,
-    sheen:         1.0,
-    sheenColor:    new THREE.Color(0xffd9b8),
-    sheenRoughness: 0.4,
-  });
-  const belly = new THREE.MeshPhysicalMaterial({
-    map:          bellyMaps.albedo,
-    normalMap:    bellyMaps.normal,
-    normalScale:  new THREE.Vector2(0.50, 0.50),
-    roughnessMap: bellyMaps.roughness,
-    roughness:    0.92,
-    sheen:        1.0,
-    sheenColor:   new THREE.Color(0xfff4dc),
-    sheenRoughness: 0.45,
-  });
-  // Wet nose — black with high specular + clearcoat so it catches a real
-  // highlight. The biggest single "alive vs robot" signal on a dog's face.
-  const dark = new THREE.MeshPhysicalMaterial({
-    color:         cfg.noseColor,
-    roughness:     0.20,
-    metalness:     0.0,
-    clearcoat:     1.0,
-    clearcoatRoughness: 0.05,
-  });
-  const tongueM = new THREE.MeshStandardMaterial({
-    color: cfg.tongueColor, roughness: 0.4, metalness: 0.05,
-  });
-  // Eyes — wet eye shader: high clearcoat over a dark iris for that
-  // "looking right at you" look.
-  const eyeWhiteM = new THREE.MeshPhysicalMaterial({
-    color: 0xfff4ea, roughness: 0.25, clearcoat: 0.8, clearcoatRoughness: 0.05,
-  });
-  const irisM = new THREE.MeshPhysicalMaterial({
-    color: 0x3a2418, roughness: 0.15, metalness: 0.10,
-    clearcoat: 1.0, clearcoatRoughness: 0.04,
-  });
-
-  // Body / chest — chunkier and rounder so the dog reads as soft and
-  // approachable rather than lean and watchful. Higher segment counts
-  // smooth the silhouette so it doesn't read as a low-poly toy from a
-  // distance — the difference is the single biggest "less robot, more
-  // creature" upgrade we can do without a real GLB model.
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.32, 40, 28), fur);
-  body.scale.set(1.0, 0.92, 1.55);
-  body.position.set(0, 0.42, 0);
-  body.castShadow = true;
-  dog.add(body); parts.body = body;
-  // Light belly
-  const bellyMesh = new THREE.Mesh(new THREE.SphereGeometry(0.30, 24, 18), belly);
-  bellyMesh.scale.set(0.85, 0.5, 1.4);
-  bellyMesh.position.set(0, 0.28, 0);
-  dog.add(bellyMesh);
-  // Chest blaze (lighter cream patch on the chest — friendlier read)
-  const blaze = new THREE.Mesh(new THREE.SphereGeometry(0.18, 18, 14), belly);
-  blaze.scale.set(0.7, 1.1, 0.8);
-  blaze.position.set(0, 0.5, 0.40);
-  dog.add(blaze);
-
-  // Neck — smoother cylinder (24 segments) so the join to the body and head
-  // doesn't read as a stack of hexagons under the soft fur material.
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.30, 24), fur);
-  neck.rotation.x = -0.45;
-  neck.position.set(0, 0.57, 0.36);
-  neck.castShadow = true;
-  dog.add(neck);
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
 
     // Animation: a named action map over the 12 clips the pack ships.
     const mixer = new THREE.AnimationMixer(model);
@@ -14746,189 +13966,10 @@ function buildDog(opts = {}) {
     parts.actions = {};
     gltf.animations.forEach((clip) => { parts.actions[clip.name] = mixer.clipAction(clip); });
 
-<<<<<<< HEAD
     dog.userData.ready = true;
     if (typeof dog.userData.onReady === "function") dog.userData.onReady();
   }).catch((err) => { console.warn("[dogs] model load failed:", url, err); });
 
-=======
-  // Head group (rotates to track player or tip up to bark)
-  const head = new THREE.Group();
-  head.position.set(0, 0.70, 0.52);
-  dog.add(head); parts.head = head;
-  // Bigger, slightly rounder skull — important for "puppy" read. Higher
-  // segments here matter more than anywhere else: the head is what the
-  // user looks at first.
-  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.22, 36, 28), fur);
-  skull.scale.set(1.0, 1.0, 1.05);
-  skull.castShadow = true;
-  head.add(skull);
-  // Forehead patch (a touch lighter — adds character)
-  const forehead = new THREE.Mesh(new THREE.SphereGeometry(0.10, 18, 14), belly);
-  forehead.scale.set(0.7, 0.9, 0.5);
-  forehead.position.set(0, 0.10, 0.13);
-  head.add(forehead);
-  // Snout — softened with rounded sphere instead of a stark box
-  const snout = new THREE.Mesh(new THREE.SphereGeometry(0.10, 24, 18), fur);
-  snout.scale.set(1.0, 0.85, 1.6);
-  snout.position.set(0, -0.06, 0.22);
-  snout.castShadow = true;
-  head.add(snout);
-  // Snout underside (lighter — reads as muzzle marking)
-  const snoutBottom = new THREE.Mesh(new THREE.SphereGeometry(0.085, 18, 14), belly);
-  snoutBottom.scale.set(0.95, 0.5, 1.4);
-  snoutBottom.position.set(0, -0.09, 0.22);
-  head.add(snoutBottom);
-  // Nose — bigger and rounder
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.055, 18, 14), dark);
-  nose.scale.set(1.1, 0.95, 0.95);
-  nose.position.set(0, -0.02, 0.36);
-  head.add(nose);
-  // Soft nose-shine (small white dot on the nose)
-  const noseShine = new THREE.Mesh(
-    new THREE.SphereGeometry(0.012, 8, 6),
-    new THREE.MeshBasicMaterial({ color: 0xffffff })
-  );
-  noseShine.position.set(0.02, 0.005, 0.41);
-  head.add(noseShine);
-
-  // Eyes — bigger, with whites + iris + pupil + highlight. The "soulful eyes"
-  // are the single most powerful empathy signal a procedural dog can have.
-  parts.eyes = [];
-  for (const sx of [-1, 1]) {
-    const eyeGroup = new THREE.Group();
-    eyeGroup.position.set(sx * 0.10, 0.06, 0.15);
-    head.add(eyeGroup);
-    // White — bumped from 14×12 to 22×16 segments so the eye reads as a
-    // smooth round eyeball, not a faceted half-sphere. Less squashed (z 0.8
-    // instead of 0.6) so it bulges naturally and catches highlights.
-    const white = new THREE.Mesh(new THREE.SphereGeometry(0.040, 22, 16), eyeWhiteM);
-    white.scale.set(1.0, 1.0, 0.8);
-    white.position.set(0, 0, 0.005);
-    eyeGroup.add(white);
-    // Iris (dark brown)
-    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.030, 22, 16), irisM);
-    iris.position.set(0, 0, 0.022);
-    iris.scale.set(1, 1, 0.65);
-    eyeGroup.add(iris);
-    // Pupil (deeper black)
-    const pupil = new THREE.Mesh(
-      new THREE.SphereGeometry(0.016, 12, 10),
-      new THREE.MeshBasicMaterial({ color: 0x080404 })
-    );
-    pupil.position.set(0, 0, 0.034);
-    eyeGroup.add(pupil);
-    // Highlight (catchlight — the thing that makes eyes feel "alive")
-    const hl = new THREE.Mesh(new THREE.SphereGeometry(0.009, 8, 6),
-      new THREE.MeshBasicMaterial({ color: 0xffffff }));
-    hl.position.set(sx * 0.008, 0.012, 0.040);
-    eyeGroup.add(hl);
-    // Soft brow (just above the eye — gives a friendlier expression)
-    const brow = new THREE.Mesh(
-      new THREE.SphereGeometry(0.025, 10, 8),
-      new THREE.MeshStandardMaterial({ color: cfg.earColor, roughness: 1.0 })
-    );
-    brow.scale.set(1.0, 0.4, 0.6);
-    brow.position.set(0, 0.038, 0.018);
-    eyeGroup.add(brow);
-    // Upper eyelid — a thin half-sphere we scale on Y to "close" for blinks.
-    // At rest scale.y = 0.05 (near-flat strip), during a blink scale.y = 1.0
-    // (covers the eye). Real dogs blink ~10 times a minute; a missing blink
-    // is the strongest uncanny-valley signal.
-    const eyelid = new THREE.Mesh(
-      new THREE.SphereGeometry(0.042, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2),
-      fur     // matches the head fur so the lid blends in
-    );
-    eyelid.scale.set(1.0, 0.05, 0.55);
-    eyelid.position.set(0, 0.005, 0.005);
-    eyeGroup.add(eyelid);
-    parts.eyes.push({ group: eyeGroup, lid: eyelid });
-  }
-
-  // Floppy ears — bigger, with a subtle inner-ear colour for depth
-  parts.ears = [];
-  const innerEarMat = new THREE.MeshStandardMaterial({ color: 0xc99a76, roughness: 1.0, side: THREE.DoubleSide });
-  for (const sx of [-1, 1]) {
-    const earRoot = new THREE.Group();
-    earRoot.position.set(sx * 0.18, 0.12, 0.0);
-    earRoot.rotation.z = sx * 0.18;
-    earRoot.rotation.x = -0.05;
-    head.add(earRoot);
-    // Outer ear — slightly darker, larger
-    const earMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.13, 0.22), earFur);
-    earMesh.position.set(0, -0.12, 0);
-    earRoot.add(earMesh);
-    // Inner ear — a touch in front, lighter
-    const innerEar = new THREE.Mesh(new THREE.PlaneGeometry(0.085, 0.17), innerEarMat);
-    innerEar.position.set(0, -0.12, 0.005);
-    earRoot.add(innerEar);
-    parts.ears.push(earRoot);
-  }
-
-  // Mouth — soft, smiling line (curved, not a box). Gives the dog a happy
-  // resting expression instead of looking blank. Hidden by the controller
-  // when the jaw opens significantly (panting / barking) so we don't have
-  // a smile floating in front of an open mouth.
-  const smileGeo = new THREE.TorusGeometry(0.045, 0.005, 6, 16, Math.PI * 0.7);
-  const smile = new THREE.Mesh(smileGeo, dark);
-  smile.rotation.z = -Math.PI / 2;
-  smile.rotation.x = -0.2;
-  smile.position.set(0, -0.105, 0.30);
-  head.add(smile); parts.smile = smile;
-
-  // Jaw + tongue (still drives the bark animation, but now hidden under the
-  // closed smile when at rest)
-  const jaw = new THREE.Group();
-  jaw.position.set(0, -0.10, 0.20);
-  head.add(jaw); parts.jaw = jaw;
-  const jawMesh = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.04, 0.16), fur);
-  jawMesh.position.set(0, -0.020, 0.04);
-  jaw.add(jawMesh);
-  const tongue = new THREE.Mesh(new THREE.SphereGeometry(0.045, 14, 10), tongueM);
-  tongue.scale.set(0.95, 0.3, 1.5);
-  tongue.position.set(0, -0.005, 0.06);
-  tongue.visible = false;
-  jaw.add(tongue); parts.tongue = tongue;
-
-  // Tail
-  const tail = new THREE.Group();
-  tail.position.set(0, 0.42, -0.45);
-  dog.add(tail); parts.tail = tail;
-  const tailMesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.05, 0.025, 0.4, 16), fur
-  );
-  tailMesh.position.set(0, 0.16, -0.04);
-  tailMesh.rotation.x = -0.4;
-  tail.add(tailMesh);
-
-  // 4 legs (each in its own group for animation)
-  parts.legs = {};
-  const legPositions = {
-    frontLeft:  [-0.16, 0.30,  0.30],
-    frontRight: [ 0.16, 0.30,  0.30],
-    backLeft:   [-0.16, 0.30, -0.30],
-    backRight:  [ 0.16, 0.30, -0.30],
-  };
-  for (const [name, [x, y, z]] of Object.entries(legPositions)) {
-    const legRoot = new THREE.Group();
-    legRoot.position.set(x, y, z);
-    dog.add(legRoot);
-    const upper = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.06, 0.05, 0.18, 16), fur
-    );
-    upper.position.set(0, -0.09, 0); upper.castShadow = true;
-    legRoot.add(upper);
-    const lower = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.05, 0.04, 0.16, 16), fur
-    );
-    lower.position.set(0, -0.26, 0.02); lower.castShadow = true;
-    legRoot.add(lower);
-    const paw = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.05, 0.13), fur);
-    paw.position.set(0, -0.36, 0.05); paw.castShadow = true;
-    legRoot.add(paw);
-    parts.legs[name] = legRoot;
-  }
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   return dog;
 }
 
@@ -14950,7 +13991,6 @@ class DogController {
     this.followPlayer = false;
     this.minDistance = 0.9;     // how close the dog wants to be when following
     this.baseY = dog.position.y;
-<<<<<<< HEAD
     // ---- Locomotion (grounded: clip playback is matched to ground speed so
     // the paws plant instead of sliding). Scene sets these from the dog size.
     this.walkSpeed = 1.0;       // m/s — overwritten by the scene from dog height
@@ -14977,25 +14017,6 @@ class DogController {
     } else {
       dog.userData.onReady = () => this._play(this._clipForState(this.state), 0.2);
     }
-=======
-    // Footstep cadence — fired each time a paw plants
-    this._lastWalkBucket = -1;
-    // Pet-amount (0..1) — set externally by the scene to drive lean-into-pet
-    // and the "happy contact" facial expression. Smoothed inside update().
-    this.petAmount = 0;
-    this._petAmountSm = 0;
-    // Blink + head-shake timers. Real dogs blink ~10 times/min and do a full
-    // head shake every ~30-90 s to settle their ears.
-    this._blinkPhase = 0;          // 0..1, fires when crossing 1
-    this._nextBlinkAt = 2 + Math.random() * 4;
-    this._headShakeT = 0;          // active head-shake animation timer
-    this._nextShakeAt = 30 + Math.random() * 60;
-    // Yawn — long, slow jaw open with closed eyes. Fires every 60-120 s when
-    // the dog is at rest. The strongest "this is a real animal" cue beyond
-    // breathing.
-    this._yawnT = 0;
-    this._nextYawnAt = 25 + Math.random() * 40;
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   }
 
   _has(name) { return this.parts.actions && this.parts.actions[name]; }
@@ -15099,73 +14120,8 @@ class DogController {
     // perk-up so a petted dog visibly livens).
     this._petAmountSm += (this.petAmount - this._petAmountSm) * Math.min(1, d * 5);
 
-<<<<<<< HEAD
     // ---- Decide whether to follow the player (calm rungs) ----
     if (this.followPlayer && this.state !== "walking" && this.state !== "eat" && this.state !== "bark") {
-=======
-    // Ears — perk up when the dog is looking right at the player (alert
-    // posture), droop when sitting quietly. Real dogs ear-perk is one of
-    // the strongest "this is a real dog reacting to me" signals.
-    //
-    // Fear-mirror: when the human's fear (PhobiaFear.suds) is high, the
-    // dog reads the human as agitated and goes fully alert too. This is a
-    // real cue — a dog can smell adrenaline + see your posture. The
-    // therapeutic implication is visible: when YOU calm down, the dog
-    // visibly calms down with you, closing the alarm loop.
-    if (p.ears && p.ears.length === 2) {
-      const playerHeadDx = this.camera.position.x - this.dog.position.x;
-      const playerHeadDz = this.camera.position.z - this.dog.position.z;
-      const playerDist = Math.hypot(playerHeadDx, playerHeadDz);
-      let humanFear = 0;
-      if (window.PhobiaFear && typeof window.PhobiaFear.suds === "number") {
-        humanFear = Math.max(0, Math.min(1, window.PhobiaFear.suds / 100));
-      }
-      // Smoothed copy so the dog's ears don't twitch frame-by-frame
-      this._humanFearSm = (this._humanFearSm || 0) + (humanFear - (this._humanFearSm || 0)) * Math.min(1, dt * 1.6);
-      const baseAlert = this.state === "bark" ? 1.0
-                      : (this.state === "walking" ? 0.5
-                      : (playerDist < 2.5 ? 0.7 : 0.2));
-      // Lift the alert level when the human is fearful — caps at 1.0 so a
-      // fully-relaxed dog still goes pricked-up alert under high SUDS.
-      const alert = Math.max(baseAlert, this._humanFearSm * 0.95);
-      const earTilt = -0.05 - alert * 0.40;        // -0.05 (relaxed) to -0.45 (perked)
-      for (let i = 0; i < 2; i++) {
-        p.ears[i].rotation.x += (earTilt - p.ears[i].rotation.x) * 0.10;
-        // Ear twitch frequency rises with alertness — a real ear-flick
-        // once every ~3 s when alert, ~1 s when in alarm.
-        const twitchChance = 0.003 + Math.max(0, alert - 0.6) * 0.020;
-        if (alert > 0.6 && Math.random() < twitchChance) {
-          p.ears[i].rotation.x -= 0.18;
-        }
-      }
-      // Body posture — when humanFear is high, dog body braces (less
-      // breathing flex, slight forward lean). Visible "freeze and watch".
-      if (this._humanFearSm > 0.4 && p.body) {
-        const brace = (this._humanFearSm - 0.4) / 0.6;
-        // Reduce breathing amplitude (already computed above by overwriting
-        // body.scale.y / scale.x — we layer a tiny pitch lean on the head)
-        if (p.head) p.head.rotation.x = -brace * 0.10;
-      } else if (p.head) {
-        p.head.rotation.x += (0 - p.head.rotation.x) * 0.05;
-      }
-    }
-
-    // Panting — when idle and close to the player, the jaw bobs at ~3 Hz
-    // and the tongue sticks out. This is the biggest "alive dog" cue.
-    const playerDx2 = this.camera.position.x - this.dog.position.x;
-    const playerDz2 = this.camera.position.z - this.dog.position.z;
-    const isCloseAndCalm = Math.hypot(playerDx2, playerDz2) < 3.0
-                          && (this.state === "idle" || this.state === "sit");
-    if (isCloseAndCalm) {
-      p.tongue.visible = true;
-      // Pant amplitude: 0.0 at far, 0.5 at 1m
-      const pantAmp = 0.30 + Math.sin(t * 6.5) * 0.18;
-      this.jawOpen += (pantAmp - this.jawOpen) * 0.20;
-    }
-
-    // Decide if we should follow the player
-    if (this.followPlayer && this.state !== "walking" && this.state !== "eat") {
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
       const dx = this.camera.position.x - this.dog.position.x;
       const dz = this.camera.position.z - this.dog.position.z;
       const dist = Math.hypot(dx, dz);
@@ -15175,129 +14131,7 @@ class DogController {
       }
     }
 
-<<<<<<< HEAD
     // ---- Locomotion ----
-=======
-    // ---- Pet-amount smoothing ----
-    // Smoothed copy so the lean isn't jerky when the scene sets discrete
-    // pulses. While being petted the dog tilts up + forward toward the hand.
-    this._petAmountSm += (this.petAmount - this._petAmountSm) * Math.min(1, dt * 5);
-
-    // ---- Blinking ----
-    // The eyelid scales on Y from 0.05 (open) to 1.0 (closed) over ~140 ms,
-    // then back. Triggers at intervals of 4-8 seconds (~10/minute average).
-    // Faster when alert (real dogs blink more when excited).
-    this._blinkTimer = (this._blinkTimer || 0) + dt;
-    let lidY = 0.05;
-    if (this._blinkTimer > this._nextBlinkAt) {
-      const phase = (this._blinkTimer - this._nextBlinkAt) / 0.14;
-      if (phase < 1) {
-        lidY = 0.05 + Math.sin(phase * Math.PI) * 0.95;
-      } else {
-        // Blink finished — schedule next
-        this._blinkTimer = 0;
-        this._nextBlinkAt = 4 + Math.random() * 4;
-      }
-    }
-    if (p.eyes && p.eyes.length === 2) {
-      for (const e of p.eyes) {
-        if (e.lid) e.lid.scale.y = lidY;
-      }
-    }
-
-    // ---- Periodic head shake (real dogs do this every ~30-90 s) ----
-    // A short rapid yaw oscillation that doesn't disturb the head's overall
-    // tracking. Only fires when calm (idle / sit, not barking / walking).
-    this._shakeTimer = (this._shakeTimer || 0) + dt;
-    if (this._headShakeT <= 0 && this._shakeTimer > this._nextShakeAt
-        && (this.state === "idle" || this.state === "sit")) {
-      this._headShakeT = 0.55;     // 0.55s shake duration
-      this._shakeTimer = 0;
-      this._nextShakeAt = 30 + Math.random() * 60;
-    }
-    let shakeYaw = 0;
-    if (this._headShakeT > 0) {
-      this._headShakeT = Math.max(0, this._headShakeT - dt);
-      // Damped sinusoid: amplitude decays from 0.45 → 0 over 0.55 s
-      const k = 1 - this._headShakeT / 0.55;
-      shakeYaw = Math.sin(k * Math.PI * 6) * 0.45 * (1 - k);
-    }
-
-    // ---- Yawn (real dogs do this every ~30-90s when relaxed) ----
-    // A long ~1.4 s open-mouth + tipped-head + eyes-closed cycle.
-    this._yawnTimer = (this._yawnTimer || 0) + dt;
-    if (this._yawnT <= 0 && this._yawnTimer > this._nextYawnAt
-        && (this.state === "idle" || this.state === "sit" || this.state === "lay")
-        && !isCloseAndCalm) {
-      this._yawnT = 1.4;
-      this._yawnTimer = 0;
-      this._nextYawnAt = 30 + Math.random() * 50;
-    }
-    let yawnJaw = 0;
-    if (this._yawnT > 0) {
-      this._yawnT = Math.max(0, this._yawnT - dt);
-      const k = 1 - this._yawnT / 1.4;          // 0..1 across the yawn
-      // Smooth open-and-close: peaks at k=0.5
-      yawnJaw = Math.sin(k * Math.PI) * 0.95;
-      // Eyes squint shut during the yawn
-      if (p.eyes && p.eyes.length === 2) {
-        const squint = Math.sin(k * Math.PI) * 0.85;
-        for (const e of p.eyes) {
-          if (e.lid) e.lid.scale.y = Math.max(e.lid.scale.y, 0.05 + squint);
-        }
-      }
-      // Show tongue during the yawn
-      if (p.tongue) p.tongue.visible = true;
-    }
-
-    // Head tracking — ALWAYS track the camera, even during walk / sit / bark.
-    // Real dogs keep eye contact while doing other things, and stopping the
-    // head-tracking during state changes was the biggest "the dog doesn't
-    // see me" tell. Bark adds a brief upward tip on top of tracking; eat
-    // overrides toward the ground (dog is looking at the food). The yaw is
-    // clamped to ±0.8 rad — beyond that the dog can't physically twist its
-    // neck without rotating the whole body.
-    {
-      const dx = this.camera.position.x - this.dog.position.x;
-      const dy = this.camera.position.y - (this.dog.position.y + 0.7);  // approx dog's eye height
-      const dz = this.camera.position.z - this.dog.position.z;
-      const horizDist = Math.hypot(dx, dz);
-      let yawTarget = Math.atan2(dx, dz) - this.dog.rotation.y;
-      while (yawTarget >  Math.PI) yawTarget -= Math.PI * 2;
-      while (yawTarget < -Math.PI) yawTarget += Math.PI * 2;
-      yawTarget = Math.max(-0.8, Math.min(0.8, yawTarget));
-      // Pitch: look up if camera is above the dog, down if below. Real dogs
-      // tilt their head slightly when looking up at a tall human (cute).
-      let pitchTarget = -Math.atan2(dy, horizDist);
-      pitchTarget = Math.max(-0.5, Math.min(0.45, pitchTarget));
-      // State-specific overrides
-      if (this.state === "eat") {
-        yawTarget = 0;
-        pitchTarget = 0.6;
-      } else if (this.state === "bark") {
-        // Tip slightly UP during the bark (the lunge), but keep yaw tracking
-        pitchTarget = -0.4;
-      }
-      // ---- Lean into the pet ----
-      // While being petted the dog tilts its head UP toward the hand. Real
-      // dogs do this — the moment they feel the hand they push their head
-      // up into it. We add ~0.18 rad of upward pitch on top of tracking.
-      pitchTarget -= this._petAmountSm * 0.18;
-      // Smoothing — fast enough to feel responsive but not snappy
-      const yawK = 0.10, pitchK = 0.08;
-      this.headYaw   += (yawTarget   - this.headYaw)   * yawK;
-      this.headPitch += (pitchTarget - this.headPitch) * pitchK;
-      // Subtle head tilt (z rotation) — the classic dog "I don't understand"
-      // tilt that triggers when the user is doing something unusual. We
-      // express it as a small periodic wobble dampened by yaw stability.
-      const tilt = Math.sin(this.breath * 0.5) * 0.04;
-      p.head.rotation.z = tilt;
-    }
-    p.head.rotation.y = this.headYaw + shakeYaw;
-    p.head.rotation.x = this.headPitch;
-
-    // Walking — translate + 4-beat gait + grounded body bob
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     if (this.state === "walking" && this.followTarget) {
       const dx = this.followTarget.x - this.dog.position.x;
       const dz = this.followTarget.z - this.dog.position.z;
@@ -15370,58 +14204,7 @@ class DogController {
       this.barkCooldown -= d;
       if (this.barkCooldown <= 0) this.setState(this.prevState === "sit" ? "sit" : "idle");
     }
-<<<<<<< HEAD
     // ---- Eat → munch for a beat, then settle.
-=======
-    // Yawn dominates jaw if active — it's a big slow open-and-close
-    if (yawnJaw > 0) {
-      this.jawOpen = Math.max(this.jawOpen, yawnJaw);
-    }
-    p.jaw.rotation.x = this.jawOpen * 0.7;
-    // Hide the smile when the jaw is open enough that we can see inside
-    if (p.smile) p.smile.visible = this.jawOpen < 0.20;
-
-    // ---- Audio: continuous panting + occasional whine ----
-    // A real dog has a constant low texture: panting when calm-and-close,
-    // a quiet whine every ~10-20 s when watching the user. The DogController
-    // owns its own audio scheduling so the dogs scene's update loop doesn't
-    // have to know about it. Spatial audio: each puff comes from the dog's
-    // actual world position, so the user's HRTF positions the sound left/right
-    // correctly when the dog moves around them.
-    this._pantTimer = (this._pantTimer || 0) + dt;
-    this._whineTimer = (this._whineTimer || (15 + Math.random() * 20));
-    const dogWorldPos = {
-      x: this.dog.position.x,
-      y: this.dog.position.y + 0.55,
-      z: this.dog.position.z,
-    };
-    if (window.PhobiaAudio) {
-      // Pant on every breath cycle when close + calm. Skipped during bark
-      // (the bark itself is the sound) and walking (panting + footsteps
-      // stack too much). Slowed to ~0.9-1.0 s per pant so it doesn't feel
-      // like a constant gasp track.
-      if (isCloseAndCalm && this._pantTimer > 0.9 + Math.random() * 0.2
-          && this.state !== "bark" && this.state !== "walking") {
-        this._pantTimer = 0;
-        try { window.PhobiaAudio.dogPant(0.30, dogWorldPos); } catch {}
-      }
-      // Whine: rare enough to feel like a deliberate communication, not a
-      // soundtrack. 35-65 s between whines (was 14-32).
-      this._whineTimer -= dt;
-      if (this._whineTimer <= 0) {
-        const playerDx = this.camera.position.x - this.dog.position.x;
-        const playerDz = this.camera.position.z - this.dog.position.z;
-        const dist = Math.hypot(playerDx, playerDz);
-        if ((this.state === "idle" || this.state === "sit")
-            && dist > 1.5 && dist < 4.5) {
-          try { window.PhobiaAudio.dogWhine(0.4, dogWorldPos); } catch {}
-        }
-        this._whineTimer = 35 + Math.random() * 30;
-      }
-    }
-
-    // Eat — head down, jaw munches; auto-transitions to sit
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     if (this.state === "eat") {
       this.eatPhase -= d * 0.5;
       if (this.eatPhase <= 0) this.setState("sit");
@@ -15497,28 +14280,7 @@ function setupDogs(scene, camera, level) {
   rug.position.set(0, -0.99, -2.2);
   rug.receiveShadow = true;
   scene.add(rug);
-<<<<<<< HEAD
   // A thinner darker rect outline on top of the rug (subtle border detail)
-=======
-
-  // Sunbeam dust motes — drift through the warm window light. Subtle but
-  // does enormous work selling the "real sun-warmed living room" mood.
-  let _dogDust = null;
-  if (window.PhobiaAtmosphere && window.PhobiaAtmosphere.createDustMotes) {
-    _dogDust = window.PhobiaAtmosphere.createDustMotes({
-      count: 130, bounds: { x: 8, y: 4, z: 10 },
-      origin: [0, 1.2, -2], color: 0xffe4b8, size: 0.05, opacity: 0.40,
-      drift: 0.12,
-    });
-    if (_dogDust) scene.add(_dogDust);
-  }
-  // Rug border (slightly darker)
-  const rugBorder = new THREE.Mesh(
-    new THREE.RingGeometry(0, 0, 64),
-    new THREE.MeshBasicMaterial({ visible: false })
-  );
-  // Use a thinner darker rect outline on top of the rug
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   const rugOutline = new THREE.Mesh(
     new THREE.PlaneGeometry(4.8, 3.4),
     new THREE.MeshBasicMaterial({ color: 0x8a4f4a, transparent: true, opacity: 0.6, depthWrite: false })
@@ -15741,7 +14503,6 @@ function setupDogs(scene, camera, level) {
     scene.add(leaf);
   }
 
-<<<<<<< HEAD
   // Build the real (rigged GLTF) dog. Breed + height come from the level so
   // the ladder reads as a clear small→large progression: a small Shiba Inu on
   // the early, calm rungs and a larger Husky as it gets closer and more
@@ -15766,70 +14527,6 @@ function setupDogs(scene, camera, level) {
   dog.rotation.y = (intensity === "barking")
     ? facePlayer
     : facePlayer + Math.PI + (Math.random() - 0.5) * 1.2;
-=======
-  // Build the procedural dog. Distance is the dog's z-offset in the room —
-  // smaller `size` rungs put the dog farther away (a calm distant dog feels
-  // safer); larger `size` rungs place it closer for a more direct approach.
-  // The user spawns at z=4 (room entrance), so user-to-dog gap is distance
-  // + 4. With this formula the gap is 5.5 m at "head-on" and 7.4 m at
-  // "cartoon dog, far away" — close enough to read the dog clearly, far
-  // enough that the user feels the approach.
-  const distance = 1.5 + (1 - size) * 2.5;   // 1.5 (head-on) → 3.4 (far)
-  // Per-rung breed variation. Each rung suggests a different breed silhouette
-  // and palette so the user encounters distinct dogs across the ladder, not
-  // the same model scaled up. Real exposure for cynophobia means meeting a
-  // chihuahua first, then a corgi, then a lab, then a shepherd — different
-  // looks, different sounds.
-  //   rung 0 (size 0.25): chihuahua-ish, white/cream, ears stay perky
-  //   rung 1 (size 0.45): corgi-ish, golden-brown
-  //   rung 2 (size 0.65): golden retriever, classic warm gold
-  //   rung 3 (size 0.85): german shepherd, two-tone tan + black saddle
-  //   rung 4 (size 1.00, intensity "barking"): rottweiler / mastiff, dark
-  let breedOpts;
-  if (intensity === "barking") {
-    breedOpts = { furColor: 0x4a3528, earColor: 0x2a1812, bellyColor: 0x886a4a, noseColor: 0x0d0908 };
-  } else if (size <= 0.30) {
-    breedOpts = { furColor: 0xeed7b8, earColor: 0xcfb285, bellyColor: 0xfaeed4, noseColor: 0x1a1218 };
-  } else if (size <= 0.50) {
-    breedOpts = { furColor: 0xc88a4e, earColor: 0x8a5a2a, bellyColor: 0xefd2a6, noseColor: 0x1a1416 };
-  } else if (size <= 0.70) {
-    breedOpts = { furColor: 0xd6a06a, earColor: 0xa97442, bellyColor: 0xefd2a6, noseColor: 0x1a1416 };
-  } else {
-    breedOpts = { furColor: 0x8a5a30, earColor: 0x4a2a14, bellyColor: 0xc8966a, noseColor: 0x0e0808 };
-  }
-  const dog = buildDog(breedOpts);
-  // Different breeds have different proportions: small dogs are stockier
-  // relative to their height; big breeds are leaner. We scale x/y/z slightly
-  // off-uniform so a chihuahua isn't just a shrunken mastiff.
-  const baseScale = 0.85 + size * 0.45;
-  let scaleX = 1.0, scaleY = 1.0, scaleZ = 1.0;
-  if (size <= 0.30) { scaleX = 1.05; scaleY = 0.92; scaleZ = 0.90; }   // compact
-  else if (size <= 0.50) { scaleX = 1.10; scaleY = 0.85; scaleZ = 1.00; }  // corgi-stocky
-  else if (size <= 0.70) { scaleX = 1.00; scaleY = 1.00; scaleZ = 1.05; }  // balanced
-  else { scaleX = 1.05; scaleY = 1.10; scaleZ = 1.10; }                    // imposing
-  dog.scale.set(baseScale * scaleX, baseScale * scaleY, baseScale * scaleZ);
-  // Track the average scale for downstream code that expects a uniform value
-  // (paw-offset, ring sizing, etc.) — they only need a single number.
-  const dogScale = baseScale;
-  // Floor is at y = -1. The procedural dog's lowest paw sits ~0.085 below the
-  // dog's group origin (after scale). So the group origin needs to be at
-  // floor + scaled paw offset. This puts the feet on the floor instead of
-  // floating in mid-air.
-  const pawOffset = 0.085 * dogScale;
-  // Place the dog slightly to one side at first — a real dog isn't standing
-  // dead-centre staring at the door waiting for you. It's near its bed,
-  // doing its own thing. The user has to walk into the room to get the
-  // dog's attention.
-  const dogStartX = (intensity === "barking") ? 0 : (Math.random() < 0.5 ? -0.7 : 0.7);
-  dog.position.set(dogStartX, -1 + pawOffset, -distance);
-  // Initial rotation: not facing the player. The barking-rung dog faces you
-  // (it's worked up); calmer rungs have the dog facing somewhere else
-  // entirely (sniffing the rug, looking out the window) so the user has to
-  // make their presence known. This is the "the dog is doing its own thing"
-  // realism upgrade — the dog isn't a button that turns on when you arrive.
-  dog.rotation.y = (intensity === "barking") ? Math.PI : Math.PI + (Math.random() - 0.5) * 1.6;
-  dog.castShadow = true;
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   scene.add(dog);
 
   // ---------- Goal indicator: petting circle around the dog ----------
@@ -16065,7 +14762,6 @@ function setupDogs(scene, camera, level) {
   }
 
   const dogCtrl = new DogController(dog, scene, camera);
-<<<<<<< HEAD
   // ---- Solid props the dog + player walk around (circle colliders) ----
   // The water bowl is intentionally NOT a collider (it's flat, and the dog
   // needs to reach it to drink).
@@ -16085,8 +14781,6 @@ function setupDogs(scene, camera, level) {
   dogCtrl.radius      = 0.26 + dogHeight * 0.22;
   dogCtrl.obstacles   = dogObstacles;
   dogCtrl.bounds      = { minX: -4.0, maxX: 4.0, minZ: -5.0, maxZ: 3.5 };
-=======
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   // The "barking" intensity keeps the dog at distance — it doesn't follow.
   // For calm/alert rungs we DELAY the follow-the-player behaviour by ~6 s.
   // In those first seconds the dog is happily doing its own thing (sniffing,
@@ -16340,7 +15034,6 @@ function setupDogs(scene, camera, level) {
       initialPos: [0, 1.55, 4.0],
       initialYaw: 0,
       initialPitch: dogPitch * 0.5,    // gentler tilt — looking ahead, not down
-<<<<<<< HEAD
       bounds: { minX: -3.4, maxX: 3.4, minZ: minZ, maxZ: 4.5 },
       speed: 1.45,
       lookSpeed: 0.0035,
@@ -16359,18 +15052,6 @@ function setupDogs(scene, camera, level) {
     // Gentle bloom + a high threshold so only the window/sunbeam glow, not the
     // whole sunlit wall.
     bloom: { strength: 0.22, threshold: 0.96 },
-=======
-      bounds: { minX: -2.5, maxX: 2.5, minZ: minZ, maxZ: 4.5 },
-      speed: 1.6,
-      lookSpeed: 0.0035,
-      // Default to first-person — a real dog encounter is at eye level, not
-      // a movie of yourself. The user can flip to third-person from the
-      // toggle if they prefer to see themselves approach.
-      preferredCameraMode: "fp",
-    },
-    // (No NPC — the user's own character is the only character in the scene.)
-    bloom: { strength: 0.35, threshold: 0.92 },
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     hands: { skinColor: 0xd4a07a, sleeveColor: 0x3a3d4f },
     surface: "wood",
     interact(controls) {
@@ -16407,16 +15088,12 @@ function setupDogs(scene, camera, level) {
     update(t, controls, dt) {
       if (controls) { dogsControls = controls; storedActiveControls = controls; }
       const d = dt || 0.016;
-      if (_dogDust && _dogDust.userData && _dogDust.userData.update) {
-        _dogDust.userData.update(d, t);
-      }
       petPulse = Math.max(0, petPulse - d);
       // Drive the dog's lean-into-pet from the petPulse so the dog actually
       // reacts to contact instead of just absorbing clicks silently.
       dogCtrl.petAmount = petPulse;
       dogCtrl.update(t, d);
 
-<<<<<<< HEAD
       // Keep the player from walking through the props or the dog. Rebuilt each
       // frame so the dog (a moving obstacle) is always current.
       if (controls && controls.setObstacles) {
@@ -16426,8 +15103,6 @@ function setupDogs(scene, camera, level) {
         ]);
       }
 
-=======
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
       // ---- Feed the unified Fear state ----
       // Proximity to the dog drives the bulk of the fear input. At the
       // "barking" intensity, we add a baseline gaze-driven input so even
@@ -16909,13 +15584,9 @@ function setupDogs(scene, camera, level) {
         if (window.PhobiaAudio) window.PhobiaAudio.bark(1.0 * trustQuiet, dogPos, barkOpts);
         // Discrete fear pulse — barks are the dog scene's "panic spikes"
         if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.6);
-<<<<<<< HEAD
         // ~1.2 s lunge + a clear alert pause between, so the dog reads as
         // "barking at you" rather than continuously rearing.
         nextSpontaneousBark = t + (2.6 + Math.random() * 1.8) / trustQuiet;
-=======
-        nextSpontaneousBark = t + (1.5 + Math.random() * 1.5) / trustQuiet;
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
       }
       if (intensity === "alert" && t > nextSpontaneousBark) {
         dogCtrl.bark();
@@ -16936,13 +15607,10 @@ function setupDogs(scene, camera, level) {
       }
       // Cancel any pending setTimeouts so they don't fire against the disposed dog
       try { dogTimers.forEach(id => clearTimeout(id)); } catch {}
-<<<<<<< HEAD
       // Flag the dog so a still-in-flight model load doesn't attach to a torn-
       // down scene, and stop the mixer so no animation callbacks linger.
       try { dog.userData.disposed = true; } catch {}
       try { if (dog.userData.parts && dog.userData.parts.mixer) dog.userData.parts.mixer.stopAllAction(); } catch {}
-=======
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
       clearItem();
     },
   };
@@ -16980,136 +15648,11 @@ function setupSpiders(scene, camera, level) {
   );
   wall.position.set(0, 4, -8);
   wall.receiveShadow = true;
-
-  // Dust motes drifting in the room — they catch the key light and read as
-  // "real air", grounding the scene as a physical room instead of a void.
-  // Atmosphere module is purely additive, so unmount comes for free with
-  // the scene's standard cleanup (scene.traverse + dispose).
-  let _dust = null;
-  if (window.PhobiaAtmosphere && window.PhobiaAtmosphere.createDustMotes) {
-    _dust = window.PhobiaAtmosphere.createDustMotes({
-      count: 180, bounds: { x: 12, y: 4, z: 14 },
-      origin: [0, 1, -3], color: 0xfff5dd, size: 0.05, opacity: 0.45,
-    });
-    if (_dust) scene.add(_dust);
-  }
   scene.add(wall);
 
-<<<<<<< HEAD
   // Build spider — real rigged GLTF (Quaternius "Easy Enemies", CC0), replacing
   // the old procedural sphere-and-cylinder spider. `size` drives how close it is
   // and how big it reads; the model is fully animated (idle / walk / attack).
-=======
-  // Build spider — chitin PBR materials when available so the body picks up
-  // visible bristle / micro-pebble normal detail under the room light, with
-  // a graceful fallback to flat MeshStandard for first-paint resilience.
-  const spider = new THREE.Group();
-  const black = (window.PhobiaRealism && window.PhobiaRealism.chitinMaterial)
-    ? window.PhobiaRealism.chitinMaterial("#0a0a0a")
-    : new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.45, metalness: 0.05 });
-  const blackish = (window.PhobiaRealism && window.PhobiaRealism.chitinMaterial)
-    ? window.PhobiaRealism.chitinMaterial("#14080a")
-    : new THREE.MeshStandardMaterial({ color: 0x14080a, roughness: 0.5 });
-
-  // Abdomen
-  const abdomen = new THREE.Mesh(new THREE.SphereGeometry(0.5, 24, 18), black);
-  abdomen.scale.set(1.0, 0.8, 1.3);
-  abdomen.position.z = -0.3;
-  abdomen.position.y = 0.05;
-  abdomen.castShadow = true;
-  spider.add(abdomen);
-
-  // Hourglass-ish marking on top
-  const mark = new THREE.Mesh(
-    new THREE.SphereGeometry(0.51, 24, 18, 0, Math.PI * 2, 0, Math.PI / 2),
-    new THREE.MeshStandardMaterial({ color: 0x4a0808, transparent: true, opacity: 0.55 })
-  );
-  mark.scale.copy(abdomen.scale);
-  mark.position.copy(abdomen.position);
-  spider.add(mark);
-
-  // Cephalothorax
-  const ceph = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 12), blackish);
-  ceph.scale.set(0.95, 0.7, 1.1);
-  ceph.position.set(0, 0, 0.35);
-  ceph.castShadow = true;
-  spider.add(ceph);
-
-  // 8 eyes — subtle dark eyes (no horror-red glow). The user is observing,
-  // not being menaced. Eyes catch a faint highlight from the room light.
-  const eyeMat = new THREE.MeshStandardMaterial({
-    color: 0x222222, emissive: 0x331111, emissiveIntensity: 0.15, roughness: 0.3,
-  });
-  const eyePositions = [
-    [-0.10, 0.16, 0.55], [0.10, 0.16, 0.55],
-    [-0.18, 0.10, 0.48], [0.18, 0.10, 0.48],
-    [-0.06, 0.18, 0.52], [0.06, 0.18, 0.52],
-    [-0.14, 0.05, 0.52], [0.14, 0.05, 0.52],
-  ];
-  for (const [x, y, z] of eyePositions) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 10), eyeMat);
-    eye.position.set(x, y, z);
-    spider.add(eye);
-  }
-
-  // Pedipalps (small front feelers)
-  for (const sx of [-1, 1]) {
-    const palp = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.02, 0.25, 6), black);
-    palp.position.set(sx * 0.12, -0.02, 0.65);
-    palp.rotation.z = sx * 0.6;
-    palp.rotation.x = -0.3;
-    spider.add(palp);
-  }
-  // Fangs
-  for (const sx of [-1, 1]) {
-    const fang = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.09, 6), black);
-    fang.position.set(sx * 0.06, -0.06, 0.62);
-    fang.rotation.x = Math.PI;
-    spider.add(fang);
-  }
-
-  // 8 legs — 4 each side, two segments each, with a "knee" bend
-  const legs = [];
-  const legLayout = [
-    { z: -0.25, spread: 0.55 },
-    { z: -0.05, spread: 0.85 },
-    { z:  0.15, spread: 0.85 },
-    { z:  0.35, spread: 0.55 },
-  ];
-  for (const side of [-1, 1]) {
-    for (let li = 0; li < 4; li++) {
-      const cfg = legLayout[li];
-      const legGroup = new THREE.Group();
-      legGroup.position.set(side * 0.18, 0.02, cfg.z);
-
-      // Femur — angles up from body
-      const femur = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.025, 0.55, 8), black);
-      femur.castShadow = true;
-      femur.position.set(side * 0.28, 0.18, 0);
-      femur.rotation.z = side * Math.PI / 4;
-      legGroup.add(femur);
-
-      // Tibia — angles down to floor
-      const tibia = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.015, 0.7, 8), black);
-      tibia.castShadow = true;
-      tibia.position.set(side * cfg.spread, -0.15, 0);
-      tibia.rotation.z = side * Math.PI / 8;
-      legGroup.add(tibia);
-
-      // Tarsus — small foot tip
-      const tarsus = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.005, 0.25, 6), black);
-      tarsus.position.set(side * (cfg.spread + 0.07), -0.45, 0);
-      tarsus.rotation.z = side * Math.PI / 14;
-      legGroup.add(tarsus);
-
-      spider.add(legGroup);
-      legs.push({ group: legGroup, idx: li, side });
-    }
-  }
-
-  // Place spider
-  spider.scale.setScalar(0.55 + size * 0.7);
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   const distance = 8.2 - size * 7.2;
   const spider = buildCreature(CREATURE_MODELS.spider, {
     targetSize: 0.75 + size * 0.95,   // leg-span in world units (~0.9 -> ~1.7)
@@ -17280,24 +15823,14 @@ function setupSpiders(scene, camera, level) {
       // Spawn near the doorway, well back from the spider. Approach is the
       // exposure — the user has to step toward the spider, not start on top
       // of it. First-person locked: spider phobia is an intimate fear (the
-<<<<<<< HEAD
       // spider is small, close, in your space) — third-person dilutes it.
-=======
-      // spider is small, close, in your space). But the user can still toggle
-      // to third-person to see themselves approach if that helps them
-      // commit to the step.
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
       initialPos: [0, 1.0, 4.0],
       initialYaw: 0,
       initialPitch: spiderPitch * 0.4,
       bounds: { minX: -3, maxX: 3, minZ: minZ, maxZ: 5 },
       speed: 1.4,
       lookSpeed: 0.0035,
-<<<<<<< HEAD
       cameraModeLocked: "fp",
-=======
-      preferredCameraMode: "fp",
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     },
     surface: "hard",   // tile floor in the spider room
     interact(controls) {
@@ -17391,7 +15924,6 @@ function setupSpiders(scene, camera, level) {
           spider.position.set(0, -50, 0);
         }
       }
-<<<<<<< HEAD
       // ---- Drive the rigged spider's animation ----
       // The model's own clips do all the leg motion; we just pick idle vs walk
       // and advance the mixer. Skip while the spider is jarred / removed.
@@ -17415,54 +15947,6 @@ function setupSpiders(scene, camera, level) {
               spider.position.z = baseZ;
               if (p.play) p.play("Idle", 0.3);
             }
-=======
-      // Stronger leg twitch at close range
-      const twitchAmp = 0.025 + size * 0.04;
-      legs.forEach((leg, i) => {
-        leg.group.rotation.y = Math.sin(t * (2.5 + size * 2) + i * 0.7) * twitchAmp;
-        leg.group.rotation.x = Math.cos(t * (1.7 + size * 1.5) + i) * twitchAmp * 0.5;
-      });
-      spider.position.y = -0.7 + Math.sin(t * 1.3) * 0.006;
-      eyeMat.emissiveIntensity = 0.12 + Math.sin(t * (1.5 + size * 2)) * 0.08;
-      // Spider tracks the user's position with its body — at close range
-      // the cephalothorax actively orients toward the camera so the user
-      // *feels* watched. Real arachnophobia trigger.
-      if (controls) {
-        const dxS = controls.position.x - spider.position.x;
-        const dzS = controls.position.z - spider.position.z;
-        const distS = Math.hypot(dxS, dzS);
-        if (distS > 0.3) {
-          const targetYaw = Math.atan2(dxS, dzS);
-          // Damped follow so the body turn looks natural, not snappy
-          const yawDelta = (targetYaw - spider.rotation.y + Math.PI * 3) % (Math.PI * 2) - Math.PI;
-          spider.rotation.y += yawDelta * Math.min(1, d * 1.2 * (size * 0.7 + 0.3));
-        }
-      }
-      // Drift the dust motes — keeps the room feeling lived-in.
-      if (_dust && _dust.userData && _dust.userData.update) {
-        _dust.userData.update(d, t);
-      }
-
-      // Highest rungs: a sudden short crawl forward, then a small retreat
-      if (size > 0.7) {
-        if (crawlPhase === 0 && t > crawlStart) {
-          crawlPhase = 0.0001;
-        }
-        if (crawlPhase > 0) {
-          crawlPhase += 0.012;
-          const k = Math.min(1, crawlPhase);
-          // ease-in out forward, then tiny backstep
-          const fwd = k < 0.7 ? (k / 0.7) : (1 - (k - 0.7) / 0.3 * 0.25);
-          spider.position.z = baseZ + fwd * 0.4 * size;
-          // Make legs pump while crawling
-          legs.forEach((leg, i) => {
-            leg.group.position.y = Math.sin(crawlPhase * 18 + i) * 0.08 * size;
-          });
-          if (crawlPhase > 1) {
-            crawlPhase = 0;
-            crawlStart = t + 4 + Math.random() * 5;
-            legs.forEach(leg => leg.group.position.y = 0);
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
           }
         }
         p.mixer.update(d);
@@ -17491,24 +15975,9 @@ function setupEnclosed(scene, camera, level) {
   scene.add(main);
   scene.add(new THREE.AmbientLight(0x2a2a33, 0.45));
 
-  // Walls + floor + ceiling — the user is INSIDE this geometry, so the eye
-  // is right up against every surface. PhysicalMaterial with a tiny
-  // clearcoat on the floor gives that subtle scuffed-vinyl sheen real
-  // institutional flooring has. Walls stay matte; ceiling slightly less
-  // matte so it picks up the lamp.
-  const wallMat = new THREE.MeshPhysicalMaterial({
-    map: makeWallTexture(), color: 0x6a6a70, roughness: 0.95,
-    envMapIntensity: 0.5,
-  });
-  const floorMat = new THREE.MeshPhysicalMaterial({
-    color: 0x3a3a3f, roughness: 0.7, metalness: 0.0,
-    clearcoat: 0.25, clearcoatRoughness: 0.45,
-    envMapIntensity: 0.6,
-  });
-  const ceilMat = new THREE.MeshPhysicalMaterial({
-    color: 0x4a4a52, roughness: 0.85,
-    envMapIntensity: 0.6,
-  });
+  const wallMat = new THREE.MeshStandardMaterial({ map: makeWallTexture(), color: 0x6a6a70, roughness: 0.95 });
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x3a3a3f, roughness: 0.85 });
+  const ceilMat = new THREE.MeshStandardMaterial({ color: 0x4a4a52, roughness: 0.9 });
 
   // Build room
   const room = new THREE.Group();
@@ -17943,8 +16412,10 @@ function setupEnclosed(scene, camera, level) {
   };
 }
 
+// ---------- Flying (airplane cabin) ----------
+function setupFlying(scene, camera, level) {
+  const stage = level.stage; // 0..1, ramp by rung
 
-<<<<<<< HEAD
   scene.background = new THREE.Color(0x88a8c8);
   // Strong key light from outside the window
   const sun = new THREE.DirectionalLight(0xfff5d0, 2.0);
@@ -18843,8 +17314,6 @@ function setupNeedles(scene, camera, level) {
     },
   };
 }
-=======
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
 
 // ---------- Snakes ----------
 function setupSnakes(scene, camera, level) {
@@ -18901,48 +17370,10 @@ function setupSnakes(scene, camera, level) {
     stone.castShadow = true;
     scene.add(stone);
   }
-  // Pollen drifting through the meadow — sells "outside in spring/summer"
-  // far better than a flat green plane. Light yellow particles biased to
-  // float gently UPWARD (the drift sign in createPollen is negative).
-  let _snakePollen = null;
-  if (window.PhobiaAtmosphere && window.PhobiaAtmosphere.createPollen) {
-    _snakePollen = window.PhobiaAtmosphere.createPollen({
-      count: 110, bounds: { x: 14, y: 3, z: 14 },
-      origin: [0, 1.5, -3],
-    });
-    if (_snakePollen) scene.add(_snakePollen);
-  }
 
-<<<<<<< HEAD
   // Snake — real rigged GLTF (Quaternius "Easy Enemies", CC0), replacing the
   // old procedural tube. It lies along the path; the model animates a constant
   // slither in idle. `size` drives both distance and the snake length.
-=======
-  // Snake — a tube along a curve, animated to move slightly
-  const snakePoints = [];
-  for (let i = 0; i < 32; i++) {
-    const t = i / 31;
-    snakePoints.push(new THREE.Vector3(
-      Math.sin(t * Math.PI * 2) * 0.3,
-      0,
-      t * 1.8 - 0.9
-    ));
-  }
-  const snakeCurve = new THREE.CatmullRomCurve3(snakePoints);
-  const snakeGeo = new THREE.TubeGeometry(snakeCurve, 64, 0.05 + size * 0.03, 12, false);
-  // Snake skin — diamond-scale PBR maps when available (visible reptile
-  // texture instead of a flat green tube).
-  const snakeMat = (window.PhobiaRealism && window.PhobiaRealism.scaleMaterial)
-    ? window.PhobiaRealism.scaleMaterial("#4a6028", { emissiveHex: 0x1a2010 })
-    : new THREE.MeshStandardMaterial({
-        color: 0x4a6028, roughness: 0.6,
-        emissive: 0x1a2010, emissiveIntensity: 0.1,
-      });
-  const snake = new THREE.Mesh(snakeGeo, snakeMat);
-  snake.castShadow = true;
-
-  // Position based on size: small/far → big/close
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
   const distance = 9 - size * 8;
   // The model's idle is a coiled, reared (cobra-like) pose, so it's tall — size
   // it by overall height to a modest world height that scales with the rung.
@@ -19113,16 +17544,9 @@ function setupSnakes(scene, camera, level) {
       bounds: { minX: -3, maxX: 3, minZ: -distance + 1.0, maxZ: 5 },
       speed: 1.2,
       lookSpeed: 0.0035,
-<<<<<<< HEAD
       // Snake phobia is intimate — first-person locked so the user is
       // genuinely looking at the creature, not watching themselves.
       cameraModeLocked: "fp",
-=======
-      // Snake phobia is intimate — first-person is the default so the user
-      // is genuinely looking at the creature. Toggle stays available so
-      // they can flip to third-person to see themselves on the path.
-      preferredCameraMode: "fp",
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     },
     hands: { sleeveColor: 0x4a3a25 },
     bloom: { strength: 0.35, threshold: 0.92 },
@@ -19135,12 +17559,6 @@ function setupSnakes(scene, camera, level) {
         controls.setObstacles([{ x: snake.position.x, z: snake.position.z, r: 0.35 }]);
       }
       const dtN = dt || 0.016;
-<<<<<<< HEAD
-=======
-      if (_snakePollen && _snakePollen.userData && _snakePollen.userData.update) {
-        _snakePollen.userData.update(dtN, t);
-      }
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
       // ---- Feed fear state from proximity to the snake ----
       if (controls && window.PhobiaFear) {
         const dxs = controls.position.x - snake.position.x;
@@ -19227,39 +17645,11 @@ function setupSnakes(scene, camera, level) {
       // engaged, not afraid).
       const retreat = sniffing ? 0 : stillness;
       snake.position.z = baseSnakeZ - retreat * 1.5;
-<<<<<<< HEAD
       // Gentle yaw sway when no leaf is being tracked; the rigged model's idle
       // clip provides the body slither + tongue flick.
       if (!leaf) snake.rotation.y = Math.sin(t * 0.6) * 0.05;
       const sp = snake.userData.parts;
       if (sp && sp.mixer) sp.mixer.update(dtN);
-=======
-      // Gentle wave motion of the snake
-      snake.scale.y = (0.7 + size * 0.5) * (1 + Math.sin(t * 1.5) * 0.02);
-      // Snake head tracks the user's extended hand. When the palm comes
-      // close, the head turns toward it — a real predator-prey
-      // interaction cue. The yaw aim is in the snake's local frame
-      // (the snake itself rotates around y to face the path); we lerp
-      // toward the target so the turn looks alive, not snappy.
-      const palmLocal = palmWorld.clone().sub(snake.position);
-      const handAimYaw = Math.atan2(palmLocal.x, palmLocal.z);
-      // Body sway baseline — keeps the natural undulation when not tracking
-      const bodySway = Math.sin(t * 0.6) * 0.05;
-      // Track strength rises as the hand approaches sniffing distance
-      const trackStrength = Math.max(0, Math.min(1, 1 - (headWorldDist - 0.3) / 1.6))
-                          * (extension > 0.4 ? 1 : extension * 2);
-      const targetSnakeYaw = bodySway * (1 - trackStrength) + handAimYaw * trackStrength;
-      snake.rotation.y += (targetSnakeYaw - snake.rotation.y) * Math.min(1, dtN * 3.0);
-      // Head pitch — at close range the head lifts a touch (curious lift)
-      const headLift = trackStrength * 0.10;
-      head.position.y = (snake.position.y + 0.05) + headLift;
-      // Tongue flicker — much faster while sniffing the user's hand
-      if (tongue) {
-        const flickerSpeed = sniffing ? 18 : (8 - stillness * 4);
-        tongue.position.z = head.position.z + 0.05 + Math.sin(t * flickerSpeed) * 0.03;
-        tongue.scale.y = 0.5 + Math.abs(Math.sin(t * flickerSpeed)) * 0.5;
-      }
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     },
     dispose() {
       // Detach the hand group from the camera so it doesn't leak across mounts
@@ -19306,28 +17696,17 @@ function setupSpeaking(scene, camera, level) {
   stage.receiveShadow = true;
   scene.add(stage);
 
-  // Podium / lectern — polished hardwood. Real conference lecterns have a
-  // thick varnish coat that catches the spotlight; clearcoat + low
-  // roughness give that "fresh stage build" sheen the user sees right in
-  // front of them when they grip it. Sheen on the box adds the subtle
-  // grain bloom under stage lighting.
+  // Podium / lectern
   const podium = new THREE.Group();
   const podBox = new THREE.Mesh(
     new THREE.BoxGeometry(0.8, 1.0, 0.5),
-    new THREE.MeshPhysicalMaterial({
-      color: 0x3a2818, roughness: 0.55, metalness: 0.05,
-      clearcoat: 0.5, clearcoatRoughness: 0.25,
-      sheen: 0.3, sheenColor: new THREE.Color(0x8a6a4a),
-    })
+    new THREE.MeshStandardMaterial({ color: 0x3a2818, roughness: 0.7 })
   );
   podBox.position.y = -0.5;
   podium.add(podBox);
   const podTop = new THREE.Mesh(
     new THREE.BoxGeometry(0.95, 0.05, 0.65),
-    new THREE.MeshPhysicalMaterial({
-      color: 0x4a3528, roughness: 0.35, metalness: 0.05,
-      clearcoat: 0.85, clearcoatRoughness: 0.12,
-    })
+    new THREE.MeshStandardMaterial({ color: 0x4a3528, roughness: 0.6 })
   );
   podTop.position.y = 0.025;
   podium.add(podTop);
@@ -19470,34 +17849,16 @@ function setupSpeaking(scene, camera, level) {
   // Audience — silhouettes seated in rows. Count scales with crowd.
   // Friendly face — a single audience member front and centre, slightly more
   // detailed and a touch closer. Nods while the user holds the "speak" button.
-  // Skin + fabric PBR so they read as a real, warm presence right in the
-  // user's eyeline (the audience member they look at while speaking).
-  const __PR_speak = window.PhobiaRealism;
   const friendly = new THREE.Group();
   const friendlyHead = new THREE.Mesh(
-    new THREE.SphereGeometry(0.22, 18, 14),
-    (__PR_speak && __PR_speak.skinMaterial)
-      ? __PR_speak.skinMaterial("#d4a07a")
-      : new THREE.MeshStandardMaterial({ color: 0xd4a07a, roughness: 0.9 })
+    new THREE.SphereGeometry(0.22, 14, 12),
+    new THREE.MeshStandardMaterial({ color: 0xd4a07a, roughness: 0.9 })
   );
-  friendlyHead.scale.set(0.95, 1.05, 0.95);
   friendlyHead.position.y = 0.7;
   friendly.add(friendlyHead);
-  // Hair cap so the friendly face has a recognisable silhouette
-  const friendlyHair = new THREE.Mesh(
-    new THREE.SphereGeometry(0.225, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.55),
-    (__PR_speak && __PR_speak.hairMaterial)
-      ? __PR_speak.hairMaterial("#3a2418")
-      : new THREE.MeshStandardMaterial({ color: 0x3a2418, roughness: 1.0 })
-  );
-  friendlyHair.scale.copy(friendlyHead.scale);
-  friendlyHair.position.copy(friendlyHead.position);
-  friendly.add(friendlyHair);
   const friendlyTorso = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.22, 0.28, 0.6, 14),
-    (__PR_speak && __PR_speak.fabricMaterial)
-      ? __PR_speak.fabricMaterial("#2c9d96", "cotton")
-      : new THREE.MeshStandardMaterial({ color: 0x2c9d96, roughness: 0.9 })
+    new THREE.CylinderGeometry(0.22, 0.28, 0.6, 12),
+    new THREE.MeshStandardMaterial({ color: 0x2c9d96, roughness: 0.9 })
   );
   friendlyTorso.position.y = 0.3;
   friendly.add(friendlyTorso);
@@ -19531,21 +17892,10 @@ function setupSpeaking(scene, camera, level) {
   const shirtTones = [0x2c4a6e, 0x4a3a55, 0x6a3a3a, 0x3a5a3a, 0x4a4a55, 0x6a5a3a, 0x4a2c2a, 0x2c5a6e];
 
   function buildAudienceMember() {
-    // If the upgraded creature builder is loaded, defer to it — gives each
-    // audience member skin pores, fabric weave, varied body proportions,
-    // glasses chance, and idle head sway. Falls back to the old layout
-    // below if the realism scripts haven't booted yet.
-    if (window.PhobiaCreatures && window.PhobiaCreatures.buildAudienceMember) {
-      const root = window.PhobiaCreatures.buildAudienceMember();
-      // The contract used by the rest of speaking-scene code is { root, head, hair, mood }.
-      const head = root.userData && root.userData.head;
-      return { root, head, hair: null, mood: 0 };
-    }
     const person = new THREE.Group();
     const skinHex = skinTones[Math.floor(Math.random() * skinTones.length)];
     const hairHex = hairTones[Math.floor(Math.random() * hairTones.length)];
     const shirtHex = shirtTones[Math.floor(Math.random() * shirtTones.length)];
-<<<<<<< HEAD
     // Small emissive lift so faces don't disappear into the auditorium dark.
     // Real audiences are slightly self-lit by phone screens / aisle lights /
     // crowd-glow; this gets the same effect without an extra light per face.
@@ -19562,17 +17912,6 @@ function setupSpeaking(scene, camera, level) {
       color: shirtHex, roughness: 0.95,
       emissive: new THREE.Color(shirtHex).multiplyScalar(0.05),
     });
-=======
-    const skinM  = (window.PhobiaRealism && window.PhobiaRealism.skinMaterial)
-      ? window.PhobiaRealism.skinMaterial("#" + skinHex.toString(16).padStart(6, "0"))
-      : new THREE.MeshStandardMaterial({ color: skinHex, roughness: 0.85 });
-    const hairM  = (window.PhobiaRealism && window.PhobiaRealism.hairMaterial)
-      ? window.PhobiaRealism.hairMaterial("#" + hairHex.toString(16).padStart(6, "0"))
-      : new THREE.MeshStandardMaterial({ color: hairHex, roughness: 1.0 });
-    const shirtM = (window.PhobiaRealism && window.PhobiaRealism.fabricMaterial)
-      ? window.PhobiaRealism.fabricMaterial("#" + shirtHex.toString(16).padStart(6, "0"), "cotton")
-      : new THREE.MeshStandardMaterial({ color: shirtHex, roughness: 0.95 });
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     // Torso
     const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, 0.40, 6, 10), shirtM);
     torso.position.y = 0.35;
@@ -19642,11 +17981,6 @@ function setupSpeaking(scene, camera, level) {
   let pauseSilence = 0;            // 0..1 — temporary "pause" silence
   let confidence = 0.0;            // 0..1 — grows with sustained speaking + sips
   let speakingControls = null;
-  // Audience attention level (0..1) — closure-scoped so it persists across
-  // frames. Damped follows a target driven by speaking / pause / confidence
-  // so the crowd's collective "lock onto the speaker" reads as a real,
-  // physically observable shift in the room rather than a snap.
-  let _audAttn = 0;
   function wireSpeakingCmds() {
     const bar = document.querySelector('.scene-cmd-bar[data-scene="speaking"]');
     if (!bar || bar.dataset.wired === "1") return;
@@ -19773,15 +18107,7 @@ function setupSpeaking(scene, camera, level) {
       initialPitch: -0.05,
       lookSpeed: 0.0035,
       pitchMin: -0.3, pitchMax: 0.3,
-<<<<<<< HEAD
       cameraModeLocked: "fp",        // standing at the lectern — FP only
-=======
-      // Default to first-person — the fear is feeling the audience look AT
-      // you, so the FP framing is the psychologically correct default. The
-      // toggle stays available for users who want to see themselves at the
-      // lectern (over-the-shoulder facing the audience).
-      preferredCameraMode: "fp",
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
     },
     hands: { sleeveColor: 0x2a2a30 },
     bloom: { strength: 0.6, threshold: 0.85 },
@@ -19804,53 +18130,15 @@ function setupSpeaking(scene, camera, level) {
       // body, so the murmur reads as people looking around / nodding rather
       // than the whole body twisting.
       const settle = (speakingPressed || pauseSilence > 0.5) ? 0.2 : 1.0;
-      // ---- Audience attention model ----
-      // The "attention" value is how locked-in the crowd is on the speaker.
-      // It rises with confident speech, spikes during a pause (pauses earn
-      // attention — the room leans in to see what comes next), and decays
-      // back to "natural sway" otherwise. When attention is high, every
-      // head rotates toward the lectern; when low, heads sway randomly.
-      // _audAttn is closure-scoped so it persists across frames.
-      const targetAttn = pauseSilence > 0.4 ? 1.0
-                       : speakingPressed   ? 0.55 + confidence * 0.3
-                       :                      Math.max(0, confidence - 0.15);
-      _audAttn += (targetAttn - _audAttn) * Math.min(1, d * 1.8);
       audienceMembers.forEach((m, i) => {
-        if (!m.head) return;
-        // Each member's natural-resting head sway (when attention is low)
-        const sway = Math.sin(t * 0.5 + i * 0.7) * 0.10 * settle;
-        // Attention-driven look-toward-speaker. Aim point is the lectern at
-        // (0, 0, -0.6); each member's seat is at (root.x, baseY, root.z).
-        // Yaw toward the lectern from each seat. Add a small per-person
-        // jitter so heads don't all snap in perfect unison.
-        const seatX = m.root.position.x;
-        const seatZ = m.root.position.z;
-        // Vector from seat to lectern in audience-local space (audience
-        // group is at scene origin so seat positions ARE world). Audience
-        // rows face the speaker who sits at z > seatZ (audience is at
-        // negative z, speaker around z=0). yaw=0 means head facing -z.
-        const dxS = 0 - seatX;
-        const dzS = -0.6 - seatZ;        // lectern z relative to seat
-        const aimYaw = Math.atan2(dxS, -dzS);    // rotation around y to face lectern
-        // Per-person jitter so the lock-in isn't robotic
-        const jitter = Math.sin(t * 1.3 + i * 0.41) * 0.04;
-        const lockedYaw = aimYaw + jitter;
-        const lockedPitch = -0.04 + Math.sin(t * 0.7 + i) * 0.02;
-        // Blend natural sway → locked-on-speaker by attention
-        m.head.rotation.y = sway * (1 - _audAttn) + lockedYaw * _audAttn;
+        m.head.rotation.y = Math.sin(t * 0.5 + i * 0.7) * 0.10 * settle;
         // High-confidence speakers earn nods from a chunk of the crowd
-        let nodX = 0;
         if (i % 4 === 0 && confidence > 0.3) {
-          nodX = Math.sin(t * 0.9 + i) * 0.10 * (confidence - 0.2);
+          m.head.rotation.x = Math.sin(t * 0.9 + i) * 0.10 * (confidence - 0.2);
         }
-        m.head.rotation.x = nodX + lockedPitch * _audAttn;
-        // Legacy audience builds had a separate hair group; the new
-        // creature builder bakes hair onto the head so it rotates
-        // implicitly — guard for either case.
-        if (m.hair) {
-          m.hair.rotation.y = m.head.rotation.y;
-          m.hair.rotation.x = m.head.rotation.x;
-        }
+        // Hair follows the head rotation
+        m.hair.rotation.y = m.head.rotation.y;
+        m.hair.rotation.x = m.head.rotation.x;
       });
       // Friendly face — nods when the user is actively speaking
       if (friendlyHead) {
@@ -19944,9 +18232,15 @@ function setupSpeaking(scene, camera, level) {
   };
 }
 
+// ---------- Driving (car interior + road) ----------
+function setupDriving(scene, camera, level) {
+  const speed   = level.speed   != null ? level.speed   : 0.5;
+  const traffic = level.traffic != null ? level.traffic : 0.3;
+  const isRain  = (level.title || "").toLowerCase().includes("rain");
 
+  scene.background = new THREE.Color(isRain ? 0x35404a : 0x6a7e8c);
+  scene.fog = new THREE.Fog(scene.background, 25, 220);
 
-<<<<<<< HEAD
   const sun = new THREE.DirectionalLight(0xfff5e0, isRain ? 0.6 : 1.4);
   sun.position.set(20, 30, 10);
   scene.add(sun);
@@ -21281,8 +19575,6 @@ function setupDark(scene, camera, level) {
     },
   };
 }
-=======
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
 
 // ---------- 3D avatar preview ----------
 // Used by the character creator. Builds a small rotating procedural figure
@@ -21297,27 +19589,6 @@ function setupDark(scene, camera, level) {
 //   - Two-segment legs (thigh + shin + foot)
 //   - Subtle idle animation hooks exposed via group.userData.animate
 function buildAvatarFigure(c) {
-  // Tiered builder selection:
-  //   1. Skinned humanoid (true SkinnedMesh + Bones with joint deformation)
-  //      — opt-in via c.useSkinned === true. Used by the character creator
-  //      preview by default. The walking animation is bone-driven so knees
-  //      and elbows actually deform across joints.
-  //   2. Parametric v2 figure with PBR materials + body/age/eye/jaw/nose
-  //      shape knobs.
-  //   3. Legacy buildAvatarFigure (this function) — geometry-primitive
-  //      figure that's been the default since the first commit.
-  if (c && c.useSkinned !== false
-      && window.PhobiaSkinned && window.PhobiaSkinned.buildFigure) {
-    try {
-      const fig = window.PhobiaSkinned.buildFigure(c);
-      if (fig) return fig;
-    } catch (e) { /* fall through to v2 / legacy */ }
-  }
-  if (window.PhobiaAvatar3D && window.PhobiaAvatar3D.buildFigure
-      && c && (c.bodyType || c.ageGroup || c.eyeShape || c.jawShape || c.noseShape)) {
-    const fig = window.PhobiaAvatar3D.buildFigure(c);
-    if (fig) return fig;
-  }
   const group = new THREE.Group();
   const skin   = (c && c.skinHex)  ? c.skinHex  : "#e8b794";
   const hair   = (c && c.hairHex)  ? c.hairHex  : "#4a2c18";
@@ -21330,18 +19601,12 @@ function buildAvatarFigure(c) {
   const hairShadow = new THREE.Color(hair).multiplyScalar(0.78).getHex();
   const shirtFold = new THREE.Color(shirt).multiplyScalar(0.78).getHex();
 
-  // PBR materials — skin pores, fabric weave, hair streak normals — when
-  // the realism module is loaded. Falls back to flat MeshStandard if not.
-  const PR = window.PhobiaRealism;
-  const skinM   = (PR && PR.skinMaterial)   ? PR.skinMaterial(skin)
-    : new THREE.MeshStandardMaterial({ color: new THREE.Color(skin), roughness: 0.78, metalness: 0.0 });
+  const skinM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(skin),   roughness: 0.78, metalness: 0.0 });
   const skinShM = new THREE.MeshStandardMaterial({ color: skinShadow, roughness: 0.85 });
-  const hairM   = (PR && PR.hairMaterial)   ? PR.hairMaterial(hair)
-    : new THREE.MeshStandardMaterial({ color: new THREE.Color(hair), roughness: 1.0 });
+  const hairM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(hair),   roughness: 1.0 });
   const hairShM = new THREE.MeshStandardMaterial({ color: hairShadow, roughness: 1.0 });
   const browM   = new THREE.MeshStandardMaterial({ color: hairShadow, roughness: 1.0 });
-  const shirtM  = (PR && PR.fabricMaterial) ? PR.fabricMaterial(shirt, "cotton")
-    : new THREE.MeshStandardMaterial({ color: new THREE.Color(shirt), roughness: 0.85 });
+  const shirtM  = new THREE.MeshStandardMaterial({ color: new THREE.Color(shirt),  roughness: 0.85 });
   const shirtFoldM = new THREE.MeshStandardMaterial({ color: shirtFold, roughness: 0.85 });
   const irisM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(eye),    roughness: 0.25, metalness: 0.18 });
   const eyeWhiteM = new THREE.MeshStandardMaterial({ color: 0xfff4ea, roughness: 0.30 });

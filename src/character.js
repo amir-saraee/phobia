@@ -63,41 +63,6 @@ const FACIAL_HAIR = [
   { id: "moustache",label:"Moustache" },
 ];
 
-// Body / face shape — drive the parametric humanoid in src/avatar3d.js.
-// Width and height multipliers translate directly to torso/leg scaling so a
-// "round" character actually reads as broader, not just labelled differently.
-const BODY_TYPES = [
-  { id: "slim",     label: "Slim" },
-  { id: "average",  label: "Average" },
-  { id: "athletic", label: "Athletic" },
-  { id: "round",    label: "Rounded" },
-  { id: "tall",     label: "Tall" },
-];
-const AGE_GROUPS = [
-  { id: "young",  label: "Young" },
-  { id: "adult",  label: "Adult" },
-  { id: "mature", label: "Mature" },
-  { id: "elder",  label: "Elder" },
-];
-const EYE_SHAPES = [
-  { id: "round",   label: "Round" },
-  { id: "almond",  label: "Almond" },
-  { id: "narrow",  label: "Narrow" },
-  { id: "wide",    label: "Wide" },
-];
-const JAW_SHAPES = [
-  { id: "soft",     label: "Soft" },
-  { id: "balanced", label: "Balanced" },
-  { id: "square",   label: "Square" },
-  { id: "pointed",  label: "Pointed" },
-];
-const NOSE_SHAPES = [
-  { id: "small",    label: "Small" },
-  { id: "balanced", label: "Balanced" },
-  { id: "long",     label: "Long" },
-  { id: "broad",    label: "Broad" },
-];
-
 function defaultCharacter() {
   return {
     name: "",
@@ -108,15 +73,6 @@ function defaultCharacter() {
     eyeColor: "brown",
     glasses: "none",
     facialHair: "none",
-    // New parametric attributes — drive proportional changes in the v2
-    // 3D avatar (body width / height, face shape, age detail). Set to
-    // average/balanced/adult by default so existing characters look the
-    // same as before while opting in to the upgraded builder.
-    bodyType: "average",
-    ageGroup: "adult",
-    eyeShape: "round",
-    jawShape: "balanced",
-    noseShape: "balanced",
     voicePreset: "calm",
     primaryPhobia: null,
     additionalPhobias: [],
@@ -137,11 +93,6 @@ function randomCharacter() {
     eyeColor:   pick(EYE_COLORS),
     glasses:    pick(GLASSES),
     facialHair: pick(FACIAL_HAIR),
-    bodyType:   pick(BODY_TYPES),
-    ageGroup:   pick(AGE_GROUPS),
-    eyeShape:   pick(EYE_SHAPES),
-    jawShape:   pick(JAW_SHAPES),
-    noseShape:  pick(NOSE_SHAPES),
     voicePreset: presets[Math.floor(Math.random() * presets.length)],
     primaryPhobia: null,
     additionalPhobias: [],
@@ -578,29 +529,10 @@ function viewCharacterCreator(existing, allPhobias) {
               <h3>Face</h3>
             </div>
             <div class="creator-row">
-<<<<<<< HEAD
               <label>Eyes</label>
               <div class="swatches" data-group="eyeColor">${swatch(EYE_COLORS, c.eyeColor, "eyeColor")}</div>
             </div>
             <div class="creator-row">
-=======
-              <label>Eye colour</label>
-              <div class="swatches" data-group="eyeColor">${swatch(EYE_COLORS, c.eyeColor, "eyeColor")}</div>
-            </div>
-            <div class="creator-row">
-              <label>Eye shape</label>
-              <div class="swatches text" data-group="eyeShape">${swatch(EYE_SHAPES, c.eyeShape || "round", "eyeShape")}</div>
-            </div>
-            <div class="creator-row">
-              <label>Jaw</label>
-              <div class="swatches text" data-group="jawShape">${swatch(JAW_SHAPES, c.jawShape || "balanced", "jawShape")}</div>
-            </div>
-            <div class="creator-row">
-              <label>Nose</label>
-              <div class="swatches text" data-group="noseShape">${swatch(NOSE_SHAPES, c.noseShape || "balanced", "noseShape")}</div>
-            </div>
-            <div class="creator-row">
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
               <label>Glasses</label>
               <div class="swatches text" data-group="glasses">${swatch(GLASSES, c.glasses, "glasses")}</div>
             </div>
@@ -613,24 +545,6 @@ function viewCharacterCreator(existing, allPhobias) {
           <div class="creator-section">
             <div class="creator-section-head">
               <span class="creator-section-num">4</span>
-<<<<<<< HEAD
-=======
-              <h3>Body</h3>
-            </div>
-            <div class="creator-row">
-              <label>Build</label>
-              <div class="swatches text" data-group="bodyType">${swatch(BODY_TYPES, c.bodyType || "average", "bodyType")}</div>
-            </div>
-            <div class="creator-row">
-              <label>Age</label>
-              <div class="swatches text" data-group="ageGroup">${swatch(AGE_GROUPS, c.ageGroup || "adult", "ageGroup")}</div>
-            </div>
-          </div>
-
-          <div class="creator-section">
-            <div class="creator-section-head">
-              <span class="creator-section-num">5</span>
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
               <h3>Clothing</h3>
             </div>
             <div class="creator-row">
@@ -643,11 +557,7 @@ function viewCharacterCreator(existing, allPhobias) {
 
       <div class="creator-phobias">
         <div class="creator-section-head">
-<<<<<<< HEAD
           <span class="creator-section-num">5</span>
-=======
-          <span class="creator-section-num">6</span>
->>>>>>> 8b3e743d0776b3415fcd259a7c7338d0c3f6f0cd
           <h3>Which fears are on your mind?</h3>
         </div>
         <p class="lead-sm">Pick one or several. The first becomes your primary — you can change it from your profile.</p>
@@ -674,11 +584,6 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
   if (!state.glasses)     state.glasses = "none";
   if (!state.facialHair)  state.facialHair = "none";
   if (!state.voicePreset) state.voicePreset = "calm";
-  if (!state.bodyType)    state.bodyType = "average";
-  if (!state.ageGroup)    state.ageGroup = "adult";
-  if (!state.eyeShape)    state.eyeShape = "round";
-  if (!state.jawShape)    state.jawShape = "balanced";
-  if (!state.noseShape)   state.noseShape = "balanced";
   const preview = document.getElementById("avatarPreview");
   const nameInput = document.getElementById("charName");
 
@@ -851,7 +756,6 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
 window.Character = {
   SKIN_TONES, HAIR_COLORS, HAIR_STYLES, TOP_COLORS,
   EYE_COLORS, GLASSES, FACIAL_HAIR,
-  BODY_TYPES, AGE_GROUPS, EYE_SHAPES, JAW_SHAPES, NOSE_SHAPES,
   defaultCharacter, randomCharacter,
   loadCharacter, loadCharacters, activeCharacterId,
   saveCharacter, setActiveCharacter, deleteCharacter, clearCharacter,
