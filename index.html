@@ -13344,7 +13344,7 @@ function setupWater(scene, camera, level) {
   const fish = [];
   if (fill > 0.2) {
     const fishCount = Math.min(10, Math.floor(2 + fill * 10));
-    const fishMat = new THREE.MeshStandardMaterial({ color: 0x6090b0, roughness: 0.4, metalness: 0.3 });
+    const fishMat = new THREE.MeshStandardMaterial({ color: 0x5a7a8a, roughness: 0.55, metalness: 0.05 });   // matte, not shiny-plastic
     for (let i = 0; i < fishCount; i++) {
       const f = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), fishMat);
       f.scale.set(0.6, 0.4, 1.5);
@@ -19373,10 +19373,14 @@ function setupStorms(scene, camera, level) {
     update(t, controls, dt) {
       if (controls) stormsControls = controls;
       const d = dt || 0.016;
-      // Animate rain
+      // Animate rain — falls fast AND is blown sideways by the storm wind
+      // (stronger at higher intensity) so it slants like wind-driven rain
+      // instead of dropping straight down. Drops re-randomise x on respawn.
       const pos = rain.geometry.attributes.position;
+      const windStep = (2 + intensity * 8) * d;
       for (let i = 0; i < N; i++) {
         pos.array[i*3+1] -= 22 * d;
+        pos.array[i*3]   += windStep;
         if (pos.array[i*3+1] < -1) {
           pos.array[i*3+1] = 18;
           pos.array[i*3]   = (Math.random() - 0.5) * 40;
