@@ -1088,6 +1088,15 @@ if ("serviceWorker" in navigator) {
   .profile-card { transition: border-color .15s, transform .15s, box-shadow .2s ease; }
   .profile-card:hover { box-shadow: 0 12px 32px rgba(124,209,197,.14); }
 
+  /* Milestone trophy tiles: stagger-in; earned ones get a soft lift on hover. */
+  .milestones-grid .milestone {
+    opacity: 0;
+    animation: card-rise .42s cubic-bezier(.2,.7,.3,1) forwards;
+    animation-delay: calc(var(--i, 0) * 45ms);
+    transition: transform .15s ease, box-shadow .2s ease, border-color .15s ease;
+  }
+  .milestones-grid .milestone.earned:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(124,209,197,.14); }
+
   /* Profile "your journey" stat strip. */
   .stat-strip {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -1115,9 +1124,29 @@ if ("serviceWorker" in navigator) {
   @keyframes swatch-pop { 0% { transform: scale(.92); } 55% { transform: scale(1.1); } 100% { transform: scale(1); } }
   .swatch.selected, .preset-btn.selected { animation: swatch-pop .26s cubic-bezier(.34,1.56,.64,1); }
 
+  /* Quick-start preset looks (character creator) — mini-avatar chips. */
+  .starter-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .starter-preset {
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    padding: 8px 8px 7px; border-radius: 12px;
+    background: var(--panel-3); border: 1.5px solid var(--border);
+    cursor: pointer; color: var(--muted);
+    transition: transform .12s cubic-bezier(.34,1.4,.64,1), border-color .15s ease, box-shadow .15s ease, color .15s ease;
+  }
+  .starter-preset:hover { transform: translateY(-2px); border-color: rgba(124,209,197,.55); color: var(--text); }
+  .starter-preset:active { transform: scale(.95); }
+  .starter-preset.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(124,209,197,.22); color: var(--text); }
+  .starter-av {
+    width: 46px; height: 46px; border-radius: 9px; overflow: hidden;
+    display: flex; align-items: flex-end; justify-content: center;
+    background: linear-gradient(180deg, #1a2547 0%, var(--panel-3) 100%);
+  }
+  .starter-av svg { width: 46px; height: 46px; }
+  .starter-lbl { font-size: 11px; font-weight: 600; letter-spacing: .2px; }
+
   @media (prefers-reduced-motion: reduce) {
     #view, .grid.big .card, .profiles-grid .profile-card, .stat-tile,
-    .swatch.selected, .preset-btn.selected {
+    .milestones-grid .milestone, .swatch.selected, .preset-btn.selected {
       animation: none !important; opacity: 1 !important;
     }
     .grid.big .card::after { display: none !important; }
@@ -5955,6 +5984,22 @@ function viewProfiles() {
       <div class="stat-tile" style="--i:2"><span class="stat-num">${rungsClimbed}</span><span class="stat-lbl">rungs climbed</span></div>
       <div class="stat-tile" style="--i:3"><span class="stat-num">${laddersDone}</span><span class="stat-lbl">ladder${laddersDone === 1 ? "" : "s"} done</span></div>
     </div>`;
+  // Trophy case — the active character's earned milestones (the full data
+  // model already exists; Insights shows it too, but the profile is the natural
+  // home for "what I've achieved").
+  const unlocked = unlockedMilestones();
+  const milestonesSection = `
+    <h3 style="margin-top:26px">Milestones</h3>
+    <p class="small">${unlocked.length} of ${MILESTONES.length} earned — they unlock as you make progress.</p>
+    <div class="milestones-grid">
+      ${MILESTONES.map(m => {
+        const got = unlocked.includes(m.id);
+        return `<div class="milestone ${got ? "earned" : "locked"}" style="--i:${MILESTONES.indexOf(m)}">
+          <div class="milestone-icon">${got ? m.icon : "🔒"}</div>
+          <div class="milestone-text"><strong>${m.title}</strong><span class="small">${m.desc}</span></div>
+        </div>`;
+      }).join("")}
+    </div>`;
   return `
     <div class="panel">
       <h2>Your characters</h2>
@@ -5964,6 +6009,7 @@ function viewProfiles() {
       <div class="actions">
         <button class="btn-primary" data-action="new-character">+ New character</button>
       </div>
+      ${milestonesSection}
     </div>
   `;
 }

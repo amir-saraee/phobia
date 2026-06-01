@@ -63,6 +63,16 @@ const FACIAL_HAIR = [
   { id: "moustache",label:"Moustache" },
 ];
 
+// Curated "quick start" looks — one tap sets a whole tasteful, diverse
+// appearance the user can then tweak. (Distinct from the random dice.)
+const STARTER_PRESETS = [
+  { id: "sage",   label: "Sage",   skinTone: "olive",     hairColor: "grey",   hairStyle: "short", topColor: "forest", eyeColor: "green", glasses: "round",  facialHair: "beard" },
+  { id: "ember",  label: "Ember",  skinTone: "fair",      hairColor: "auburn", hairStyle: "curly", topColor: "rose",   eyeColor: "hazel", glasses: "none",   facialHair: "none" },
+  { id: "indigo", label: "Indigo", skinTone: "deep",      hairColor: "black",  hairStyle: "buzz",  topColor: "navy",   eyeColor: "brown", glasses: "square", facialHair: "none" },
+  { id: "bloom",  label: "Bloom",  skinTone: "porcelain", hairColor: "rose",   hairStyle: "long",  topColor: "plum",   eyeColor: "blue",  glasses: "none",   facialHair: "none" },
+  { id: "slate",  label: "Slate",  skinTone: "tan",       hairColor: "brown",  hairStyle: "pony",  topColor: "char",   eyeColor: "grey",  glasses: "none",   facialHair: "stubble" },
+];
+
 function defaultCharacter() {
   return {
     name: "",
@@ -497,6 +507,21 @@ function viewCharacterCreator(existing, allPhobias) {
         </div>
 
         <div class="creator-form">
+          <div class="creator-section creator-starters">
+            <div class="creator-section-head">
+              <span class="creator-section-num">✦</span>
+              <h3>Quick start</h3>
+            </div>
+            <p class="small" style="margin:-2px 0 12px">Tap a look to start from — then tweak anything below.</p>
+            <div class="starter-row">
+              ${STARTER_PRESETS.map(pr => `
+                <button type="button" class="starter-preset" data-starter="${pr.id}" title="${pr.label}">
+                  <span class="starter-av">${avatarSVG(Object.assign({}, defaultCharacter(), pr), 46)}</span>
+                  <span class="starter-lbl">${pr.label}</span>
+                </button>`).join("")}
+            </div>
+          </div>
+
           <div class="creator-section">
             <div class="creator-section-head">
               <span class="creator-section-num">1</span>
@@ -732,25 +757,41 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
   // "Surprise me" — randomise everything except name + chosen phobias.
   // Same handler is wired to BOTH the bottom "Surprise me" action button
   // and the small dice icon over the preview frame.
-  function shuffleAppearance() {
-    const r = randomCharacter();
-    Object.assign(state, {
-      skinTone: r.skinTone, hairColor: r.hairColor, hairStyle: r.hairStyle,
-      topColor: r.topColor, eyeColor: r.eyeColor, glasses: r.glasses,
-      facialHair: r.facialHair, voicePreset: r.voicePreset,
-    });
+  // Apply a full set of appearance fields onto state + re-sync the swatch/voice
+  // UI + the live preview. Shared by the dice and the quick-start presets.
+  function applyAppearance(fields) {
+    Object.assign(state, fields);
     root.querySelectorAll(".swatches").forEach(group => {
-      const family = group.dataset.group;
-      const id = state[family];
+      const id = state[group.dataset.group];
       group.querySelectorAll(".swatch").forEach(b => b.classList.toggle("selected", b.dataset.id === id));
     });
     root.querySelectorAll(".preset-btn").forEach(b => b.classList.toggle("selected", b.dataset.preset === state.voicePreset));
     rerender();
   }
+  function shuffleAppearance() {
+    const r = randomCharacter();
+    applyAppearance({
+      skinTone: r.skinTone, hairColor: r.hairColor, hairStyle: r.hairStyle,
+      topColor: r.topColor, eyeColor: r.eyeColor, glasses: r.glasses,
+      facialHair: r.facialHair, voicePreset: r.voicePreset,
+    });
+    root.querySelectorAll(".starter-preset").forEach(b => b.classList.remove("active"));
+  }
   const random = document.getElementById("creatorRandom");
   if (random) random.addEventListener("click", shuffleAppearance);
   const randomTop = document.getElementById("creatorRandomTop");
   if (randomTop) randomTop.addEventListener("click", shuffleAppearance);
+
+  // Quick-start preset looks — one tap applies a curated appearance.
+  root.querySelectorAll(".starter-preset").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const pr = STARTER_PRESETS.find(p => p.id === btn.dataset.starter);
+      if (!pr) return;
+      const { id, label, ...fields } = pr;
+      applyAppearance(fields);
+      root.querySelectorAll(".starter-preset").forEach(b => b.classList.toggle("active", b === btn));
+    });
+  });
 }
 
 window.Character = {
