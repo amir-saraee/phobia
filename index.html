@@ -2939,7 +2939,8 @@ const PhobiaAudio = (() => {
 
   function startMRI() {
     const c = ensureCtx(); if (!c) return { stop() {} };
-    let alive = true;
+    let alive = true, timer = null;
+    const nb = noiseBuffer(1);
     function clank() {
       if (!alive) return;
       const now = c.currentTime;
@@ -2948,19 +2949,32 @@ const PhobiaAudio = (() => {
       const baseFreq = 70 + Math.random() * 90;
       for (let i = 0; i < reps; i++) {
         const t = now + i * period;
+        // Low body — a gated square "knock" with a quick attack (was a click).
         const osc = c.createOscillator();
         osc.type = "square";
         osc.frequency.value = baseFreq + (i % 2 === 0 ? 0 : 30);
         const g = c.createGain();
-        g.gain.setValueAtTime(0.28, t);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.20, t + 0.004);
         g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
         osc.connect(g).connect(master);
         osc.start(t); osc.stop(t + 0.06);
+        // Metallic buzz layer — bandpass-noise burst = the gradient-coil "brrr"
+        // that makes a real scanner sound mechanical rather than a pure tone.
+        const ns = c.createBufferSource(); ns.buffer = nb;
+        const bp = c.createBiquadFilter();
+        bp.type = "bandpass"; bp.frequency.value = 500 + (i % 2) * 760; bp.Q.value = 4;
+        const ng = c.createGain();
+        ng.gain.setValueAtTime(0.0001, t);
+        ng.gain.exponentialRampToValueAtTime(0.10, t + 0.003);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.045);
+        ns.connect(bp).connect(ng).connect(master);
+        ns.start(t); ns.stop(t + 0.06);
       }
-      setTimeout(clank, 2000 + Math.random() * 3500);
+      timer = setTimeout(clank, 2000 + Math.random() * 3500);
     }
-    setTimeout(clank, 1500);
-    return { stop() { alive = false; } };
+    timer = setTimeout(clank, 1500);
+    return { stop() { alive = false; if (timer) clearTimeout(timer); } };
   }
 
   function startBreathing(rate = 0.22) {
@@ -3088,20 +3102,31 @@ const PhobiaAudio = (() => {
     gain.gain.linearRampToValueAtTime(0.18 + intensity * 0.18, c.currentTime + 1.5);
     src.connect(hp).connect(lp).connect(gain).connect(out);
     src.start();
-    // Sub bass tone for the deep drone
-    const osc = c.createOscillator();
-    osc.type = "sawtooth";
-    osc.frequency.value = 75;
+    // Two slightly-detuned saw subs through a warmth lowpass — they beat against
+    // each other for a slow turbine throb rather than a static buzz.
+    const osc = c.createOscillator();  osc.type = "sawtooth";  osc.frequency.value = 75;
+    const osc2 = c.createOscillator(); osc2.type = "sawtooth"; osc2.frequency.value = 76.6;
+    const subLp = c.createBiquadFilter(); subLp.type = "lowpass"; subLp.frequency.value = 220;
     const oscGain = c.createGain();
     oscGain.gain.value = 0;
     oscGain.gain.linearRampToValueAtTime(0.05 + intensity * 0.04, c.currentTime + 1.5);
-    osc.connect(oscGain).connect(out);
-    osc.start();
+    osc.connect(subLp); osc2.connect(subLp); subLp.connect(oscGain).connect(out);
+    osc.start(); osc2.start();
+    // Faint high turbine whine with a slow shimmer LFO — sells "jet".
+    const whine = c.createOscillator(); whine.type = "triangle"; whine.frequency.value = 230;
+    const whineLfo = c.createOscillator(); const whineLfoG = c.createGain();
+    whineLfo.frequency.value = 0.3; whineLfoG.gain.value = 12;
+    whineLfo.connect(whineLfoG).connect(whine.frequency);
+    const whineGain = c.createGain(); whineGain.gain.value = 0;
+    whineGain.gain.linearRampToValueAtTime(0.012 + intensity * 0.02, c.currentTime + 2.0);
+    whine.connect(whineGain).connect(out);
+    whine.start(); whineLfo.start();
     return {
       stop() {
         gain.gain.setTargetAtTime(0, c.currentTime, 0.5);
         oscGain.gain.setTargetAtTime(0, c.currentTime, 0.5);
-        setTimeout(() => { try { src.stop(); osc.stop(); } catch {} }, 1500);
+        whineGain.gain.setTargetAtTime(0, c.currentTime, 0.5);
+        setTimeout(() => { try { src.stop(); osc.stop(); osc2.stop(); whine.stop(); whineLfo.stop(); } catch {} }, 1500);
       },
     };
   }
@@ -3111,15 +3136,35 @@ const PhobiaAudio = (() => {
     const c = ensureCtx(); if (!c) return;
     const out = spatial(pos, { refDistance: 1, maxDistance: 30, rolloffFactor: 1.2 });
     const now = c.currentTime;
-    const buf = noiseBuffer(0.5);
-    const src = c.createBufferSource(); src.buffer = buf;
-    const bp = c.createBiquadFilter();
-    bp.type = "bandpass"; bp.frequency.value = 1500; bp.Q.value = 0.9;
+    // Main wash — bandpass noise, quick attack ramp (was an instant click).
+    const src = c.createBufferSource(); src.buffer = noiseBuffer(0.5);
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1400; bp.Q.value = 0.9;
     const g = c.createGain();
-    g.gain.setValueAtTime(0.35 * intensity, now);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.34 * intensity, now + 0.004);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
     src.connect(bp).connect(g).connect(out);
     src.start(now); src.stop(now + 0.45);
+    // Bright "plip" droplet at the very start.
+    const drop = c.createBufferSource(); drop.buffer = noiseBuffer(0.12);
+    const hp = c.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 4500;
+    const dg = c.createGain();
+    dg.gain.setValueAtTime(0.0001, now);
+    dg.gain.exponentialRampToValueAtTime(0.16 * intensity, now + 0.003);
+    dg.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    drop.connect(hp).connect(dg).connect(out);
+    drop.start(now); drop.stop(now + 0.12);
+    // Low "gloop" body/tail — gives the splash weight.
+    const glp = c.createOscillator(); glp.type = "sine";
+    glp.frequency.setValueAtTime(320, now);
+    glp.frequency.exponentialRampToValueAtTime(140, now + 0.25);
+    const glpF = c.createBiquadFilter(); glpF.type = "lowpass"; glpF.frequency.value = 400;
+    const gg = c.createGain();
+    gg.gain.setValueAtTime(0.0001, now + 0.008);
+    gg.gain.exponentialRampToValueAtTime(0.12 * intensity, now + 0.03);
+    gg.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    glp.connect(glpF).connect(gg).connect(out);
+    glp.start(now); glp.stop(now + 0.32);
   }
 
   // Hiss — for the snake scene
@@ -3240,31 +3285,39 @@ const PhobiaAudio = (() => {
   // Engine + tyre noise (driving)
   function startDrivingDrone(speed = 0.5) {
     const c = ensureCtx(); if (!c) return { stop() {} };
-    // Engine sub
-    const osc = c.createOscillator();
-    osc.type = "sawtooth";
-    osc.frequency.value = 80 + speed * 60;
-    const oscG = c.createGain();
-    oscG.gain.value = 0;
+    // Engine subs — two slightly detuned saws through a warmth lowpass, with a
+    // slow pitch lope so the engine breathes instead of sitting on a dead tone.
+    const f0 = 80 + speed * 60;
+    const osc = c.createOscillator();  osc.type = "sawtooth";  osc.frequency.value = f0;
+    const osc2 = c.createOscillator(); osc2.type = "sawtooth"; osc2.frequency.value = f0 + 2.5;
+    const engLp = c.createBiquadFilter(); engLp.type = "lowpass"; engLp.frequency.value = 280 + speed * 200;
+    const oscG = c.createGain(); oscG.gain.value = 0;
     oscG.gain.linearRampToValueAtTime(0.05 + speed * 0.05, c.currentTime + 1);
-    osc.connect(oscG).connect(master);
-    osc.start();
-    // Tyre noise
-    const buf = noiseBuffer(3);
-    const src = c.createBufferSource();
-    src.buffer = buf; src.loop = true;
-    const lp = c.createBiquadFilter();
-    lp.type = "lowpass"; lp.frequency.value = 600 + speed * 800;
-    const tg = c.createGain();
-    tg.gain.value = 0;
+    const lope = c.createOscillator(); const lopeG = c.createGain();
+    lope.frequency.value = 4 + speed * 6; lopeG.gain.value = 2.5;
+    lope.connect(lopeG).connect(osc.frequency);
+    osc.connect(engLp); osc2.connect(engLp); engLp.connect(oscG).connect(master);
+    osc.start(); osc2.start(); lope.start();
+    // Tyre noise (lowpass)
+    const src = c.createBufferSource(); src.buffer = noiseBuffer(3); src.loop = true;
+    const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 600 + speed * 800;
+    const tg = c.createGain(); tg.gain.value = 0;
     tg.gain.linearRampToValueAtTime(0.10 + speed * 0.20, c.currentTime + 1);
     src.connect(lp).connect(tg).connect(master);
     src.start();
+    // Wind rush — highpass noise that only really comes up at higher speeds.
+    const wind = c.createBufferSource(); wind.buffer = noiseBuffer(3); wind.loop = true;
+    const whp = c.createBiquadFilter(); whp.type = "highpass"; whp.frequency.value = 1200 + speed * 1600;
+    const wg = c.createGain(); wg.gain.value = 0;
+    wg.gain.linearRampToValueAtTime(Math.max(0, speed - 0.3) * 0.14, c.currentTime + 1.2);
+    wind.connect(whp).connect(wg).connect(master);
+    wind.start();
     return {
       stop() {
         oscG.gain.setTargetAtTime(0, c.currentTime, 0.5);
         tg.gain.setTargetAtTime(0, c.currentTime, 0.5);
-        setTimeout(() => { try { osc.stop(); src.stop(); } catch {} }, 1500);
+        wg.gain.setTargetAtTime(0, c.currentTime, 0.5);
+        setTimeout(() => { try { osc.stop(); osc2.stop(); lope.stop(); src.stop(); wind.stop(); } catch {} }, 1500);
       },
     };
   }
@@ -3274,13 +3327,23 @@ const PhobiaAudio = (() => {
     const c = ensureCtx(); if (!c) return;
     const out = spatial(pos, { refDistance: 0.5, maxDistance: 6 });
     const now = c.currentTime;
-    const osc = c.createOscillator();
-    osc.type = "square"; osc.frequency.value = 1500;
+    // Crisp relay "tk": a short bandpass-noise snap + a faint tonal body, with
+    // an attack ramp — instead of a pure 1500 Hz square beep.
+    const ns = c.createBufferSource(); ns.buffer = noiseBuffer(0.05);
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 2200; bp.Q.value = 1.2;
+    const ng = c.createGain();
+    ng.gain.setValueAtTime(0.0001, now);
+    ng.gain.exponentialRampToValueAtTime(0.09, now + 0.001);
+    ng.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+    ns.connect(bp).connect(ng).connect(out);
+    ns.start(now); ns.stop(now + 0.05);
+    const osc = c.createOscillator(); osc.type = "triangle"; osc.frequency.value = 1300;
     const g = c.createGain();
-    g.gain.setValueAtTime(0.06, now);
-    g.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.03, now + 0.001);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
     osc.connect(g).connect(out);
-    osc.start(now); osc.stop(now + 0.05);
+    osc.start(now); osc.stop(now + 0.04);
   }
 
   // Single footstep — short low thump that varies by surface.
