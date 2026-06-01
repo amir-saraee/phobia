@@ -2684,6 +2684,30 @@ const PhobiaAudio = (() => {
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
     return buf;
   }
+  // Pink (1/f) noise — far less harsh than white noise, so natural textures
+  // (wind, water, rain, room tone, crowd) read as soft air/water instead of
+  // a bright "tssss" hiss. Paul Kellet's economical pink-filter approximation.
+  let _pinkBuf = null;
+  function pinkNoiseBuffer(seconds = 3) {
+    if (_pinkBuf) return _pinkBuf;
+    const c = ensureCtx(); if (!c) return null;
+    const buf = c.createBuffer(1, c.sampleRate * seconds, c.sampleRate);
+    const data = buf.getChannelData(0);
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < data.length; i++) {
+      const white = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + white * 0.0555179;
+      b1 = 0.99332 * b1 + white * 0.0750759;
+      b2 = 0.96900 * b2 + white * 0.1538520;
+      b3 = 0.86650 * b3 + white * 0.3104856;
+      b4 = 0.55000 * b4 + white * 0.5329522;
+      b5 = -0.7616 * b5 - white * 0.0168980;
+      data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
+      b6 = white * 0.115926;
+    }
+    _pinkBuf = buf;
+    return buf;
+  }
 
   // ---- Spatial audio ----
   // PhobiaAudio.spatial(pos) returns an AudioNode connected to master that
@@ -2745,9 +2769,9 @@ const PhobiaAudio = (() => {
   }
 
   // ---- Looped textures (wind, water, underwater, room tone) ----
-  function startLoop({ baseFreq, q = 0.7, gain: gainTarget = 0.3, lfoRate = 0.3, lfoDepth = 100, type = "lowpass" }) {
+  function startLoop({ baseFreq, q = 0.7, gain: gainTarget = 0.3, lfoRate = 0.3, lfoDepth = 100, type = "lowpass", pink = false }) {
     const c = ensureCtx(); if (!c) return { stop() {} };
-    const buf = noiseBuffer(3);
+    const buf = pink ? pinkNoiseBuffer(3) : noiseBuffer(3);
     const src = c.createBufferSource();
     src.buffer = buf; src.loop = true;
     const filt = c.createBiquadFilter();
@@ -2774,24 +2798,26 @@ const PhobiaAudio = (() => {
   function startWind(intensity = 0.6) {
     return startLoop({
       baseFreq: 220 + intensity * 700, q: 0.9,
-      gain: 0.18 + intensity * 0.22, lfoRate: 0.28, lfoDepth: 250 * intensity,
+      gain: 0.18 + intensity * 0.22, lfoRate: 0.28, lfoDepth: 250 * intensity, pink: true,
     });
   }
   function startWaterLap(intensity = 0.5) {
+    // Slower, deeper filter LFO + pink noise → a gentle wash that swells and
+    // recedes like laps on a shore, instead of steady bright hiss.
     return startLoop({
-      baseFreq: 600 + intensity * 1200, q: 0.6,
-      gain: 0.18 + intensity * 0.18, lfoRate: 0.55, lfoDepth: 350 * intensity,
+      baseFreq: 480 + intensity * 900, q: 0.7,
+      gain: 0.18 + intensity * 0.18, lfoRate: 0.22, lfoDepth: 520 * intensity, pink: true,
     });
   }
   function startUnderwater() {
     return startLoop({
-      baseFreq: 220, q: 1.2, gain: 0.45, lfoRate: 0.18, lfoDepth: 60,
+      baseFreq: 220, q: 1.2, gain: 0.45, lfoRate: 0.18, lfoDepth: 60, pink: true,
     });
   }
   function startRoomTone(intensity = 0.4) {
     return startLoop({
       baseFreq: 90 + intensity * 60, q: 1.2,
-      gain: 0.12 + intensity * 0.15, lfoRate: 0.1, lfoDepth: 30,
+      gain: 0.12 + intensity * 0.15, lfoRate: 0.1, lfoDepth: 30, pink: true,
     });
   }
 
@@ -2879,27 +2905,36 @@ const PhobiaAudio = (() => {
     return { stop() { alive = false; } };
   }
 
-  function startSkittering() {
+  function startSkittering(pos = null) {
+    // Dry "tick-tick" of legs on a hard surface: short bandpass-NOISE clicks,
+    // irregularly spaced — NOT pitched square-wave beeps (which sounded 8-bit).
     const c = ensureCtx(); if (!c) return { stop() {} };
-    let alive = true;
+    let alive = true, timer = null;
+    const out = spatial(pos);          // spatialize when a position is given
+    const nb = noiseBuffer(1);
+    function click(when) {
+      const src = c.createBufferSource(); src.buffer = nb;
+      const bp = c.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = 2600 + Math.random() * 2600;   // 2.6–5.2 kHz dry tick
+      bp.Q.value = 1.1;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, when);
+      g.gain.exponentialRampToValueAtTime(0.055, when + 0.001);  // ~1 ms snap
+      g.gain.exponentialRampToValueAtTime(0.0006, when + 0.013); // ~12 ms decay
+      src.connect(bp).connect(g).connect(out);
+      src.start(when); src.stop(when + 0.025);
+    }
     function tick() {
       if (!alive) return;
       const now = c.currentTime;
-      const reps = 3 + Math.floor(Math.random() * 5);
-      for (let i = 0; i < reps; i++) {
-        const osc = c.createOscillator();
-        osc.type = "square";
-        osc.frequency.value = 1500 + Math.random() * 2200;
-        const g = c.createGain();
-        g.gain.setValueAtTime(0.05, now + i * 0.025);
-        g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.025 + 0.03);
-        osc.connect(g).connect(master);
-        osc.start(now + i * 0.025); osc.stop(now + i * 0.025 + 0.04);
-      }
-      setTimeout(tick, 1400 + Math.random() * 2600);
+      const reps = 3 + Math.floor(Math.random() * 6);
+      let when = now;
+      for (let i = 0; i < reps; i++) { click(when); when += 0.018 + Math.random() * 0.022; }
+      timer = setTimeout(tick, 1200 + Math.random() * 2600);
     }
     tick();
-    return { stop() { alive = false; } };
+    return { stop() { alive = false; if (timer) clearTimeout(timer); } };
   }
 
   function startMRI() {
@@ -2976,7 +3011,7 @@ const PhobiaAudio = (() => {
   }
 
   function startCityHum() {
-    return startLoop({ baseFreq: 130, q: 1.0, gain: 0.13, lfoRate: 0.05, lfoDepth: 20 });
+    return startLoop({ baseFreq: 130, q: 1.0, gain: 0.13, lfoRate: 0.05, lfoDepth: 20, pink: true });
   }
 
   // Calm ambient pad — 3 sine voices, low-pass + slow LFO. Used as a background
@@ -3088,64 +3123,76 @@ const PhobiaAudio = (() => {
   }
 
   // Hiss — for the snake scene
-  function startHiss(rate = 0.4) {
+  function startHiss(rate = 0.4, pos = null) {
+    // Snake hiss: a breathy band of noise (~3–5 kHz) with a slow wobble so it
+    // "breathes", not a thin high "tsss". Bandpass (not highpass) + an LFO on
+    // the band centre gives a living sibilance.
     const c = ensureCtx(); if (!c) return { stop() {} };
-    let alive = true;
+    let alive = true, timer = null;
+    const out = spatial(pos);
     function puff() {
       if (!alive) return;
       const now = c.currentTime;
-      const dur = 0.6 + Math.random() * 0.4;
+      const dur = 0.7 + Math.random() * 0.5;
       const buf = noiseBuffer(dur);
       const src = c.createBufferSource(); src.buffer = buf;
-      const hp = c.createBiquadFilter();
-      hp.type = "highpass"; hp.frequency.value = 4000; hp.Q.value = 0.8;
+      const bp = c.createBiquadFilter();
+      bp.type = "bandpass"; bp.frequency.value = 3800; bp.Q.value = 1.4;
+      const lfo = c.createOscillator(); const lg = c.createGain();
+      lfo.frequency.value = 5 + Math.random() * 4; lg.gain.value = 700;
+      lfo.connect(lg).connect(bp.frequency);
       const g = c.createGain();
-      g.gain.setValueAtTime(0, now);
-      g.gain.linearRampToValueAtTime(0.06 + Math.random() * 0.04, now + 0.1);
-      g.gain.exponentialRampToValueAtTime(0.001, now + dur);
-      src.connect(hp).connect(g).connect(master);
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.07 + Math.random() * 0.04, now + 0.12);
+      g.gain.exponentialRampToValueAtTime(0.0008, now + dur);
+      src.connect(bp).connect(g).connect(out);
       src.start(now); src.stop(now + dur);
-      setTimeout(puff, (1 / rate) * 1000 + Math.random() * 1500);
+      lfo.start(now); lfo.stop(now + dur);
+      timer = setTimeout(puff, (1 / rate) * 1000 + Math.random() * 1500);
     }
-    setTimeout(puff, 1500);
-    return { stop() { alive = false; } };
+    timer = setTimeout(puff, 1200);
+    return { stop() { alive = false; if (timer) clearTimeout(timer); } };
   }
 
-  // Audience murmur — sustained crowd-mumble bed
+  // Audience murmur — sustained crowd-mumble bed. Pink noise through a bandpass
+  // that SLOWLY sweeps (a formant wobble) reads as vowel-like babble rather than
+  // a steady vent hiss.
   function startAudienceMurmur(crowd = 0.5) {
     const c = ensureCtx(); if (!c) return { stop() {} };
-    const buf = noiseBuffer(4);
+    const buf = pinkNoiseBuffer(4);
     const src = c.createBufferSource(); src.buffer = buf; src.loop = true;
     const lp = c.createBiquadFilter();
-    lp.type = "bandpass"; lp.frequency.value = 600; lp.Q.value = 1.5;
+    lp.type = "bandpass"; lp.frequency.value = 550; lp.Q.value = 1.6;
+    const lfo = c.createOscillator(); const lfoG = c.createGain();
+    lfo.frequency.value = 0.7; lfoG.gain.value = 320;       // formant sweep ≈ 230–870 Hz
+    lfo.connect(lfoG).connect(lp.frequency);
     const g = c.createGain();
     g.gain.value = 0;
     g.gain.linearRampToValueAtTime(0.06 + crowd * 0.10, c.currentTime + 1.5);
     src.connect(lp).connect(g).connect(master);
-    src.start();
-    // Periodic cough or throat clear
-    let alive = true;
+    src.start(); lfo.start();
+    // Periodic cough / throat-clear — breathy filtered NOISE, not a sawtooth buzz.
+    let alive = true, timer = null;
     function cough() {
       if (!alive || crowd < 0.2) return;
       const now = c.currentTime;
-      const osc = c.createOscillator();
-      osc.type = "sawtooth"; osc.frequency.value = 220 + Math.random() * 80;
+      const ns = c.createBufferSource(); ns.buffer = noiseBuffer(0.25);
+      const bp = c.createBiquadFilter();
+      bp.type = "bandpass"; bp.frequency.value = 400 + Math.random() * 300; bp.Q.value = 2;
       const cg = c.createGain();
-      cg.gain.setValueAtTime(0, now);
-      cg.gain.linearRampToValueAtTime(0.06, now + 0.02);
-      cg.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
-      const lpf = c.createBiquadFilter();
-      lpf.type = "lowpass"; lpf.frequency.value = 1200;
-      osc.connect(lpf).connect(cg).connect(master);
-      osc.start(now); osc.stop(now + 0.2);
-      setTimeout(cough, 9000 + Math.random() * 18000);
+      cg.gain.setValueAtTime(0.0001, now);
+      cg.gain.exponentialRampToValueAtTime(0.07, now + 0.02);
+      cg.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      ns.connect(bp).connect(cg).connect(master);
+      ns.start(now); ns.stop(now + 0.25);
+      timer = setTimeout(cough, 9000 + Math.random() * 18000);
     }
-    setTimeout(cough, 6000 + Math.random() * 8000);
+    timer = setTimeout(cough, 6000 + Math.random() * 8000);
     return {
       stop() {
-        alive = false;
+        alive = false; if (timer) clearTimeout(timer);
         g.gain.setTargetAtTime(0, c.currentTime, 0.5);
-        setTimeout(() => { try { src.stop(); } catch {} }, 1500);
+        setTimeout(() => { try { src.stop(); lfo.stop(); } catch {} }, 1500);
       },
     };
   }
@@ -3441,23 +3488,85 @@ const PhobiaAudio = (() => {
     const c = ensureCtx(); if (!c) return;
     const out = spatial(pos, { refDistance: 1, maxDistance: 12 });
     const now = c.currentTime;
-    const dur = 0.6;
+    const dur = 0.7;
+    // Stick-slip creak: a woody mid tone that creeps in pitch, GATED by a fast
+    // tremolo so it ratchets like wood catching and releasing — not a smooth
+    // low foghorn glide (which is what it used to be).
     const osc = c.createOscillator();
     osc.type = "sawtooth";
-    osc.frequency.setValueAtTime(180, now);
-    osc.frequency.exponentialRampToValueAtTime(80, now + dur);
+    osc.frequency.setValueAtTime(280, now);
+    osc.frequency.linearRampToValueAtTime(360, now + dur * 0.6);
+    osc.frequency.exponentialRampToValueAtTime(200, now + dur);
+    const bp = c.createBiquadFilter();
+    bp.type = "bandpass"; bp.frequency.value = 520; bp.Q.value = 3.5;
     const g = c.createGain();
     g.gain.setValueAtTime(0, now);
-    g.gain.linearRampToValueAtTime(0.18, now + 0.05);
+    g.gain.linearRampToValueAtTime(0.16, now + 0.06);
     g.gain.exponentialRampToValueAtTime(0.001, now + dur);
-    const lp = c.createBiquadFilter();
-    lp.type = "lowpass"; lp.frequency.value = 600;
-    osc.connect(lp).connect(g).connect(out);
-    osc.start(now); osc.stop(now + dur + 0.1);
+    // Tremolo "ratchet" added onto the gain envelope.
+    const trem = c.createOscillator(); trem.type = "square";
+    trem.frequency.setValueAtTime(26, now);
+    trem.frequency.linearRampToValueAtTime(44, now + dur);
+    const tremGain = c.createGain(); tremGain.gain.value = 0.10;
+    trem.connect(tremGain).connect(g.gain);
+    osc.connect(bp).connect(g).connect(out);
+    osc.start(now); osc.stop(now + dur + 0.05);
+    trem.start(now); trem.stop(now + dur + 0.05);
+  }
+
+  // Clinical heart-monitor blip — a short steady ECG beep. Gives the needles
+  // scene an unmistakable "medical room" identity it was missing.
+  function startMonitorBeep(bpm = 72) {
+    const c = ensureCtx(); if (!c) return { stop() {} };
+    let alive = true, timer = null;
+    const period = 60000 / bpm;
+    function beep() {
+      if (!alive) return;
+      const now = c.currentTime;
+      const osc = c.createOscillator();
+      osc.type = "sine"; osc.frequency.value = 880;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.045, now + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0008, now + 0.10);
+      osc.connect(g).connect(master);
+      osc.start(now); osc.stop(now + 0.12);
+      timer = setTimeout(beep, period);
+    }
+    timer = setTimeout(beep, 600);
+    return { stop() { alive = false; if (timer) clearTimeout(timer); } };
+  }
+
+  // Unsettling random creaks + distant low thumps — the "something in the dark"
+  // signature the dark scene was missing (it was just a flat hum, like enclosed).
+  function startCreaks(rate = 0.5) {
+    const c = ensureCtx(); if (!c) return { stop() {} };
+    let alive = true, timer = null;
+    function next() {
+      if (!alive) return;
+      if (Math.random() < 0.5) {
+        doorCreak({ x: (Math.random() - 0.5) * 4, y: 0, z: -1 - Math.random() * 3 });
+      } else {
+        const now = c.currentTime;
+        const osc = c.createOscillator(); osc.type = "sine";
+        osc.frequency.setValueAtTime(90, now);
+        osc.frequency.exponentialRampToValueAtTime(45, now + 0.25);
+        const g = c.createGain();
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(0.09, now + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0008, now + 0.3);
+        osc.connect(g).connect(master);
+        osc.start(now); osc.stop(now + 0.35);
+      }
+      timer = setTimeout(next, (3000 + Math.random() * 6000) / Math.max(0.2, rate));
+    }
+    timer = setTimeout(next, 2500 + Math.random() * 3000);
+    return { stop() { alive = false; if (timer) clearTimeout(timer); } };
   }
 
   return {
     unlock, setMuted, isMuted,
+    startMonitorBeep, startCreaks,
     startWind, startWaterLap, startUnderwater, startRoomTone, startCityHum,
     startBarking, startSkittering, startMRI, startBreathing, startHeartbeat,
     startVertigoHeartbeat,
@@ -6511,6 +6620,7 @@ function startSceneAudio(phobiaKey, levelIdx) {
     }
     case "needles": {
       handles.push(A.startRoomTone(0.18));
+      if (A.startMonitorBeep) handles.push(A.startMonitorBeep(72));   // clinical ECG blip = "medical room"
       if (levelIdx >= 2) handles.push(A.startBreathing(0.4 + intensity * 0.2));
       break;
     }
@@ -6521,12 +6631,14 @@ function startSceneAudio(phobiaKey, levelIdx) {
       break;
     }
     case "speaking": {
-      handles.push(A.startAudienceMurmur(level.crowd != null ? level.crowd : intensity));
+      const lv = PHOBIAS.speaking.levels[levelIdx];
+      handles.push(A.startAudienceMurmur(lv && lv.crowd != null ? lv.crowd : intensity));
       if (levelIdx >= 2) handles.push(A.startBreathing(0.4 + intensity * 0.25));
       break;
     }
     case "driving": {
-      const speed = level.speed != null ? level.speed : intensity;
+      const lv = PHOBIAS.driving.levels[levelIdx];
+      const speed = lv && lv.speed != null ? lv.speed : intensity;
       handles.push(A.startDrivingDrone(speed));
       if (levelIdx >= 4) handles.push(A.startRain(0.6));
       if (levelIdx >= 3) handles.push(A.startBreathing(0.35));
@@ -6539,6 +6651,7 @@ function startSceneAudio(phobiaKey, levelIdx) {
     }
     case "dark": {
       handles.push(A.startRoomTone(0.3 + intensity * 0.3));
+      if (A.startCreaks) handles.push(A.startCreaks(0.4 + intensity * 0.6));   // creaks/thumps grow with the dark
       if (levelIdx >= 2) handles.push(A.startBreathing(0.4 + intensity * 0.2));
       break;
     }
@@ -12949,8 +13062,10 @@ function setupHeights(scene, camera, level) {
         if (car.userData.heading > 0 && car.position.x > 400) car.position.x = -400;
         if (car.userData.heading < 0 && car.position.x < -400) car.position.x =  400;
       }
-      // People drift slowly
+      // People drift slowly, meandering a little each frame rather than
+      // marching in a dead-straight line forever — reads as a living street.
       for (const p of people) {
+        p.userData.dir += (Math.random() - 0.5) * 0.06;
         p.position.x += Math.cos(p.userData.dir) * p.userData.speed * 0.06;
         p.position.z += Math.sin(p.userData.dir) * p.userData.speed * 0.06;
         if (Math.abs(p.position.x) > 300 || Math.abs(p.position.z) > 300) {
@@ -13347,7 +13462,7 @@ function setupWater(scene, camera, level) {
     const fishMat = new THREE.MeshStandardMaterial({ color: 0x5a7a8a, roughness: 0.55, metalness: 0.05 });   // matte, not shiny-plastic
     for (let i = 0; i < fishCount; i++) {
       const f = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), fishMat);
-      f.scale.set(0.6, 0.4, 1.5);
+      f.scale.set(1.6, 0.35, 0.5);   // long axis along X = the swim direction (was sideways)
       f.position.set(
         (Math.random() - 0.5) * 25,
         (waterY != null ? waterY : -1) - 0.2 - Math.random() * 1.2,
@@ -13711,7 +13826,7 @@ function setupWater(scene, camera, level) {
         if (f.position.x > 14) f.userData.dir = -1;
         if (f.position.x < -14) f.userData.dir = 1;
         // Mirror the geometry to face the swim direction
-        f.scale.x = f.userData.dir > 0 ? 0.6 : -0.6;
+        f.scale.x = f.userData.dir > 0 ? 1.6 : -1.6;   // mirror along the (now long) X axis to face the swim direction
         // Decay scared state
         f.userData.scared = Math.max(0, f.userData.scared - dtFish * 1.5);
       }
@@ -16532,22 +16647,39 @@ function setupFlying(scene, camera, level) {
   windowGlass.rotation.y = Math.PI / 2;
   scene.add(windowGlass);
 
-  // Wing strut visible through the window — anchors the view as a real plane
-  const wing = new THREE.Mesh(
-    new THREE.BoxGeometry(0.04, 0.04, 1.2),
-    new THREE.MeshStandardMaterial({ color: 0xc8c8d0, metalness: 0.7, roughness: 0.3 })
-  );
-  wing.position.set(-3.2, 0.0, -4.2);
-  wing.rotation.z = -0.05;
+  // Wing visible through the window — a real flat wing whose root reaches back
+  // toward the fuselage and whose tip extends out past the engine, so it reads
+  // as "the wing of the plane I'm on" rather than a floating strut.
+  const wingMetal = new THREE.MeshStandardMaterial({ color: 0xc8c8d0, metalness: 0.55, roughness: 0.35 });
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.07, 0.6), wingMetal);
+  wing.position.set(-3.0, -0.02, -4.3);   // root ≈ x-1.65 (by the fuselage) → tip ≈ x-4.35 (past engine)
+  wing.rotation.z = -0.04;                // slight dihedral
+  wing.rotation.y = 0.10;                 // slight sweep
   scene.add(wing);
-  // Engine nacelle visible far out
+  // Engine nacelle hung under the wing
   const engine = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.35, 0.30, 1.1, 16),
-    new THREE.MeshStandardMaterial({ color: 0xb8b8c0, metalness: 0.6, roughness: 0.35 })
+    new THREE.CylinderGeometry(0.35, 0.32, 1.1, 20),
+    new THREE.MeshStandardMaterial({ color: 0xb8b8c0, metalness: 0.55, roughness: 0.35 })
   );
-  engine.rotation.z = Math.PI / 2;
-  engine.position.set(-4.0, -0.05, -4.2);
+  engine.rotation.z = Math.PI / 2;        // axis along X; the camera-facing cap is the +X end
+  engine.position.set(-4.0, -0.22, -4.2);
   scene.add(engine);
+  // Dark intake ring on the front (camera-facing) face + a metal spinner, so
+  // the engine reads as a jet intake instead of a flat-capped can.
+  const intake = new THREE.Mesh(
+    new THREE.CircleGeometry(0.29, 22),
+    new THREE.MeshStandardMaterial({ color: 0x14171c, roughness: 0.7, side: THREE.DoubleSide })
+  );
+  intake.position.set(-3.43, -0.22, -4.2);
+  intake.rotation.y = Math.PI / 2;
+  scene.add(intake);
+  const spinner = new THREE.Mesh(
+    new THREE.ConeGeometry(0.07, 0.18, 12),
+    new THREE.MeshStandardMaterial({ color: 0xd2d2da, metalness: 0.5, roughness: 0.4 })
+  );
+  spinner.rotation.z = -Math.PI / 2;      // tip toward +X (the camera)
+  spinner.position.set(-3.36, -0.22, -4.2);
+  scene.add(spinner);
 
   // Seat in front of you (the back of someone else's seat)
   const seatMat = new THREE.MeshStandardMaterial({ color: 0x4a4055, roughness: 0.85 });
@@ -16870,6 +17002,22 @@ function setupNeedles(scene, camera, level) {
     leg.castShadow = true;
     scene.add(leg);
   }
+  // Small clinical extras ON the tray so it reads as a real prep tray, not an
+  // empty slab: a foil alcohol-swab packet and a cotton ball. (Tray top ≈ -0.38.)
+  const swab = new THREE.Mesh(
+    new THREE.BoxGeometry(0.07, 0.006, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0xdfe6ee, metalness: 0.6, roughness: 0.35 })
+  );
+  swab.position.set(0.68, -0.373, trayZ - 0.12);
+  swab.rotation.y = 0.5;
+  scene.add(swab);
+  const cotton = new THREE.Mesh(
+    new THREE.SphereGeometry(0.018, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0xfbfbf7, roughness: 1.0 })
+  );
+  cotton.scale.set(1, 0.8, 1);
+  cotton.position.set(0.36, -0.366, trayZ + 0.1);
+  scene.add(cotton);
 
   // Syringe — a barrel + plunger + needle
   const syringe = new THREE.Group();
