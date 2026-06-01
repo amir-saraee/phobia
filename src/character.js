@@ -63,6 +63,12 @@ const FACIAL_HAIR = [
   { id: "moustache",label:"Moustache" },
 ];
 
+const HEADWEAR = [
+  { id: "none",   label: "None" },
+  { id: "beanie", label: "Beanie" },
+  { id: "cap",    label: "Cap" },
+];
+
 // Curated "quick start" looks — one tap sets a whole tasteful, diverse
 // appearance the user can then tweak. (Distinct from the random dice.)
 const STARTER_PRESETS = [
@@ -83,6 +89,7 @@ function defaultCharacter() {
     eyeColor: "brown",
     glasses: "none",
     facialHair: "none",
+    headwear: "none",
     voicePreset: "calm",
     primaryPhobia: null,
     additionalPhobias: [],
@@ -103,6 +110,7 @@ function randomCharacter() {
     eyeColor:   pick(EYE_COLORS),
     glasses:    pick(GLASSES),
     facialHair: pick(FACIAL_HAIR),
+    headwear:   Math.random() < 0.4 ? pick(HEADWEAR) : "none",
     voicePreset: presets[Math.floor(Math.random() * presets.length)],
     primaryPhobia: null,
     additionalPhobias: [],
@@ -214,7 +222,7 @@ function avatarSVG(c, size = 80) {
   // collide. Uses a simple hash of skin+hair+top to keep IDs stable for the
   // same character.
   const gid = "av" + (
-    (skin + hair + top + eye + (c.hairStyle || "") + (c.glasses || "") + (c.facialHair || ""))
+    (skin + hair + top + eye + (c.hairStyle || "") + (c.glasses || "") + (c.facialHair || "") + (c.headwear || ""))
       .split("").reduce((h, ch) => ((h << 5) - h + ch.charCodeAt(0)) | 0, 0) & 0xffff
   ).toString(16);
 
@@ -272,6 +280,30 @@ function avatarSVG(c, size = 80) {
           <path d="M34 30 Q40 26 50 26 Q60 26 66 30" stroke="${skinShadow}" stroke-width=".8" fill="none" opacity=".5"/>`;
       default: return "";
     }
+  })();
+
+  // Headwear sits over the hair; it borrows the shirt colour so the look
+  // coordinates. Drawn after the hair, before the eyebrows/eyes.
+  const headwearLayer = (() => {
+    const hw = c.headwear;
+    if (!hw || hw === "none") return "";
+    if (hw === "beanie") {
+      return `
+        <path d="M26 38 Q23 10 50 8 Q77 10 74 38 Z" fill="${top}"/>
+        <rect x="23" y="33" width="54" height="8" rx="4" fill="${topShadow}"/>
+        <g stroke="${topLight}" stroke-width="1" fill="none" opacity=".4" stroke-linecap="round">
+          <path d="M36 11 Q35 24 34 33"/><path d="M50 9 L50 33"/><path d="M64 11 Q65 24 66 33"/>
+        </g>
+        <circle cx="50" cy="9" r="3" fill="${topLight}" opacity=".85"/>`;
+    }
+    if (hw === "cap") {
+      return `
+        <path d="M28 36 Q26 12 50 10 Q74 12 72 36 Z" fill="${top}"/>
+        <path d="M47 34 Q82 32 90 43 Q84 38 49 38 Z" fill="${topShadow}"/>
+        <path d="M32 30 Q41 19 50 19 Q59 19 68 30" stroke="${topLight}" stroke-width="1.2" fill="none" opacity=".5"/>
+        <circle cx="50" cy="12" r="2.4" fill="${topLight}" opacity=".85"/>`;
+    }
+    return "";
   })();
 
   return `
@@ -336,6 +368,8 @@ function avatarSVG(c, size = 80) {
 
       <!-- Hair on top of head -->
       ${hairLayer}
+      <!-- Headwear over the hair -->
+      ${headwearLayer}
 
       <!-- Eyebrows: thicker and slightly arched -->
       <path d="M37 40 Q42 38 47 41" stroke="${hairDeep}" stroke-width="1.8" fill="none" stroke-linecap="round"/>
@@ -571,11 +605,15 @@ function viewCharacterCreator(existing, allPhobias) {
           <div class="creator-section">
             <div class="creator-section-head">
               <span class="creator-section-num">4</span>
-              <h3>Clothing</h3>
+              <h3>Clothing &amp; accessories</h3>
             </div>
             <div class="creator-row">
               <label>Shirt</label>
               <div class="swatches" data-group="topColor">${swatch(TOP_COLORS, c.topColor, "topColor")}</div>
+            </div>
+            <div class="creator-row">
+              <label>Headwear</label>
+              <div class="swatches text" data-group="headwear">${swatch(HEADWEAR, c.headwear || "none", "headwear")}</div>
             </div>
           </div>
         </div>
@@ -609,6 +647,7 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
   if (!state.eyeColor)    state.eyeColor = "brown";
   if (!state.glasses)     state.glasses = "none";
   if (!state.facialHair)  state.facialHair = "none";
+  if (!state.headwear)    state.headwear = "none";
   if (!state.voicePreset) state.voicePreset = "calm";
   const preview = document.getElementById("avatarPreview");
   const nameInput = document.getElementById("charName");
@@ -797,7 +836,7 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
 
 window.Character = {
   SKIN_TONES, HAIR_COLORS, HAIR_STYLES, TOP_COLORS,
-  EYE_COLORS, GLASSES, FACIAL_HAIR,
+  EYE_COLORS, GLASSES, FACIAL_HAIR, HEADWEAR,
   defaultCharacter, randomCharacter,
   loadCharacter, loadCharacters, activeCharacterId,
   saveCharacter, setActiveCharacter, deleteCharacter, clearCharacter,

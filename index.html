@@ -6528,6 +6528,7 @@ function mountExposure(phobiaKey, levelIdx) {
         opts.hairStyle = character.hairStyle || "short";
         opts.glasses   = character.glasses || "none";
         opts.facialHair = character.facialHair || "none";
+        opts.headwear  = character.headwear || "none";
       }
       window.Scene3D.mount(phobiaKey, stage, lv, levelIdx, opts);
       return true;
@@ -8936,6 +8937,7 @@ class Body {
       eyeColor:   0x3a2410,
       glasses:    "none",    // "none" | "round" | "square"
       facialHair: "none",    // "none" | "stubble" | "beard" | "moustache"
+      headwear:   "none",    // "none" | "beanie" | "cap"
       // Body part offsets in body-local space (foot at y=0, head at y≈1.55).
       headY:      1.55,    // camera height = top of body
       neckY:      1.40,
@@ -9163,6 +9165,30 @@ class Body {
     // independently in the wind. Initialise to nothing for "bald".
     this.hair = new THREE.Group();
     this.head.add(this.hair);
+    // Headwear (beanie / cap) — coordinates with the shirt colour; rides on the
+    // head so it turns and sways with it. Added before the hair geometry so the
+    // hair shows beneath the brim/band.
+    if (o.headwear === "beanie" || o.headwear === "cap") {
+      const hwMat = new THREE.MeshStandardMaterial({ color: o.shirtColor, roughness: 0.92 });
+      const hwBandMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor).multiplyScalar(0.8), roughness: 0.92 });
+      if (o.headwear === "beanie") {
+        const dome = new THREE.Mesh(new THREE.SphereGeometry(0.125, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.6), hwMat);
+        dome.scale.set(1.02, 1.12, 1.0); dome.position.y = 0.035; dome.castShadow = true;
+        this.head.add(dome);
+        const band = new THREE.Mesh(new THREE.TorusGeometry(0.118, 0.02, 10, 24), hwBandMat);
+        band.rotation.x = Math.PI / 2; band.position.y = 0.045;
+        this.head.add(band);
+        const pom = new THREE.Mesh(new THREE.SphereGeometry(0.022, 10, 8), hwBandMat);
+        pom.position.y = 0.165; this.head.add(pom);
+      } else {
+        const dome = new THREE.Mesh(new THREE.SphereGeometry(0.122, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.56), hwMat);
+        dome.scale.set(1.02, 1.0, 1.0); dome.position.y = 0.045; dome.castShadow = true;
+        this.head.add(dome);
+        const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.095, 0.014, 18), hwBandMat);
+        brim.scale.set(1.0, 1.0, 0.82); brim.position.set(0, 0.02, 0.07);
+        this.head.add(brim);
+      }
+    }
     this.hairFlutter = null;          // set below for long / pony / curly styles
     if (o.hairStyle === "short") {
       const cap = new THREE.Mesh(
@@ -10915,6 +10941,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
           eyeColor:  opts.eyeColor,
           glasses:   opts.glasses,
           facialHair: opts.facialHair,
+          headwear:  opts.headwear,
           surface: (result && result.surface) || "hard",
           windExposure: (result && result.windExposure) || 0,
         },
@@ -20128,6 +20155,39 @@ function buildAvatarFigure(c) {
   cranium.position.y = 0.05;
   cranium.castShadow = true;
   head.add(cranium);
+
+  // ===== HEADWEAR ===== (beanie / cap — coordinates with the shirt colour)
+  if (c && (c.headwear === "beanie" || c.headwear === "cap")) {
+    const hwM = new THREE.MeshStandardMaterial({ color: new THREE.Color(shirt), roughness: 0.92 });
+    const hwBandM = new THREE.MeshStandardMaterial({ color: new THREE.Color(shirt).multiplyScalar(0.8), roughness: 0.92 });
+    if (c.headwear === "beanie") {
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.215, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.58), hwM);
+      dome.scale.set(1.02, 1.12, 1.0);
+      dome.position.y = 0.075;
+      dome.castShadow = true;
+      head.add(dome);
+      const band = new THREE.Mesh(new THREE.TorusGeometry(0.206, 0.033, 12, 28), hwBandM);
+      band.rotation.x = Math.PI / 2;
+      band.scale.set(1.02, 1.0, 1.0);
+      band.position.y = 0.085;
+      head.add(band);
+      const pom = new THREE.Mesh(new THREE.SphereGeometry(0.037, 12, 10), hwBandM);
+      pom.position.y = 0.30;
+      head.add(pom);
+    } else { // cap
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.21, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.54), hwM);
+      dome.scale.set(1.02, 1.0, 1.0);
+      dome.position.y = 0.085;
+      dome.castShadow = true;
+      head.add(dome);
+      // Rounded visor — a flat disc pushed forward (+z); its back half tucks
+      // inside the head so only the front brim shows.
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.165, 0.165, 0.024, 22), hwBandM);
+      brim.scale.set(1.0, 1.0, 0.82);
+      brim.position.set(0, 0.045, 0.12);
+      head.add(brim);
+    }
+  }
 
   // Jaw (narrower, lower) gives the face a real shape from any angle
   const jaw = new THREE.Mesh(new THREE.SphereGeometry(0.18, 24, 18), skinM);
