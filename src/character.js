@@ -69,6 +69,12 @@ const HEADWEAR = [
   { id: "cap",    label: "Cap" },
 ];
 
+const TOP_STYLES = [
+  { id: "tee",    label: "Tee" },
+  { id: "hoodie", label: "Hoodie" },
+  { id: "jacket", label: "Jacket" },
+];
+
 // Curated "quick start" looks — one tap sets a whole tasteful, diverse
 // appearance the user can then tweak. (Distinct from the random dice.)
 const STARTER_PRESETS = [
@@ -86,6 +92,7 @@ function defaultCharacter() {
     hairColor: "brown",
     hairStyle: "short",
     topColor: "teal",
+    topStyle: "tee",
     eyeColor: "brown",
     glasses: "none",
     facialHair: "none",
@@ -107,6 +114,7 @@ function randomCharacter() {
     hairColor:  pick(HAIR_COLORS),
     hairStyle:  pick(HAIR_STYLES),
     topColor:   pick(TOP_COLORS),
+    topStyle:   pick(TOP_STYLES),
     eyeColor:   pick(EYE_COLORS),
     glasses:    pick(GLASSES),
     facialHair: pick(FACIAL_HAIR),
@@ -306,6 +314,35 @@ function avatarSVG(c, size = 80) {
     return "";
   })();
 
+  // Outfit-style detailing over the plain shirt: hoodie = hood cowl behind the
+  // neck + kangaroo pocket + drawstrings; jacket = open lapels + a zip. Tee is
+  // the plain shirt (no extra).
+  const topStyleLayer = (() => {
+    const st = c.topStyle;
+    if (st === "hoodie") {
+      return `
+        <path d="M30 82 Q30 60 50 58 Q70 60 70 82 Q60 74 50 74 Q40 74 30 82 Z" fill="${topShadow}"/>
+        <path d="M34 80 Q42 72 50 72 Q58 72 66 80" stroke="${topLight}" stroke-width="1" fill="none" opacity=".45"/>
+        <path d="M36 100 Q50 96 64 100 L64 113 Q50 111 36 113 Z" fill="${topShadow}" opacity=".5"/>
+        <line x1="36" y1="100" x2="36" y2="113" stroke="${topShadow}" stroke-width="1" opacity=".6"/>
+        <line x1="64" y1="100" x2="64" y2="113" stroke="${topShadow}" stroke-width="1" opacity=".6"/>
+        <line x1="46" y1="82" x2="45" y2="98" stroke="${topLight}" stroke-width="1.6" opacity=".75" stroke-linecap="round"/>
+        <line x1="54" y1="82" x2="55" y2="98" stroke="${topLight}" stroke-width="1.6" opacity=".75" stroke-linecap="round"/>
+        <circle cx="45" cy="99" r="1.7" fill="${topLight}"/><circle cx="55" cy="99" r="1.7" fill="${topLight}"/>`;
+    }
+    if (st === "jacket") {
+      return `
+        <path d="M41 76 L50 95 L45 78 Z" fill="${topShadow}"/>
+        <path d="M59 76 L50 95 L55 78 Z" fill="${topShadow}"/>
+        <line x1="50" y1="86" x2="50" y2="120" stroke="${topShadow}" stroke-width="1.8" opacity=".7"/>
+        <g stroke="${topLight}" stroke-width=".6" opacity=".5">
+          ${[90, 96, 102, 108, 114].map(y => `<line x1="48.4" y1="${y}" x2="51.6" y2="${y}"/>`).join("")}
+        </g>
+        <circle cx="50" cy="87" r="1.5" fill="${topLight}"/>`;
+    }
+    return "";
+  })();
+
   return `
     <svg viewBox="0 0 100 120" width="${size}" height="${Math.round(size * 1.2)}" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -353,6 +390,8 @@ function avatarSVG(c, size = 80) {
       <path d="M50 80 L50 120" stroke="${topShadow}" stroke-width="1" opacity=".35"/>
       <!-- Shirt collar V -->
       <path d="M40 76 L50 84 L60 76 Q56 80 50 80 Q44 80 40 76 Z" fill="${topShadow}" opacity=".55"/>
+      <!-- Outfit-style detailing (hoodie / jacket); drawn behind the neck -->
+      ${topStyleLayer}
 
       <!-- Neck (slightly recessed shadow) -->
       <path d="M42 58 L42 74 Q50 78 58 74 L58 58 Z" fill="${skinDeep}"/>
@@ -612,6 +651,10 @@ function viewCharacterCreator(existing, allPhobias) {
               <div class="swatches" data-group="topColor">${swatch(TOP_COLORS, c.topColor, "topColor")}</div>
             </div>
             <div class="creator-row">
+              <label>Style</label>
+              <div class="swatches text" data-group="topStyle">${swatch(TOP_STYLES, c.topStyle || "tee", "topStyle")}</div>
+            </div>
+            <div class="creator-row">
               <label>Headwear</label>
               <div class="swatches text" data-group="headwear">${swatch(HEADWEAR, c.headwear || "none", "headwear")}</div>
             </div>
@@ -648,6 +691,7 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
   if (!state.glasses)     state.glasses = "none";
   if (!state.facialHair)  state.facialHair = "none";
   if (!state.headwear)    state.headwear = "none";
+  if (!state.topStyle)    state.topStyle = "tee";
   if (!state.voicePreset) state.voicePreset = "calm";
   const preview = document.getElementById("avatarPreview");
   const nameInput = document.getElementById("charName");
@@ -835,7 +879,7 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
 }
 
 window.Character = {
-  SKIN_TONES, HAIR_COLORS, HAIR_STYLES, TOP_COLORS,
+  SKIN_TONES, HAIR_COLORS, HAIR_STYLES, TOP_COLORS, TOP_STYLES,
   EYE_COLORS, GLASSES, FACIAL_HAIR, HEADWEAR,
   defaultCharacter, randomCharacter,
   loadCharacter, loadCharacters, activeCharacterId,

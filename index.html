@@ -6529,6 +6529,7 @@ function mountExposure(phobiaKey, levelIdx) {
         opts.glasses   = character.glasses || "none";
         opts.facialHair = character.facialHair || "none";
         opts.headwear  = character.headwear || "none";
+        opts.topStyle  = character.topStyle || "tee";
       }
       window.Scene3D.mount(phobiaKey, stage, lv, levelIdx, opts);
       return true;
@@ -8938,6 +8939,7 @@ class Body {
       glasses:    "none",    // "none" | "round" | "square"
       facialHair: "none",    // "none" | "stubble" | "beard" | "moustache"
       headwear:   "none",    // "none" | "beanie" | "cap"
+      topStyle:   "tee",     // "tee" | "hoodie" | "jacket"
       // Body part offsets in body-local space (foot at y=0, head at y≈1.55).
       headY:      1.55,    // camera height = top of body
       neckY:      1.40,
@@ -9041,6 +9043,35 @@ class Body {
     );
     shirtCenter.position.set(0, (o.chestTopY + o.waistY) / 2, o.width * 0.62);
     this.group.add(shirtCenter);
+
+    // ===== OUTFIT STYLE ===== (hoodie / jacket detailing on the in-scene body)
+    if (o.topStyle === "hoodie" || o.topStyle === "jacket") {
+      const foldMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor).multiplyScalar(0.78), roughness: 0.92 });
+      const midY = (o.chestTopY + o.waistY) / 2;
+      if (o.topStyle === "hoodie") {
+        const cowl = new THREE.Mesh(new THREE.TorusGeometry(0.105, 0.035, 12, 24), foldMat);
+        cowl.rotation.x = Math.PI / 2; cowl.scale.set(1.25, 1.0, 0.9);
+        cowl.position.set(0, o.chestTopY - 0.01, -0.005); cowl.castShadow = true;
+        this.group.add(cowl);
+        const drape = new THREE.Mesh(new THREE.SphereGeometry(0.10, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.6), foldMat);
+        drape.scale.set(1.2, 0.85, 0.65); drape.position.set(0, o.chestTopY + 0.02, -0.08);
+        this.group.add(drape);
+        const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.085, 0.04), foldMat);
+        pocket.position.set(0, o.waistY + 0.10, o.width * 0.55);
+        this.group.add(pocket);
+      } else { // jacket
+        const zipMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor).multiplyScalar(1.18), roughness: 0.5, metalness: 0.3 });
+        const zip = new THREE.Mesh(new THREE.BoxGeometry(0.018, (o.chestTopY - o.waistY) + 0.06, 0.016), zipMat);
+        zip.position.set(0, midY, o.width * 0.6);
+        this.group.add(zip);
+        for (const sx of [-1, 1]) {
+          const lapel = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.17, 0.018), foldMat);
+          lapel.position.set(sx * 0.055, o.chestTopY - 0.10, o.width * 0.58);
+          lapel.rotation.z = sx * 0.5;
+          this.group.add(lapel);
+        }
+      }
+    }
 
     // Shoulders — bumps at the top corners of the chest
     this.shoulders = [];
@@ -10942,6 +10973,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
           glasses:   opts.glasses,
           facialHair: opts.facialHair,
           headwear:  opts.headwear,
+          topStyle:  opts.topStyle,
           surface: (result && result.surface) || "hard",
           windExposure: (result && result.windExposure) || 0,
         },
@@ -20509,6 +20541,34 @@ function buildAvatarFigure(c) {
   waist.position.y = 0.78;
   waist.castShadow = true;
   group.add(waist);
+
+  // ===== OUTFIT STYLE ===== (hoodie / jacket detailing over the torso)
+  if (c && (c.topStyle === "hoodie" || c.topStyle === "jacket")) {
+    const foldM = new THREE.MeshStandardMaterial({ color: new THREE.Color(shirtFold), roughness: 0.9 });
+    if (c.topStyle === "hoodie") {
+      const cowl = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.045, 12, 24), foldM);
+      cowl.rotation.x = Math.PI / 2; cowl.scale.set(1.25, 1.0, 0.95);
+      cowl.position.set(0, 1.30, -0.01); cowl.castShadow = true;
+      group.add(cowl);
+      const drape = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.6), foldM);
+      drape.scale.set(1.2, 0.9, 0.7); drape.position.set(0, 1.34, -0.10);
+      group.add(drape);
+      const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.10, 0.05), foldM);
+      pocket.position.set(0, 0.92, 0.12);
+      group.add(pocket);
+    } else { // jacket
+      const zipM = new THREE.MeshStandardMaterial({ color: new THREE.Color(shirt).multiplyScalar(1.18), roughness: 0.5, metalness: 0.3 });
+      const zip = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.5, 0.02), zipM);
+      zip.position.set(0, 0.98, 0.135);
+      group.add(zip);
+      for (const sx of [-1, 1]) {
+        const lapel = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.22, 0.022), foldM);
+        lapel.position.set(sx * 0.07, 1.16, 0.12);
+        lapel.rotation.z = sx * 0.5;
+        group.add(lapel);
+      }
+    }
+  }
   // Belt
   const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.20, 0.05, 20), beltM);
   belt.scale.set(1.18, 1, 0.78);

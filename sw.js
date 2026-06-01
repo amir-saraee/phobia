@@ -11,7 +11,7 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v8.3-headwear";
+const VERSION = "mira-v8.4-outfits";
 const SHELL = [
   "./",
   "./index.html",
