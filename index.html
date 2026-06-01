@@ -1038,6 +1038,92 @@ if ("serviceWorker" in navigator) {
   .grid.big .card .meta .dotsep { opacity: .4; }
   .grid.big .card:hover { transform: translateY(-3px); border-color: var(--accent); background: linear-gradient(150deg, #1c2745 0%, #181d33 100%); }
 
+  /* ===========================================================
+     UX motion pass — page transitions, inviting phobia cards,
+     richer profile, and tactile controls. All disabled under
+     prefers-reduced-motion (see bottom of this block).
+     =========================================================== */
+  @keyframes view-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  #view { animation: view-enter .34s cubic-bezier(.2,.7,.3,1); }
+
+  @keyframes card-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+
+  /* Phobia select cards: stagger-in, livelier hover, a shine sweep, and a
+     "Begin / Continue" call-to-action that invites the click. */
+  .grid.big .card {
+    opacity: 0;
+    animation: card-rise .5s cubic-bezier(.2,.7,.3,1) forwards;
+    animation-delay: calc(var(--i, 0) * 55ms);
+  }
+  .grid.big .card::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    background: linear-gradient(115deg, transparent 35%, rgba(124,209,197,.12) 50%, transparent 65%);
+    transform: translateX(-130%);
+    transition: transform .6s cubic-bezier(.4,0,.2,1);
+  }
+  .grid.big .card:hover::after { transform: translateX(130%); }
+  .grid.big .card:hover { transform: translateY(-4px) scale(1.012); box-shadow: 0 16px 42px rgba(124,209,197,.16); }
+  .grid.big .card:active { transform: translateY(-1px) scale(.997); }
+  .grid.big .card .icon { transition: transform .25s cubic-bezier(.34,1.4,.64,1), background .25s ease, border-color .25s ease; }
+  .grid.big .card:hover .icon { transform: translateY(-2px) scale(1.08) rotate(-3deg); border-color: rgba(124,209,197,.5); background: linear-gradient(135deg, rgba(124,209,197,.30), rgba(165,180,252,.12)); }
+  .grid.big .card:hover .icon svg { filter: drop-shadow(0 0 7px rgba(124,209,197,.55)); }
+  .grid.big .card .progress-bar > div { transition: width .7s cubic-bezier(.2,.7,.3,1); }
+  .card-go {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-top: 14px; font-size: 12.5px; font-weight: 700; letter-spacing: .3px;
+    color: var(--accent);
+    opacity: 0; transform: translateY(5px);
+    transition: opacity .22s ease, transform .22s ease;
+  }
+  .grid.big .card:hover .card-go, .grid.big .card:focus-visible .card-go { opacity: 1; transform: none; }
+  .card-go .arr { transition: transform .22s ease; }
+  .grid.big .card:hover .card-go .arr { transform: translateX(4px); }
+
+  /* Profile cards: stagger-in + a soft lift shadow on hover. */
+  .profiles-grid .profile-card {
+    opacity: 0;
+    animation: card-rise .45s cubic-bezier(.2,.7,.3,1) forwards;
+    animation-delay: calc(var(--i, 0) * 70ms);
+  }
+  .profile-card { transition: border-color .15s, transform .15s, box-shadow .2s ease; }
+  .profile-card:hover { box-shadow: 0 12px 32px rgba(124,209,197,.14); }
+
+  /* Profile "your journey" stat strip. */
+  .stat-strip {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px; margin: 14px 0 22px;
+  }
+  .stat-tile {
+    background: linear-gradient(160deg, var(--panel-2) 0%, var(--panel-3) 100%);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; text-align: left;
+    opacity: 0; animation: card-rise .45s cubic-bezier(.2,.7,.3,1) forwards;
+    animation-delay: calc(var(--i, 0) * 60ms);
+  }
+  .stat-tile .stat-num {
+    display: block; font-size: 26px; font-weight: 800; line-height: 1;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .stat-tile .stat-lbl { display: block; margin-top: 6px; font-size: 12px; color: var(--muted); }
+
+  /* Tactile controls — press feedback on buttons + creator swatches/chips. */
+  .btn-primary:active, .btn-ghost:active, .btn-warn:active { transform: translateY(0) scale(.98); }
+  .swatch:active { transform: scale(.88); }
+  /* Satisfying pop when a swatch / coach-voice chip is chosen (the JS toggles
+     .selected, so this replays on each pick). */
+  @keyframes swatch-pop { 0% { transform: scale(.92); } 55% { transform: scale(1.1); } 100% { transform: scale(1); } }
+  .swatch.selected, .preset-btn.selected { animation: swatch-pop .26s cubic-bezier(.34,1.56,.64,1); }
+
+  @media (prefers-reduced-motion: reduce) {
+    #view, .grid.big .card, .profiles-grid .profile-card, .stat-tile,
+    .swatch.selected, .preset-btn.selected {
+      animation: none !important; opacity: 1 !important;
+    }
+    .grid.big .card::after { display: none !important; }
+    .card-go { opacity: 1; transform: none; }
+  }
+
   /* Climbing-ladder visual on the ladder page */
   .climb-ladder {
     margin: 22px 0;
@@ -4873,6 +4959,16 @@ function attachHandlers(view, params) {
       PhobiaAudio.unlock();
       handleAction(el.dataset, params);
     });
+    // Keyboard activation for elements we've made focusable (role="button"),
+    // e.g. the phobia cards — Enter / Space triggers the same click handler.
+    if (el.getAttribute("role") === "button" && el.tabIndex >= 0) {
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+          e.preventDefault();
+          el.click();
+        }
+      });
+    }
   });
 }
 
@@ -5533,18 +5629,19 @@ function viewWelcome() {
 }
 
 function viewSelect() {
-  const cards = Object.entries(PHOBIAS).map(([key, p]) => {
+  const cards = Object.entries(PHOBIAS).map(([key, p], i) => {
     const prog = getProgress(key);
     const completed = prog.highestCompleted + 1;
     const total = p.levels.length;
     const attempts = state.log.filter(l => l.phobia === key).length;
+    const cta = completed === 0 ? "Begin" : completed >= total ? "Revisit" : "Continue";
     const meta = `
       <div class="meta">
         <span>${completed === 0 ? "not started" : completed === total ? "ladder complete" : `rung ${completed} of ${total}`}</span>
         ${attempts > 0 ? `<span class="dotsep">·</span><span>${attempts} session${attempts === 1 ? "" : "s"}</span>` : ""}
       </div>`;
     return `
-      <div class="card" data-action="select-phobia" data-phobia="${key}">
+      <div class="card" data-action="select-phobia" data-phobia="${key}" style="--i:${i}" tabindex="0" role="button" aria-label="${p.label} — ${cta}">
         ${completed > 0 ? `<span class="progress-pill">${completed}/${total}</span>` : ""}
         <div class="icon">${p.icon}</div>
         <h3>${p.label}</h3>
@@ -5552,6 +5649,7 @@ function viewSelect() {
         <p style="margin: 0; font-size: 13.5px;">${p.blurb}</p>
         ${meta}
         <div class="progress-bar"><div style="width:${(completed/total)*100}%"></div></div>
+        <span class="card-go">${cta} <span class="arr">→</span></span>
       </div>
     `;
   }).join("");
@@ -5825,12 +5923,12 @@ function viewProfiles() {
   if (!window.Character) return `<div class="panel"><p>Loading…</p></div>`;
   const all = window.Character.loadCharacters();
   const activeId = window.Character.activeCharacterId();
-  const cards = all.map(c => {
+  const cards = all.map((c, i) => {
     const isActive = c.id === activeId;
     const sessions = (state.byCharacter && state.byCharacter[c.id] && state.byCharacter[c.id].log) || [];
     const phobiaCount = c.primaryPhobia ? 1 + (c.additionalPhobias || []).length : 0;
     return `
-      <div class="profile-card ${isActive ? "active" : ""}" data-action="select-character" data-id="${c.id}">
+      <div class="profile-card ${isActive ? "active" : ""}" data-action="select-character" data-id="${c.id}" style="--i:${i}">
         <div class="profile-avatar">${window.Character.avatarSVG(c, 70)}</div>
         <div class="profile-text">
           <strong>${c.name || "Unnamed"}</strong>
@@ -5844,10 +5942,24 @@ function viewProfiles() {
       </div>
     `;
   }).join("");
+  // "Your journey" — a quick, rewarding summary of the ACTIVE character's
+  // progress (state.log / state.progress track the active character).
+  const streak = computeStreak();
+  const totalSessions = state.log.length;
+  const rungsClimbed = Object.values(state.progress).reduce((s, p) => s + Math.max(0, (p.highestCompleted ?? -1) + 1), 0);
+  const laddersDone = Object.entries(PHOBIAS).filter(([k, p]) => (state.progress[k]?.highestCompleted ?? -1) >= p.levels.length - 1).length;
+  const statStrip = `
+    <div class="stat-strip">
+      <div class="stat-tile" style="--i:0"><span class="stat-num">${streak}</span><span class="stat-lbl">🔥 day streak</span></div>
+      <div class="stat-tile" style="--i:1"><span class="stat-num">${totalSessions}</span><span class="stat-lbl">session${totalSessions === 1 ? "" : "s"}</span></div>
+      <div class="stat-tile" style="--i:2"><span class="stat-num">${rungsClimbed}</span><span class="stat-lbl">rungs climbed</span></div>
+      <div class="stat-tile" style="--i:3"><span class="stat-num">${laddersDone}</span><span class="stat-lbl">ladder${laddersDone === 1 ? "" : "s"} done</span></div>
+    </div>`;
   return `
     <div class="panel">
       <h2>Your characters</h2>
       <p>Each character keeps its own ladder progress, SUDS log, and phobia list. Switch between them any time.</p>
+      ${statStrip}
       <div class="profiles-grid">${cards}</div>
       <div class="actions">
         <button class="btn-primary" data-action="new-character">+ New character</button>
