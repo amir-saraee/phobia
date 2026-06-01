@@ -10585,6 +10585,12 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         body.setCameraMode(controls.cameraMode);
         if (hands && hands.setCameraMode) hands.setCameraMode(controls.cameraMode);
       }
+      // Anchor the body to the player's feet immediately. The per-frame
+      // body.update() already does this, but running it once now means the body
+      // is correctly placed on frame 0 — no 1-frame flash of the body (and its
+      // ground-shadow disc) stuck at the world origin / eye level before the
+      // first animation tick.
+      try { body.update(0, 0, 0, controls, hands); } catch {}
     }
     interactFn = result && result.interact;
     onClickFn = result && result.onClick;
@@ -16456,8 +16462,14 @@ function setupFlying(scene, camera, level) {
   sun.castShadow = true;
   scene.add(sun);
   scene.add(new THREE.AmbientLight(0x2a3a4a, 0.6));
-  // Cabin overhead lights
-  const cabinLight = new THREE.PointLight(0xffe9b0, 0.7, 8);
+  // Soft cabin fill so interior surfaces facing AWAY from the window/key light
+  // (notably the seat back right in front of you) read as dim grey instead of a
+  // black void. The single overhead point barely grazes those faces.
+  scene.add(new THREE.HemisphereLight(0xdce4f0, 0x3a3340, 0.5));
+  // Cabin overhead lights — bright while boarding at the gate, dimmed once the
+  // doors close for taxi/takeoff (the level descriptions literally say "cabin
+  // lights dim"). Gives the mid rungs a distinct, felt change.
+  const cabinLight = new THREE.PointLight(0xffe9b0, stage < 0.45 ? 0.85 : 0.40, 8);
   cabinLight.position.set(0, 1.6, 0);
   scene.add(cabinLight);
 
@@ -16503,6 +16515,14 @@ function setupFlying(scene, camera, level) {
         // distant clouds
         float cloud = smoothstep(0.4, 0.6, sin(vUv.x * 8.0 + 0.5) * cos(vUv.y * 6.0 + 1.0));
         col = mix(col, vec3(1.0), cloud * 0.45);
+        // Tarmac/apron through the window while on the ground (gate, boarding,
+        // doors-closed). On takeoff the horizon drops away and by cruise the
+        // window is pure sky — so the window itself shows which rung you're on.
+        float climb = smoothstep(0.5, 0.9, stage);
+        float horizon = mix(0.46, -0.3, climb);            // ground line sinks during takeoff
+        float g = smoothstep(horizon + 0.05, horizon - 0.05, h);
+        vec3 ground = vec3(0.34, 0.35, 0.37);              // grey apron / runway
+        col = mix(col, ground, g * (1.0 - climb));
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
@@ -16739,11 +16759,14 @@ function setupFlying(scene, camera, level) {
       // Animate tray to target angle
       trayPivot.rotation.x += (trayTargetAngle - trayPivot.rotation.x) * 0.15;
       const dampening = 1 - calmTurbulence * 0.85;
-      // Continuous turbulence
-      const tShake = stage * 0.06 * dampening;
+      // Continuous turbulence. At the gate (stage ~0.1) the plane is parked, so
+      // there is NO motion; movement begins with taxi/takeoff and peaks in cruise
+      // turbulence — so the gate rung reads as genuinely still vs. the rest.
+      const moveStage = Math.max(0, stage - 0.2);
+      const tShake = moveStage * 0.075 * dampening;
       camera.position.y += Math.sin(t * 9.0) * tShake;
       camera.position.x += Math.cos(t * 7.0) * tShake * 0.5;
-      camera.rotation.z += Math.sin(t * 5.0) * stage * 0.005 * dampening;
+      camera.rotation.z += Math.sin(t * 5.0) * moveStage * 0.006 * dampening;
       // Random jolts dampened by calm
       if (stage > 0.85 && Math.random() < 0.005 * dampening) {
         camera.position.y += (Math.random() - 0.5) * 0.15 * dampening;
@@ -17066,11 +17089,22 @@ function setupNeedles(scene, camera, level) {
   // want the syringe to track the nurse's right hand exactly so it never
   // drifts off the palm. Inside the local hand frame we position the
   // syringe so the needle points away from the nurse and toward the camera.
-  scene.remove(syringe);
-  forearmGroup.add(syringe);
-  // Clear the previous absolute syringe position; place inside the hand
-  syringe.position.set(0, -0.30, 0);
-  syringe.rotation.set(0, -1.0, 0);    // angle the needle toward the user
+  // From rung 2 on, the nurse has PICKED UP the syringe — re-parent it to her
+  // hand so it tracks the palm exactly. On rung 1 ("syringe on a tray, across
+  // the room, sealed") it instead stays resting on the tray and the nurse's
+  // hands are empty — which is what that level actually describes. Previously
+  // it was always welded to her hand, so the tray was empty at every rung.
+  if (proximity >= 0.35) {
+    scene.remove(syringe);
+    forearmGroup.add(syringe);
+    // Clear the previous absolute syringe position; place inside the hand
+    syringe.position.set(0, -0.30, 0);
+    syringe.rotation.set(0, -1.0, 0);    // angle the needle toward the user
+  } else {
+    // Rest it on the tray top (tray at y=-0.4, ~0.04 thick → top ≈ -0.38).
+    syringe.position.set(0.5, -0.353, trayZ);
+    syringe.rotation.set(0, 0.5, 0);     // lying at a slight angle on the tray
+  }
 
   // The user's arm + hand. Visible from the second rung on so they can
   // see themselves making a fist as the syringe approaches.
@@ -18943,7 +18977,7 @@ function setupStorms(scene, camera, level) {
   // so the lightning flash reads as a flash, not as an explosion.
   const skyBase = new THREE.Color(0x0e1220);
   scene.background = skyBase.clone();
-  scene.fog = new THREE.Fog(0x0e1220, 14, 90);
+  scene.fog = new THREE.Fog(0x0e1220, 14 - intensity * 5, 90 - intensity * 30);   // storm closes in at high intensity
 
   scene.add(new THREE.AmbientLight(0x3a4050, 0.30));
   // Distant ambient flash — pulses softly during a strike. Kept moderate so
@@ -18978,7 +19012,10 @@ function setupStorms(scene, camera, level) {
   function generateBolt() {
     // Pick a random distant strike location on the horizon
     const tx = (Math.random() - 0.5) * 60;
-    const tz = -25 - Math.random() * 25;
+    // Closer strikes at higher intensity (a distant grumble vs. directly
+    // overhead). `near` = how close the nearest possible strike can land.
+    const near = 12 + (1 - intensity) * 18;
+    const tz = -near - Math.random() * 25;
     // Top of the bolt: high up, slightly offset from the strike
     const sx = tx + (Math.random() - 0.5) * 6;
     const sy = 18 + Math.random() * 4;
@@ -19098,7 +19135,7 @@ function setupStorms(scene, camera, level) {
   scene.add(house);
 
   // Rain particles
-  const N = 700;
+  const N = Math.round(320 + intensity * 620);   // light drizzle → heavy downpour
   const rainPos = new Float32Array(N * 3);
   for (let i = 0; i < N; i++) {
     rainPos[i*3]   = (Math.random() - 0.5) * 40;
@@ -19108,7 +19145,8 @@ function setupStorms(scene, camera, level) {
   const rainGeo = new THREE.BufferGeometry();
   rainGeo.setAttribute("position", new THREE.BufferAttribute(rainPos, 3));
   const rain = new THREE.Points(rainGeo, new THREE.PointsMaterial({
-    color: 0x7a8aa0, size: 0.05, transparent: true, opacity: 0.55,
+    color: 0x7a8aa0, size: 0.045 + intensity * 0.025, transparent: true,
+    opacity: 0.38 + intensity * 0.34,    // faint drizzle at low intensity, dense at high
   }));
   scene.add(rain);
 
@@ -19366,7 +19404,7 @@ function setupStorms(scene, camera, level) {
       // strike is a real branching bolt + a soft sky glow + a delayed thunder.
       if (t > nextStrike) {
         generateBolt();
-        flash = 0.7;            // softer broad glow
+        flash = 0.45 + intensity * 0.35;   // dim distant flicker → bright, close flash
         boltLife = 1.0;         // bolt geometry is bright at strike, fades fast
         lastFlashT = t;
         nextStrike = t + 3 + (1 - intensity) * 8 + Math.random() * 2;
