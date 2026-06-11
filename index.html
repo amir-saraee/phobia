@@ -9074,7 +9074,11 @@ class FPControls {
     this.camera.rotation.order = "YXZ";
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
-    this.camera.rotation.z = 0;
+    // Roll: lean into turns + a faint footfall sway, computed at the end of
+    // the previous frame's update (one frame of latency is invisible at 60 Hz;
+    // the TP branch overwrites rotation entirely via lookAt, so this only
+    // ever shows in first person).
+    this.camera.rotation.z = this._camRoll || 0;
 
     // Remember where we were so we can advance the walk cycle by actual
     // distance travelled (grounded stride, no foot-skating) and detect motion
@@ -9171,13 +9175,48 @@ class FPControls {
     //     a separate character).
     const targetBlend = this.cameraMode === "tp" ? 1 : 0;
     this.tpBlend += (targetBlend - this.tpBlend) * Math.min(1, dt * 4.0);
-    const fpBobScale = 1 - this.tpBlend;       // bob fades to 0 in TP
-    const bobY = Math.abs(Math.sin(this._walkPhase)) * 0.04 * this._walkAmt * fpBobScale;
-    const bobX = Math.sin(this._walkPhase * 0.5) * 0.02 * this._walkAmt * fpBobScale;
-    // FP target — at the player's eye level + walk bob
-    const fpX = this.position.x + bobX;
-    const fpY = this.position.y + bobY;
-    const fpZ = this.position.z;
+    // ---- First-person body-feel ----
+    // The camera IS the user's head: it should dip into each footfall, ride
+    // their breath, and lean into turns. Everything here scales down with
+    // the reduce-motion accessibility setting (re-read once a second, not
+    // every frame).
+    if (this._rmAt == null || (this._rmAt -= dt) <= 0) {
+      this._rmAt = 1;
+      try { this._reduceMotion = localStorage.getItem("fobia.reducedMotion") === "1"; }
+      catch { this._reduceMotion = false; }
+    }
+    const mScale = this._reduceMotion ? 0.3 : 1;
+    const fpBobScale = (1 - this.tpBlend) * mScale;   // fades to 0 in TP
+    // Footfall-shaped bob: a stride isn't a sine — eye height dips sharply
+    // into each heel strike and floats over mid-stance. Sharpened |sin|,
+    // zero-mean so standing eye height is unchanged.
+    const plant = Math.pow(Math.abs(Math.sin(this._walkPhase)), 1.5);
+    const bobY = (plant - 0.62) * 0.045 * this._walkAmt * fpBobScale;
+    // Breathing — always present, faster and deeper as fear rises. This is
+    // the user's own chest: the quietest channel the fear system speaks
+    // through, and the one that makes standing still feel inhabited.
+    const fearK = (window.PhobiaFear ? window.PhobiaFear.get() : 0) / 100;
+    this._breathT = (this._breathT || 0) + dt * (1.5 + fearK * 2.4);
+    const breathY = Math.sin(this._breathT) * (0.0035 + fearK * 0.0045)
+      * (1 - this._walkAmt * 0.7) * fpBobScale;
+    // Lateral sway rides the camera's LOCAL right vector — the old code
+    // swayed along world-X, which reversed whenever you faced ±x.
+    const swayAmt = Math.sin(this._walkPhase * 0.5) * 0.016 * this._walkAmt * fpBobScale;
+    const rSinY = Math.sin(this.yaw), rCosY = Math.cos(this.yaw);
+    const fpX = this.position.x + rCosY * swayAmt;
+    const fpY = this.position.y + bobY + breathY;
+    const fpZ = this.position.z - rSinY * swayAmt;
+    // Roll target for next frame: yaw-velocity lean + strafe lean + footfall.
+    const yawVel = dt > 0 ? (this.yaw - (this._prevYawRoll ?? this.yaw)) / dt : 0;
+    this._prevYawRoll = this.yaw;
+    const strafe = ((this.keys.KeyD || this.keys.ArrowRight) ? 1 : 0)
+                 - ((this.keys.KeyA || this.keys.ArrowLeft) ? 1 : 0);
+    const rollTarget = Math.max(-0.06, Math.min(0.06,
+      -yawVel * 0.012
+      - strafe * 0.02 * this._walkAmt
+      + Math.sin(this._walkPhase * 0.5) * 0.007 * this._walkAmt
+    )) * fpBobScale;
+    this._camRoll = (this._camRoll || 0) + (rollTarget - this._camRoll) * Math.min(1, dt * 7);
 
     // TP target — orbit behind the player. Yaw drives orbit angle; pitch
     // tilts the camera up/down around the character.
@@ -9529,37 +9568,55 @@ class Body {
       this.arms.push({ root: armRoot, elbow, side: sx });
     }
 
-    // Hips — pants belt block
+    // Hips — pants belt block (kept as a named ref so the gait engine can
+    // twist the pelvis against the chest each step)
     const hips = new THREE.Mesh(
       new THREE.BoxGeometry(o.width * 2.2, o.waistY - o.hipY, 0.26), pants
     );
     hips.position.set(0, (o.waistY + o.hipY) / 2, 0);
     hips.castShadow = true;
     this.group.add(hips);
+    this.hips = hips;
 
-    // Legs
-    const legLen = o.hipY - o.ankleY;
+    // Legs — articulated chains: hip pivot → thigh → knee pivot → shin + foot.
+    // The old single-cylinder legs swung from the hip like a toy soldier's;
+    // a visible KNEE that flexes during the swing phase is the single
+    // strongest "that's a person walking" cue a body can give.
+    const legLen = o.hipY - o.ankleY;          // 0.78 with default dims
+    const thighLen = legLen * 0.52;
+    const shinLen = legLen * 0.48;
+    this._thighLen = thighLen;
+    this._shinLen = shinLen;
     this.legs = [];
     for (const sx of [-1, 1]) {
-      const leg = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.083, 0.066, legLen - 0.05, 14), pants
+      const hip = new THREE.Group();
+      hip.position.set(sx * 0.10, o.hipY, 0);
+      this.group.add(hip);
+      const thigh = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.085, 0.072, thighLen - 0.015, 14), pants
       );
-      leg.position.set(sx * 0.10, (o.hipY + o.ankleY) / 2 - 0.02, 0);
-      leg.castShadow = true;
-      this.group.add(leg);
-      this.legs.push({ mesh: leg, side: sx });
-    }
-
-    // Feet — flat shoes, slightly forward
-    this.feet = [];
-    for (const sx of [-1, 1]) {
-      const foot = new THREE.Mesh(
-        new THREE.BoxGeometry(0.14, 0.06, 0.26), shoes
+      thigh.position.y = -thighLen / 2;
+      thigh.castShadow = true;
+      hip.add(thigh);
+      const knee = new THREE.Group();
+      knee.position.y = -thighLen;
+      hip.add(knee);
+      // Knee cap — small sphere smoothing the joint when bent
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.072, 12, 10), pants);
+      cap.scale.set(1, 0.8, 1);
+      knee.add(cap);
+      const shin = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.066, 0.052, shinLen - 0.015, 14), pants
       );
-      foot.position.set(sx * 0.11, o.ankleY, 0.06);
+      shin.position.y = -shinLen / 2;
+      shin.castShadow = true;
+      knee.add(shin);
+      // Foot rides the shin (ankle at the shin's bottom end)
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, 0.26), shoes);
+      foot.position.set(0, -shinLen + 0.01, 0.06);
       foot.castShadow = true;
-      this.group.add(foot);
-      this.feet.push({ mesh: foot, side: sx });
+      knee.add(foot);
+      this.legs.push({ hip, knee, foot, side: sx });
     }
 
     // ---------- Head + face ----------
@@ -9904,9 +9961,13 @@ class Body {
       az = cam.position.z;
     }
     this.group.position.set(ax, ay, az);
-    // Yaw follows the camera's yaw so the body turns with the head.
+    // Yaw follows the camera's yaw so the body turns with the head. The mesh
+    // is authored with its face/chest on LOCAL +Z, while the camera looks
+    // toward -Z — without the π flip the third-person view showed the avatar
+    // permanently facing the camera (and moonwalking away from it), and
+    // looking down in first person put your toes pointing backwards.
     if (controls && typeof controls.yaw === "number") {
-      this.group.rotation.y = controls.yaw;  // body faces same direction as the camera
+      this.group.rotation.y = controls.yaw + Math.PI;
     }
     // Subtle breath (always-on idle motion). Bigger amplitude when standing
     // still (idle), smaller when walking (overshadowed by step bob anyway).
@@ -9942,31 +10003,39 @@ class Body {
       this.head.rotation.x = Math.sin(t * 0.7) * 0.02;
     }
 
-    // ---------- Natural walk cycle ----------
-    // Real walking: leg swings forward (positive sin), then plants and pushes
-    // back (negative sin). Foot lifts with a heel-toe roll. Body leans
-    // forward slightly, hips counter-twist, shoulders bob. Arms swing
-    // OPPOSITE to legs (right arm forward when left leg forward) — handled
-    // in the arms block below.
+    // ---------- Gait engine ----------
+    // A real human stride, not a metronome: the leg swings forward with the
+    // KNEE flexing to clear the ground (peak flex at mid-swing), lands almost
+    // straight, then stays near-straight through stance while the body
+    // vaults over it. Phase convention per leg (θ): sin(θ) > 0 and rising =
+    // swing-forward; θ ∈ (π/2, 3π/2) = stance. Knee flexion ≈ max(0, cosθ),
+    // which peaks exactly at mid-swing and vanishes through stance.
     this.legs.forEach((leg) => {
-      const side = leg.side;
-      const phase = walkPhase + (side > 0 ? 0 : Math.PI);
-      // Full sinusoidal swing: forward (+) and backward (-)
-      const swing = Math.sin(phase) * 0.55 * walkAmt;
-      leg.mesh.rotation.x = -swing;     // negative because rotating about hip
-      leg.mesh.position.z = swing * 0.08;
+      const θ = walkPhase + (leg.side > 0 ? 0 : Math.PI);
+      const swing = Math.sin(θ) * 0.50 * walkAmt;
+      const kneeFlex = (Math.max(0, Math.cos(θ)) * 0.95 + 0.04) * walkAmt;
+      leg.hip.rotation.x = -swing;
+      leg.knee.rotation.x = kneeFlex;
+      // Foot: level the sole against the combined leg rotation, then add a
+      // heel-toe roll — toe up as the foot reaches forward, heel peel as it
+      // pushes off behind.
+      leg.foot.rotation.x = -(leg.hip.rotation.x + leg.knee.rotation.x) * 0.75
+        + Math.sin(θ) * 0.22 * walkAmt;
     });
-    this.feet.forEach((foot) => {
-      const side = foot.side;
-      const phase = walkPhase + (side > 0 ? 0 : Math.PI);
-      const swing = Math.sin(phase);
-      // Lift only when foot is forward (swing > 0)
-      const lift = Math.max(0, swing) * 0.08 * walkAmt;
-      foot.mesh.position.y = this.opts.ankleY + lift;
-      foot.mesh.position.z = 0.06 + swing * 0.12 * walkAmt;
-      // Heel-toe roll: foot rotates up at peak swing, down at plant
-      foot.mesh.rotation.x = -swing * 0.35 * walkAmt;
-    });
+    // Pelvis dynamics — the part stiff procedural walks always miss:
+    //  · step bob: the body vaults highest at mid-stance and dips into each
+    //    heel strike (|sin| of the per-step phase, zero-mean so standing
+    //    height is unchanged)
+    //  · weight shift: the torso rides laterally over whichever foot is
+    //    planted (full stride = one left + one right shift)
+    const stepBob = (Math.abs(Math.sin(walkPhase)) - 0.64) * 0.034 * walkAmt;
+    this.group.position.y += stepBob;
+    const yawNow = this.group.rotation.y;
+    const weightShift = Math.sin(walkPhase) * 0.022 * walkAmt
+      // Idle: slow side-to-side balance transfer — nobody stands frozen.
+      + Math.sin(t * 0.45) * 0.013 * idleFactor;
+    this.group.position.x += Math.cos(yawNow) * weightShift;
+    this.group.position.z += -Math.sin(yawNow) * weightShift;
     // ---------- Posture (smoothed lerp toward targets set by the scene) ----------
     // The scene calls body.setPosture({ lean, crouch, armSpread, reach })
     // each frame to make the character respond to context: lean over a
@@ -10012,17 +10081,28 @@ class Body {
       this.head.position.y = this._headBaseY - crouchDrop;
     }
     if (ps.crouch > 0.01 && this.legs) {
-      const kneeBend = ps.crouch * 0.45;
+      // A crouch is bent KNEES, not a shrunken torso: thigh pitches forward,
+      // shin folds back, and the whole body drops by exactly the geometric
+      // shortening of the bent leg — so the feet stay planted on the floor.
+      const c = ps.crouch;
+      const hipBend = c * 0.50;
+      const kneeBend = c * 0.95;
       this.legs.forEach(leg => {
-        leg.mesh.rotation.x += kneeBend * 0.35;
+        leg.hip.rotation.x -= hipBend;
+        leg.knee.rotation.x += kneeBend;
+        leg.foot.rotation.x = -(leg.hip.rotation.x + leg.knee.rotation.x) * 0.85;
       });
+      const drop = this._thighLen * (1 - Math.cos(hipBend))
+        + this._shinLen * (1 - Math.cos(kneeBend - hipBend));
+      this.group.position.y -= drop;
     }
-    // Hip counter-twist: hips rotate slightly opposite to the upper body
-    // each step. It's the hallmark of a real walk cycle. We rotate the
-    // whole group by a tiny amount on top of the camera-driven yaw.
+    // Hip counter-twist: the pelvis rotates with the stepping leg while the
+    // chest counter-rotates above it — the hallmark of a real walk cycle.
     if (this._hipTwist === undefined) this._hipTwist = 0;
     const hipTwistTarget = Math.sin(walkPhase) * 0.06 * walkAmt;
     this._hipTwist += (hipTwistTarget - this._hipTwist) * 0.25;
+    if (this.hips) this.hips.rotation.y = this._hipTwist * 1.7;
+    if (this.chest) this.chest.rotation.y = -this._hipTwist * 1.2;
     // Footstep audio + visible dust puff each time a foot plants. The
     // dust is an invisible-by-default Points cloud we lazy-create the
     // first time a step fires; each puff is N points expanding from the
@@ -10211,10 +10291,10 @@ class Body {
     // Foot world position — we approximate by reading the body group
     // position + the foot mesh's local position (after the walk-cycle has
     // updated it).
-    const foot = this.feet && this.feet.find(f => f.side === side);
-    if (!foot) return;
+    const leg = this.legs && this.legs.find(l => l.side === side);
+    if (!leg) return;
     const wp = new THREE.Vector3();
-    foot.mesh.getWorldPosition(wp);
+    leg.foot.getWorldPosition(wp);
     // Surface palette
     const surface = this.opts.surface || "hard";
     let colour, baseSize, isWater = false;
@@ -10917,11 +10997,19 @@ class Hands {
   // Trigger a brief animation pulse (e.g. after a click)
   fireAction() { this.actionPulse = 1.0; }
 
-  update(t, dt) {
-    this.gestureStrength += (this.gestureTargetStrength - this.gestureStrength) * 0.12;
-    this.actionPulse = Math.max(0, this.actionPulse - (dt || 0.016) * 1.4);
+  update(t, dt, controls) {
+    const d = dt || 0.016;
+    // Delta-timed smoothing (the old per-frame 0.12 factor ran 2× faster on
+    // 120 Hz displays).
+    this.gestureStrength += (this.gestureTargetStrength - this.gestureStrength) * Math.min(1, d * 7.5);
+    this.actionPulse = Math.max(0, this.actionPulse - d * 1.4);
 
-    const breathY = Math.sin(t * 1.2) * 0.006;
+    // Body-feel inputs: the walk gait (hands counter-sway like real arms),
+    // breath that quickens with fear, and a fear tremor that puts the
+    // anxiety in the user's OWN hands — the most personal place it can live.
+    const w = controls && controls.getWalkState ? controls.getWalkState() : { phase: 0, amount: 0 };
+    const fearK = (window.PhobiaFear ? window.PhobiaFear.get() : 0) / 100;
+    const breathY = Math.sin(t * (1.2 + fearK * 1.6)) * (0.005 + fearK * 0.004);
 
     [this.left, this.right].forEach((hand) => {
       const side = hand.userData.side;
@@ -10999,10 +11087,28 @@ class Hands {
 
       // Lerp position + rotation toward (base + (target - base) * gestureStrength)
       const finalPos = base.clone().lerp(target, this.gestureStrength);
-      hand.position.lerp(finalPos, 0.18);
-      hand.rotation.x += (baseRot.x + (targetRotX - baseRot.x) * this.gestureStrength - hand.rotation.x) * 0.18;
-      hand.rotation.y += (baseRot.y + (targetRotY - baseRot.y) * this.gestureStrength - hand.rotation.y) * 0.18;
-      hand.rotation.z += (baseRot.z + (targetRotZ - baseRot.z) * this.gestureStrength - hand.rotation.z) * 0.18;
+      // Gait counter-swing: each hand drifts forward/back opposite its
+      // same-side leg with a small bounce at each plant — faded out while a
+      // gesture needs the hand steady.
+      const gaitFree = 1 - this.gestureStrength;
+      const armPhase = w.phase + (side > 0 ? Math.PI : 0);
+      finalPos.z += Math.sin(armPhase) * 0.030 * w.amount * gaitFree;
+      finalPos.y += (Math.abs(Math.sin(w.phase)) - 0.5) * 0.012 * w.amount * gaitFree;
+      finalPos.x += Math.sin(w.phase * 0.5) * 0.008 * w.amount * side * gaitFree;
+      // Fear tremor — tiny, high-frequency, slightly different per hand so it
+      // reads as nerves rather than screen shake. Builds above ~fear 45 and
+      // stays ON during gestures: a trembling reach toward the snake is
+      // exactly the honest body the exposure should show.
+      const tremor = Math.max(0, fearK - 0.45) * 0.012;
+      if (tremor > 0) {
+        finalPos.x += Math.sin(t * 21 + side * 7) * tremor;
+        finalPos.y += Math.sin(t * 27 + side * 3) * tremor * 0.7;
+      }
+      const posK = Math.min(1, d * 11);
+      hand.position.lerp(finalPos, posK);
+      hand.rotation.x += (baseRot.x + (targetRotX - baseRot.x) * this.gestureStrength - hand.rotation.x) * posK;
+      hand.rotation.y += (baseRot.y + (targetRotY - baseRot.y) * this.gestureStrength - hand.rotation.y) * posK;
+      hand.rotation.z += (baseRot.z + (targetRotZ - baseRot.z) * this.gestureStrength - hand.rotation.z) * posK;
 
       // Curl fingers — base curl from the gesture, plus a brief universal
       // squeeze whenever actionPulse > 0 so EVERY click on an interactive
@@ -11537,7 +11643,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         reachHint.style.opacity = probe.hint ? "1" : "0";
       }
     } catch (e) { console.warn("scene interact:", e); }
-    try { if (hands) hands.update(t, dt); }
+    try { if (hands) hands.update(t, dt, controls); }
     catch (e) { console.warn("hands.update:", e); }
     try {
       if (body && controls) {
