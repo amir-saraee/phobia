@@ -228,6 +228,11 @@ if ("serviceWorker" in navigator) {
     border: 1px solid var(--border);
   }
   .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  /* Tiny inline action (e.g. "Hear it" voice sample in settings) */
+  .btn-mini {
+    padding: 2px 8px; font-size: 11px; min-height: 0;
+    border-radius: 999px; vertical-align: 1px;
+  }
   .btn-warn {
     background: rgba(245,158,11,.15); color: #fde68a;
     border: 1px solid rgba(245,158,11,.4);
@@ -1589,6 +1594,21 @@ if ("serviceWorker" in navigator) {
     border: 1px solid var(--border);
     border-radius: var(--radius);
   }
+  /* Validation nudge: shown when "Save & begin" is pressed with no fear
+     picked. Replaces a blocking OS alert() — same message, app-styled,
+     plus a brief border pulse so the eye lands on the right section. */
+  .creator-phobias .phobia-note {
+    color: var(--warn, #f0b965);
+    font-size: var(--text-sm);
+    margin: 0 0 var(--space-3);
+  }
+  .creator-phobias.nudge {
+    animation: phobia-nudge 1.2s ease-out 1;
+  }
+  @keyframes phobia-nudge {
+    0%   { border-color: var(--warn, #f0b965); box-shadow: 0 0 0 3px rgba(240, 185, 101, 0.25); }
+    100% { border-color: var(--border); box-shadow: 0 0 0 0 rgba(240, 185, 101, 0); }
+  }
   .creator-phobias .creator-section-head { margin-bottom: var(--space-2); }
   .creator-phobias .lead-sm {
     color: var(--muted);
@@ -2615,8 +2635,19 @@ if ("serviceWorker" in navigator) {
     .phobia-grid { grid-template-columns: 1fr; }
     .info-grid { grid-template-columns: 1fr; }
     .char-badge-name { display: none; }
-    .nav-actions { gap: 4px; }
-    .audio-btn, .home-btn { padding: 6px 10px; font-size: 12px; }
+    /* Phone header: six nav items + brand must fit 375px. Icon-only buttons,
+       tighter gaps, compact chip + badge — at the old paddings the row was
+       409px wide and pushed the Home button clean off-screen. */
+    .nav-actions { gap: 3px; }
+    .audio-btn, .home-btn { padding: 5px 8px; font-size: 12px; }
+    .brand-left { gap: 6px; }
+    .brand h1 { font-size: 17px; }
+    .courage-badge { font-size: 10px; padding: 2px 6px; }
+    .char-badge { padding: 3px 6px; }
+    .char-badge-streak { display: none; }
+    /* Progress + Home live in the ☰ drawer too — drop their header buttons
+       on phones rather than letting the row push past the viewport. */
+    #insightsBtn, .home-btn { display: none; }
     .hero { padding: 26px 18px 22px; }
     .hero h1.huge { font-size: 26px; }
     .hero .lead { font-size: 14px; }
@@ -4238,7 +4269,7 @@ const PhobiaVoice = (() => {
     if (/google/i.test(name)) s += 14;
     if (/female/i.test(name)) s += 6;
     if (v.localService) s += 8;          // immune to network stutter
-    if (/compact|whisper|albert|bad news|bells|boing|bubbles|cellos|wobble|zarvox|trinoids|organ|fred|junior|kathy|ralph|grandma|grandpa|rocko|shelley|flo|eddy|reed/i.test(name)) s -= 60;
+    if (/compact|whisper|albert|bad news|good news|bahh|jester|deranged|hysterical|princess|superstar|bells|boing|bubbles|cellos|wobble|zarvox|trinoids|organ\b|fred|junior|kathy|ralph|grandma|grandpa|rocko|shelley|flo\b|eddy|reed/i.test(name)) s -= 60;
     return s;
   }
   function pickVoice() {
@@ -4321,7 +4352,9 @@ const PhobiaVoice = (() => {
         detail: { text, durationMs: Math.max(2200, text.length * 70) }
       }));
     } catch {}
-    if (muted || !synth || !text) return;
+    // `force` lets deliberate, user-initiated samples (the settings "Hear it"
+    // button) play while guidance is muted — without touching the stored pref.
+    if ((muted && !opts.force) || !synth || !text) return;
     const parts = splitSentences(text);
     const items = parts.map((p, i) => ({
       text: p,
@@ -5345,6 +5378,13 @@ function openSettings() {
       </div>
       <input type="range" id="voiceRate" min="0.65" max="1.1" step="0.05" value="0.85" />
     </div>
+    <div class="row" style="display:${PhobiaVoice.hasVoice() ? "flex" : "none"};">
+      <div>
+        <label>Guide's voice</label>
+        <div class="small">Installed voices differ a lot — pick the one that sounds most human. <button class="btn-ghost btn-mini" id="voiceSample" type="button">▶ Hear it</button></div>
+      </div>
+      <select id="voiceSelect" class="select-pill" aria-label="Guide's voice"></select>
+    </div>
     <div class="row">
       <div>
         <label>Closed captions</label>
@@ -5501,6 +5541,35 @@ function openSettings() {
   };
   const rate = drawer.querySelector("#voiceRate");
   if (rate) rate.oninput = () => PhobiaVoice.setRate(parseFloat(rate.value));
+  // Guide's voice picker — top 8 scored voices, saved choice pinned on top.
+  // Populated lazily because some browsers deliver getVoices() async.
+  const voiceSel = drawer.querySelector("#voiceSelect");
+  if (voiceSel && PhobiaVoice.listVoices) {
+    const fill = () => {
+      const voices = PhobiaVoice.listVoices().slice(0, 8);
+      if (!voices.length) return false;
+      let savedURI = "";
+      try { savedURI = localStorage.getItem("fobia.voiceURI") || ""; } catch {}
+      voiceSel.innerHTML = voices.map(v =>
+        `<option value="${v.uri.replace(/"/g, "&quot;")}" ${v.uri === savedURI ? "selected" : ""}>${v.name}</option>`
+      ).join("");
+      return true;
+    };
+    if (!fill() && window.speechSynthesis) {
+      window.speechSynthesis.addEventListener("voiceschanged", fill, { once: true });
+    }
+    voiceSel.onchange = () => {
+      PhobiaVoice.setVoice(voiceSel.value);
+      // Immediate feedback in the chosen voice — a deliberate sample plays
+      // even while guidance is muted (force), without touching the pref.
+      PhobiaVoice.speak("I'll walk each step with you. Slow breath in — and out.", { urgent: true, force: true });
+    };
+  }
+  const voiceSample = drawer.querySelector("#voiceSample");
+  if (voiceSample) voiceSample.onclick = (e) => {
+    e.stopPropagation();
+    PhobiaVoice.speak("You're safe. We go at your pace — one small step, then the next.", { urgent: true, force: true });
+  };
   drawer.querySelector("#resetAllBtn").onclick = () => {
     if (confirm("Reset all progress?")) {
       state = { progress: {}, log: [] };
@@ -9591,12 +9660,15 @@ class Body {
     nose.position.set(0, -0.022, 0.110);
     this.head.add(nose);
 
-    // Mouth — a faint smile arc (Torus partial)
+    // Mouth — a faint smile arc (Torus partial). The arc parameter starts at
+    // the +X axis, so to get a smile (ends up, centre down) the mesh is spun
+    // so the arc spans the BOTTOM of the circle — rotating ±90° instead put
+    // a vertical C-curl beside the nose.
     const mouth = new THREE.Mesh(
       new THREE.TorusGeometry(0.024, 0.0035, 6, 16, Math.PI * 0.85),
       new THREE.MeshBasicMaterial({ color: 0x6a3a30 })
     );
-    mouth.rotation.z = -Math.PI / 2;
+    mouth.rotation.z = Math.PI * 1.075;   // arc centred on the circle's bottom
     mouth.rotation.x = -0.12;
     mouth.position.set(0, -0.057, 0.107);
     this.head.add(mouth);
@@ -10382,12 +10454,13 @@ class TherapistNPC {
     this.head.add(nose);
 
     // Mouth — neutral kind half-smile. We open/close it via scale.y to
-    // animate speech (jaw drop visible as mouth widens vertically).
+    // animate speech (jaw drop visible as mouth widens vertically). Arc spun
+    // to span the circle's bottom = smile; ±90° put it sideways by the nose.
     this.mouth = new THREE.Mesh(
       new THREE.TorusGeometry(0.024, 0.0035, 6, 16, Math.PI * 0.85),
       new THREE.MeshBasicMaterial({ color: 0x6a3a30 })
     );
-    this.mouth.rotation.z = -Math.PI / 2;
+    this.mouth.rotation.z = Math.PI * 1.075;
     this.mouth.rotation.x = -0.10;
     this.mouth.position.set(0, -0.057, 0.107);
     this.head.add(this.mouth);
@@ -17035,6 +17108,46 @@ function setupEnclosed(scene, camera, level) {
   fixture.position.set(0, roomH / 2 - 0.05, 0);
   scene.add(fixture);
 
+  // ---- Wall furniture (storage-room rungs only; the MRI tube stays clean) ----
+  // Bare planes read as a test level. Skirting boards, a vent grille and a
+  // wall pipe make it a real utility room — and because they're CHILDREN of
+  // the wall meshes, they ride along correctly as the walls close in.
+  if (size >= 0.3) {
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0x4a4a50, roughness: 0.85 });
+    const metalMat = new THREE.MeshStandardMaterial({ color: 0x52525a, roughness: 0.45, metalness: 0.5 });
+    // Skirting along each wall's local bottom (plane local: x = width, y = height)
+    for (const [wall, w] of [[back, roomW], [front, roomW], [left, roomD], [right, roomD]]) {
+      const skirt = new THREE.Mesh(new THREE.BoxGeometry(w * 0.995, 0.09, 0.025), trimMat);
+      skirt.position.set(0, -roomH / 2 + 0.045, 0.013);
+      wall.add(skirt);
+    }
+    // Vent grille high on the back wall — a dark recess with slats
+    const vent = new THREE.Group();
+    const ventPlate = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.02), metalMat);
+    vent.add(ventPlate);
+    const slatMat = new THREE.MeshStandardMaterial({ color: 0x17171c, roughness: 0.9 });
+    for (let i = 0; i < 4; i++) {
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.035, 0.012), slatMat);
+      slat.position.set(0, 0.10 - i * 0.066, 0.012);
+      vent.add(slat);
+    }
+    vent.position.set(roomW * 0.25, roomH / 2 - 0.35, 0.02);
+    back.add(vent);
+    // Pipe running the length of the left wall with two brackets
+    const pipe = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.035, 0.035, roomD * 0.92, 10),
+      metalMat
+    );
+    pipe.rotation.z = Math.PI / 2;
+    pipe.position.set(0, roomH * 0.24, 0.05);
+    left.add(pipe);
+    for (const bx of [-roomD * 0.3, roomD * 0.3]) {
+      const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.09, 0.05), trimMat);
+      bracket.position.set(bx, roomH * 0.24, 0.028);
+      left.add(bracket);
+    }
+  }
+
   // Door — visible at any size (smaller rooms have a smaller door, but always
   // a door so the user can see the way out when feeling claustrophobic).
   // Pivoted at its hinge edge so it swings open/closed.
@@ -17888,6 +18001,72 @@ function setupNeedles(scene, camera, level) {
   const right = new THREE.Mesh(new THREE.PlaneGeometry(20, 8), wallMat);
   right.rotation.y = -Math.PI / 2; right.position.set(8, 2, -1);
   scene.add(right);
+
+  // ---- Human touches ----
+  // Real clinics aren't featureless: a calm-breathing poster, a plant in the
+  // corner, daylight through blinds. Warmth lowers the baseline dread so the
+  // syringe itself stays the single source of fear — exposure works on the
+  // trigger, not on a creepy room.
+  {
+    // Poster: drawn on a small canvas (soft lungs-ish circles + "BREATHE")
+    const pc = document.createElement("canvas");
+    pc.width = 256; pc.height = 340;
+    const pg = pc.getContext("2d");
+    pg.fillStyle = "#f2f6f9"; pg.fillRect(0, 0, 256, 340);
+    pg.fillStyle = "#dceaf2";
+    pg.beginPath(); pg.arc(128, 120, 70, 0, Math.PI * 2); pg.fill();
+    pg.fillStyle = "#9fc4dd";
+    pg.beginPath(); pg.arc(128, 120, 46, 0, Math.PI * 2); pg.fill();
+    pg.fillStyle = "#5d87a8";
+    pg.beginPath(); pg.arc(128, 120, 22, 0, Math.PI * 2); pg.fill();
+    pg.fillStyle = "#3c5366";
+    pg.font = "600 34px sans-serif"; pg.textAlign = "center";
+    pg.fillText("BREATHE", 128, 250);
+    pg.font = "400 17px sans-serif"; pg.fillStyle = "#7e93a4";
+    pg.fillText("in for 4 — out for 6", 128, 282);
+    const posterTex = new THREE.CanvasTexture(pc);
+    const poster = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.85, 1.12),
+      new THREE.MeshStandardMaterial({ map: posterTex, roughness: 0.9 })
+    );
+    poster.position.set(-1.8, 0.75, -7.96);
+    scene.add(poster);
+
+    // Potted plant in the back-left corner
+    const pot = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.16, 0.12, 0.26, 12),
+      new THREE.MeshStandardMaterial({ color: 0xb06a4a, roughness: 0.9 })
+    );
+    pot.position.set(-2.9, -0.87, -7.2);
+    pot.castShadow = true;
+    scene.add(pot);
+    const leafMat = new THREE.MeshStandardMaterial({ color: 0x4a7a4e, roughness: 0.85, side: THREE.DoubleSide });
+    for (let i = 0; i < 6; i++) {
+      const leaf = new THREE.Mesh(new THREE.PlaneGeometry(0.13, 0.42), leafMat);
+      const ang = (i / 6) * Math.PI * 2;
+      leaf.position.set(-2.9 + Math.sin(ang) * 0.07, -0.52, -7.2 + Math.cos(ang) * 0.07);
+      leaf.rotation.y = ang;
+      leaf.rotation.x = -0.35;
+      scene.add(leaf);
+    }
+
+    // Window with horizontal blinds on the left wall — bright daylight slab
+    // behind dark slats (the light is faked; the brightness cue is enough).
+    const winGlow = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.7, 1.3),
+      new THREE.MeshBasicMaterial({ color: 0xeaf4fb })
+    );
+    winGlow.rotation.y = Math.PI / 2;
+    winGlow.position.set(-7.96, 0.9, -2.4);
+    scene.add(winGlow);
+    const slatMat = new THREE.MeshStandardMaterial({ color: 0xc7d3dc, roughness: 0.8 });
+    for (let i = 0; i < 9; i++) {
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.055, 1.66), slatMat);
+      slat.position.set(-7.93, 1.48 - i * 0.145, -2.4);
+      slat.rotation.z = 0.5;
+      scene.add(slat);
+    }
+  }
 
   // Medical tray (reflective)
   const tray = new THREE.Mesh(
@@ -21020,12 +21199,127 @@ function setupDark(scene, camera, level) {
   chair.position.set(-1.6, -1, -2);
   scene.add(chair);
 
-  const shelf = new THREE.Mesh(
-    new THREE.BoxGeometry(1.4, 1.8, 0.3),
-    new THREE.MeshStandardMaterial({ color: 0x202428 })
+  // ---- Bedroom dressing ----
+  // The room used to be four bare walls, a box-chair and a box-shelf — it read
+  // as "test level", not "my bedroom at 3 am". Recognisable night-time
+  // furniture does double duty: it grounds the scene in a real memory, and it
+  // gives the "name what you see" exercise actual things to name.
+  const darkWood = new THREE.MeshStandardMaterial({ color: 0x231d18, roughness: 0.9 });
+  const fabricMat = new THREE.MeshStandardMaterial({ color: 0x2a2f3c, roughness: 1.0 });
+
+  // Bed against the left wall — frame, mattress, pillow, folded blanket
+  const bed = new THREE.Group();
+  const bedFrame = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.28, 2.1), darkWood);
+  bedFrame.position.y = 0.14; bed.add(bedFrame);
+  const headboard = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.75, 0.07), darkWood);
+  headboard.position.set(0, 0.38, -1.04); bed.add(headboard);
+  const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.16, 1.95),
+    new THREE.MeshStandardMaterial({ color: 0x343a47, roughness: 1.0 }));
+  mattress.position.y = 0.36; bed.add(mattress);
+  const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.10, 0.34),
+    new THREE.MeshStandardMaterial({ color: 0x454c5c, roughness: 1.0 }));
+  pillow.position.set(0, 0.49, -0.72); pillow.rotation.x = -0.06; bed.add(pillow);
+  const blanket = new THREE.Mesh(new THREE.BoxGeometry(1.07, 0.07, 1.1), fabricMat);
+  blanket.position.set(0, 0.47, 0.35); bed.add(blanket);
+  bed.position.set(-2.25, -1, 0.2);
+  bed.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  scene.add(bed);
+
+  // Nightstand + the room's lamp ON it (the point light finally has a body)
+  const stand = new THREE.Group();
+  const standBody = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 0.4), darkWood);
+  standBody.position.y = 0.25; stand.add(standBody);
+  const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 0.18, 10), darkWood);
+  lampBase.position.y = 0.59; stand.add(lampBase);
+  const lampShade = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.10, 0.13, 0.16, 12, 1, true),
+    new THREE.MeshStandardMaterial({
+      color: 0xc9a876, roughness: 1.0, side: THREE.DoubleSide,
+      emissive: 0xffd6a0, emissiveIntensity: 0.55 * (1 - dim),
+    })
   );
-  shelf.position.set(2, -0.1, -3);
-  scene.add(shelf);
+  lampShade.position.y = 0.72; stand.add(lampShade);
+  stand.position.set(-2.6, -1, 1.55);
+  stand.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  scene.add(stand);
+  // Park the room light inside the shade — low height = long anxious shadows.
+  lamp.position.set(-2.55, -0.26, 1.55);
+
+  // Window on the right wall with thin curtains + cold moonlight. At the
+  // darkest rungs the lamp dies and this is all that's left — which is true
+  // to life and quietly beautiful instead of just murky.
+  const moonGlow = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.15, 1.35),
+    new THREE.MeshBasicMaterial({ color: 0x53647e })
+  );
+  moonGlow.rotation.y = -Math.PI / 2;
+  moonGlow.position.set(2.97, 0.55, -0.8);
+  scene.add(moonGlow);
+  // Window cross-frame bars
+  for (const bar of [
+    { w: 0.05, h: 1.35, y: 0.55, z: -0.8 },
+    { w: 1.15, h: 0.05, y: 0.55, z: -0.8 },
+  ]) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.03, bar.h, bar.w), darkWood);
+    m.position.set(2.955, bar.y, bar.z);
+    scene.add(m);
+  }
+  for (const cz of [-1.55, -0.05]) {
+    const curtain = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.7, 0.42), fabricMat);
+    curtain.position.set(2.92, 0.5, cz);
+    scene.add(curtain);
+  }
+  const moon = new THREE.DirectionalLight(0x8aa7cc, 0.12 + dim * 0.22);
+  moon.position.set(5, 1.6, -0.8);
+  moon.target.position.set(0, -1, 0.2);
+  scene.add(moon); scene.add(moon.target);
+
+  // Wardrobe in the back corner — its door hangs slightly open onto a pitch
+  // black interior, and creaks wider during the session (wired in update()).
+  const wardrobe = new THREE.Group();
+  const wbody = new THREE.Mesh(new THREE.BoxGeometry(1.15, 2.05, 0.5), darkWood);
+  wbody.position.y = 1.025; wardrobe.add(wbody);
+  // Black interior shown through the door gap
+  const winterior = new THREE.Mesh(new THREE.PlaneGeometry(1.05, 1.95),
+    new THREE.MeshBasicMaterial({ color: 0x000000 }));
+  winterior.position.set(0, 1.02, 0.245);
+  wardrobe.add(winterior);
+  wardrobe.position.set(2.3, -1, -3.15);
+  wardrobe.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  scene.add(wardrobe);
+  // Left-hinged door (its own group so rotation pivots at the hinge edge)
+  const wardrobeDoor = new THREE.Group();
+  const doorPanel = new THREE.Mesh(new THREE.BoxGeometry(0.56, 1.95, 0.04), darkWood);
+  doorPanel.position.x = 0.28;
+  doorPanel.castShadow = true;
+  wardrobeDoor.add(doorPanel);
+  const doorKnob = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6),
+    new THREE.MeshStandardMaterial({ color: 0x6a6258, roughness: 0.4, metalness: 0.6 }));
+  doorKnob.position.set(0.50, 0, 0.045);
+  wardrobeDoor.add(doorKnob);
+  wardrobeDoor.position.set(1.73, 0.02, -2.89);
+  wardrobeDoor.rotation.y = -0.10;          // ajar from the start
+  scene.add(wardrobeDoor);
+  let doorOpen = 0, doorOpenTarget = 0;
+  let doorCreakAt = 10 + Math.random() * 10;
+
+  // Rug — soft landing for the eye in the middle of the floor
+  const rug = new THREE.Mesh(
+    new THREE.CircleGeometry(1.0, 24),
+    new THREE.MeshStandardMaterial({ color: 0x232730, roughness: 1.0 })
+  );
+  rug.rotation.x = -Math.PI / 2;
+  rug.position.set(0, -0.992, 0.6);
+  rug.receiveShadow = true;
+  scene.add(rug);
+
+  // Solid things the player can't walk through (bed corner clips otherwise)
+  const DARK_OBSTACLES = [
+    { x: -2.25, z: 0.2, r: 1.05 },   // bed
+    { x: -2.6, z: 1.55, r: 0.42 },   // nightstand
+    { x: 2.3, z: -3.05, r: 0.75 },   // wardrobe
+    { x: -1.6, z: -2, r: 0.45 },     // chair
+  ];
 
   // ---- Lurking presences (the nyctophobia core) ----
   // Dark, faceless shapes at the room's edges with faint, blinking eyes. In the
@@ -21145,7 +21439,7 @@ function setupDark(scene, camera, level) {
     const nameBtn = bar.querySelector('[data-cmd="name"]');
     if (nameBtn) nameBtn.onclick = (e) => {
       e.stopPropagation();
-      if (window.PhobiaVoice) window.PhobiaVoice.speak("Name what you see. A chair. A shelf. A wall. The same things as in daylight.");
+      if (window.PhobiaVoice) window.PhobiaVoice.speak("Name what you see. Your bed. The wardrobe. The window. The same room as in daylight.");
     };
     const matchBtn = bar.querySelector('[data-cmd="match"]');
     if (matchBtn) matchBtn.onclick = (e) => {
@@ -21197,6 +21491,22 @@ function setupDark(scene, camera, level) {
     surface: "soft",   // carpeted dim room
     update(t, controls, dt) {
       const d = dt || 0.016;
+      // Keep the player out of the furniture.
+      if (controls && controls.setObstacles) controls.setObstacles(DARK_OBSTACLES);
+      // The wardrobe door creaks a few degrees further open now and then —
+      // the doorCreak audio finally has a visible source. The movement is a
+      // slow groan, not a snap, and it happens whether or not you're looking.
+      doorCreakAt -= d;
+      if (doorCreakAt <= 0) {
+        doorCreakAt = 16 + Math.random() * 20 - dim * 6;
+        if (doorOpenTarget < 0.5) doorOpenTarget += 0.07 + Math.random() * 0.08;
+        if (window.PhobiaAudio && window.PhobiaAudio.doorCreak) {
+          try { window.PhobiaAudio.doorCreak({ x: 1.75, y: 0, z: -2.9 }); } catch {}
+        }
+        if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.3);
+      }
+      doorOpen += (doorOpenTarget - doorOpen) * Math.min(1, d * 0.8);
+      wardrobeDoor.rotation.y = -(0.10 + doorOpen);
       // Flashlight on while held — brighter, narrower. Smoothing is
       // delta-timed so the ramp feels identical at 60 Hz and 120 Hz
       // (flashlight.intensity is persistent state, so a bare *0.12 per frame
@@ -21398,61 +21708,71 @@ function buildAvatarFigure(c) {
     head.add(ear);
   }
 
-  // Nose — bridge + tip + nostrils
-  const noseBridge = new THREE.Mesh(new THREE.SphereGeometry(0.025, 10, 8), skinM);
-  noseBridge.scale.set(1.0, 1.6, 1.6);
-  noseBridge.position.set(0, 0.005, 0.18);
+  // Nose — bridge + tip + nostrils. Deliberately modest: at the old scale the
+  // bridge+tip stack dominated the mid-face and the tip drooped INTO the
+  // upper-lip zone, merging nose and mouth into one fleshy mass up close.
+  const noseBridge = new THREE.Mesh(new THREE.SphereGeometry(0.020, 10, 8), skinM);
+  noseBridge.scale.set(0.85, 1.35, 1.1);
+  noseBridge.position.set(0, -0.005, 0.180);
   head.add(noseBridge);
-  const noseTip = new THREE.Mesh(new THREE.SphereGeometry(0.032, 12, 10), skinM);
-  noseTip.scale.set(1.0, 0.85, 1.4);
-  noseTip.position.set(0, -0.045, 0.21);
+  const noseTip = new THREE.Mesh(new THREE.SphereGeometry(0.026, 12, 10), skinM);
+  noseTip.scale.set(1.0, 0.80, 1.1);
+  noseTip.position.set(0, -0.038, 0.196);
   head.add(noseTip);
   for (const sx of [-1, 1]) {
     const nostril = new THREE.Mesh(
-      new THREE.SphereGeometry(0.011, 8, 6),
+      new THREE.SphereGeometry(0.009, 8, 6),
       new THREE.MeshStandardMaterial({ color: skinShadow, roughness: 0.9 })
     );
-    nostril.position.set(sx * 0.018, -0.062, 0.235);
+    nostril.position.set(sx * 0.015, -0.052, 0.208);
     head.add(nostril);
   }
 
-  // Eyes — whites + iris + pupil + catchlight + upper eyelid (closes when blinking)
+  // Eyes — whites + iris + pupil + catchlight + upper eyelid (closes when
+  // blinking). Everything is tucked INSIDE the skull silhouette: with the old
+  // offsets the iris/pupil/catchlight stack floated ~2 cm in front of the
+  // face, which read fine head-on but as a googly bead in profile.
   const eyeRefs = [];
   for (const sx of [-1, 1]) {
     const eyeGroup = new THREE.Group();
-    eyeGroup.position.set(sx * 0.075, 0.025, 0.16);
+    // Sits flush with the skull surface (cranium half-depth ≈0.188 at eye
+    // height): recessing further sinks the whites into shadow, protruding
+    // further reads as googly beads in profile.
+    eyeGroup.position.set(sx * 0.075, 0.025, 0.170);
     head.add(eyeGroup);
 
-    const white = new THREE.Mesh(new THREE.SphereGeometry(0.040, 16, 14), eyeWhiteM);
-    white.scale.set(1.0, 1.0, 0.55);
+    const white = new THREE.Mesh(new THREE.SphereGeometry(0.036, 16, 14), eyeWhiteM);
+    white.scale.set(0.85, 0.95, 0.50);
     white.position.set(0, 0, 0.005);
     eyeGroup.add(white);
 
-    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.026, 14, 12), irisM);
-    iris.position.set(0, 0, 0.022);
-    iris.scale.set(1, 1, 0.4);
+    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.024, 14, 12), irisM);
+    iris.position.set(0, 0, 0.016);
+    iris.scale.set(1, 1, 0.35);
     eyeGroup.add(iris);
 
     const pupil = new THREE.Mesh(
-      new THREE.SphereGeometry(0.012, 10, 8),
+      new THREE.SphereGeometry(0.010, 10, 8),
       new THREE.MeshBasicMaterial({ color: 0x080404 })
     );
-    pupil.position.set(0, 0, 0.034);
+    pupil.scale.set(1, 1, 0.5);
+    pupil.position.set(0, 0, 0.0235);
     eyeGroup.add(pupil);
 
     const hl = new THREE.Mesh(
-      new THREE.SphereGeometry(0.0075, 6, 5),
+      new THREE.SphereGeometry(0.006, 6, 5),
       new THREE.MeshBasicMaterial({ color: 0xffffff })
     );
-    hl.position.set(sx * 0.008, 0.01, 0.040);
+    hl.scale.set(1, 1, 0.5);
+    hl.position.set(sx * 0.007, 0.009, 0.027);
     eyeGroup.add(hl);
 
     // Upper eyelid (a thin half-sphere we scale to "close" for blinks)
     const lid = new THREE.Mesh(
-      new THREE.SphereGeometry(0.042, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.SphereGeometry(0.038, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2),
       skinM
     );
-    lid.scale.set(1.0, 0.05, 0.55);
+    lid.scale.set(1.0, 0.05, 0.50);
     lid.position.set(0, 0.005, 0.005);
     eyeGroup.add(lid);
 
@@ -21461,50 +21781,44 @@ function buildAvatarFigure(c) {
 
   // Eyebrows — match hair shadow colour, tilted slightly inward for friendly look
   for (const sx of [-1, 1]) {
-    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.012, 0.022), browM);
-    brow.position.set(sx * 0.075, 0.075, 0.18);
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.011, 0.020), browM);
+    brow.position.set(sx * 0.075, 0.082, 0.175);
     brow.rotation.z = -sx * 0.08;
     head.add(brow);
   }
 
-  // Mouth — soft closed lips with a small smile curve
-  // Upper lip (slim torus arc)
-  const upperLip = new THREE.Mesh(
-    new THREE.TorusGeometry(0.038, 0.008, 8, 14, Math.PI),
-    lipsM
-  );
-  upperLip.rotation.z = -Math.PI / 2;
-  upperLip.rotation.x = -0.2;
-  upperLip.position.set(0, -0.075, 0.205);
+  // Mouth — soft closed lips. Two squashed spheres (upper slimmer, lower
+  // fuller) read as lips from every angle. The old half-torus arcs lived in
+  // the XY plane, so rotating them ±90° about Z pointed the arc VERTICALLY —
+  // they rendered as flesh-coloured C-curls hanging beside the nose.
+  const upperLip = new THREE.Mesh(new THREE.SphereGeometry(0.030, 14, 10), lipsM);
+  upperLip.scale.set(1.45, 0.34, 0.50);
+  upperLip.position.set(0, -0.088, 0.188);
   head.add(upperLip);
-  // Lower lip (slightly thicker)
-  const lowerLip = new THREE.Mesh(
-    new THREE.TorusGeometry(0.038, 0.011, 8, 14, Math.PI),
-    lipsM
-  );
-  lowerLip.rotation.z = Math.PI / 2;
-  lowerLip.rotation.x = 0.2;
-  lowerLip.position.set(0, -0.105, 0.205);
+  const lowerLip = new THREE.Mesh(new THREE.SphereGeometry(0.030, 14, 10), lipsM);
+  lowerLip.scale.set(1.25, 0.46, 0.56);
+  lowerLip.position.set(0, -0.110, 0.185);
   head.add(lowerLip);
   // Mouth shadow (a touch of dark between the lips for depth)
   const mouthShadow = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.06, 0.005),
+    new THREE.PlaneGeometry(0.055, 0.004),
     new THREE.MeshBasicMaterial({ color: 0x4a1a1a, transparent: true, opacity: 0.45 })
   );
-  mouthShadow.position.set(0, -0.090, 0.215);
+  mouthShadow.position.set(0, -0.099, 0.203);
   head.add(mouthShadow);
 
-  // Cheek warmth (subtle red dots)
+  // Cheek warmth — mostly sunk into the skull so only a soft gradient
+  // surfaces; at full opacity they read as flat circular stickers.
   for (const sx of [-1, 1]) {
     const cheek = new THREE.Mesh(
       new THREE.SphereGeometry(0.04, 10, 8),
       new THREE.MeshStandardMaterial({
         color: new THREE.Color(skin).lerp(new THREE.Color(0xe07a72), 0.25).getHex(),
-        roughness: 0.9, transparent: true, opacity: 0.55,
+        roughness: 0.9, transparent: true, opacity: 0.32,
       })
     );
-    cheek.scale.set(1.0, 0.6, 0.3);
-    cheek.position.set(sx * 0.13, -0.05, 0.165);
+    cheek.scale.set(1.0, 0.6, 0.22);
+    cheek.position.set(sx * 0.125, -0.05, 0.158);
     head.add(cheek);
   }
 
@@ -21520,10 +21834,11 @@ function buildAvatarFigure(c) {
     cap.scale.copy(cranium.scale);
     cap.position.copy(cranium.position);
     head.add(cap);
-    // Fringe (small forward sweep over the brow)
+    // Fringe (small forward sweep ABOVE the brow — kept clear of the eye
+    // line so brows + eyes + fringe don't merge into one "visor" band)
     const fringe = new THREE.Mesh(new THREE.SphereGeometry(0.10, 14, 10), hairM);
-    fringe.scale.set(1.4, 0.4, 0.5);
-    fringe.position.set(0, 0.10, 0.16);
+    fringe.scale.set(1.35, 0.36, 0.45);
+    fringe.position.set(0, 0.135, 0.145);
     head.add(fringe);
   } else if (hairStyle === "buzz") {
     const cap = new THREE.Mesh(
@@ -21679,9 +21994,11 @@ function buildAvatarFigure(c) {
   group.add(neck);
 
   // ===== TORSO (tapered: shoulders > chest > waist) =====
-  // Chest — broader sphere, slim in z so it reads as a torso, not a ball
+  // Chest — slim in z so it reads as a torso, not a ball. Width is kept
+  // UNDER the shoulder span: at 1.30× the chest swallowed the arms entirely
+  // (capsules hung inside its silhouette) and the figure read as armless.
   const chest = new THREE.Mesh(new THREE.SphereGeometry(0.20, 28, 20), shirtM);
-  chest.scale.set(1.30, 1.05, 0.70);
+  chest.scale.set(1.10, 1.05, 0.70);
   chest.position.y = 1.10;
   chest.castShadow = true;
   group.add(chest);
@@ -21694,7 +22011,7 @@ function buildAvatarFigure(c) {
   group.add(seam);
   // Waist — narrower than chest
   const waist = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.20, 0.30, 18), shirtM);
-  waist.scale.set(1.18, 1, 0.78);
+  waist.scale.set(1.04, 1, 0.78);
   waist.position.y = 0.78;
   waist.castShadow = true;
   group.add(waist);
@@ -21728,7 +22045,7 @@ function buildAvatarFigure(c) {
   }
   // Belt
   const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.20, 0.05, 20), beltM);
-  belt.scale.set(1.18, 1, 0.78);
+  belt.scale.set(1.04, 1, 0.78);
   belt.position.y = 0.62;
   group.add(belt);
   const buckle = new THREE.Mesh(
@@ -21739,10 +22056,14 @@ function buildAvatarFigure(c) {
   group.add(buckle);
 
   // ===== SHOULDERS =====
+  // Squashed + tucked into the chest line so they read as deltoids inside
+  // the sleeve — at full-sphere size on top of the old wide chest they
+  // floated above the silhouette like balloons.
   const shoulders = [];
   for (const sx of [-1, 1]) {
-    const sh = new THREE.Mesh(new THREE.SphereGeometry(0.10, 16, 12), shirtM);
-    sh.position.set(sx * 0.22, 1.22, 0);
+    const sh = new THREE.Mesh(new THREE.SphereGeometry(0.095, 16, 12), shirtM);
+    sh.scale.set(1.0, 0.82, 0.88);
+    sh.position.set(sx * 0.235, 1.20, 0);
     sh.castShadow = true;
     group.add(sh);
     shoulders.push(sh);
@@ -21754,8 +22075,9 @@ function buildAvatarFigure(c) {
   const forearmLen = 0.28;
   for (const sx of [-1, 1]) {
     const armRoot = new THREE.Group();
-    armRoot.position.set(sx * 0.22, 1.18, 0);
-    armRoot.rotation.z = sx * 0.06;     // arms hang slightly out
+    // Rooted just outside the (narrowed) chest so the whole arm is visible.
+    armRoot.position.set(sx * 0.255, 1.18, 0);
+    armRoot.rotation.z = sx * 0.10;     // arms hang slightly out
     armRoot.rotation.x = 0.04;          // and a touch forward
     group.add(armRoot);
 
@@ -21929,6 +22251,9 @@ const AvatarPreview = (() => {
     floor.position.y = -0.005;
     scene.add(floor);
     let figure = buildAvatarFigure(character);
+    // DEBUG hook (same spirit as window.__active in mount()): lets tooling
+    // pose the turntable for deterministic screenshots. Inert in normal use.
+    window.__avatarFigure = figure;
     scene.add(figure);
     // Drag-to-rotate: grab the figure and spin it. The slow turntable auto-spin
     // pauses while dragging and resumes (from wherever you left it) on release.
@@ -21992,6 +22317,7 @@ const AvatarPreview = (() => {
         });
         figure = buildAvatarFigure(newChar);
         figure.rotation.y = yaw;
+        window.__avatarFigure = figure;
         scene.add(figure);
       },
     };

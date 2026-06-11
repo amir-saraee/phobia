@@ -826,7 +826,25 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
   if (save) save.addEventListener("click", () => {
     chosen = readChosen().sort((a, b) => chosen.indexOf(a) - chosen.indexOf(b));
     if (chosen.length === 0) {
-      alert("Pick at least one fear to start. You can add more later.");
+      // Inline, non-blocking nudge. An OS alert() froze the page mid-flow and
+      // looked nothing like the app — instead, scroll the phobia picker into
+      // view, pulse it, and show a styled message under its heading.
+      const ph = root.querySelector(".creator-phobias");
+      if (ph) {
+        let note = ph.querySelector(".phobia-note");
+        if (!note) {
+          note = document.createElement("p");
+          note.className = "phobia-note";
+          note.setAttribute("role", "alert");
+          const grid = ph.querySelector(".phobia-grid");
+          ph.insertBefore(note, grid || null);
+        }
+        note.textContent = "Pick at least one fear to start — you can add more later.";
+        ph.classList.remove("nudge");
+        void ph.offsetWidth;            // restart the pulse animation
+        ph.classList.add("nudge");
+        ph.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
       return;
     }
     state.primaryPhobia = chosen[0];
