@@ -470,8 +470,11 @@ if ("serviceWorker" in navigator) {
   .stage .camera-toggle:active { transform: translateY(1px); }
   .stage .vignette {
     position: absolute; inset: 0; pointer-events: none; z-index: 4;
+    /* Softened: the old .55 corner darkening (starting at 55%) stacked on top
+       of the fear vignette and made every scene look murky. A lighter, later
+       falloff keeps the cinematic edge without crushing the frame. */
     background: radial-gradient(ellipse at center,
-      rgba(0,0,0,0) 55%, rgba(0,0,0,.55) 100%);
+      rgba(0,0,0,0) 64%, rgba(0,0,0,.28) 100%);
   }
   /* Smooth scene fade-in: when the canvas first mounts, fade up from black
      over ~600ms so users don't see a hard pop into a fully-rendered scene.
@@ -2786,14 +2789,25 @@ const PhobiaAudio = (() => {
     } catch {}
   }
 
+  // Master output = base level × duck. Ducking pulls the environmental bed
+  // down while the therapist voice speaks (the way a real guide's voice sits
+  // ON TOP of a room, not inside its noise) and restores it gently after.
+  let duckLevel = 1;
+  function applyMasterGain(ramp = 0.2) {
+    try {
+      if (master && ctx) {
+        master.gain.linearRampToValueAtTime((muted ? 0 : 0.7) * duckLevel, ctx.currentTime + ramp);
+      }
+    } catch {}
+  }
+  function duck(on) {
+    duckLevel = on ? 0.4 : 1;
+    applyMasterGain(on ? 0.15 : 0.6);
+  }
   function setMuted(m) {
     muted = !!m;
     try { localStorage.setItem("fobia.muted", muted ? "1" : "0"); } catch {}
-    try {
-      if (master && ctx) {
-        master.gain.linearRampToValueAtTime(muted ? 0 : 0.7, ctx.currentTime + 0.2);
-      }
-    } catch {}
+    applyMasterGain(0.2);
   }
   const isMuted = () => muted;
 
@@ -3059,6 +3073,33 @@ const PhobiaAudio = (() => {
     return { stop() { alive = false; if (timer) clearTimeout(timer); } };
   }
 
+  // Movement-synced skitter: a dense click train fired for the duration of one
+  // visible dart, positioned where the dart happens. The ambient startSkittering
+  // bed stays sparse and atmospheric; THIS is the sound of legs actually moving
+  // when the user can see them move — sight and sound agreeing is what sells it.
+  function skitterBurst(pos = null, duration = 0.4, intensity = 1.0) {
+    const c = ensureCtx(); if (!c) return;
+    const out = spatial(pos, { refDistance: 1.0, maxDistance: 20, rolloffFactor: 1.9 });
+    const nb = noiseBuffer(1);
+    const now = c.currentTime;
+    const k = Math.max(0.2, Math.min(1, intensity));
+    let when = now;
+    while (when < now + duration) {
+      const src = c.createBufferSource(); src.buffer = nb;
+      const bp = c.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = 2600 + Math.random() * 2600;
+      bp.Q.value = 1.1;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, when);
+      g.gain.exponentialRampToValueAtTime(0.04 * k + 0.02, when + 0.001);
+      g.gain.exponentialRampToValueAtTime(0.0006, when + 0.012);
+      src.connect(bp).connect(g).connect(out);
+      src.start(when); src.stop(when + 0.02);
+      when += 0.014 + Math.random() * 0.016;   // ~30–60 Hz leg rate — frantic
+    }
+  }
+
   function startMRI() {
     const c = ensureCtx(); if (!c) return { stop() {} };
     let alive = true, timer = null;
@@ -3319,6 +3360,72 @@ const PhobiaAudio = (() => {
     }
     timer = setTimeout(puff, 1200);
     return { stop() { alive = false; if (timer) clearTimeout(timer); } };
+  }
+
+  // One-shot defensive hiss — immediate (no scheduling delay), spatial, with a
+  // sharper attack than the ambient startHiss puffs. Fired when the snake
+  // throws a warning display at a player who rushed in.
+  function hissOnce(pos = null, intensity = 1.0) {
+    const c = ensureCtx(); if (!c) return;
+    const out = spatial(pos, { refDistance: 1.0, maxDistance: 30 });
+    const now = c.currentTime;
+    const dur = 0.9 + Math.random() * 0.4;
+    const buf = noiseBuffer(dur);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const bp = c.createBiquadFilter();
+    bp.type = "bandpass"; bp.frequency.value = 4200; bp.Q.value = 1.2;
+    const lfo = c.createOscillator(); const lg = c.createGain();
+    lfo.frequency.value = 7; lg.gain.value = 900;
+    lfo.connect(lg).connect(bp.frequency);
+    const g = c.createGain();
+    const peak = 0.16 * Math.max(0.2, Math.min(1, intensity));
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(peak, now + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0008, now + dur);
+    src.connect(bp).connect(g).connect(out);
+    src.start(now); src.stop(now + dur);
+    lfo.start(now); lfo.stop(now + dur);
+  }
+
+  // Continuous grass-rustle loop for a moving creature (the snake's slither).
+  // Unlike spatial() one-shots, the returned handle lets the scene move the
+  // sound source and scale its loudness every frame, so the rustle genuinely
+  // travels with the body and falls silent when the snake stops.
+  function startSlither() {
+    const c = ensureCtx(); if (!c) return { set() {}, stop() {} };
+    const panner = c.createPanner();
+    panner.panningModel = "HRTF";
+    panner.distanceModel = "inverse";
+    panner.refDistance = 1.2;
+    panner.maxDistance = 24;
+    panner.rolloffFactor = 1.8;
+    const g = c.createGain(); g.gain.value = 0.0;
+    // Dry grass shear: noise through a mid bandpass, not a wind-like lowpass.
+    const src = c.createBufferSource(); src.buffer = noiseBuffer(2.0); src.loop = true;
+    const bp = c.createBiquadFilter(); bp.type = "bandpass";
+    bp.frequency.value = 1400; bp.Q.value = 0.9;
+    const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 5200;
+    src.connect(bp).connect(lp).connect(g).connect(panner).connect(master);
+    src.start();
+    let alive = true;
+    return {
+      set(pos, intensity) {
+        if (!alive) return;
+        try {
+          if (panner.positionX) {
+            panner.positionX.value = pos.x; panner.positionY.value = pos.y; panner.positionZ.value = pos.z;
+          } else if (panner.setPosition) panner.setPosition(pos.x, pos.y, pos.z);
+          g.gain.setTargetAtTime(0.11 * Math.max(0, Math.min(1, intensity)), c.currentTime, 0.12);
+        } catch {}
+      },
+      stop() {
+        alive = false;
+        try {
+          g.gain.setTargetAtTime(0, c.currentTime, 0.2);
+          setTimeout(() => { try { src.stop(); } catch {} }, 600);
+        } catch {}
+      },
+    };
   }
 
   // Audience murmur — sustained crowd-mumble bed. Pink noise through a bandpass
@@ -3632,10 +3739,11 @@ const PhobiaAudio = (() => {
   // method that ramps the gain in real time. Heights uses this to make the
   // heartbeat audibly louder when the user is close to the edge / looking
   // straight down — a felt physiological response, not a constant track.
-  function startVertigoHeartbeat(initialBpm = 78) {
+  function startVertigoHeartbeat(initialBpm = 78, onBeat = null) {
     const c = ensureCtx(); if (!c) return { stop() {}, setIntensity() {}, setBpm() {} };
     let alive = true;
     let bpm = initialBpm;
+    let intensity = 0;
     const dynGain = c.createGain();
     dynGain.gain.value = 0.0;
     dynGain.connect(master);
@@ -3654,6 +3762,9 @@ const PhobiaAudio = (() => {
       };
       beat(now, 56, 0.45, 0.18);
       beat(now + 0.18, 46, 0.30, 0.14);
+      // Let the caller sync OTHER body-feel channels (haptic buzz, vignette
+      // pulse) to the same lub-dub the ears hear. One clock, one body.
+      if (onBeat) { try { onBeat(bpm, intensity); } catch {} }
       setTimeout(pump, 60000 / bpm);
     }
     pump();
@@ -3664,6 +3775,7 @@ const PhobiaAudio = (() => {
       },
       setIntensity(i) {
         const v = Math.max(0, Math.min(1, i || 0));
+        intensity = v;
         try { dynGain.gain.setTargetAtTime(v * 0.95, c.currentTime, 0.18); } catch {}
       },
       setBpm(b) { bpm = Math.max(40, Math.min(160, b || 78)); },
@@ -3752,13 +3864,14 @@ const PhobiaAudio = (() => {
   }
 
   return {
-    unlock, setMuted, isMuted,
+    unlock, setMuted, isMuted, duck,
     startMonitorBeep, startCreaks,
     startWind, startWaterLap, startUnderwater, startRoomTone, startCityHum,
     startBarking, startSkittering, startMRI, startBreathing, startHeartbeat,
     startVertigoHeartbeat,
     startEngineDrone, startHiss, startAudienceMurmur, startAmbientPad,
     startRain, startDrivingDrone,
+    hissOnce, startSlither, skitterBurst,
     bark, splash, doorCreak, thunder, indicatorClick, footstep,
     // Dog vocalisations
     dogWhine, dogPant, dogSniff,
@@ -4065,7 +4178,9 @@ const PhobiaNarrator = (() => {
     if (!bucket || bucket.length === 0) return;
     const line = pick(bucket);
     try {
-      window.PhobiaVoice.speak(line);
+      // Panic support interrupts whatever ambient cue is mid-sentence;
+      // everything else waits its turn in the voice queue.
+      window.PhobiaVoice.speak(line, { urgent: bucket === sceneLines.panic });
       PhobiaFear.markNarrated();
     } catch {}
   }
@@ -4108,30 +4223,97 @@ const PhobiaVoice = (() => {
     else if (stored === "1") muted = true;
   } catch {}
 
+  // ---- Voice selection: score EVERY installed voice instead of walking a
+  // fixed name list. Premium / enhanced / neural variants (the ones that
+  // actually sound human) outrank their plain siblings, which outrank remote
+  // generic voices; novelty voices are pushed to the bottom so "Bubbles"
+  // never narrates someone's panic. A user-saved voiceURI wins outright.
+  function scoreVoice(v) {
+    let s = 0;
+    const name = v.name || "";
+    if (!/^en/i.test(v.lang || "")) s -= 40;
+    if (/premium|enhanced|natural|neural/i.test(name)) s += 50;
+    if (/\b(Ava|Samantha|Allison|Zoe|Susan|Karen|Moira|Tessa|Serena)\b/i.test(name)) s += 24;
+    if (/\b(Aria|Jenny|Sonia|Libby|Michelle)\b/i.test(name)) s += 22;   // MS neural set
+    if (/google/i.test(name)) s += 14;
+    if (/female/i.test(name)) s += 6;
+    if (v.localService) s += 8;          // immune to network stutter
+    if (/compact|whisper|albert|bad news|bells|boing|bubbles|cellos|wobble|zarvox|trinoids|organ|fred|junior|kathy|ralph|grandma|grandpa|rocko|shelley|flo|eddy|reed/i.test(name)) s -= 60;
+    return s;
+  }
   function pickVoice() {
     if (!synth) return;
     const voices = synth.getVoices();
     if (!voices.length) return;
-    // Prefer calm female English voices known to ship with major browsers.
-    const preferOrder = [
-      "Samantha", "Karen", "Moira", "Tessa", "Allison",
-      "Google UK English Female", "Google US English",
-      "Microsoft Aria", "Microsoft Zira", "Microsoft Jenny",
-    ];
-    for (const name of preferOrder) {
-      const v = voices.find(v => v.name && v.name.includes(name));
-      if (v) { voice = v; return; }
-    }
-    voice = voices.find(v => /en/i.test(v.lang) && /female/i.test(v.name)) ||
-            voices.find(v => /en/i.test(v.lang)) ||
-            voices.find(v => v.default) ||
-            voices[0];
+    try {
+      const savedURI = localStorage.getItem("fobia.voiceURI");
+      if (savedURI) {
+        const v = voices.find(v => v.voiceURI === savedURI);
+        if (v) { voice = v; return; }
+      }
+    } catch {}
+    voice = voices.slice().sort((a, b) => scoreVoice(b) - scoreVoice(a))[0] || null;
   }
   if (synth) {
     pickVoice();
     if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = pickVoice;
   }
 
+  // ---- Delivery queue with breath pacing ----
+  // The old speak() called synth.cancel() on EVERY line, so any new cue cut
+  // the previous one off mid-word — the single least-calm thing a therapist
+  // voice can do. Now: lines queue; each line is split at sentence boundaries
+  // and delivered with a short breath gap between sentences and a longer one
+  // between lines, like a person pacing themselves. Urgent lines (panic
+  // support, grounding steps) jump the queue and DO interrupt.
+  let queue = [];
+  let speaking = false;
+  let gapTimer = null;
+  let watchdog = null;
+
+  function splitSentences(text) {
+    return String(text).split(/(?<=[.!?…])\s+/).filter(s => s.trim().length);
+  }
+  function clearTimers() {
+    if (gapTimer) { clearTimeout(gapTimer); gapTimer = null; }
+    if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+  }
+  function setDuck(on) {
+    try { if (window.PhobiaAudio && window.PhobiaAudio.duck) window.PhobiaAudio.duck(on); } catch {}
+  }
+  function playNext() {
+    clearTimers();
+    if (!synth) { speaking = false; setDuck(false); return; }
+    const item = queue.shift();
+    if (!item) { speaking = false; setDuck(false); return; }
+    speaking = true;
+    setDuck(true);
+    let advanced = false;
+    const advance = (delay) => {
+      if (advanced) return;
+      advanced = true;
+      gapTimer = setTimeout(playNext, delay);
+    };
+    try {
+      const u = new SpeechSynthesisUtterance(item.text);
+      if (voice) u.voice = voice;
+      // Calm therapist tone — slightly slower than default, slightly lower
+      // pitch for warmth, gentle volume. Clamped to spec-safe ranges.
+      u.rate = Math.max(0.1, Math.min(10, item.rate || voiceRate));
+      u.pitch = Math.max(0, Math.min(2, item.pitch != null ? item.pitch : 0.92));
+      u.volume = Math.max(0, Math.min(1, item.volume == null ? 0.9 : item.volume));
+      // Breath gap: short between sentences of one line, longer between lines.
+      u.onend = () => advance(item.endOfLine ? 700 : 350);
+      u.onerror = () => advance(120);
+      synth.speak(u);
+      // Chrome's synth occasionally goes silent without onend/onerror —
+      // a watchdog keeps the queue moving (generous estimate: 90 ms/char).
+      watchdog = setTimeout(() => advance(0), Math.max(3000, item.text.length * 90 + 1500));
+    } catch (e) {
+      // Some Safari versions throw on .speak() if the page is hidden.
+      advance(150);
+    }
+  }
   function speak(text, opts = {}) {
     // Always emit caption event for closed captions, even when muted
     try {
@@ -4140,35 +4322,56 @@ const PhobiaVoice = (() => {
       }));
     } catch {}
     if (muted || !synth || !text) return;
-    // Cancel any in-flight speech so back-to-back lines don't queue up and
-    // talk over each other. Some browsers (older Firefox, certain Edge
-    // versions) throw on cancel when the queue is empty — wrap defensively.
-    try { synth.cancel(); } catch {}
-    try {
-      const u = new SpeechSynthesisUtterance(text);
-      if (voice) u.voice = voice;
-      // Calm therapist tone — slightly slower than default (0.85), slightly
-      // lower pitch (0.92) for warmth, gentle volume so it doesn't compete
-      // with environmental audio. Clamp values to spec-safe ranges so a
-      // bad opt doesn't make the browser refuse to speak.
-      u.rate = Math.max(0.1, Math.min(10, opts.rate || voiceRate));
-      u.pitch = Math.max(0, Math.min(2, opts.pitch != null ? opts.pitch : 0.92));
-      u.volume = Math.max(0, Math.min(1, opts.volume == null ? 0.85 : opts.volume));
-      synth.speak(u);
-    } catch (e) {
-      // Some Safari versions throw on .speak() if the page is hidden.
-      // Silent fallback — captions already fired above.
+    const parts = splitSentences(text);
+    const items = parts.map((p, i) => ({
+      text: p,
+      endOfLine: i === parts.length - 1,
+      rate: opts.rate, pitch: opts.pitch, volume: opts.volume,
+    }));
+    if (opts.urgent) {
+      // Panic support cannot wait behind ambient commentary.
+      queue = items;
+      clearTimers();
+      try { synth.cancel(); } catch {}
+      speaking = false;
+      playNext();
+      return;
     }
+    // Never build a backlog: guidance that lags the moment it described is
+    // worse than silence. Keep at most the current line + one waiting.
+    if (speaking && queue.length > 2) queue = queue.slice(0, 2);
+    queue.push(...items);
+    if (!speaking) playNext();
   }
-  function stop() { if (synth) try { synth.cancel(); } catch {} }
+  function stop() {
+    queue = [];
+    clearTimers();
+    speaking = false;
+    setDuck(false);
+    if (synth) try { synth.cancel(); } catch {}
+  }
   function setMuted(m) {
     muted = !!m;
     try { localStorage.setItem("fobia.voiceMuted", muted ? "1" : "0"); } catch {}
     if (muted) stop();
   }
   function setRate(r) { voiceRate = r; }
+  function listVoices() {
+    if (!synth) return [];
+    return synth.getVoices()
+      .filter(v => /^en/i.test(v.lang || ""))
+      .sort((a, b) => scoreVoice(b) - scoreVoice(a))
+      .map(v => ({ name: v.name, uri: v.voiceURI, score: scoreVoice(v) }));
+  }
+  function setVoice(uri) {
+    try { localStorage.setItem("fobia.voiceURI", uri || ""); } catch {}
+    pickVoice();
+  }
 
-  return { speak, stop, setMuted, isMuted: () => muted, setRate, hasVoice: () => !!synth };
+  return {
+    speak, stop, setMuted, isMuted: () => muted, setRate, hasVoice: () => !!synth,
+    listVoices, setVoice, isSpeaking: () => speaking,
+  };
 })();
 window.PhobiaVoice = PhobiaVoice;
 
@@ -6521,10 +6724,19 @@ function mountExposure(phobiaKey, levelIdx) {
       const character = window.Character && window.Character.loadCharacter();
       const opts = {};
       if (character) {
-        opts.skinColor = window.Character.hexToInt(window.Character.skinHex(character));
-        opts.shirtColor = window.Character.hexToInt(window.Character.topHex(character));
-        opts.hairColor = window.Character.hexToInt(window.Character.hairHex(character));
-        opts.eyeColor  = window.Character.hexToInt(window.Character.eyeHex(character));
+        // Only forward colours that actually resolved. A legacy character
+        // saved before a palette existed yields undefined here, and an
+        // `undefined` value still OVERRIDES Body's defaults through
+        // Object.assign — which is how every material went grey + THREE
+        // warned "parameter 'color' has value of undefined" 14× per mount.
+        const C = window.Character;
+        const setIf = (key, v) => {
+          if (v !== undefined && v !== null && !Number.isNaN(v)) opts[key] = v;
+        };
+        setIf("skinColor",  C.hexToInt(C.skinHex(character)));
+        setIf("shirtColor", C.hexToInt(C.topHex(character)));
+        setIf("hairColor",  C.hexToInt(C.hairHex(character)));
+        setIf("eyeColor",   C.hexToInt(C.eyeHex(character)));
         opts.hairStyle = character.hairStyle || "short";
         opts.glasses   = character.glasses || "none";
         opts.facialHair = character.facialHair || "none";
@@ -6591,10 +6803,9 @@ function mountExposure(phobiaKey, levelIdx) {
     // Start audio appropriate to this scene
     PhobiaAudio.unlock();
     stageAudio = startSceneAudio(phobiaKey, levelIdx);
-    // Start heartbeat for the harder rungs
-    if (levelIdx >= 2) {
-      stageAudio.push(PhobiaAudio.startHeartbeat(bpm));
-    }
+    // (The fixed-rate rung heartbeat was retired: the global body-feel rig in
+    // mount() now drives ONE heartbeat from the live fear value — it speeds up
+    // because the user is actually afraid, not because the level number is big.)
     // Schedule scripted voice cues — about every 14 seconds (slower cadence
     // so the user has time to actually sit with the previous instruction).
     const lines = (VOICE_LINES[phobiaKey] || [])[levelIdx] || [];
@@ -8136,8 +8347,13 @@ function runTutorialTour(stage) {
     }
     Object.assign(card.style, { left: left + "px", top: top + "px" });
     overlay.appendChild(card);
-    document.getElementById("tourSkip").onclick = done;
-    document.getElementById("tourNext").onclick = () => {
+    // The tour shows on a 3 s delay — if the user already navigated away the
+    // overlay (and its buttons) may be gone. Bail instead of throwing.
+    const skipBtn = document.getElementById("tourSkip");
+    const nextBtn = document.getElementById("tourNext");
+    if (!skipBtn || !nextBtn) { done(); return; }
+    skipBtn.onclick = done;
+    nextBtn.onclick = () => {
       if (stepIdx + 1 < steps.length) show(stepIdx + 1); else done();
     };
   }
@@ -8298,9 +8514,11 @@ function prefetchDogModels() {
 // / _Jump). Self-contained GLB (no external textures). Used by setupSpiders /
 // setupSnakes via buildCreature() below.
 const CREATURE_MODELS = {
-  spider:     "assets/models/Spider.glb",
-  snake:      "assets/models/Snake.glb",
-  snakeAngry: "assets/models/Snake_angry.glb",
+  spider: "assets/models/Spider.glb",
+  snake:  "assets/models/Snake.glb",
+  // (A separate "angry" snake variant was dropped: the base rig's Attack /
+  // Walk clips now cover the defensive display, and the extra file never
+  // shipped — prefetching it just 404'd on every boot.)
 };
 function prefetchCreatureModels() {
   Object.values(CREATURE_MODELS).forEach((url) => { try { loadGLTF(url); } catch {} });
@@ -8377,7 +8595,28 @@ function buildCreature(url, opts = {}) {
     };
     group.userData.ready = true;
     if (typeof group.userData.onReady === "function") group.userData.onReady();
-  }).catch((err) => { console.warn("[creature] model load failed:", url, err); });
+  }).catch((err) => {
+    console.warn("[creature] model load failed:", url, err);
+    // Fallback so the exposure is never a silently EMPTY scene (e.g. a CDN
+    // hiccup or a missing asset). A simple dark placeholder at the creature's
+    // spot keeps the proximity/gaze fear mechanic working (it keys off the
+    // group's position, not the model) and gives the user something to face.
+    // No animation clips, so the scene's mixer-guarded update simply skips them.
+    try {
+      const ph = new THREE.Mesh(
+        new THREE.SphereGeometry(0.25, 16, 12),
+        new THREE.MeshStandardMaterial({ color: 0x141418, roughness: 0.6 })
+      );
+      ph.scale.set(1.7, 0.7, 1.1);
+      ph.position.y = 0.18;
+      ph.castShadow = true;
+      group.add(ph);
+      parts.height = 0.35; parts.span = 0.6; parts.footOffset = 0;
+      group.userData.ready = true;
+      group.userData.loadFailed = true;
+      if (typeof group.userData.onReady === "function") group.userData.onReady();
+    } catch (e) { console.warn("[creature] fallback failed:", e); }
+  });
   return group;
 }
 
@@ -8445,11 +8684,13 @@ function makeRenderer(container) {
   // procedural lighting which lacks bounce), making every scene feel less
   // washed out and more like a professional render.
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  // ACES Filmic rolls off highlights and darkens mid-tones, so 1.05 left every
+  // scene reading as overcast/dusk. 1.32 lifts the mid-tones into real daylight
+  // without blowing out highlights (ACES handles the top end gracefully).
+  renderer.toneMappingExposure = 1.32;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  // Honour real physical light units so reflections from the environment map
-  // aren't double-bright vs. direct lights.
-  renderer.useLegacyLights = false;
+  // (Physical light units are the r155+ default; setting useLegacyLights
+  // explicitly only triggered a deprecation warning on every mount.)
   // ---- High-quality shadow tuning ----
   // Soft shadows give the single biggest "this isn't a video game" lift.
   // VSM shadows already use a blur radius set later in mount(); here we
@@ -10683,6 +10924,10 @@ function unmount() {
   if (active.fearUnsubscribe) {
     try { active.fearUnsubscribe(); } catch {}
   }
+  // Stop the body-feel rig (heartbeat / breath pacer / haptics) with it.
+  if (active.fearFXStop) {
+    try { active.fearFXStop(); } catch {}
+  }
   // Remove overlay elements we added
   if (active.overlays) {
     active.overlays.forEach(el => { if (el.parentNode) el.parentNode.removeChild(el); });
@@ -10979,6 +11224,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         },
         (result && result.body) || {}
       );
+      // Drop undefined entries so Body's own defaults win — an explicitly-
+      // undefined key still overrides defaults through Object.assign.
+      Object.keys(bodyOpts).forEach(k => { if (bodyOpts[k] === undefined) delete bodyOpts[k]; });
       body = new Body(scene, camera, bodyOpts);
       // Sync body's head visibility AND the FP hands' visibility to the
       // controls' camera mode. In TP, body's head shows + FP hands hide
@@ -11205,17 +11453,63 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   fearMeter.style.opacity = "0";
   container.appendChild(fearMeter);
   const fearMeterFill = fearMeter.querySelector(".fear-meter-fill");
-  // Subscribe to Fear updates — drive the vignette + meter
+  // Subscribe to Fear updates — drive the vignette + meter + the BODY-FEEL rig:
+  // a heartbeat you can hear in EVERY scene (not just heights), a slow breath
+  // pacer that joins at sustained high fear, a haptic pulse on phones, and a
+  // vignette that throbs ON the heartbeat. One fear value, one body — sight,
+  // sound and touch agreeing is what makes the panic feel physiological
+  // instead of cinematic. Audio starts lazily at the first real fear, by which
+  // point a user gesture has long since unlocked the AudioContext.
   let fearUnsubscribe = null;
+  let fxHeart = null;          // adjustable heartbeat (audio + beat callback)
+  let fxBreath = null;         // slow breath pacer
+  let fxBeatBoost = 0;         // vignette throb, decays between beats
+  let fxLastNow = performance.now();
+  const fxCanVibrate = !!(navigator.vibrate && window.matchMedia
+    && window.matchMedia("(pointer: coarse)").matches);
   if (window.PhobiaFear) {
     fearUnsubscribe = window.PhobiaFear.subscribe((value, ctx) => {
       const fear01 = value / 100;
-      // Vignette opacity rises from 0 to 0.85 as fear climbs
-      fearVignette.style.setProperty("--fv-opacity", String(0.05 + fear01 * 0.85));
+      const fxNow = performance.now();
+      const fxDt = Math.min(0.1, (fxNow - fxLastNow) / 1000);
+      fxLastNow = fxNow;
+
+      // --- Heartbeat: fades in from ~fear 25, races toward ~120 bpm at 100.
+      // Grounding mode doesn't kill it — it slows it, which the user FEELS
+      // as their body coming back down.
+      if (!fxHeart && value > 25 && window.PhobiaAudio && window.PhobiaAudio.startVertigoHeartbeat) {
+        fxHeart = window.PhobiaAudio.startVertigoHeartbeat(64, (bpm, intensity) => {
+          if (fxCanVibrate && intensity > 0.25) {
+            try { navigator.vibrate(Math.round(18 + intensity * 30)); } catch {}
+          }
+          fxBeatBoost = Math.min(0.2, 0.06 + intensity * 0.12);
+        });
+      }
+      if (fxHeart) {
+        const hbI = ctx.grounding ? 0.12 : Math.max(0, (value - 22) / 78);
+        fxHeart.setIntensity(hbI * 0.9);
+        fxHeart.setBpm(64 + fear01 * 56 - (ctx.grounding ? 18 : 0));
+      }
+
+      // --- Slow breath pacer at sustained high fear (hysteresis 58 on / 42 off).
+      // Deliberately CALM (~13 breaths/min): it models the breathing we want
+      // the user to copy — the audio twin of the breath-circle HUD, not a
+      // panic soundtrack.
+      if (!fxBreath && value > 58 && !ctx.grounding
+          && window.PhobiaAudio && window.PhobiaAudio.startBreathing) {
+        fxBreath = window.PhobiaAudio.startBreathing(0.22);
+      } else if (fxBreath && (value < 42 || ctx.grounding)) {
+        try { fxBreath.stop(); } catch {}
+        fxBreath = null;
+      }
+
+      // Vignette opacity rises from 0 to 0.85 as fear climbs — plus the
+      // decaying heartbeat throb, so the edges of vision pulse with the lub-dub.
+      fxBeatBoost = Math.max(0, fxBeatBoost - fxDt * 0.5);
+      fearVignette.style.setProperty("--fv-opacity", String(0.05 + fear01 * 0.85 + fxBeatBoost));
       // The clear ellipse SHRINKS as fear rises — peripheral vision narrows
       fearVignette.style.setProperty("--fv-clear", `${Math.max(15, 60 - fear01 * 45)}%`);
       // Canvas-level filter: desaturate + slight red bias as fear rises
-      const desat = Math.max(0, 1.0 - fear01 * 0.45);
       const sat = Math.max(0, 1.0 - fear01 * 0.20);
       const hue = -fear01 * 6;          // small shift toward red
       if (renderer && renderer.domElement) {
@@ -11234,6 +11528,15 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       }
     });
   }
+  // Single teardown for the body-feel rig — called from unmount alongside
+  // the fear unsubscribe so no heartbeat survives a scene change.
+  const fearFXStop = () => {
+    try { if (fxHeart) fxHeart.stop(); } catch {}
+    fxHeart = null;
+    try { if (fxBreath) fxBreath.stop(); } catch {}
+    fxBreath = null;
+    try { if (fxCanVibrate) navigator.vibrate(0); } catch {}
+  };
 
   // ----- Grounding mode (panic stop / 5-4-3-2-1) -----
   // The user can press Esc OR hold Space for 0.4 s to enter grounding mode.
@@ -11275,7 +11578,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       groundingText.textContent = s.text;
       groundingText.classList.add("visible");
       if (window.PhobiaVoice) {
-        try { window.PhobiaVoice.speak(s.text); } catch {}
+        try { window.PhobiaVoice.speak(s.text, { urgent: true }); } catch {}
       }
       groundingTimer = setTimeout(() => {
         groundingText.classList.remove("visible");
@@ -11445,7 +11748,14 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       { event: "keydown", fn: onGroundingKey },
     ],
     fearUnsubscribe,
+    fearFXStop,
   };
+  // DEBUG (preview/dev only): force-render hooks so screenshots show ground
+  // truth even when the rAF-driven loop is throttled (backgrounded tab). These
+  // are inert in normal use — nothing calls them unless a tool/devtools does.
+  window.__renderNow = () => { try { composer ? composer.render() : renderer.render(scene, camera); } catch (e) {} };
+  window.__tickNow   = (n = 1) => { try { for (let i = 0; i < n; i++) tick(); } catch (e) {} };
+  window.__active    = active;   // debug: lets the harness pitch the camera etc.
   // Expose a global "fire a hand pulse" hook so scene-specific click
   // handlers (which bypass the renderer's onCanvasClick) can still trigger
   // visible grip feedback when the user touches an interactive object.
@@ -11874,31 +12184,36 @@ function setupHeights(scene, camera, level) {
     return "twilight";
   })();
   // Sky gradient + sun direction + sun colour per time of day.
+  // Daytime rungs were rendering as dusk: the sun/hemisphere intensities were
+  // tuned before ACES tone mapping went in, and ACES crushes mid-tones — so
+  // "morning" looked overcast-grey. These values are lifted hard (sun ~+75%,
+  // hemisphere ~2×, brighter+more-saturated sky) so daytime reads as genuine
+  // open-air daylight. Twilight stays moody but gets a small lift off black.
   const TOD = {
-    morning:  { skyTop: [0.58, 0.60, 0.55], skyBot: [0.10, 0.55, 0.82],
-                sunDir: [120, 200, 160], sunCol: 0xfff2d8, sunInt: 1.35,
-                hemi: { sky: 0xa8c4ec, ground: 0x4a5060, intensity: 0.5 },
-                fogCol: 0xb6cce4, fogNear: 220, fogFar: 1900,
+    morning:  { skyTop: [0.58, 0.66, 0.72], skyBot: [0.09, 0.70, 0.88],
+                sunDir: [120, 200, 160], sunCol: 0xfff2d8, sunInt: 2.5,
+                hemi: { sky: 0xbcd6f6, ground: 0x5c6470, intensity: 1.05 },
+                fogCol: 0xc8d8ee, fogNear: 240, fogFar: 2000,
                 exposure: 1.0, label: "morning" },
-    midday:   { skyTop: [0.58, 0.55, 0.50], skyBot: [0.55, 0.45, 0.92],
-                sunDir: [40, 280, 30],     sunCol: 0xffffff, sunInt: 1.45,
-                hemi: { sky: 0xc8dcf4, ground: 0x40464e, intensity: 0.5 },
-                fogCol: 0xd0e0f0, fogNear: 260, fogFar: 2200,
+    midday:   { skyTop: [0.58, 0.62, 0.74], skyBot: [0.56, 0.55, 0.96],
+                sunDir: [40, 280, 30],     sunCol: 0xffffff, sunInt: 2.8,
+                hemi: { sky: 0xd8e8fc, ground: 0x4c525c, intensity: 1.15 },
+                fogCol: 0xe0eefc, fogNear: 280, fogFar: 2400,
                 exposure: 1.0, label: "midday" },
-    afternoon:{ skyTop: [0.58, 0.50, 0.46], skyBot: [0.07, 0.55, 0.78],
-                sunDir: [-180, 200, -60],  sunCol: 0xffe6c0, sunInt: 1.3,
-                hemi: { sky: 0xb8c8e0, ground: 0x3a3a40, intensity: 0.5 },
-                fogCol: 0xc0cce0, fogNear: 220, fogFar: 1900,
+    afternoon:{ skyTop: [0.58, 0.58, 0.68], skyBot: [0.07, 0.66, 0.84],
+                sunDir: [-180, 200, -60],  sunCol: 0xffe6c0, sunInt: 2.4,
+                hemi: { sky: 0xc8d8ee, ground: 0x46464e, intensity: 1.0 },
+                fogCol: 0xccd8ea, fogNear: 240, fogFar: 2000,
                 exposure: 0.98, label: "afternoon" },
-    golden:   { skyTop: [0.62, 0.55, 0.34], skyBot: [0.06, 0.78, 0.62],
-                sunDir: [-260, 60, -80],   sunCol: 0xffb070, sunInt: 1.25,
-                hemi: { sky: 0xffb898, ground: 0x2a2228, intensity: 0.48 },
-                fogCol: 0xc8a890, fogNear: 200, fogFar: 1600,
+    golden:   { skyTop: [0.62, 0.64, 0.54], skyBot: [0.07, 0.85, 0.70],
+                sunDir: [-260, 60, -80],   sunCol: 0xffb878, sunInt: 2.2,
+                hemi: { sky: 0xffc8a6, ground: 0x342a2e, intensity: 0.85 },
+                fogCol: 0xd4b69c, fogNear: 210, fogFar: 1700,
                 exposure: 0.98, label: "golden hour" },
-    twilight: { skyTop: [0.65, 0.60, 0.10], skyBot: [0.62, 0.45, 0.30],
-                sunDir: [-280, 25, -100],  sunCol: 0x806a8e, sunInt: 0.45,
-                hemi: { sky: 0x404a70, ground: 0x14141c, intensity: 0.40 },
-                fogCol: 0x303550, fogNear: 180, fogFar: 1400,
+    twilight: { skyTop: [0.66, 0.64, 0.18], skyBot: [0.62, 0.50, 0.38],
+                sunDir: [-280, 25, -100],  sunCol: 0x9a86a8, sunInt: 0.75,
+                hemi: { sky: 0x4c5684, ground: 0x18181f, intensity: 0.6 },
+                fogCol: 0x383d5c, fogNear: 180, fogFar: 1400,
                 exposure: 0.90, label: "twilight" },
   };
   const cfg = TOD[tod];
@@ -12896,18 +13211,11 @@ function setupHeights(scene, camera, level) {
   }
   setTimeout(wireHeightsCommands, 0);
 
-  // ---- Vertigo audio: dynamic heartbeat that ramps with edge proximity + look-down ----
-  // The heartbeat starts quiet and only becomes audible when the user is
-  // genuinely close to the railing or looking straight down. This gives the
-  // user a visceral physiological signal — the heart is reacting to what
-  // they're actually doing, not running on a timer.
-  let heartHandle = null;
+  // Vertigo heartbeat: now provided by the GLOBAL body-feel rig in mount(),
+  // driven by the unified fear value (edge proximity + look-down already feed
+  // it via setInput). The scene-local heartbeat was removed so the two don't
+  // double up.
   let lastHowlAt = -10;
-  if (h > 0.30 && window.PhobiaAudio && window.PhobiaAudio.startVertigoHeartbeat) {
-    try {
-      heartHandle = window.PhobiaAudio.startVertigoHeartbeat(70 + h * 18);
-    } catch {}
-  }
 
   return {
     controls: {
@@ -12925,10 +13233,12 @@ function setupHeights(scene, camera, level) {
       speed: 1.4,
       lookSpeed: 0.0035,
       // Default to third-person so the user immediately SEES their character
-      // up on the roof. They can flip to first-person any time. We respect
-      // any saved preference — only override the default if there isn't one.
-      preferredCameraMode: "tp",
-      // Over-the-shoulder framing so the avatar doesn't block the edge/view.
+      // First-person by default — for acrophobia, BEING on the ledge looking
+      // straight down at the drop is the whole point; watching a 3rd-person
+      // doll kills it. The 3rd-person toggle is still there for anyone who
+      // wants it (and any saved preference still wins).
+      preferredCameraMode: "fp",
+      // Over-the-shoulder framing (used only if the user toggles to 3rd person).
       tpShoulder: 0.55, tpDistance: 4.2, tpHeight: 0.5,
     },
     // (No NPC — the user's own character is the only character in the scene.)
@@ -13229,13 +13539,8 @@ function setupHeights(scene, camera, level) {
         }
       }
 
-      // Heartbeat audio: louder + faster as vertigo rises. Only audible when
-      // the user is actively standing at the edge / looking down — silent
-      // otherwise, so it lands as a real physiological response.
-      if (heartHandle && heartHandle.setIntensity) {
-        try { heartHandle.setIntensity(vertigo * 0.9); } catch {}
-        try { heartHandle.setBpm(70 + h * 12 + vertigo * 35); } catch {}
-      }
+      // Heartbeat audio now comes from the global body-feel rig (mount()),
+      // fed by the same vertigo → fear inputs below.
 
       // Wind howl gusts: occasional bursts on top of the continuous wind, with
       // frequency scaling on vertigo. At full vertigo we get a howl every
@@ -13310,17 +13615,22 @@ function setupHeights(scene, camera, level) {
         });
       }
 
+      // Frame-rate normaliser: all the per-frame ambient motion below was
+      // tuned at 60 fps. Multiplying by fpsAdj (=1.0 at 60 Hz, 0.5 at 120 Hz)
+      // makes drift/spin speeds identical on every display instead of running
+      // ~2× too fast on high-refresh phones.
+      const fpsAdj = (dt || 0.016) * 60;
       for (const c of clouds) {
-        c.position.x += c.userData.driftSpeed * 0.04;
+        c.position.x += c.userData.driftSpeed * 0.04 * fpsAdj;
         if (c.position.x > 600) c.position.x = -600;
       }
       // Birds drift across the sky in formation. Each flock has its own
       // direction and speed; when they leave the visible range they
       // re-enter from the opposite side at a fresh height.
       for (const flock of birds) {
-        flock.position.x += flock.userData.driftSpeed * flock.userData.dir * 0.04;
+        flock.position.x += flock.userData.driftSpeed * flock.userData.dir * 0.04 * fpsAdj;
         // Subtle flock bob — leader sets the height, followers inherit
-        flock.position.y += Math.sin(t * 0.7 + flock.position.x * 0.005) * 0.01;
+        flock.position.y += Math.sin(t * 0.7 + flock.position.x * 0.005) * 0.01 * fpsAdj;
         if (flock.userData.dir > 0 && flock.position.x > 300) {
           flock.position.x = -300;
           flock.position.y = cameraY - 5 + Math.random() * 50;
@@ -13347,34 +13657,34 @@ function setupHeights(scene, camera, level) {
       }
       // Cars drive past — tiny pinpricks at our height
       for (const car of cars) {
-        car.position.x += car.userData.heading * car.userData.speed * 0.06;
+        car.position.x += car.userData.heading * car.userData.speed * 0.06 * fpsAdj;
         if (car.userData.heading > 0 && car.position.x > 400) car.position.x = -400;
         if (car.userData.heading < 0 && car.position.x < -400) car.position.x =  400;
       }
       // People drift slowly, meandering a little each frame rather than
       // marching in a dead-straight line forever — reads as a living street.
       for (const p of people) {
-        p.userData.dir += (Math.random() - 0.5) * 0.06;
-        p.position.x += Math.cos(p.userData.dir) * p.userData.speed * 0.06;
-        p.position.z += Math.sin(p.userData.dir) * p.userData.speed * 0.06;
+        p.userData.dir += (Math.random() - 0.5) * 0.06 * fpsAdj;
+        p.position.x += Math.cos(p.userData.dir) * p.userData.speed * 0.06 * fpsAdj;
+        p.position.z += Math.sin(p.userData.dir) * p.userData.speed * 0.06 * fpsAdj;
         if (Math.abs(p.position.x) > 300 || Math.abs(p.position.z) > 300) {
           p.userData.dir += Math.PI;
         }
       }
       // Helicopter — drifts across the sky, rotors spin, slight body bob
       if (helicopter) {
-        helicopter.position.x += helicopter.userData.heading * helicopter.userData.driftSpeed * 0.045;
-        helicopter.userData.bobPhase += 0.01;
+        helicopter.position.x += helicopter.userData.heading * helicopter.userData.driftSpeed * 0.045 * fpsAdj;
+        helicopter.userData.bobPhase += 0.01 * fpsAdj;
         helicopter.position.y += Math.sin(helicopter.userData.bobPhase * 1.3) * 0.05 * 0.8;
         // Slight yaw wobble — like a real chopper subtly correcting course
         helicopter.rotation.y = (helicopter.userData.heading > 0 ? 0 : Math.PI)
           + Math.sin(helicopter.userData.bobPhase * 0.7) * 0.05;
         // Rotor spin
         if (helicopter.userData.mainRotor) {
-          helicopter.userData.mainRotor.rotation.y += 0.55;
+          helicopter.userData.mainRotor.rotation.y += 0.55 * fpsAdj;
         }
         if (helicopter.userData.tailRotor) {
-          helicopter.userData.tailRotor.rotation.x += 1.2;
+          helicopter.userData.tailRotor.rotation.x += 1.2 * fpsAdj;
         }
         // Nav-light blink ~2 Hz alternating red/green
         const blink = Math.sin(t * Math.PI * 2.4) > 0.4;
@@ -13422,8 +13732,8 @@ function setupHeights(scene, camera, level) {
       if (wind) {
         const pos = wind.geometry.attributes.position;
         for (let i = 0; i < pos.count; i++) {
-          pos.array[i * 3] += 0.6 + h * 0.6;
-          pos.array[i * 3 + 1] -= 0.3;
+          pos.array[i * 3] += (0.6 + h * 0.6) * fpsAdj;
+          pos.array[i * 3 + 1] -= 0.3 * fpsAdj;
           if (pos.array[i * 3] > 60) pos.array[i * 3] = -60;
           if (pos.array[i * 3 + 1] < cameraY - 30) pos.array[i * 3 + 1] = cameraY + 30;
         }
@@ -13453,7 +13763,7 @@ function setupHeights(scene, camera, level) {
       if (debris && debrisData) {
         const pos = debris.geometry.attributes.position;
         for (let i = 0; i < debrisData.length; i++) {
-          pos.array[i * 3 + 1] += debrisData[i].vy * 0.06;
+          pos.array[i * 3 + 1] += debrisData[i].vy * 0.06 * fpsAdj;
           if (pos.array[i * 3 + 1] < -10) {
             pos.array[i * 3]     = (Math.random() - 0.5) * 12;
             pos.array[i * 3 + 1] = cameraY + 10 + Math.random() * 30;
@@ -13494,7 +13804,7 @@ function setupHeights(scene, camera, level) {
       }
       // Fence-shake animation — segments near the user wobble for 1 s after click
       if (shakeT > 0) {
-        const dt2 = 0.016;
+        const dt2 = dt || 0.016;
         shakeT = Math.max(0, shakeT - dt2 * 1.6);
         const userX = controls ? controls.position.x : 0;
         for (const seg of railSegments) {
@@ -13524,11 +13834,7 @@ function setupHeights(scene, camera, level) {
       }
     },
     dispose() {
-      // Stop the dynamic heartbeat when the scene unmounts so the audio
-      // doesn't leak into the next rung.
-      if (heartHandle && heartHandle.stop) {
-        try { heartHandle.stop(); } catch {}
-      }
+      // (Heartbeat teardown now lives in the global body-feel rig.)
     },
   };
 }
@@ -13551,11 +13857,12 @@ function setupWater(scene, camera, level) {
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(1500, 32, 16), skyMat));
   scene.background = new THREE.Color(0x9bc6e0);
 
-  // Lighting
-  const sun = new THREE.DirectionalLight(0xfff5e0, 1.7);
+  // Lighting — lifted so the water reads as luminous open water, not a flat
+  // dark void (the surface is most of the scene).
+  const sun = new THREE.DirectionalLight(0xfff5e0, 2.5);
   sun.position.set(80, 120, 60);
   scene.add(sun);
-  scene.add(new THREE.HemisphereLight(0xa8d0eb, 0x224466, 0.55));
+  scene.add(new THREE.HemisphereLight(0xb8dcf2, 0x2a5070, 0.85));
 
   // Distant horizon strip — suggests an island for shallow levels
   if (fill < 0.7) {
@@ -13573,8 +13880,8 @@ function setupWater(scene, camera, level) {
     uniforms: {
       time:        { value: 0 },
       sunDir:      { value: sun.position.clone().normalize() },
-      deepColor:   { value: new THREE.Color(0x033a5a) },
-      shallowColor:{ value: new THREE.Color(0x4a98c0) },
+      deepColor:   { value: new THREE.Color(0x0c577f) },
+      shallowColor:{ value: new THREE.Color(0x5fb4dc) },
       skyTop:      { value: new THREE.Color(0x4a8fbf) },
       skyBot:      { value: new THREE.Color(0xd0e8f5) },
       waveAmp:     { value: 0.25 + fill * 0.5 },
@@ -13809,6 +14116,29 @@ function setupWater(scene, camera, level) {
   // Maximum depth the camera descends to at deepZ for this rung. The user
   // can always step BACK to the shore — full agency.
   const maxDepth = fill * 2.2;       // 0.22 m at fill=0.10, 2.2 m at fill=1.0
+  // ---- Submersion (the drowning beat) ----
+  // When you wade deep enough that your HEAD goes under, the screen floods
+  // blue-murky and a breath meter drains — surface (walk back) to breathe. This
+  // is the half of aquaphobia the scene was missing: it never actually put you
+  // under. Only reachable on the deep rungs (maxDepth must exceed head height).
+  const HEAD_DEPTH = 1.5;            // depth at which the eye-line goes under
+  let submersion = 0, breath = 1, breathWarned = false, uwOverlay = null, breathHud2 = null;
+  function buildSubmersionUI() {
+    const stage = document.getElementById("stage");
+    if (!stage) return;
+    uwOverlay = document.createElement("div");
+    uwOverlay.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:5;opacity:0;transition:opacity .2s;" +
+      "background:radial-gradient(ellipse at center, rgba(12,90,120,.32) 0%, rgba(5,46,70,.78) 70%, rgba(2,24,42,.93) 100%);" +
+      "backdrop-filter:blur(1.6px);-webkit-backdrop-filter:blur(1.6px);";
+    stage.appendChild(uwOverlay);
+    breathHud2 = document.createElement("div");
+    breathHud2.className = "trust-hud";
+    breathHud2.style.opacity = "0";
+    breathHud2.innerHTML = '<div class="trust-row"><span class="trust-name">Breath</span>' +
+      '<span class="trust-pct"></span></div><div class="trust-bar"><div class="trust-bar-fill" style="background:#5fd0e8"></div></div>';
+    stage.appendChild(breathHud2);
+  }
+  setTimeout(buildSubmersionUI, 80);
   let lastWaterEntryZ = null;        // track when we cross from dry to wet for splash
   let wadeDepthHud = null;
   function depthLabel(d) {
@@ -14003,8 +14333,10 @@ function setupWater(scene, camera, level) {
       bounds: { minX: -3, maxX: 3, minZ: deepZ, maxZ: shoreZ + 2.2 },
       speed: 0.9,                     // wading is slower than walking
       lookSpeed: 0.004,
-      preferredCameraMode: "tp",
-      // Over-the-shoulder framing so the avatar doesn't block the water ahead.
+      // First-person by default so the water rises up YOUR view as you wade in,
+      // instead of watching a doll wade. 3rd-person toggle still available.
+      preferredCameraMode: "fp",
+      // Over-the-shoulder framing (used only if the user toggles to 3rd person).
       tpShoulder: 0.6, tpDistance: 3.9, tpHeight: 0.45,
     },
     hands: { skinColor: 0xd4a07a, sleeveColor: 0x4a5d8a },
@@ -14076,6 +14408,31 @@ function setupWater(scene, camera, level) {
         window.PhobiaFear.setInput("gaze", lookDownAmt * 0.5 * fearProx);
         const isAway = depth < 0.05;
         window.PhobiaFear.bumpAvoidance(dt || 0.016, isAway);
+      }
+
+      // ---- Submersion + breath (the drowning beat) ----
+      const dW = dt || 0.016;
+      submersion = Math.max(0, Math.min(1, (depth - HEAD_DEPTH) / 0.5));
+      if (uwOverlay) uwOverlay.style.opacity = String(submersion * 0.95);
+      if (submersion > 0.05) {
+        breath = Math.max(0, breath - dW * 0.10);                 // ~10 s of air
+        if (window.PhobiaFear) window.PhobiaFear.setInput("proximity", Math.min(1, 0.85 + (1 - breath) * 0.15));
+        if (breath < 0.35 && !breathWarned) {
+          breathWarned = true;
+          if (window.PhobiaVoice) window.PhobiaVoice.speak("You're under. Your chest tightens for air. Rise back up — the surface is right there.", { urgent: true });
+        }
+        camera.position.y += Math.sin(t * 0.8) * 0.04;            // buoyant lift
+      } else {
+        if (breath < 1) breath = Math.min(1, breath + dW * 0.5);  // recover fast at the surface
+        breathWarned = false;
+      }
+      if (breathHud2) {
+        breathHud2.style.opacity = submersion > 0.05 ? "1" : "0";
+        const bp = Math.round(breath * 100);
+        breathHud2.querySelector(".trust-pct").textContent = bp + "%";
+        const bf = breathHud2.querySelector(".trust-bar-fill");
+        bf.style.width = bp + "%";
+        bf.style.background = breath < 0.3 ? "#e85a5a" : "#5fd0e8";
       }
 
       // ---- Body posture by water depth ----
@@ -14204,9 +14561,9 @@ function setupWater(scene, camera, level) {
     dispose() {
       const stage = document.getElementById("stage");
       if (stage) {
-        const hud = stage.querySelector(".trust-hud");
-        if (hud) hud.remove();
+        stage.querySelectorAll(".trust-hud").forEach(h => h.remove());
       }
+      if (uwOverlay && uwOverlay.parentNode) uwOverlay.parentNode.removeChild(uwOverlay);
       // Clean up held pebble + flying pebble + scattered pebbles on unmount
       if (heldPebbleMesh) {
         camera.remove(heldPebbleMesh);
@@ -14407,7 +14764,27 @@ function buildDog(opts = {}) {
 
     dog.userData.ready = true;
     if (typeof dog.userData.onReady === "function") dog.userData.onReady();
-  }).catch((err) => { console.warn("[dogs] model load failed:", url, err); });
+  }).catch((err) => {
+    console.warn("[dogs] model load failed:", url, err);
+    // Fallback so the room is never silently empty on a load failure. No
+    // mixer/clips, so DogController.update() bails (it guards on parts.mixer) —
+    // the dog won't walk, but the scene's bark audio + fear cues still fire and
+    // the user has a dog-shaped thing to face instead of an empty room.
+    try {
+      const ph = new THREE.Group();
+      const mat = new THREE.MeshStandardMaterial({ color: 0x7a6248, roughness: 0.85 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.4, 0.72), mat);
+      body.position.y = 0.42; body.castShadow = true; ph.add(body);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.28), mat);
+      head.position.set(0, 0.58, 0.46); head.castShadow = true; ph.add(head);  // +Z = forward (snout)
+      ph.scale.setScalar(targetHeight / 0.75);
+      dog.add(ph);
+      parts.height = targetHeight;
+      dog.userData.ready = true;
+      dog.userData.loadFailed = true;
+      if (typeof dog.userData.onReady === "function") dog.userData.onReady();
+    } catch (e) { console.warn("[dogs] fallback failed:", e); }
+  });
 
   return dog;
 }
@@ -14670,7 +15047,7 @@ function setupDogs(scene, camera, level) {
   // Sun streaming in through a window (warm key light) — higher + more to the
   // front so it rakes across the room and models the dog's form with a clear
   // light/shadow side instead of looking flat.
-  const key = new THREE.DirectionalLight(0xffe9c4, 2.0);
+  const key = new THREE.DirectionalLight(0xffe9c4, 3.2);
   key.position.set(4.5, 8, 5);
   key.target.position.set(0, -0.4, -2);
   key.castShadow = !IS_LOW_POWER;
@@ -14686,7 +15063,7 @@ function setupDogs(scene, camera, level) {
   scene.add(key); scene.add(key.target);
   // Natural sky/ground fill — replaces flat ambient with a gradient that lifts
   // shadows realistically (warm from above, cooler bounce from the floor).
-  scene.add(new THREE.HemisphereLight(0xfff3df, 0xb59a73, 0.65));
+  scene.add(new THREE.HemisphereLight(0xfff3df, 0xb59a73, 1.1));
   // Warm front fill from the player's side so the dog's face (which turns to
   // watch you) is lit, not lost in shadow.
   const fill = new THREE.PointLight(0xffe9cf, 0.45, 22);
@@ -14697,7 +15074,7 @@ function setupDogs(scene, camera, level) {
   fillBack.position.set(3.5, 3.2, -3);
   scene.add(fillBack);
   // A small ambient floor so nothing is pure black.
-  scene.add(new THREE.AmbientLight(0xfff1e0, 0.18));
+  scene.add(new THREE.AmbientLight(0xfff1e0, 0.35));
 
   // Floor (light oak planks)
   const floor = new THREE.Mesh(
@@ -15220,6 +15597,25 @@ function setupDogs(scene, camera, level) {
   dogCtrl.radius      = 0.26 + dogHeight * 0.22;
   dogCtrl.obstacles   = dogObstacles;
   dogCtrl.bounds      = { minX: -4.0, maxX: 4.0, minZ: -5.0, maxZ: 3.5 };
+  // ---------------------------------------------------------------------------
+  // FEAR-CURVE (barking rung): stalk → CHARGE → SNAP → recoil.
+  // Instead of barking on the spot, the dog stalks tensely, then commits to a
+  // run straight AT you, rears up and snaps at ~1.1 m with a sharp spatial bark
+  // and a fear spike, then backs off to its spot. The player's agency is the
+  // safety valve: you can always retreat (walkable scene) — backing away makes
+  // the charge fall short and keeps the fear peak lower; holding your ground
+  // spikes the fear, which is exactly what earns real exposure credit (the
+  // hold-timer weights time by fear). Holding through a snap and watching the
+  // dog back down is the disconfirming evidence exposure therapy is built on.
+  const baseWalkSpeed = dogCtrl.walkSpeed;
+  const lungeAnchor = { x: dog.position.x, z: dog.position.z };
+  let lungeState = "stalking";   // stalking | charging | snapping | recoiling
+  let lungeT = 0;                // seconds spent in the current sub-state
+  let nextCharge = 2.4;          // scene-time at which the next charge commits
+  let snapFired = false;         // one-shot guard for the snap bark/spike
+  let stalkTargetT = 0;          // re-pick a pacing spot occasionally
+  let heldGroundDist = 99;       // closest the dog got this charge (player agency)
+  let stalkWoofT = 0;
   // The "barking" intensity keeps the dog at distance — it doesn't follow.
   // For calm/alert rungs we DELAY the follow-the-player behaviour by ~6 s.
   // In those first seconds the dog is happily doing its own thing (sniffing,
@@ -15476,11 +15872,11 @@ function setupDogs(scene, camera, level) {
       bounds: { minX: -3.4, maxX: 3.4, minZ: minZ, maxZ: 4.5 },
       speed: 1.45,
       lookSpeed: 0.0035,
-      // Default to third-person so the user sees themselves enter the room
-      // and approach the dog. Persists per-scene after first use.
-      preferredCameraMode: "tp",
-      // Bias the third-person camera over the shoulder + a touch lower/closer so
-      // the dog ahead isn't hidden behind the avatar.
+      // First-person by default so the barking dog charges at YOUR face, not a
+      // doll's — that head-on lunge is the cynophobia trigger. Persists
+      // per-scene after first use; 3rd-person toggle still available.
+      preferredCameraMode: "fp",
+      // Bias the third-person camera over the shoulder (used only if toggled to 3rd).
       tpShoulder: 0.62,
       tpDistance: 3.9,
       tpHeight: 0.42,
@@ -16018,14 +16414,84 @@ function setupDogs(scene, camera, level) {
       // Forward at yaw=0 is +z (snout); rotation by yaw θ → (sin θ, 0, cos θ)
       const dogForward = { x: Math.sin(dogYaw), y: 0, z: Math.cos(dogYaw) };
       const barkOpts = { forward: dogForward, coneInnerAngle: 80, coneOuterAngle: 220, coneOuterGain: 0.30 };
-      if (intensity === "barking" && t > nextSpontaneousBark) {
-        dogCtrl.bark();
-        if (window.PhobiaAudio) window.PhobiaAudio.bark(1.0 * trustQuiet, dogPos, barkOpts);
-        // Discrete fear pulse — barks are the dog scene's "panic spikes"
-        if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.6);
-        // ~1.2 s lunge + a clear alert pause between, so the dog reads as
-        // "barking at you" rather than continuously rearing.
-        nextSpontaneousBark = t + (2.6 + Math.random() * 1.8) / trustQuiet;
+      // ---- Fear-curve: stalk → CHARGE → SNAP → recoil (barking rung) ----
+      if (intensity === "barking" && dog.userData.ready) {
+        lungeT += d;
+        const dxp = camera.position.x - dog.position.x;
+        const dzp = camera.position.z - dog.position.z;
+        const distP = Math.hypot(dxp, dzp) || 0.0001;
+        const SNAP_DIST = 1.1;
+
+        if (lungeState === "stalking") {
+          dogCtrl.walkSpeed = baseWalkSpeed;
+          // Pace tensely a step either side of its spot, locked onto you.
+          if (t > stalkTargetT && dogCtrl.state !== "walking") {
+            stalkTargetT = t + 1.4 + Math.random() * 1.6;
+            const side = (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.5);
+            dogCtrl.walkTo(lungeAnchor.x + side, lungeAnchor.z);
+          }
+          // Occasional low warning woof (a low-intensity bark is a throaty growl).
+          if (t > stalkWoofT) {
+            stalkWoofT = t + 1.6 + Math.random() * 2.0;
+            if (window.PhobiaAudio) window.PhobiaAudio.bark(0.3 * trustQuiet, dogPos, barkOpts);
+          }
+          // Commit to a charge on the timer — but only if you're within a
+          // believable lunge range. If you've backed off, it just keeps stalking.
+          if (t > nextCharge && distP < 5.0) {
+            lungeState = "charging"; lungeT = 0; snapFired = false;
+            heldGroundDist = distP;
+            dogCtrl.walkSpeed = baseWalkSpeed * 2.6;       // a real run
+          }
+        }
+
+        else if (lungeState === "charging") {
+          dogCtrl.walkSpeed = baseWalkSpeed * 2.6;
+          heldGroundDist = Math.min(heldGroundDist, distP);
+          if (distP > SNAP_DIST + 0.05) {
+            // Home on you, stopping a snap-length short so it rears AT you
+            // rather than walking through you.
+            const tx = camera.position.x - (dxp / distP) * SNAP_DIST;
+            const tz = camera.position.z - (dzp / distP) * SNAP_DIST;
+            dogCtrl.walkTo(tx, tz);
+          } else {
+            lungeState = "snapping"; lungeT = 0;
+          }
+          // If you retreat faster than it closes, it gives up and backs off.
+          if (lungeT > 2.2) { lungeState = "recoiling"; lungeT = 0; }
+        }
+
+        else if (lungeState === "snapping") {
+          if (!snapFired) {
+            snapFired = true;
+            dogCtrl.bark();                                 // rear-up Attack clip
+            if (window.PhobiaAudio) window.PhobiaAudio.bark(1.0 * trustQuiet, dogPos, barkOpts);
+            // Apex of the fear curve — a sharp spike, bigger the closer you
+            // let it get.
+            if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.8 + 0.2 * Math.max(0, 1 - heldGroundDist));
+          }
+          if (lungeT > 0.7) {
+            lungeState = "recoiling"; lungeT = 0;
+            // Reward holding your ground: the dog backing down is the
+            // disconfirming evidence exposure therapy is built on.
+            if (heldGroundDist < 1.7 && window.PhobiaVoice) {
+              window.PhobiaVoice.speak("It lunged, and you stayed. Nothing bad happened. That is the fear losing its grip.");
+            }
+          }
+        }
+
+        else if (lungeState === "recoiling") {
+          dogCtrl.walkSpeed = baseWalkSpeed * 1.5;
+          const dAnchor = Math.hypot(dog.position.x - lungeAnchor.x, dog.position.z - lungeAnchor.z);
+          if (dAnchor > 0.3 && dogCtrl.state !== "bark") {
+            dogCtrl.walkTo(lungeAnchor.x, lungeAnchor.z);
+          } else if (dogCtrl.state !== "walking" && dogCtrl.state !== "bark") {
+            lungeState = "stalking"; lungeT = 0;
+            dogCtrl.walkSpeed = baseWalkSpeed;
+            // Quieter and less frequent as trust builds; retreating buys reprieve.
+            nextCharge = t + (3.4 + Math.random() * 2.6) / trustQuiet;
+            stalkTargetT = t + 0.8;
+          }
+        }
       }
       if (intensity === "alert" && t > nextSpontaneousBark) {
         dogCtrl.bark();
@@ -16059,18 +16525,25 @@ function setupDogs(scene, camera, level) {
 function setupSpiders(scene, camera, level) {
   const size = level.size;
 
-  scene.background = new THREE.Color(0x2a2a30);
-  scene.fog = new THREE.Fog(0x2a2a30, 8, 28);
+  scene.background = new THREE.Color(0x303138);
+  scene.fog = new THREE.Fog(0x303138, 9, 30);
 
-  const key = new THREE.DirectionalLight(0xd0d8e0, 1.4);
+  // Dramatic raking key so the spider is sharply modelled and throws a long
+  // menacing shadow — seeing every leg clearly is scarier than a murky blob.
+  // Low ambient keeps the shadow side moody; a cold rim edge-lights the legs.
+  const key = new THREE.DirectionalLight(0xe6ecf2, 2.8);
   key.position.set(3, 8, 2);
-  key.target.position.set(0, 0, -3);
+  key.target.position.set(0, -0.6, -3);
   key.castShadow = true;
   key.shadow.mapSize.set(1024, 1024);
   key.shadow.camera.left = -8;  key.shadow.camera.right = 8;
   key.shadow.camera.top = 8;    key.shadow.camera.bottom = -8;
+  if (key.shadow.radius !== undefined) key.shadow.radius = 3;
   scene.add(key); scene.add(key.target);
-  scene.add(new THREE.AmbientLight(0x404555, 0.7));
+  const rim = new THREE.DirectionalLight(0x9fb6d8, 1.4);
+  rim.position.set(-5, 3, -7);
+  scene.add(rim);
+  scene.add(new THREE.AmbientLight(0x3a4150, 0.26));
 
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(30, 30),
@@ -16107,11 +16580,21 @@ function setupSpiders(scene, camera, level) {
   const spiderPitch = Math.atan2(-(1.0 + 0.6), distance);
   const minZ = -distance + 0.6;
 
-  // Crawl-toward-camera state for the closest rung — short bursts of forward motion
-  // that retreat slightly, mimicking how a spider actually moves.
+  // ---- Skitter state (the arachnophobic apex) ----
+  // Instead of a timid 0.5 m crawl-and-retreat, the spider darts TOWARD you in
+  // erratic stop-start bursts — fast, with a sideways jag and a dead-still
+  // freeze between — and can come right up to your feet. Your agency: contain
+  // it under the jar, or simply back away (the scene is walkable). Speed and
+  // frequency scale with the rung's `size`.
   const baseZ = spider.position.z;
-  let crawlStart = 4 + Math.random() * 3;
-  let crawlPhase = 0;
+  let skitterState = "lurking";       // lurking | skittering | pausing
+  let skitterT = 0;
+  let nextSkitter = 2.5 + Math.random() * 2.5;
+  let skitterDur = 0.3;
+  let skitterDir = { x: 0, z: 1 };
+  let skitterTargetYaw = 0;           // heading goal — turned toward, never snapped
+  let skitterSpeedMul = 1;            // 1 = full dart, ~0.3 = idle micro-shuffle
+  let microShuffleAt = 1.5 + Math.random() * 2.0;
   let spiderControls = null;
   let scriptedGesture = null;   // overrides the default "rest" gesture briefly
   let scriptedGestureUntil = 0;
@@ -16154,6 +16637,14 @@ function setupSpiders(scene, camera, level) {
     jar.position.set(x, 4.0, z);    // start above the floor, drops in
     jarPhase = "falling";
     jarLifeT = 0;
+    // The spider sees it coming — a rear-up startle (the rig's Jump clip,
+    // played once and held) right before the glass lands. A creature that
+    // REACTS to your action is what makes the catch feel real.
+    const pp = spider.userData.parts;
+    if (pp && pp.play && spider.position.y > -10) {
+      pp.play("Jump", 0.06, { once: true });
+      if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.25);
+    }
   }
 
   // ----- Click-on-spider / click-on-floor (mouse / touch) -----
@@ -16370,23 +16861,81 @@ function setupSpiders(scene, camera, level) {
       if (p && p.mixer) {
         // Highest rungs: a sudden short crawl toward you, then a small retreat —
         // the spider's Walk clip plays during the crawl, idle otherwise.
-        if (size > 0.7 && jarPhase === "idle") {
-          if (crawlPhase === 0 && t > crawlStart) {
-            crawlPhase = 0.0001;
-            if (p.play) p.play("Walk", 0.2);
-          }
-          if (crawlPhase > 0) {
-            crawlPhase += 0.012;
-            const k = Math.min(1, crawlPhase);
-            const fwd = k < 0.7 ? (k / 0.7) : (1 - (k - 0.7) / 0.3 * 0.25);
-            spider.position.z = baseZ + fwd * 0.6 * size;
-            if (crawlPhase > 1) {
-              crawlPhase = 0;
-              crawlStart = t + 4 + Math.random() * 5;
-              spider.position.z = baseZ;
-              if (p.play) p.play("Idle", 0.3);
+        // Erratic skitter toward you — only while the spider is loose (not
+        // jarred/removed) and we have player controls. Bigger rungs skitter
+        // faster and more often.
+        if (size >= 0.4 && jarPhase === "idle" && controls && spider.position.y > -10) {
+          skitterT += d;
+          const dxp = controls.position.x - spider.position.x;
+          const dzp = controls.position.z - spider.position.z;
+          const distP = Math.hypot(dxp, dzp) || 0.0001;
+
+          if (skitterState === "lurking") {
+            // Micro-shuffle: a tiny sidestep well before the real dart. The
+            // "it's alive and fidgeting" tell — stillness reads as a choice
+            // the spider is making, not a freeze-frame.
+            if (skitterT > microShuffleAt && skitterT < nextSkitter * 0.8) {
+              skitterState = "skittering"; skitterT = 0;
+              skitterDur = 0.10 + Math.random() * 0.10;
+              skitterSpeedMul = 0.3;
+              const ang = Math.random() * Math.PI * 2;
+              skitterDir = { x: Math.sin(ang), z: Math.cos(ang) };
+              skitterTargetYaw = ang;
+              microShuffleAt = 1.5 + Math.random() * 2.5;
+              if (p.play) p.play("Walk", 0.06, { timeScale: 1.2 });
+            } else if (skitterT > nextSkitter) {
+              skitterState = "skittering"; skitterT = 0;
+              skitterDur = 0.22 + Math.random() * 0.4;          // short, fast burst
+              skitterSpeedMul = 1;
+              const jag = (Math.random() - 0.5) * 1.3;          // unpredictable sideways jag
+              let vx = dxp / distP + jag, vz = dzp / distP;
+              const m = Math.hypot(vx, vz) || 1;
+              skitterDir = { x: vx / m, z: vz / m };
+              skitterTargetYaw = Math.atan2(skitterDir.x, skitterDir.z);   // (+Z fwd)
+              // Leg rate matches ground speed — fast dart, frantic legs.
+              const spd = 1.2 + size * 1.7;
+              if (p.play) p.play("Walk", 0.06, { timeScale: Math.max(1, Math.min(2.6, spd / 0.9)) });
+              // The dash is audible exactly while it happens, where it happens.
+              if (window.PhobiaAudio && window.PhobiaAudio.skitterBurst) {
+                window.PhobiaAudio.skitterBurst(
+                  { x: spider.position.x, y: -0.9, z: spider.position.z },
+                  skitterDur, 0.5 + size * 0.5
+                );
+              }
+            }
+          } else if (skitterState === "skittering") {
+            const speed = (1.2 + size * 1.7) * skitterSpeedMul; // m/s — fast and jittery
+            if (distP > 0.45) {
+              spider.position.x += skitterDir.x * speed * d;
+              spider.position.z += skitterDir.z * speed * d;
+            }
+            if (skitterT > skitterDur) {
+              skitterState = "pausing"; skitterT = 0;
+              if (p.play) p.play("Idle", 0.12);
+              // A sudden freeze close to you after a dart = a startle spike.
+              // (Micro-shuffles don't spike — they're the background fidget.)
+              if (skitterSpeedMul >= 1 && distP < 1.5 && window.PhobiaFear) {
+                window.PhobiaFear.pulseEvent(0.45 + 0.45 * (1 - distP / 1.5));
+              }
+            }
+          } else { // pausing — the classic dead-still spider freeze, then decide again
+            if (skitterT > 0.3 + Math.random() * 0.7) {
+              skitterState = "lurking"; skitterT = 0;
+              microShuffleAt = 1.2 + Math.random() * 2.2;
+              // Backing away buys a longer reprieve; staying close invites more.
+              nextSkitter = (distP > 3.5 ? 2.5 : 0.6) + Math.random() * 1.8;
             }
           }
+          // Spiders pivot fast — but over a few frames, not in one. A snap
+          // rotation is the single biggest "it's a video game" tell.
+          {
+            let dy = skitterTargetYaw - spider.rotation.y;
+            dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+            spider.rotation.y += dy * Math.min(1, d * 14);
+          }
+          // Keep it on the floor within sane bounds.
+          spider.position.x = Math.max(-4, Math.min(4, spider.position.x));
+          spider.position.z = Math.max(-9, Math.min(2.5, spider.position.z));
         }
         p.mixer.update(d);
       }
@@ -16450,6 +16999,33 @@ function setupEnclosed(scene, camera, level) {
   right.receiveShadow = true;
   room.add(right);
   scene.add(room);
+
+  // ---- Walls that close in (the claustrophobic dynamic) ----
+  // The room slowly CONSTRICTS while you're inside. Opening the door relieves
+  // it (you can always get out); holding Space — a steady breath — halts and
+  // eases the squeeze, so staying calm literally stops it closing in. Tighter
+  // rungs close faster. (This was the signature claustrophobic beat the scene
+  // was missing — the room used to be a fixed size per rung.)
+  let closeAmt = 0, breathHeld = false;
+  const closeRate = 0.05 + (1 - size) * 0.11;     // per second; faster on tight rungs
+  const backZ0 = back.position.z, frontZ0 = front.position.z;
+  const leftX0 = left.position.x, rightX0 = right.position.x, ceilY0 = ceiling.position.y;
+  let encKeyDown = null, encKeyUp = null, breathHud = null;
+  function bindEnclosedBreath() {
+    encKeyDown = (e) => { if (e.code === "Space" && !/INPUT|TEXTAREA/.test((e.target || {}).tagName || "")) { e.preventDefault(); breathHeld = true; } };
+    encKeyUp   = (e) => { if (e.code === "Space") breathHeld = false; };
+    window.addEventListener("keydown", encKeyDown);
+    window.addEventListener("keyup", encKeyUp);
+    const stage = document.getElementById("stage");
+    if (stage) {
+      breathHud = document.createElement("div");
+      breathHud.className = "controls-hint";
+      breathHud.style.cssText = "position:absolute;left:50%;bottom:92px;transform:translateX(-50%);z-index:6;white-space:nowrap;opacity:.85;";
+      breathHud.textContent = "The walls are closing in — open the door to leave, or hold Space for a steady breath and they ease back.";
+      stage.appendChild(breathHud);
+    }
+  }
+  setTimeout(bindEnclosedBreath, 90);
 
   // Light fixture (the bulb)
   const fixture = new THREE.Mesh(
@@ -16785,6 +17361,27 @@ function setupEnclosed(scene, camera, level) {
       if (doorPivot) {
         doorPivot.rotation.y += (doorTargetAngle - doorPivot.rotation.y) * 0.08;
       }
+      // ---- Closing-in walls ----
+      const dEnc = dt || 0.016;
+      closeAmt += (breathHeld ? -0.85 : 1) * closeRate * dEnc;
+      if (doorTargetAngle !== 0) closeAmt -= dEnc * 0.7;          // door open = relief
+      closeAmt = Math.max(0, Math.min(1, closeAmt));
+      const travel = closeAmt * 0.38;                             // walls move up to 38% toward centre
+      back.position.z  = backZ0  * (1 - travel);
+      front.position.z = frontZ0 * (1 - travel);
+      left.position.x  = leftX0  * (1 - travel);
+      right.position.x = rightX0 * (1 - travel);
+      ceiling.position.y = ceilY0 * (1 - travel * 0.7);           // ceiling lowers, gentler so it won't clip the eye
+      const encB = controls && controls.opts && controls.opts.bounds;
+      if (encB) {
+        const hw = Math.max(0.12, (roomW / 2) * (1 - travel) - 0.35);
+        const hd = Math.max(0.12, (roomD / 2) * (1 - travel) - 0.35);
+        encB.minX = -hw; encB.maxX = hw; encB.minZ = -hd; encB.maxZ = hd;
+      }
+      if (window.PhobiaFear) {
+        window.PhobiaFear.setInput("proximity", closeAmt * 0.95);
+        window.PhobiaFear.setInput("gaze", breathHeld ? 0.15 : closeAmt * 0.45);
+      }
       // Light switch + flicker. Base intensity follows the lightOn flag EVERY
       // frame (so the switch works both ways, in every room size); in tight
       // rooms an unstable flicker rides on top of the "on" base. Previously the
@@ -16851,6 +17448,11 @@ function setupEnclosed(scene, camera, level) {
       if (size < 0.4) {
         camera.rotation.y += Math.sin(t * 0.7) * 0.06;
       }
+    },
+    dispose() {
+      if (encKeyDown) window.removeEventListener("keydown", encKeyDown);
+      if (encKeyUp)   window.removeEventListener("keyup", encKeyUp);
+      if (breathHud && breathHud.parentNode) breathHud.parentNode.removeChild(breathHud);
     },
   };
 }
@@ -17020,6 +17622,9 @@ function setupFlying(scene, camera, level) {
   let calmCycles = 0;          // completed cycles since scene mount
   let calmTurbulence = 0;      // 0..1 instantaneous damping
   let calmFloor = 0;           // 0..0.6 persistent damping that grows with cycles
+  // Air-pocket "stomach drop" + banking lurch state (damped springs).
+  let dropPos = 0, dropVel = 0, nextPocket = 5 + Math.random() * 7;
+  let bankAmt = 0, bankVel = 0, nextBank = 8 + Math.random() * 10;
   function wireFlyingCmds() {
     const bar = document.querySelector('.scene-cmd-bar[data-scene="flying"]');
     if (!bar || bar.dataset.wired === "1") return;
@@ -17188,10 +17793,31 @@ function setupFlying(scene, camera, level) {
       camera.position.y += Math.sin(t * 9.0) * tShake;
       camera.position.x += Math.cos(t * 7.0) * tShake * 0.5;
       camera.rotation.z += Math.sin(t * 5.0) * moveStage * 0.006 * dampening;
-      // Random jolts dampened by calm
-      if (stage > 0.85 && Math.random() < 0.005 * dampening) {
-        camera.position.y += (Math.random() - 0.5) * 0.15 * dampening;
-        camera.rotation.z += (Math.random() - 0.5) * 0.03 * dampening;
+      // ---- Air pockets: the stomach-drop (the apex flying fear) ----
+      // On a timer (more often + bigger at cruise), the floor falls out — a
+      // sharp downward kick that springs back, so it lurches then settles like
+      // a real air pocket. Breathing (calm) softens both the drop and the fear.
+      nextPocket -= d;
+      if (nextPocket <= 0 && moveStage > 0.3) {
+        nextPocket = (4 + Math.random() * 6) / (0.5 + stage);
+        dropVel -= (1.4 + stage * 1.8) * dampening;      // kick downward
+        if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.45 + stage * 0.3);
+      }
+      dropVel += (-dropPos * 38 - dropVel * 6) * d;        // critically-ish damped spring → 0
+      dropPos += dropVel * d;
+      camera.position.y += dropPos;
+      // ---- Occasional banking lurch (a turn that tips you) ----
+      nextBank -= d;
+      if (nextBank <= 0 && moveStage > 0.3) {
+        nextBank = 9 + Math.random() * 12;
+        bankVel += (Math.random() < 0.5 ? -1 : 1) * (0.5 + stage * 0.5) * dampening;
+      }
+      bankVel += (-bankAmt * 22 - bankVel * 5) * d;
+      bankAmt += bankVel * d;
+      camera.rotation.z += bankAmt * 0.12;
+      // Continuous fear from the motion, calmed by breathing.
+      if (window.PhobiaFear) {
+        window.PhobiaFear.setInput("proximity", Math.min(1, moveStage * 0.6 * dampening + Math.abs(dropPos) * 0.9));
       }
     },
     dispose() {
@@ -17574,6 +18200,7 @@ function setupNeedles(scene, camera, level) {
     patch.rotation.x = -Math.PI / 2;
     patch.position.set(0, 0.04, 0.05);
     armGroup.add(patch);
+    injectionPatch = patch;   // animated (dimple + mark) during the injection
     const vein = new THREE.Mesh(
       new THREE.PlaneGeometry(0.008, 0.04),
       new THREE.MeshBasicMaterial({ color: 0x3a5070, transparent: true, opacity: 0.45 })
@@ -17645,6 +18272,18 @@ function setupNeedles(scene, camera, level) {
   let fistTarget = 0;
   let fistHeld = false;
   let needleAdvance = 0;      // 0..1 — how far the needle has progressed
+  // ---- Injection phase machine (the real fear curve) ----
+  // approach: needle nears the arm while you hold the fist; RELEASE backs it
+  //           off (your control). in: the needle has bitten — a sharp one-shot
+  //           fear spike + skin dimple, then it seats fully. withdraw: it eases
+  //           out, skin un-dimples, a small mark is left. done: resets for a
+  //           clean second rep once you release. This replaces the old logic
+  //           where the needle floated near the arm and, after one go, the
+  //           advance never reset (it dead-ended retracted).
+  let injectPhase = "approach"; // approach | in | withdraw | done
+  let injectHoldT = 0;
+  let withdrawAmt = 0;
+  let injectionPatch = null;    // the swab/skin site mesh — dimples on contact
   // The NURSE moves toward the user (not the syringe alone). This is the
   // realistic motion: the clinician approaches with the syringe in hand.
   // Capture the nurse's resting position; approach target is right beside
@@ -17671,19 +18310,25 @@ function setupNeedles(scene, camera, level) {
     canvasDom.addEventListener("pointerup", release);
     canvasDom.addEventListener("pointercancel", release);
     canvasDom.addEventListener("pointerleave", release);
-    // Spacebar / 'F' as keyboard alternative
-    window.addEventListener("keydown", (e) => {
+    // Spacebar / 'F' as keyboard alternative. Named (not anonymous) so
+    // dispose() can remove them — otherwise the leaked keydown handler keeps
+    // calling preventDefault() on Space app-wide and swallows the spacebar in
+    // OTHER scenes (e.g. the public-speaking hold-to-speak).
+    needleKeyDown = (e) => {
       if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
       if (proximity < 0.35) return;
       if (e.code === "Space" || e.key.toLowerCase() === "f") {
         e.preventDefault();
         fistHeld = true; fistTarget = 1.0;
       }
-    });
-    window.addEventListener("keyup", (e) => {
+    };
+    needleKeyUp = (e) => {
       if (e.code === "Space" || e.key.toLowerCase() === "f") release();
-    });
+    };
+    window.addEventListener("keydown", needleKeyDown);
+    window.addEventListener("keyup", needleKeyUp);
   }
+  let needleKeyDown = null, needleKeyUp = null;
   setTimeout(bindNeedleHold, 60);
 
   // Tiny on-stage HUD: shows whether the fist is held and a "calm" pulse so
@@ -17791,45 +18436,67 @@ function setupNeedles(scene, camera, level) {
         thumbJoint.rotation.z = -0.6 + fistAmt * 0.7;     // thumb folds in
         thumbJoint.rotation.x = fistAmt * 0.4;
       }
-      // Steady advance only while fist is held. Linear so the user can pace
-      // exactly how long the procedure takes.
-      if (fistHeld) {
-        needleAdvance = Math.min(1, needleAdvance + d * 0.10);
-      }
-      // When fully advanced, hold the needle in place for ~0.8 s, then retreat.
-      let withdraw = 0;
-      if (needleAdvance >= 0.999 && fistHeld) {
-        // Brief "in the arm" beat. After 0.8 s of holding here, withdraw.
-        if (!syringe.userData._heldT) syringe.userData._heldT = 0;
-        syringe.userData._heldT += d;
-        if (syringe.userData._heldT > 0.8) {
-          withdraw = Math.min(1, (syringe.userData._heldT - 0.8) / 0.6);
-          if (withdraw >= 1) {
-            // Allow another "approach" — reset for a clean second attempt
-            // but only if user releases first. We pause here.
-            withdraw = 1;
-          }
+      // ---- Injection phase machine: approach → PRICK → hold → withdraw → reset
+      const CONTACT = 0.86;          // needleAdvance at which the tip bites skin
+      if (injectPhase === "approach") {
+        // Hold the fist → the needle approaches; RELEASE → it eases back off.
+        // The agency is real: you can always push it away before the bite.
+        if (fistHeld) needleAdvance = Math.min(1, needleAdvance + d * 0.12);
+        else          needleAdvance = Math.max(0, needleAdvance - d * 0.16);
+        if (needleAdvance >= CONTACT) {
+          injectPhase = "in";
+          injectHoldT = 0;
+          // THE moment the scene was missing — the prick actually happens:
+          // one sharp fear spike, then immediate reassurance.
+          if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.85);
+          if (window.PhobiaVoice) window.PhobiaVoice.speak("That's the needle in. The sharp part is already over. Slow breath out.");
+        }
+      } else if (injectPhase === "in") {
+        // Seat the needle the last sliver, then hold "in the arm" for a beat.
+        needleAdvance = Math.min(1, needleAdvance + d * 0.20);
+        injectHoldT += d;
+        if (injectHoldT > 1.1) injectPhase = "withdraw";
+      } else if (injectPhase === "withdraw") {
+        withdrawAmt = Math.min(1, withdrawAmt + d * 1.5);
+        if (withdrawAmt >= 1) {
+          injectPhase = "done";
+          if (injectionPatch) injectionPatch.material.color.setHex(0xe7a999);  // small mark left
+          if (window.PhobiaVoice) window.PhobiaVoice.speak("Done — it's out. You stayed with it. That is exactly how the fear unlearns.");
+        }
+      } else if (injectPhase === "done") {
+        // Reset for a clean second rep once the user releases the fist. (The
+        // old code never reset — after one go the needle was stuck retracted.)
+        if (!fistHeld) {
+          needleAdvance = 0; withdrawAmt = 0; injectHoldT = 0;
+          injectPhase = "approach";
+          if (injectionPatch) injectionPatch.material.color.setHex(0xfff8d8);
         }
       }
-      // Position the NURSE (with syringe in hand) from base → approach
-      // × needleAdvance, then retreat. The syringe is parented to the
-      // nurse's forearm so it follows automatically.
+      const withdraw = withdrawAmt;
+      // Position the NURSE (with syringe in hand) from base → approach, then
+      // retreat. The syringe is parented to the nurse's forearm so it follows.
       const adv = needleAdvance * (1 - withdraw);
       nurseGroup.position.x = nurseBaseX + (nurseApproachX - nurseBaseX) * adv;
       nurseGroup.position.y = nurseBaseY + (nurseApproachY - nurseBaseY) * adv;
       nurseGroup.position.z = nurseBaseZ + (nurseApproachZ - nurseBaseZ) * adv;
       // Nurse turns to face the user as they approach
       nurseGroup.rotation.y = -0.4 + adv * -0.4;
-      // Plunger depresses slightly when fully in
-      if (adv > 0.95) {
-        plunger.position.x = -0.10 + (adv - 0.95) * 0.4 * 0.05;
+      // Skin dimples inward as the needle presses (a touch before the bite),
+      // easing back as it withdraws — the recognisable "skin tenting" cue.
+      if (injectionPatch) {
+        const press = Math.max(0, (needleAdvance - 0.65) / 0.35) * (1 - withdraw);
+        injectionPatch.position.y = 0.04 - press * 0.018;
       }
+      // Plunger depresses as it seats; returns as it withdraws.
+      plunger.position.x = -0.10 + Math.max(0, adv - 0.95) * 0.4 * 0.05;
       refreshNeedleHud();
       // Subtle breathing camera at higher rungs (slows when holding the fist)
       const breath = fistHeld ? 0.6 : 1.0;
       camera.position.y += Math.sin(t * 1.4) * 0.01 * (0.5 + proximity) * breath;
     },
     dispose() {
+      if (needleKeyDown) window.removeEventListener("keydown", needleKeyDown);
+      if (needleKeyUp)   window.removeEventListener("keyup", needleKeyUp);
       const stage = document.getElementById("stage");
       if (stage) {
         const hud = stage.querySelector(".trust-hud");
@@ -17871,7 +18538,10 @@ function setupSnakes(scene, camera, level) {
   path.position.set(0, -0.99, 0);
   path.receiveShadow = true;
   scene.add(path);
-  // Tufts of grass alongside (small flat blades)
+  // Tufts of grass alongside (small flat blades). Each gets a random wind
+  // phase — they sway gently in update() so the meadow reads alive, and the
+  // snake's rustle has something visibly rustling.
+  const grassTufts = [];
   for (let i = 0; i < 60; i++) {
     const g = new THREE.Mesh(
       new THREE.PlaneGeometry(0.3, 0.5),
@@ -17880,6 +18550,9 @@ function setupSnakes(scene, camera, level) {
     const sx = (i % 2 === 0 ? -1 : 1) * (1.4 + Math.random() * 6);
     g.position.set(sx, -0.75, (Math.random() - 0.5) * 18);
     g.rotation.y = Math.random() * Math.PI;
+    g.userData.windPhase = Math.random() * Math.PI * 2;
+    g.userData.windAmp = 0.05 + Math.random() * 0.05;
+    grassTufts.push(g);
     scene.add(g);
   }
 
@@ -17911,9 +18584,14 @@ function setupSnakes(scene, camera, level) {
   snake.add(headAnchor);
   snake.userData.onReady = () => {
     try {
-      snake.userData.parts.play("Idle");
       const pp = snake.userData.parts;
+      pp.play("Idle");
       headAnchor.position.set(0, pp.height * 0.78, pp.span * 0.18);
+      // Bone handles for head tracking + a live head anchor. The rig names
+      // its chain Root/Body/Chest/Neck/Head — grab what exists, degrade to
+      // the static anchor if the model changed.
+      pp.headBone = pp.model.getObjectByName("Head") || null;
+      pp.neckBone = pp.model.getObjectByName("Neck") || null;
     } catch {}
   };
   scene.add(snake);
@@ -17926,6 +18604,266 @@ function setupSnakes(scene, camera, level) {
   let stillness = 0;       // 0..1, builds while user holds the "Hold still" button
   const baseSnakeZ = snake.position.z;
   let stillHeld = false;
+
+  // ---- Snake locomotion controller ----
+  // The old scene parked the snake at one spot playing its idle clip — it read
+  // as a statue. Real snakes are mostly still, but they MOVE: a slow patrol of
+  // their patch, the occasional crossing of open ground, a reared watch when
+  // something big approaches, retreat from a calm observer. The rig's Walk clip
+  // carries the lateral undulation; this controller supplies the root motion
+  // (turn-rate-limited so a direction change reads as a body curve, never a
+  // pivot) and picks the behaviour state:
+  //   bask      — coiled, tongue flicking (Idle clip), the resting default
+  //   wander    — slow slither toward a chosen point; on higher rungs it will
+  //               deliberately cross the path a couple of metres AHEAD of the
+  //               player — movement, not threat, is the exposure
+  //   watch     — reared, body angled toward a player who came close; the
+  //               Neck/Head bones gently track the player post-mixer
+  //   retreat   — slithers away from a still, calm observer (stillness
+  //               mechanic) — the disconfirmation: calm makes it leave
+  //   defensive — top rungs only: a player who RUSHES the snake gets a hiss +
+  //               strike-feint that stops short, then retreat. Teaches the
+  //               real-world rule: slow movement reads as safety.
+  const snakeCtl = {
+    state: "bask",
+    stateT: 0,
+    baskDur: 3.0 + Math.random() * 4.0,
+    heading: 0,                  // facing, radians (+Z forward like the spider)
+    speed: 0,                    // current ground speed (m/s)
+    target: null,                // wander/retreat destination {x, z}
+    crossing: false,             // current wander leg crosses the path
+    headYaw: 0,                  // smoothed head-tracking offset (radians)
+    defenseCooldown: 0,
+    defensiveSpoken: false,
+    lastWarnHiss: -99,
+  };
+  const SNAKE_BOUNDS = { minX: -3.4, maxX: 3.4, minZ: -9.3, maxZ: 1.2 };
+  const SNAKE_REF_SPEED = 0.5;   // m/s at Walk clip timeScale 1 — tuned by eye
+  let slitherSound = null;       // lazy spatial rustle handle
+  let prevPlayerDist = null, approachSpeed = 0;  // radial m/s toward the snake
+  const _snkV1 = new THREE.Vector3();
+
+  function snakeClampToBounds(p) {
+    p.x = Math.max(SNAKE_BOUNDS.minX, Math.min(SNAKE_BOUNDS.maxX, p.x));
+    p.z = Math.max(SNAKE_BOUNDS.minZ, Math.min(SNAKE_BOUNDS.maxZ, p.z));
+    return p;
+  }
+  function snakePickWanderTarget(controls) {
+    // Higher rungs sometimes cross the open path 2–4 m ahead of the player —
+    // the classic "it moved!" beat — otherwise roam near home turf.
+    if (size >= 0.6 && controls && Math.random() < 0.45) {
+      const aheadZ = Math.max(SNAKE_BOUNDS.minZ + 0.4,
+        Math.min(1.0, controls.position.z - (2.2 + Math.random() * 2.0)));
+      const side = snake.position.x >= 0 ? -1 : 1;
+      snakeCtl.crossing = true;
+      return snakeClampToBounds({ x: side * (2.0 + Math.random() * 1.2), z: aheadZ });
+    }
+    snakeCtl.crossing = false;
+    const t = snakeClampToBounds({
+      x: (Math.random() - 0.5) * 5.0,
+      z: baseSnakeZ + (Math.random() - 0.5) * 4.0,
+    });
+    // Never pick a destination on top of the player.
+    if (controls) {
+      const dx = t.x - controls.position.x, dz = t.z - controls.position.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 1.8) { t.z = Math.max(SNAKE_BOUNDS.minZ, controls.position.z - 2.5); }
+    }
+    return t;
+  }
+  function snakeEnter(state, controls) {
+    snakeCtl.state = state;
+    snakeCtl.stateT = 0;
+    const sp = snake.userData.parts;
+    const hasRig = sp && sp.mixer && sp.play;
+    if (state === "bask") {
+      snakeCtl.baskDur = (size >= 0.6 ? 2.0 : 3.5) + Math.random() * (size >= 0.6 ? 4 : 6);
+      snakeCtl.target = null;
+      if (hasRig) sp.play("Idle", 0.5);
+    } else if (state === "wander") {
+      snakeCtl.target = snakePickWanderTarget(controls);
+      if (hasRig) sp.play("Walk", 0.4);
+      // The sudden onset of motion is itself a (small) startle when close.
+      if (snakeCtl.crossing && controls && window.PhobiaFear) {
+        const d = Math.hypot(snake.position.x - controls.position.x, snake.position.z - controls.position.z);
+        if (d < 6) window.PhobiaFear.pulseEvent(0.3);
+      }
+    } else if (state === "watch") {
+      snakeCtl.target = null;
+      if (hasRig) sp.play("Idle", 0.35);
+    } else if (state === "retreat") {
+      if (controls) {
+        const dx = snake.position.x - controls.position.x;
+        const dz = snake.position.z - controls.position.z;
+        const d = Math.hypot(dx, dz) || 1;
+        snakeCtl.target = snakeClampToBounds({
+          x: snake.position.x + (dx / d) * 2.6,
+          z: snake.position.z + (dz / d) * 2.6,
+        });
+      } else {
+        snakeCtl.target = snakeClampToBounds({ x: snake.position.x, z: snake.position.z - 2.5 });
+      }
+      if (hasRig) sp.play("Walk", 0.3);
+    } else if (state === "defensive") {
+      snakeCtl.target = null;
+      if (hasRig) sp.play("Attack", 0.08, { once: true });
+      const hp = new THREE.Vector3();
+      headAnchor.getWorldPosition(hp);
+      if (window.PhobiaAudio && window.PhobiaAudio.hissOnce) window.PhobiaAudio.hissOnce(hp, 1.0);
+      if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.85);
+      if (!snakeCtl.defensiveSpoken && window.PhobiaVoice) {
+        snakeCtl.defensiveSpoken = true;
+        window.PhobiaVoice.speak("It warned you — that's all it was. Step back, slow down. Slow movement reads as safety.");
+      }
+      snakeCtl.defenseCooldown = 14;
+    }
+  }
+  // Per-frame brain + root motion. `sniffing` comes from the extend-hand
+  // mechanic below — while the snake is investigating the hand it is engaged,
+  // so it neither retreats nor wanders off.
+  function snakeUpdate(t, dtN, controls, sniffing) {
+    const sp = snake.userData.parts;
+    const hasRig = sp && sp.mixer && sp.play;
+    snakeCtl.stateT += dtN;
+    snakeCtl.defenseCooldown = Math.max(0, snakeCtl.defenseCooldown - dtN);
+
+    // Player kinematics — RADIAL approach speed (m/s closing on the snake),
+    // not raw walk speed: max walk speed is only 1.2 m/s here, so "rushing"
+    // means closing nearly flat-out, while cautious step-pause-step approaches
+    // average well under the threshold.
+    let playerDist = Infinity;
+    if (controls) {
+      playerDist = Math.hypot(controls.position.x - snake.position.x, controls.position.z - snake.position.z);
+      if (prevPlayerDist != null && dtN > 0) {
+        const inst = (prevPlayerDist - playerDist) / dtN;   // + = approaching
+        approachSpeed += (inst - approachSpeed) * Math.min(1, dtN * 6);
+      }
+      prevPlayerDist = playerDist;
+    }
+
+    // --- Defensive trigger (top rungs): rushing into its space ---
+    if (size >= 0.75 && snakeCtl.state !== "defensive" && snakeCtl.defenseCooldown <= 0
+        && controls && playerDist < 1.45 && approachSpeed > 0.9) {
+      // Face the player before the feint so the display is unmistakably aimed.
+      snakeCtl.heading = Math.atan2(controls.position.x - snake.position.x, controls.position.z - snake.position.z);
+      snake.rotation.y = snakeCtl.heading;
+      snakeEnter("defensive", controls);
+    }
+
+    // --- State transitions ---
+    if (snakeCtl.state === "bask") {
+      if (controls && playerDist < 3.2) snakeEnter("watch", controls);
+      else if (stillness > 0.3 && controls && playerDist < 5) snakeEnter("retreat", controls);
+      else if (snakeCtl.stateT > snakeCtl.baskDur) snakeEnter("wander", controls);
+    } else if (snakeCtl.state === "wander") {
+      if (controls && playerDist < (snakeCtl.crossing ? 1.6 : 2.6)) snakeEnter("watch", controls);
+      else if (snakeCtl.target) {
+        const d = Math.hypot(snakeCtl.target.x - snake.position.x, snakeCtl.target.z - snake.position.z);
+        if (d < 0.35 || snakeCtl.stateT > 18) snakeEnter("bask", controls);
+      }
+    } else if (snakeCtl.state === "watch") {
+      if (sniffing) {
+        // Engaged with the offered hand — hold position, stay reared.
+      } else if (stillness > 0.3) snakeEnter("retreat", controls);
+      else if (!controls || playerDist > 4.2) snakeEnter("bask", controls);
+    } else if (snakeCtl.state === "retreat") {
+      const d = snakeCtl.target
+        ? Math.hypot(snakeCtl.target.x - snake.position.x, snakeCtl.target.z - snake.position.z)
+        : 0;
+      if (d < 0.35 || snakeCtl.stateT > 8) snakeEnter("bask", controls);
+    } else if (snakeCtl.state === "defensive") {
+      // Attack clip is ~0.67 s; once the feint lands, withdraw.
+      if (snakeCtl.stateT > 0.72) snakeEnter("retreat", controls);
+    }
+
+    // --- Warning hiss when looming over it on mid+ rungs (throttled) ---
+    if ((snakeCtl.state === "watch") && size >= 0.6 && controls && playerDist < 1.7
+        && !sniffing && (t - snakeCtl.lastWarnHiss) > 9) {
+      snakeCtl.lastWarnHiss = t;
+      headAnchor.getWorldPosition(_snkV1);
+      if (window.PhobiaAudio && window.PhobiaAudio.hissOnce) window.PhobiaAudio.hissOnce(_snkV1, 0.55);
+      if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.3);
+    }
+
+    // --- Steering + root motion ---
+    const moving = snakeCtl.state === "wander" || snakeCtl.state === "retreat";
+    let desiredSpeed = 0;
+    if (moving && snakeCtl.target) {
+      const dx = snakeCtl.target.x - snake.position.x;
+      const dz = snakeCtl.target.z - snake.position.z;
+      const dist = Math.hypot(dx, dz);
+      let desiredHeading = Math.atan2(dx, dz);
+      // Serpentine weave on top of the base heading — the path itself curves.
+      desiredHeading += Math.sin(t * 2.4) * 0.18;
+      let dh = desiredHeading - snakeCtl.heading;
+      dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+      const turnRate = snakeCtl.state === "retreat" ? 2.6 : 1.6;
+      snakeCtl.heading += Math.max(-turnRate * dtN, Math.min(turnRate * dtN, dh));
+      desiredSpeed = (snakeCtl.state === "retreat" ? 0.85 : 0.45 + size * 0.25);
+      desiredSpeed *= Math.min(1, dist / 0.8);            // ease in on arrival
+      desiredSpeed *= Math.max(0.25, 1 - Math.abs(dh) / Math.PI); // slow in tight turns
+      // Never slither into the camera: full stop just outside personal space.
+      if (controls && playerDist < 1.1) desiredSpeed = 0;
+    } else if (snakeCtl.state === "watch" && controls) {
+      // Rotate the reared body toward the player — slowly; menace is patient.
+      const desired = Math.atan2(controls.position.x - snake.position.x, controls.position.z - snake.position.z);
+      let dh = desired - snakeCtl.heading;
+      dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+      snakeCtl.heading += Math.max(-0.9 * dtN, Math.min(0.9 * dtN, dh));
+    } else if (snakeCtl.state === "bask" && leaf) {
+      // A landing leaf draws a lazy orientation — alive, attentive, harmless.
+      const desired = Math.atan2(leaf.position.x - snake.position.x, leaf.position.z - snake.position.z);
+      let dh = desired - snakeCtl.heading;
+      dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+      snakeCtl.heading += Math.max(-0.5 * dtN, Math.min(0.5 * dtN, dh));
+    }
+    snakeCtl.speed += (desiredSpeed - snakeCtl.speed) * Math.min(1, dtN * 3);
+    if (snakeCtl.speed > 0.005) {
+      snake.position.x += Math.sin(snakeCtl.heading) * snakeCtl.speed * dtN;
+      snake.position.z += Math.cos(snakeCtl.heading) * snakeCtl.speed * dtN;
+      snakeClampToBounds(snake.position);
+    }
+    snake.rotation.y = snakeCtl.heading;
+
+    // Walk clip rate follows actual ground speed so the body's undulation and
+    // the root motion agree — no ice-skating.
+    if (hasRig && moving && sp.current) {
+      sp.current.timeScale = Math.max(0.55, Math.min(2.2, (snakeCtl.speed || 0.001) / SNAKE_REF_SPEED));
+    }
+
+    // --- Head anchor follows the actual head bone (the hand-sniff target) ---
+    if (sp && sp.headBone) {
+      sp.headBone.getWorldPosition(_snkV1);
+      headAnchor.position.copy(snake.worldToLocal(_snkV1));
+    }
+
+    // --- Post-mixer head tracking while watching ---
+    // The mixer rewrites bone rotations every frame, so the gentle "it is
+    // looking at you" turn is applied after mixer.update as a small additive
+    // twist on Neck + Head. Angles are clamped tight — a hint, not an owl.
+    if (hasRig) sp.mixer.update(dtN);
+    const trackWeight = (snakeCtl.state === "watch" || snakeCtl.state === "defensive") ? 1 : 0;
+    if (hasRig && (trackWeight > 0 || Math.abs(snakeCtl.headYaw) > 0.001) && controls && sp.neckBone) {
+      const worldYaw = Math.atan2(controls.position.x - snake.position.x, controls.position.z - snake.position.z);
+      let rel = worldYaw - snake.rotation.y;
+      rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+      const clamped = Math.max(-0.55, Math.min(0.55, rel)) * trackWeight;
+      snakeCtl.headYaw += (clamped - snakeCtl.headYaw) * Math.min(1, dtN * 4);
+      sp.neckBone.rotation.y += snakeCtl.headYaw * 0.5;
+      if (sp.headBone) sp.headBone.rotation.y += snakeCtl.headYaw * 0.5;
+    }
+
+    // --- Slither rustle tracks the moving body ---
+    if (window.PhobiaAudio && window.PhobiaAudio.startSlither) {
+      if (!slitherSound && snakeCtl.speed > 0.05) slitherSound = window.PhobiaAudio.startSlither();
+      if (slitherSound) {
+        slitherSound.set(
+          { x: snake.position.x, y: snake.position.y + 0.1, z: snake.position.z },
+          Math.min(1, snakeCtl.speed / 0.9)
+        );
+      }
+    }
+  }
 
   // ----- Extend hand (real human action with a calm snake) -----
   // The user can press-and-hold to slowly extend a hand toward the snake.
@@ -18072,7 +19010,9 @@ function setupSnakes(scene, camera, level) {
       // genuinely looking at the creature, not watching themselves.
       cameraModeLocked: "fp",
     },
-    hands: { sleeveColor: 0x4a3a25 },
+    // NOTE: no generic `hands` here — this scene builds its own palm-up
+    // `handGroup` (below) for the "extend hand" mechanic. Requesting the
+    // generic first-person hands too would render a second forearm on top.
     bloom: { strength: 0.35, threshold: 0.92 },
     surface: "grass",   // outdoor path with grass + dirt
     update(t, controls, dt) {
@@ -18115,13 +19055,8 @@ function setupSnakes(scene, camera, level) {
             }, 4000);
           }
         }
-        // Snake briefly orients toward the leaf
-        if (snake && leaf) {
-          const dx = leaf.position.x - snake.position.x;
-          const dz = leaf.position.z - snake.position.z;
-          const targetYaw = Math.atan2(dx, dz);
-          snake.rotation.y += (targetYaw - snake.rotation.y) * 0.04;
-        }
+        // (Orientation toward the leaf is handled by the locomotion
+        // controller's bask state — the whole body turns lazily, no snap.)
       }
       // Stillness mechanic: when user holds "still" + isn't moving, the snake
       // gradually slithers AWAY (it's more afraid of you when you're calm).
@@ -18164,20 +19099,31 @@ function setupSnakes(scene, camera, level) {
         sniffT = Math.max(0, sniffT - dtN * 0.10);
       }
 
-      // Snake retreats up to 1.5 m as stillness builds, but if the user
-      // is sniff-meeting the snake, the snake stops retreating (it's
-      // engaged, not afraid).
-      const retreat = sniffing ? 0 : stillness;
-      snake.position.z = baseSnakeZ - retreat * 1.5;
-      // Gentle yaw sway when no leaf is being tracked; the rigged model's idle
-      // clip provides the body slither + tongue flick.
-      if (!leaf) snake.rotation.y = Math.sin(t * 0.6) * 0.05;
-      const sp = snake.userData.parts;
-      if (sp && sp.mixer) sp.mixer.update(dtN);
+      // Drive the locomotion controller — behaviour states, root motion,
+      // clip-rate sync, head tracking, slither rustle. The stillness retreat
+      // and the "engaged while sniffing" rule both live inside it now.
+      snakeUpdate(t, dtN, controls, sniffing);
+      // Meadow life: grass blades sway on individual wind phases, a little
+      // harder in the gusts (cheap — rotation only, no shader work).
+      const gust = 1 + Math.sin(t * 0.43) * 0.5;
+      for (let gi = 0; gi < grassTufts.length; gi++) {
+        const g = grassTufts[gi];
+        g.rotation.z = Math.sin(t * 1.7 + g.userData.windPhase) * g.userData.windAmp * gust;
+      }
     },
     dispose() {
-      // Detach the hand group from the camera so it doesn't leak across mounts
-      try { camera.remove(handGroup); } catch {}
+      // Stop the moving slither rustle (it's a looping source, not a one-shot).
+      try { if (slitherSound) { slitherSound.stop(); slitherSound = null; } } catch {}
+      // Dispose the hand group's own geometry/materials BEFORE detaching it.
+      // (The global disposer walks the scene graph; once we remove handGroup
+      // from the camera it's unreachable, so we must free it here ourselves.)
+      try {
+        handGroup.traverse(o => {
+          if (o.geometry) o.geometry.dispose();
+          if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m && m.dispose());
+        });
+        camera.remove(handGroup);
+      } catch {}
     },
   };
 }
@@ -18484,7 +19430,17 @@ function setupSpeaking(scene, camera, level) {
       eye.position.set(sx * 0.04, 0.83, 0.115);
       person.add(eye);
     }
-    return { root: person, head, hair, mood: 0 };
+    // A phone some members raise — the dreaded "they're on their phones / not
+    // even watching" cue. Emissive so it glows like a screen; hidden until raised.
+    const phone = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.05, 0.09),
+      new THREE.MeshBasicMaterial({ color: 0xaadcff })
+    );
+    phone.position.set(0.1, 0.56, 0.17);
+    phone.visible = false;
+    person.add(phone);
+    return { root: person, head, hair, phone, mood: 0,
+             nextPhone: 3 + Math.random() * 13, nextWhisper: 5 + Math.random() * 16, whisperT: 0 };
   }
 
   // crowd 0 = "Empty room / practising alone" → spawn no audience at all.
@@ -18668,14 +19624,30 @@ function setupSpeaking(scene, camera, level) {
       // than the whole body twisting.
       const settle = (speakingPressed || pauseSilence > 0.5) ? 0.2 : 1.0;
       audienceMembers.forEach((m, i) => {
-        m.head.rotation.y = Math.sin(t * 0.5 + i * 0.7) * 0.10 * settle;
-        // High-confidence speakers earn nods from a chunk of the crowd
-        if (i % 4 === 0 && confidence > 0.3) {
-          m.head.rotation.x = Math.sin(t * 0.9 + i) * 0.10 * (confidence - 0.2);
+        let headY = Math.sin(t * 0.5 + i * 0.7) * 0.10 * settle;
+        let headX = 0;
+        // High-confidence speakers earn nods from a chunk of the crowd; when you
+        // falter (low confidence) some glance down/away — disengaged, which is
+        // exactly what glossophobia reads as ("I'm losing them").
+        if (i % 4 === 0 && confidence > 0.3) headX = Math.sin(t * 0.9 + i) * 0.10 * (confidence - 0.2);
+        else if (confidence < 0.25 && i % 3 === 1) headX = 0.16;
+        // Phone glances — a member raises a phone and looks down at the screen.
+        m.nextPhone -= d;
+        if (m.nextPhone <= 0) {
+          m.phone.visible = !m.phone.visible;
+          m.nextPhone = m.phone.visible ? (2.5 + Math.random() * 4) : (7 + Math.random() * 16);
         }
-        // Hair follows the head rotation
-        m.hair.rotation.y = m.head.rotation.y;
-        m.hair.rotation.x = m.head.rotation.x;
+        if (m.phone.visible) headX = 0.34;            // head down at the screen
+        // Whisper to a neighbour — head turns to the side for a beat.
+        m.nextWhisper -= d;
+        if (m.nextWhisper <= 0) { m.whisperT = 1.0; m.nextWhisper = 9 + Math.random() * 18; }
+        if (m.whisperT > 0) { m.whisperT -= d; headY = (i % 2 ? 0.5 : -0.5); }
+        m.head.rotation.y = headY; m.head.rotation.x = headX;
+        m.hair.rotation.y = headY; m.hair.rotation.x = headX;
+        // Body life: a slow breathing rise and a faint individual sway —
+        // without these the bodies are mannequins under moving heads.
+        m.root.scale.y = 1 + Math.sin(t * 0.8 + i * 1.31) * 0.008;
+        m.root.rotation.z = Math.sin(t * 0.23 + i * 2.17) * 0.012;
       });
       // Friendly face — nods when the user is actively speaking
       if (friendlyHead) {
@@ -18794,6 +19766,7 @@ function setupDriving(scene, camera, level) {
   // Lane dashes. polygonOffset pulls them toward the camera in the depth
   // buffer so they don't z-fight with the road plane way down the 400 m strip
   // (a 1 cm height gap isn't enough at that distance).
+  const dashes = [];
   for (let z = 0; z > -400; z -= 8) {
     const dash = new THREE.Mesh(
       new THREE.PlaneGeometry(0.25, 4),
@@ -18802,6 +19775,22 @@ function setupDriving(scene, camera, level) {
     dash.rotation.x = -Math.PI / 2;
     dash.position.set(0, -0.985, z);
     scene.add(dash);
+    dashes.push(dash);
+  }
+  // Roadside reflector posts that whip past — the strongest ego-motion cue
+  // (the lane dashes alone read as "stationary road"; objects streaking past
+  // your periphery are what make speed felt). Streamed in the update loop.
+  const posts = [];
+  for (let z = 0; z > -400; z -= 16) {
+    for (const sx of [-5.6, 5.6]) {
+      const post = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06, 0.06, 1.0, 6),
+        new THREE.MeshStandardMaterial({ color: 0xb8c0c8, emissive: 0xff6644, emissiveIntensity: 0.25, roughness: 0.6 })
+      );
+      post.position.set(sx, -0.5, z);
+      scene.add(post);
+      posts.push(post);
+    }
   }
   // Roadside grass
   for (const sx of [-1, 1]) {
@@ -19128,6 +20117,7 @@ function setupDriving(scene, camera, level) {
   camera.updateProjectionMatrix();
 
   let drivingControls = null;
+  let drivingDisposed = false; // set on unmount; guards deferred indicator-audio timeouts
   let brakeFactor = 1.0;       // multiplier for car relative-speed (1 = normal, 0.5 = braking)
   function wireDrivingCmds() {
     const bar = document.querySelector('.scene-cmd-bar[data-scene="driving"]');
@@ -19152,7 +20142,7 @@ function setupDriving(scene, camera, level) {
           }
           case "indicator":
             if (window.PhobiaAudio && window.PhobiaAudio.indicatorClick) {
-              for (let i = 0; i < 4; i++) setTimeout(() => window.PhobiaAudio.indicatorClick(), i * 600);
+              for (let i = 0; i < 4; i++) setTimeout(() => { if (!drivingDisposed && window.PhobiaAudio) window.PhobiaAudio.indicatorClick(); }, i * 600);
             }
             // Blink the right-turn indicator lamp on the cluster for ~3 s
             indicatorSide = 1;
@@ -19324,10 +20314,22 @@ function setupDriving(scene, camera, level) {
           car.position.z = -120 - Math.random() * 100;
           car.position.x = car.userData.lane * 3.2;
           car.userData.signal = 0;
+          car.userData.targetLane = null;
         }
         if (car.userData.signal == null) car.userData.signal = 0;
         if (car.userData.signal === 0 && Math.random() < 0.0008) {
           car.userData.signal = 1.5;
+          // Signal first, THEN move over — the blink used to be decoration;
+          // now it predicts a real lane change, which is what a mirror-checking
+          // driver's brain expects traffic to do.
+          const want = car.userData.lane + (Math.random() < 0.5 ? -1 : 1);
+          car.userData.targetLane = Math.max(-1, Math.min(1, want));
+        }
+        // Carry out the signalled lane change as a smooth ~1.5 s drift.
+        if (car.userData.targetLane != null && car.userData.targetLane !== car.userData.lane) {
+          const targetX = car.userData.targetLane * 3.2;
+          car.position.x += (targetX - car.position.x) * Math.min(1, d * 1.2);
+          if (Math.abs(targetX - car.position.x) < 0.06) car.userData.lane = car.userData.targetLane;
         }
         // Blink one tail lamp amber while signalling; otherwise hold tail-light
         // red. (Previously this recoloured car.children[1] — a wheel whose
@@ -19340,6 +20342,24 @@ function setupDriving(scene, camera, level) {
         } else if (sigMat) {
           sigMat.color.setHex(0xff3322);
         }
+      }
+      // ---- Road streaming toward you = the felt sense of speed ----
+      // The lane dashes + roadside posts whip past at our ego-speed (faster on
+      // higher rungs + while accelerating, slower while braking). This is the
+      // cue the scene was missing — speed was only inferable from oncoming cars.
+      const egoSpeed = (10 + speed * 26) * accelBoost * brakeFactor;
+      for (const m of dashes) { m.position.z += egoSpeed * d; if (m.position.z > 10) m.position.z -= 400; }
+      for (const m of posts)  { m.position.z += egoSpeed * d; if (m.position.z > 10) m.position.z -= 400; }
+      // Fear from speed + how close the nearest car is (so the hold-timer reads
+      // real distress instead of wall-clock).
+      if (window.PhobiaFear) {
+        const spd = Math.min(1, egoSpeed / 36);
+        let nearCar = 0;
+        for (const car of otherCars) {
+          const cd = Math.hypot(car.position.x, car.position.z);
+          if (cd < 4) nearCar = Math.max(nearCar, 1 - cd / 4);
+        }
+        window.PhobiaFear.setInput("proximity", Math.min(1, spd * 0.6 + nearCar * 0.55));
       }
       // Rain falls
       if (rain) {
@@ -19402,6 +20422,11 @@ function setupDriving(scene, camera, level) {
       const brakeOn = brakePressed > 0.30 || brakeFactor < 0.5;
       lampMatBrake.emissive.setHex(brakeOn ? 0xff3030 : 0x000000);
       lampMatBrake.emissiveIntensity = brakeOn ? 1 : 0;
+    },
+    dispose() {
+      // Stops the deferred indicator-click audio timeouts from sounding after
+      // the user has already driven off / left the scene.
+      drivingDisposed = true;
     },
   };
 }
@@ -19594,6 +20619,7 @@ function setupStorms(scene, camera, level) {
   let flash = 0;
   let boltLife = 0;
   let restrikePending = false;
+  let shakeAmt = 0;            // concussion from a close strike's thunder
   let camFlashTint = 0;
   let lastFlashT = -10;
 
@@ -19752,6 +20778,10 @@ function setupStorms(scene, camera, level) {
   camera.updateProjectionMatrix();
 
   let stormsControls = null;
+  // Set on unmount so the deferred thunder/re-strike callbacks scheduled inside
+  // update() don't fire against a torn-down scene (e.g. thunder booming seconds
+  // after the user has already left the storm).
+  let disposed = false;
   function wireStormsCmds() {
     const bar = document.querySelector('.scene-cmd-bar[data-scene="storms"]');
     if (!bar || bar.dataset.wired === "1") return;
@@ -19845,8 +20875,11 @@ function setupStorms(scene, camera, level) {
       // strike is a real branching bolt + a soft sky glow + a delayed thunder.
       if (t > nextStrike) {
         generateBolt();
-        flash = 0.45 + intensity * 0.35;   // dim distant flicker → bright, close flash
-        boltLife = 1.0;         // bolt geometry is bright at strike, fades fast
+        // Is this one CLOSE? Close strikes flash harder, boom almost at once,
+        // and hit with a physical concussion (camera shake + a fear spike).
+        const isClose = Math.random() < (0.22 + intensity * 0.5);
+        flash = (isClose ? 0.8 : 0.45) + intensity * 0.3;
+        boltLife = isClose ? 1.3 : 1.0;   // bolt geometry is bright at strike, fades fast
         lastFlashT = t;
         nextStrike = t + 3 + (1 - intensity) * 8 + Math.random() * 2;
         // Capture where this bolt actually struck so the thunder rolls in
@@ -19862,7 +20895,7 @@ function setupStorms(scene, camera, level) {
         if (Math.random() < 0.6) {
           restrikePending = true;
           setTimeout(() => {
-            if (!restrikePending) return;
+            if (disposed || !restrikePending) return;
             restrikePending = false;
             boltLife = Math.max(boltLife, 0.7);
             flash = Math.max(flash, 0.55);
@@ -19871,10 +20904,20 @@ function setupStorms(scene, camera, level) {
         // Thunder follows after a delay (sound is slower than light) and is
         // panned from the bolt's actual position — so a strike to the left
         // rumbles from your left.
-        const thunderDelay = (1 - intensity) * 4000 + 500;
+        // Sound lags light. A CLOSE strike's boom is almost immediate and hits
+        // like a physical wave — the concussion (shake + fear spike) fires WITH
+        // the thunder, not the flash, so a near strike startles the way a real
+        // one does. Distant strikes keep their long, gentle delay.
+        const thunderDelay = isClose ? (160 + Math.random() * 220) : ((1 - intensity) * 4000 + 600);
         setTimeout(() => {
+          if (disposed) return;
           if (window.PhobiaAudio && window.PhobiaAudio.thunder) {
-            window.PhobiaAudio.thunder(0.4 + intensity * 0.6, true, strikePos);
+            window.PhobiaAudio.thunder((isClose ? 0.95 : 0.4) + intensity * 0.25, true, strikePos);
+          }
+          if (isClose) {
+            shakeAmt = Math.max(shakeAmt, 1.0);            // the concussion you feel
+            flash = Math.max(flash, 0.65);                 // the boom briefly re-lights the sky
+            if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.7 + intensity * 0.2);
           }
         }, thunderDelay);
       }
@@ -19887,12 +20930,27 @@ function setupStorms(scene, camera, level) {
       // Soft ambient flash. Capped well below pure white so it never washes
       // the scene out into "atomic explosion" territory.
       lightning.intensity = flash * (1.4 + intensity * 0.9);
+      // Concussion shake from a close strike's thunder — sharp, decays fast.
+      // Applied after the controls write the camera each frame, so it reads as
+      // a jolt and resets cleanly (no drift).
+      shakeAmt = Math.max(0, shakeAmt - d * 2.4);
+      if (shakeAmt > 0.001) {
+        const s = shakeAmt * shakeAmt;
+        camera.position.x += (Math.random() - 0.5) * 0.13 * s;
+        camera.position.y += (Math.random() - 0.5) * 0.11 * s;
+        camera.rotation.z += (Math.random() - 0.5) * 0.022 * s;
+      }
       // Camera tint is subtle and biased blue; capped at ~0.18.
       camFlashTint += (flash * 0.20 - camFlashTint) * 0.25;
       const r = 0.055 + camFlashTint * 0.6;
       const g = 0.071 + camFlashTint * 0.7;
       const b = 0.125 + camFlashTint * 1.0;
       scene.background.setRGB(r, g, b);
+    },
+    dispose() {
+      // Stop any in-flight thunder / re-strike timers from firing after we
+      // leave (their callbacks bail out on this flag).
+      disposed = true;
     },
   };
 }
@@ -19969,10 +21027,49 @@ function setupDark(scene, camera, level) {
   shelf.position.set(2, -0.1, -3);
   scene.add(shelf);
 
+  // ---- Lurking presences (the nyctophobia core) ----
+  // Dark, faceless shapes at the room's edges with faint, blinking eyes. In the
+  // dark they CREEP toward you while you're not looking at them; sweep the
+  // flashlight onto one and it freezes, then slips away to a far edge — the
+  // "I looked, and there was nothing there" disconfirmation that exposure is
+  // built on. More of them, and bolder, on the darker rungs.
+  const lurkers = [];
+  const lurkerCount = dim > 0.7 ? 4 : dim > 0.45 ? 3 : dim > 0.25 ? 2 : 0;
+  function placeLurkerFar(g) {
+    const ang = Math.random() * Math.PI * 2;
+    const rad = 2.6 + Math.random() * 0.7;
+    g.position.set(
+      Math.max(-W/2 + 0.4, Math.min(W/2 - 0.4, Math.sin(ang) * rad)),
+      -1,
+      Math.max(-D/2 + 0.4, Math.min(D/2 - 0.4, -1 + Math.cos(ang) * rad))
+    );
+  }
+  for (let i = 0; i < lurkerCount; i++) {
+    const g = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x070809, roughness: 1.0 });
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.95, 5, 9), bodyMat);
+    torso.position.y = 0.18; g.add(torso);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), bodyMat);
+    head.position.y = 0.92; g.add(head);
+    const eyeMatL = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const eyeMatR = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.026, 8, 6), eyeMatL);
+    const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.026, 8, 6), eyeMatR);
+    eyeL.position.set(-0.055, 0.95, 0.14); eyeR.position.set(0.055, 0.95, 0.14);
+    g.add(eyeL); g.add(eyeR);
+    g.userData = { bodyMat, eyeMatL, eyeMatR, revealT: 0, blink: 0, blinkAt: 1 + Math.random() * 4 };
+    placeLurkerFar(g);
+    scene.add(g);
+    lurkers.push(g);
+  }
+  let lurkerNamed = false;            // one-time reframing voice cue
+  const _fwd = new THREE.Vector3(), _toL = new THREE.Vector3();
+
   camera.fov = 70;
   camera.updateProjectionMatrix();
 
   let flashlightHeld = false;
+  let darkDisposed = false;
   let matchT = 0;       // 0..1, decays after the user lights a match
   let matchLight = null;
 
@@ -20100,9 +21197,12 @@ function setupDark(scene, camera, level) {
     surface: "soft",   // carpeted dim room
     update(t, controls, dt) {
       const d = dt || 0.016;
-      // Flashlight on while held — brighter, narrower
+      // Flashlight on while held — brighter, narrower. Smoothing is
+      // delta-timed so the ramp feels identical at 60 Hz and 120 Hz
+      // (flashlight.intensity is persistent state, so a bare *0.12 per frame
+      // ramped twice as fast on high-refresh displays).
       const target = flashlightHeld ? (1.6 * (1 - dim * 0.4)) : (0.7 * (1 - dim * 0.8));
-      flashlight.intensity += (target - flashlight.intensity) * 0.12;
+      flashlight.intensity += (target - flashlight.intensity) * Math.min(1, d * 7.2);
       // Match — bright warm flicker that decays over ~5s
       if (matchT > 0 && matchLight) {
         matchT = Math.max(0, matchT - d * 0.2);
@@ -20126,11 +21226,68 @@ function setupDark(scene, camera, level) {
           matchGroup.visible = false;
         }
       }
-      // Subtle lamp flicker at the darkest rungs (the imagination filling in)
-      if (dim > 0.7 && Math.random() < 0.005) {
-        lamp.intensity = (1.6 * (1 - dim)) * (0.4 + Math.random() * 0.5);
-        setTimeout(() => { lamp.intensity = 1.6 * (1 - dim); }, 80);
+      // ---- Lurkers: creep in the dark, dispelled by the light ----
+      if (lurkers.length && controls) {
+        camera.getWorldDirection(_fwd); _fwd.y = 0; _fwd.normalize();
+        let nearestUnlit = 99, eyesVisible = false;
+        for (const g of lurkers) {
+          const ud = g.userData;
+          const dx = controls.position.x - g.position.x;
+          const dz = controls.position.z - g.position.z;
+          const dist = Math.hypot(dx, dz) || 0.001;
+          g.rotation.y = Math.atan2(dx, dz);                  // face the player
+          _toL.set(g.position.x - controls.position.x, 0, g.position.z - controls.position.z).normalize();
+          const aimed = _fwd.dot(_toL);                       // 1 = looking right at it
+          const lit = flashlightHeld && aimed > 0.9 && dist < 7.5 && flashlight.intensity > 0.4;
+          if (lit) {
+            ud.revealT = Math.min(1, ud.revealT + d * 3.5);
+            if (ud.revealT >= 1) {                            // fully revealed → it slips away
+              placeLurkerFar(g);
+              ud.revealT = 0;
+              if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.45);
+              if (!lurkerNamed && window.PhobiaVoice) {
+                lurkerNamed = true;
+                window.PhobiaVoice.speak("You looked, and there was nothing there. The dark made it bigger than it was.");
+              }
+            }
+          } else {
+            ud.revealT = Math.max(0, ud.revealT - d * 2);
+            if (dist > 1.4) {                                 // creep closer while unobserved
+              const creep = (0.12 + dim * 0.28) * d;
+              g.position.x += (dx / dist) * creep;
+              g.position.z += (dz / dist) * creep;
+            }
+            nearestUnlit = Math.min(nearestUnlit, dist);
+          }
+          const bodyShade = 0.027 + ud.revealT * 0.05;        // lifts from pure black only when lit
+          ud.bodyMat.color.setRGB(bodyShade, bodyShade, bodyShade + 0.006);
+          ud.blinkAt -= d;                                    // eyes blink
+          if (ud.blinkAt < 0) { ud.blink = 0.14; ud.blinkAt = 2.5 + Math.random() * 4.5; }
+          ud.blink = Math.max(0, ud.blink - d);
+          const near = 1 - Math.min(1, (dist - 1) / 4.5);
+          const eyeV = (ud.blink > 0 || lit) ? 0 : (0.28 + near * 1.05);  // faint red, glows brighter as it nears
+          ud.eyeMatL.color.setRGB(eyeV, eyeV * 0.1, eyeV * 0.08);
+          ud.eyeMatR.color.setRGB(eyeV, eyeV * 0.1, eyeV * 0.08);
+          if (eyeV > 0.2) eyesVisible = true;
+        }
+        if (window.PhobiaFear) {
+          const prox = Math.max(0, Math.min(1, 1 - (nearestUnlit - 1.0) / 4.5));
+          window.PhobiaFear.setInput("proximity", prox * 0.9);
+          window.PhobiaFear.setInput("gaze", eyesVisible ? 0.55 : 0.2);
+        }
       }
+      // Subtle lamp flicker at the darkest rungs (the imagination filling in).
+      // Probability is per-second (× d) so the flicker rate doesn't double on
+      // a 120 Hz display.
+      if (dim > 0.7 && Math.random() < 0.3 * d) {
+        lamp.intensity = (1.6 * (1 - dim)) * (0.4 + Math.random() * 0.5);
+        setTimeout(() => { if (!darkDisposed) lamp.intensity = 1.6 * (1 - dim); }, 80);
+      }
+    },
+    dispose() {
+      // Guards the in-flight lamp-flicker restore timeout from writing a
+      // torn-down light after the user leaves.
+      darkDisposed = true;
     },
   };
 }
@@ -20742,7 +21899,6 @@ const AvatarPreview = (() => {
     // way it'll look during exposure. ACES + soft exposure + shared env map.
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
-    renderer.useLegacyLights = false;
     container.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(32, w / h, 0.05, 50);
