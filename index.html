@@ -4254,6 +4254,53 @@ const PhobiaVoice = (() => {
     else if (stored === "1") muted = true;
   } catch {}
 
+  // ---- Recorded "Mira" voice ----
+  // Every static line is pre-rendered to a small AAC clip (assets/voice/,
+  // built by scripts/generate-voice.mjs) so the guide sounds IDENTICAL on
+  // every device — browser TTS quality is a lottery, and on some Android/
+  // Linux builds it's a robot or nothing. Recorded mode is the default once
+  // the manifest loads; any line not in it (runtime-templated text) falls
+  // back to live TTS seamlessly. Picking a system voice in Settings switches
+  // the mode to "tts" and persists.
+  let manifest = null;            // { "<normalized line>": "<hash>.m4a" }
+  let mode = "tts";               // flips to "recorded" when the manifest lands
+  let player = null;              // shared HTMLAudioElement for clips
+  const canPlayAAC = (() => {
+    try { return !!new Audio().canPlayType('audio/mp4; codecs="mp4a.40.2"'); }
+    catch { return false; }
+  })();
+  const normalize = (s) => String(s).replace(/\s+/g, " ").trim();
+  if (canPlayAAC && typeof fetch === "function") {
+    fetch("assets/voice/manifest.json")
+      .then(r => (r && r.ok ? r.json() : null))
+      .then(j => {
+        if (j && j.files && Object.keys(j.files).length) {
+          manifest = j.files;
+          let pref = null;
+          try { pref = localStorage.getItem("fobia.voiceMode"); } catch {}
+          if (pref !== "tts") mode = "recorded";
+        }
+      })
+      .catch(() => {});
+  }
+  function ensurePlayer() {
+    if (!player) {
+      player = new Audio();
+      player.preload = "auto";
+    }
+    return player;
+  }
+  function stopPlayback() {
+    if (synth) try { synth.cancel(); } catch {}
+    if (player) {
+      try {
+        player.onended = player.onerror = null;   // orphan the old closures
+        player.pause();
+        player.removeAttribute("src");
+      } catch {}
+    }
+  }
+
   // ---- Voice selection: score EVERY installed voice instead of walking a
   // fixed name list. Premium / enhanced / neural variants (the ones that
   // actually sound human) outrank their plain siblings, which outrank remote
@@ -4314,7 +4361,6 @@ const PhobiaVoice = (() => {
   }
   function playNext() {
     clearTimers();
-    if (!synth) { speaking = false; setDuck(false); return; }
     const item = queue.shift();
     if (!item) { speaking = false; setDuck(false); return; }
     speaking = true;
@@ -4325,6 +4371,37 @@ const PhobiaVoice = (() => {
       advanced = true;
       gapTimer = setTimeout(playNext, delay);
     };
+    // --- Recorded clip: one file per line, pacing baked in at render time ---
+    if (item.kind === "clip") {
+      // If the file can't load/play (offline before it was cached, decode
+      // problem, autoplay not unlocked), the line is re-queued as live TTS
+      // rather than silently dropped.
+      const fallbackToTTS = () => {
+        if (item.text && synth) {
+          const parts = splitSentences(item.text);
+          queue.unshift(...parts.map((p, i) => ({
+            kind: "tts", text: p, endOfLine: i === parts.length - 1, volume: item.volume,
+          })));
+        }
+        advance(80);
+      };
+      try {
+        const a = ensurePlayer();
+        a.onended = a.onerror = null;
+        a.src = item.url;
+        a.volume = Math.max(0, Math.min(1, item.volume == null ? 0.95 : item.volume));
+        a.onended = () => advance(620);                    // breath gap between lines
+        a.onerror = fallbackToTTS;
+        const p = a.play();
+        if (p && p.catch) p.catch(fallbackToTTS);
+        watchdog = setTimeout(() => advance(0), 30000);    // clips are < 20 s
+      } catch {
+        fallbackToTTS();
+      }
+      return;
+    }
+    // --- Live TTS sentence chunk ---
+    if (!synth) { speaking = false; setDuck(false); return; }
     try {
       const u = new SpeechSynthesisUtterance(item.text);
       if (voice) u.voice = voice;
@@ -4354,18 +4431,27 @@ const PhobiaVoice = (() => {
     } catch {}
     // `force` lets deliberate, user-initiated samples (the settings "Hear it"
     // button) play while guidance is muted — without touching the stored pref.
-    if ((muted && !opts.force) || !synth || !text) return;
-    const parts = splitSentences(text);
-    const items = parts.map((p, i) => ({
-      text: p,
-      endOfLine: i === parts.length - 1,
-      rate: opts.rate, pitch: opts.pitch, volume: opts.volume,
-    }));
+    if ((muted && !opts.force) || !text) return;
+    // Recorded clip when we have one for this exact line; live TTS otherwise.
+    const norm = normalize(text);
+    let items;
+    if (mode === "recorded" && manifest && manifest[norm]) {
+      items = [{ kind: "clip", url: "assets/voice/" + manifest[norm], volume: opts.volume, text: norm }];
+    } else {
+      if (!synth) return;
+      const parts = splitSentences(text);
+      items = parts.map((p, i) => ({
+        kind: "tts",
+        text: p,
+        endOfLine: i === parts.length - 1,
+        rate: opts.rate, pitch: opts.pitch, volume: opts.volume,
+      }));
+    }
     if (opts.urgent) {
       // Panic support cannot wait behind ambient commentary.
       queue = items;
       clearTimers();
-      try { synth.cancel(); } catch {}
+      stopPlayback();
       speaking = false;
       playNext();
       return;
@@ -4381,8 +4467,14 @@ const PhobiaVoice = (() => {
     clearTimers();
     speaking = false;
     setDuck(false);
-    if (synth) try { synth.cancel(); } catch {}
+    stopPlayback();
   }
+  function setMode(m) {
+    mode = m === "recorded" && manifest ? "recorded" : "tts";
+    try { localStorage.setItem("fobia.voiceMode", mode); } catch {}
+  }
+  function getMode() { return mode; }
+  function hasRecorded() { return !!manifest; }
   function setMuted(m) {
     muted = !!m;
     try { localStorage.setItem("fobia.voiceMuted", muted ? "1" : "0"); } catch {}
@@ -4402,8 +4494,10 @@ const PhobiaVoice = (() => {
   }
 
   return {
-    speak, stop, setMuted, isMuted: () => muted, setRate, hasVoice: () => !!synth,
+    speak, stop, setMuted, isMuted: () => muted, setRate,
+    hasVoice: () => !!synth || !!manifest,
     listVoices, setVoice, isSpeaking: () => speaking,
+    setMode, getMode, hasRecorded,
   };
 })();
 window.PhobiaVoice = PhobiaVoice;
@@ -5547,19 +5641,28 @@ function openSettings() {
   if (voiceSel && PhobiaVoice.listVoices) {
     const fill = () => {
       const voices = PhobiaVoice.listVoices().slice(0, 8);
-      if (!voices.length) return false;
+      const hasRec = PhobiaVoice.hasRecorded && PhobiaVoice.hasRecorded();
+      if (!voices.length && !hasRec) return false;
       let savedURI = "";
       try { savedURI = localStorage.getItem("fobia.voiceURI") || ""; } catch {}
-      voiceSel.innerHTML = voices.map(v =>
-        `<option value="${v.uri.replace(/"/g, "&quot;")}" ${v.uri === savedURI ? "selected" : ""}>${v.name}</option>`
-      ).join("");
+      const vMode = PhobiaVoice.getMode ? PhobiaVoice.getMode() : "tts";
+      voiceSel.innerHTML =
+        (hasRec ? `<option value="__recorded__" ${vMode === "recorded" ? "selected" : ""}>Mira — recorded (recommended)</option>` : "") +
+        voices.map(v =>
+          `<option value="${v.uri.replace(/"/g, "&quot;")}" ${vMode !== "recorded" && v.uri === savedURI ? "selected" : ""}>${v.name}</option>`
+        ).join("");
       return true;
     };
     if (!fill() && window.speechSynthesis) {
       window.speechSynthesis.addEventListener("voiceschanged", fill, { once: true });
     }
     voiceSel.onchange = () => {
-      PhobiaVoice.setVoice(voiceSel.value);
+      if (voiceSel.value === "__recorded__") {
+        PhobiaVoice.setMode("recorded");
+      } else {
+        PhobiaVoice.setVoice(voiceSel.value);
+        PhobiaVoice.setMode("tts");
+      }
       // Immediate feedback in the chosen voice — a deliberate sample plays
       // even while guidance is muted (force), without touching the pref.
       PhobiaVoice.speak("I'll walk each step with you. Slow breath in — and out.", { urgent: true, force: true });

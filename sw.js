@@ -11,7 +11,7 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v9.0-living-world";
+const VERSION = "mira-v9.2-recorded-voice";
 const SHELL = [
   "./",
   "./index.html",
@@ -25,6 +25,10 @@ const SHELL = [
   "./assets/models/Husky.gltf",
   "./assets/models/Spider.glb",
   "./assets/models/Snake.glb",
+  // Recorded therapist-voice manifest (clips themselves are cached as they
+  // play via the runtime network-first handler; a missing clip falls back to
+  // live TTS, so partial caches degrade gracefully offline).
+  "./assets/voice/manifest.json",
 ];
 
 self.addEventListener("install", (event) => {
