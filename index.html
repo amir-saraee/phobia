@@ -9090,47 +9090,95 @@ class FPControls {
     // the starting position) so users on a keyboard can shift weight without
     // the scene allowing full traversal.
     let movingNow = false;
+    // Input direction in world space (unit length) — assembled from key
+    // flags; the touch joystick drives the same flags.
+    let ix = 0, iz = 0;
     const wantsKey = this.keys.KeyW || this.keys.ArrowUp ||
                      this.keys.KeyS || this.keys.ArrowDown ||
                      this.keys.KeyA || this.keys.ArrowLeft ||
                      this.keys.KeyD || this.keys.ArrowRight;
     if (wantsKey && (this.opts.mode === "walkable" || this.opts.mode === "lookOnly")) {
-      const isLean = this.opts.mode === "lookOnly";
-      const speed = (isLean ? 0.85 : this.opts.speed) * dt;
       const sinY = Math.sin(this.yaw), cosY = Math.cos(this.yaw);
-      let mx = 0, mz = 0;
-      if (this.keys.KeyW || this.keys.ArrowUp)    { mx += -sinY; mz += -cosY; }
-      if (this.keys.KeyS || this.keys.ArrowDown)  { mx +=  sinY; mz +=  cosY; }
-      if (this.keys.KeyD || this.keys.ArrowRight) { mx +=  cosY; mz += -sinY; }
-      if (this.keys.KeyA || this.keys.ArrowLeft)  { mx += -cosY; mz +=  sinY; }
-      const len = Math.hypot(mx, mz);
-      if (len > 0) {
-        movingNow = true;
-        mx = (mx / len) * speed; mz = (mz / len) * speed;
-        this.position.x += mx;
-        this.position.z += mz;
-        if (isLean) {
-          // Keep within ±0.6 m of the original spawn so the user doesn't
-          // wander out of the scripted scene's intended viewpoint.
-          if (this._origin == null) this._origin = new THREE.Vector3().fromArray(this.opts.initialPos);
-          const dx = this.position.x - this._origin.x;
-          const dz = this.position.z - this._origin.z;
-          const r = Math.hypot(dx, dz);
-          const RMAX = 0.6;
-          if (r > RMAX) {
-            this.position.x = this._origin.x + dx / r * RMAX;
-            this.position.z = this._origin.z + dz / r * RMAX;
-          }
-        } else {
-          const b = this.opts.bounds;
-          if (b) {
-            this.position.x = Math.max(b.minX, Math.min(b.maxX, this.position.x));
-            this.position.z = Math.max(b.minZ, Math.min(b.maxZ, this.position.z));
-          }
+      if (this.keys.KeyW || this.keys.ArrowUp)    { ix += -sinY; iz += -cosY; }
+      if (this.keys.KeyS || this.keys.ArrowDown)  { ix +=  sinY; iz +=  cosY; }
+      if (this.keys.KeyD || this.keys.ArrowRight) { ix +=  cosY; iz += -sinY; }
+      if (this.keys.KeyA || this.keys.ArrowLeft)  { ix += -cosY; iz +=  sinY; }
+      const len = Math.hypot(ix, iz);
+      if (len > 0) { ix /= len; iz /= len; }
+    }
+    // ---- Acceleration: a body with mass, not a hovering camera ----
+    // Velocity eases toward the input direction × speed. Real walking takes
+    // ~0.25 s to reach pace and ~0.18 s to stop; instant start/stop was the
+    // single biggest "video-game glide" tell. The brief post-release glide
+    // is deliberately NOT counted as walking, so the legs settle while the
+    // last few centimetres bleed off.
+    const isLean = this.opts.mode === "lookOnly";
+    const maxSpeed = isLean ? 0.85 : this.opts.speed;
+    if (!this._vel) this._vel = { x: 0, z: 0 };
+    const hasInput = ix !== 0 || iz !== 0;
+    const velRate = hasInput ? 10 : 14;
+    this._vel.x += (ix * maxSpeed - this._vel.x) * Math.min(1, dt * velRate);
+    this._vel.z += (iz * maxSpeed - this._vel.z) * Math.min(1, dt * velRate);
+    if (!hasInput && Math.hypot(this._vel.x, this._vel.z) < 0.02) {
+      this._vel.x = 0; this._vel.z = 0;
+    }
+    if (this._vel.x !== 0 || this._vel.z !== 0) {
+      movingNow = hasInput;
+      this.position.x += this._vel.x * dt;
+      this.position.z += this._vel.z * dt;
+      if (isLean) {
+        // Keep within ±0.6 m of the original spawn so the user doesn't
+        // wander out of the scripted scene's intended viewpoint.
+        if (this._origin == null) this._origin = new THREE.Vector3().fromArray(this.opts.initialPos);
+        const dx = this.position.x - this._origin.x;
+        const dz = this.position.z - this._origin.z;
+        const r = Math.hypot(dx, dz);
+        const RMAX = 0.6;
+        if (r > RMAX) {
+          this.position.x = this._origin.x + dx / r * RMAX;
+          this.position.z = this._origin.z + dz / r * RMAX;
+        }
+      } else {
+        const b = this.opts.bounds;
+        if (b) {
+          this.position.x = Math.max(b.minX, Math.min(b.maxX, this.position.x));
+          this.position.z = Math.max(b.minZ, Math.min(b.maxZ, this.position.z));
         }
       }
     }
 
+    // ---- Collision vs static scene solids (auto-collected at mount) ----
+    // Every piece of furniture / prop becomes an XZ box; resolution pushes
+    // the player capsule out along the SHALLOWEST axis, which makes walls
+    // and furniture naturally slide you along their faces instead of
+    // stopping you dead or letting you wade through the geometry.
+    if (this._staticColliders && this._staticColliders.length) {
+      const r = this.bodyRadius;
+      for (const c of this._staticColliders) {
+        const nx = Math.max(c.minX, Math.min(c.maxX, this.position.x));
+        const nz = Math.max(c.minZ, Math.min(c.maxZ, this.position.z));
+        const dx = this.position.x - nx, dz = this.position.z - nz;
+        const d2 = dx * dx + dz * dz;
+        if (d2 >= r * r) continue;
+        if (d2 > 1e-8) {
+          // Outside the box face: push out along the contact normal.
+          const d = Math.sqrt(d2);
+          this.position.x = nx + (dx / d) * r;
+          this.position.z = nz + (dz / d) * r;
+        } else {
+          // Centre is inside the box: exit through the nearest face.
+          const exL = this.position.x - (c.minX - r);
+          const exR = (c.maxX + r) - this.position.x;
+          const ezB = this.position.z - (c.minZ - r);
+          const ezF = (c.maxZ + r) - this.position.z;
+          const m = Math.min(exL, exR, ezB, ezF);
+          if (m === exL) this.position.x = c.minX - r;
+          else if (m === exR) this.position.x = c.maxX + r;
+          else if (m === ezB) this.position.z = c.minZ - r;
+          else this.position.z = c.maxZ + r;
+        }
+      }
+    }
     // ---- Collision: push the player out of solid obstacles (props, the dog)
     // so you can't walk through them. Resolved every frame (also handles a
     // moving obstacle bumping a stationary player). Then re-clamp to bounds.
@@ -9144,8 +9192,10 @@ class FPControls {
           this.position.z = o.z + (dz / d) * min;
         }
       }
+    }
+    if (this._staticColliders || this.obstacles) {
       const b = this.opts.bounds;
-      if (b) {
+      if (b && !isLean) {
         this.position.x = Math.max(b.minX, Math.min(b.maxX, this.position.x));
         this.position.z = Math.max(b.minZ, Math.min(b.maxZ, this.position.z));
       }
@@ -9153,12 +9203,42 @@ class FPControls {
 
     // Walk cycle advances by DISTANCE moved (not time), so the legs swing in
     // lockstep with the ground and the feet don't slide. ~0.62 m per half-step.
-    const _movedDist = Math.hypot(this.position.x - _prevX, this.position.z - _prevZ);
+    const _mdx = this.position.x - _prevX, _mdz = this.position.z - _prevZ;
+    const _movedDist = Math.hypot(_mdx, _mdz);
     movingNow = movingNow && _movedDist > 1e-4;
     if (this._walkAmt == null) this._walkAmt = 0;
     if (this._walkPhase == null) this._walkPhase = 0;
     this._walkAmt += ((movingNow ? 1 : 0) - this._walkAmt) * Math.min(1, dt * 5);
-    this._walkPhase += (_movedDist / 0.62) * Math.PI;   // distance-driven stride
+    // Travel direction in BODY-LOCAL space: fwd ∈ [-1,1] (+ = the way you
+    // face), side ∈ [-1,1] (+ = your right). The gait engine reads this to
+    // step backward when you back up and scissor sideways when you strafe —
+    // reusing one forward cycle for every direction is how moonwalks happen.
+    if (this._moveFwd == null) { this._moveFwd = 1; this._moveSide = 0; }
+    if (movingNow && _movedDist > 1e-4) {
+      this._walkPhase += (_movedDist / 0.62) * Math.PI;   // distance-driven stride
+      const inv = 1 / _movedDist;
+      const wx = _mdx * inv, wz = _mdz * inv;
+      const sY = Math.sin(this.yaw), cY = Math.cos(this.yaw);
+      const fwd = -(wx * sY + wz * cY);          // camera forward = (-sinY, -cosY)
+      const side = wx * cY - wz * sY;            // camera right   = ( cosY, -sinY)
+      this._moveFwd  += (fwd  - this._moveFwd ) * Math.min(1, dt * 10);
+      this._moveSide += (side - this._moveSide) * Math.min(1, dt * 10);
+    }
+    // Turn-in-place shuffle: spinning on the spot is foot WORK — feed a small
+    // alternating step so the body doesn't pirouette on frozen legs.
+    const yawDeltaAbs = Math.abs(this.yaw - (this._prevYawShuf ?? this.yaw));
+    this._prevYawShuf = this.yaw;
+    const turningInPlace = !movingNow && dt > 0 && (yawDeltaAbs / dt) > 0.9;
+    if (this._shuffleAmt == null) this._shuffleAmt = 0;
+    this._shuffleAmt += ((turningInPlace ? 1 : 0) - this._shuffleAmt) * Math.min(1, dt * 6);
+    if (this._shuffleAmt > 0.02 && !movingNow) {
+      this._walkPhase += yawDeltaAbs * 1.6;               // feet alternate with the turn
+    } else if (!movingNow && this._walkAmt > 0.03) {
+      // Settle step: ease the stride to the nearest feet-together pose
+      // instead of freezing mid-swing when the player stops.
+      const rest = Math.round(this._walkPhase / Math.PI) * Math.PI;
+      this._walkPhase += (rest - this._walkPhase) * Math.min(1, dt * 9);
+    }
     this.moving = movingNow;
 
     // ---- Camera placement ----
@@ -9300,12 +9380,12 @@ class FPControls {
     this.camera.position.set(cx, cy, cz);
 
     if (this.tpBlend > 0.001) {
-      // Look at a target at roughly the character's chest height. Aiming
-      // slightly LOWER than chest centres the character vertically in the
-      // frame — was overshooting upward and putting the character in the
-      // bottom third. The look-target also pitches with the user's pitch
-      // so they can aim the camera up/down past the character.
-      const lookYBase = this.position.y - 0.75;     // approx chest height
+      // Look at a target at roughly the character's chest height. With the
+      // normalized eye line (eye = feet + 1.62, chest ≈ feet + 1.12) the
+      // chest sits ~0.5 m below the eye — the old 0.75 offset was tuned for
+      // the legacy taller eye heights and aimed at the hips. The look-target
+      // also pitches with the user's pitch so they can aim past the character.
+      const lookYBase = this.position.y - 0.50;     // approx chest height
       const lookX = this.position.x + sinY * 0.3;   // less yaw bias
       const lookY = lookYBase + sinP * tpDist * 0.55;
       const lookZ = this.position.z + cosY * 0.3;
@@ -9326,8 +9406,25 @@ class FPControls {
       this._tpSmoothLook = null;
     }
   }
-  // Expose walk state so scene can drive Body animation
-  getWalkState() { return { phase: this._walkPhase || 0, amount: this._walkAmt || 0 }; }
+  // Expose walk state so the Body's gait engine can mirror the real motion:
+  // phase/amount drive the stride, fwd/side give the travel direction in
+  // body-local space (backpedal, strafe, diagonals), shuffle reports
+  // turn-in-place stepping.
+  getWalkState() {
+    return {
+      phase: this._walkPhase || 0,
+      amount: Math.max(this._walkAmt || 0, (this._shuffleAmt || 0) * 0.45),
+      fwd: this._moveFwd == null ? 1 : this._moveFwd,
+      side: this._moveSide || 0,
+      shuffle: this._shuffleAmt || 0,
+    };
+  }
+  // Static XZ box colliders {minX,maxX,minZ,maxZ} auto-collected from the
+  // scene's solid meshes at mount. Separate from the dynamic circle
+  // obstacles (creatures) which scenes refresh per frame.
+  setStaticColliders(list) {
+    this._staticColliders = Array.isArray(list) && list.length ? list : null;
+  }
 
   // Toggle / set camera mode. Persists in localStorage so a user who likes
   // third-person view keeps it across sessions.
@@ -9960,6 +10057,11 @@ class Body {
       ay = cam.position.y - height;
       az = cam.position.z;
     }
+    // Feet pinned to the ACTUAL floor when the scene declares it. Deriving
+    // ground from "eye minus body height" floated or buried the feet in every
+    // scene whose eye height wasn't exactly 1.55 above its floor — which was
+    // most of them. The soles, not the eye, define where a person is.
+    if (this.opts.groundY != null) ay = this.opts.groundY;
     this.group.position.set(ax, ay, az);
     // Yaw follows the camera's yaw so the body turns with the head. The mesh
     // is authored with its face/chest on LOCAL +Z, while the camera looks
@@ -10010,17 +10112,36 @@ class Body {
     // vaults over it. Phase convention per leg (θ): sin(θ) > 0 and rising =
     // swing-forward; θ ∈ (π/2, 3π/2) = stance. Knee flexion ≈ max(0, cosθ),
     // which peaks exactly at mid-swing and vanishes through stance.
+    // Travel direction in body-local space — the stride must follow the way
+    // the BODY is actually moving, not always pretend it walks forward:
+    //   fwd  +1 → forward swing,  -1 → backpedal (reversed swing),
+    //   side ±1 → sidestep (legs scissor from the hip, soles kept flat),
+    //   diagonals blend both; turn-in-place shuffles with tiny steps.
+    let gaitFwd = 1, gaitSide = 0;
+    if (controls && controls.getWalkState) {
+      const ws = controls.getWalkState();
+      gaitFwd = ws.fwd;
+      gaitSide = ws.side;
+      if (ws.amount > walkAmt) walkAmt = ws.amount;   // shuffle feeds the gait
+    }
+    const fwdShare = Math.abs(gaitFwd);
     this.legs.forEach((leg) => {
       const θ = walkPhase + (leg.side > 0 ? 0 : Math.PI);
       const swing = Math.sin(θ) * 0.50 * walkAmt;
-      const kneeFlex = (Math.max(0, Math.cos(θ)) * 0.95 + 0.04) * walkAmt;
-      leg.hip.rotation.x = -swing;
+      // Knee clears the ground at mid-swing for fore-aft strides; sidesteps
+      // use a smaller constant lift (you don't fold a knee to shuffle).
+      const kneeFlex = (Math.max(0, Math.cos(θ)) * (0.30 + 0.65 * fwdShare) + 0.04) * walkAmt;
+      leg.hip.rotation.x = -swing * gaitFwd;
+      leg.hip.rotation.z = swing * gaitSide * 0.55;
       leg.knee.rotation.x = kneeFlex;
       // Foot: level the sole against the combined leg rotation, then add a
       // heel-toe roll — toe up as the foot reaches forward, heel peel as it
-      // pushes off behind.
+      // pushes off behind. The roll belongs to FORWARD strides only; rolling
+      // the toes while backpedalling or strafing reads wrong.
       leg.foot.rotation.x = -(leg.hip.rotation.x + leg.knee.rotation.x) * 0.75
-        + Math.sin(θ) * 0.22 * walkAmt;
+        + Math.sin(θ) * 0.22 * walkAmt * Math.max(0, gaitFwd);
+      // Counter the sidestep abduction so the soles stay parallel to the floor.
+      leg.foot.rotation.z = -leg.hip.rotation.z * 0.8;
     });
     // Pelvis dynamics — the part stiff procedural walks always miss:
     //  · step bob: the body vaults highest at mid-stance and dips into each
@@ -11378,6 +11499,56 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       if (result.collisionObjects && controls.setCollisionScene) {
         controls.setCollisionScene(result.collisionObjects);
       }
+      // ---- Real eye line ----
+      // Scenes that declare groundY (their floor's world height) get a true
+      // human eye height: 1.62 m above that floor, identical in every scene.
+      // Eye heights used to range 0.7–2.55 m above the floor, so the same
+      // dog read as a toy in one room and the room as a dollhouse in the
+      // next. eyeY overrides for spaces whose ceiling sits below standing
+      // height (the MRI bore).
+      if (result.groundY != null && result.controls.mode === "walkable") {
+        controls.position.y = result.eyeY != null ? result.eyeY : result.groundY + 1.62;
+      }
+      // ---- Auto-collected solid colliders ----
+      // Walk the populated scene once and turn every furniture-scale mesh
+      // into an XZ box the player capsule cannot pass through (resolved with
+      // face sliding in FPControls). Heuristics: skip planes/discs (floors,
+      // walls, rugs — room bounds already confine the player), skip
+      // creatures (they carry per-frame dynamic circle obstacles), skip
+      // camera-pinned props (hands, the match), skip ankle clutter,
+      // overhead fixtures and building-scale shells.
+      if (result.controls.mode === "walkable") {
+        const groundRef = result.groundY != null
+          ? result.groundY
+          : controls.position.y - 1.62;
+        const boxes = [];
+        const _bb = new THREE.Box3();
+        scene.updateMatrixWorld(true);
+        scene.traverse((o) => {
+          if (!o.isMesh || !o.geometry) return;
+          if (o.userData.noCollide) return;
+          const gtype = o.geometry.type;
+          if (gtype === "PlaneGeometry" || gtype === "CircleGeometry") return;
+          for (let p = o; p; p = p.parent) {
+            if (p === camera) return;                       // camera-pinned prop
+            if (p.userData && p.userData.parts) return;     // animated creature
+            if (p.userData && p.userData.noCollide) return;
+          }
+          _bb.setFromObject(o);
+          if (!isFinite(_bb.min.x) || !isFinite(_bb.max.x)) return;
+          const spanX = _bb.max.x - _bb.min.x;
+          const spanZ = _bb.max.z - _bb.min.z;
+          if (_bb.max.y < groundRef + 0.28) return;   // ankle-height clutter
+          if (_bb.min.y > groundRef + 1.25) return;   // overhead fixtures
+          if (spanX > 7 || spanZ > 7) return;         // environment shells
+          if (spanX < 0.06 && spanZ < 0.06) return;   // wires / pebbles
+          boxes.push({
+            minX: _bb.min.x, maxX: _bb.max.x,
+            minZ: _bb.min.z, maxZ: _bb.max.z,
+          });
+        });
+        if (boxes.length) controls.setStaticColliders(boxes);
+      }
       // Per-scene third-person framing overrides (e.g. the dog scene biases the
       // camera over the shoulder so the dog isn't hidden behind the avatar).
       if (result.controls) {
@@ -11503,6 +11674,8 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
           topStyle:  opts.topStyle,
           surface: (result && result.surface) || "hard",
           windExposure: (result && result.windExposure) || 0,
+          // Feet pinned to the scene's real floor (see Body.update).
+          groundY: (result && result.groundY != null) ? result.groundY : undefined,
         },
         (result && result.body) || {}
       );
@@ -13529,6 +13702,7 @@ function setupHeights(scene, camera, level) {
     collisionObjects,
     hands: { skinColor: 0xd4a07a, sleeveColor: 0x2d3a52 },
     surface: "hard",   // concrete platform / rooftop
+    groundY: platTopY, // body feet pinned to the platform surface
     // Wind exposure scales with rung height. The Body's scarf and hair-flutter
     // visibly react so the user sees a tangible "I'm somewhere with real wind"
     // signal even before they look around. Heights amplifies it dynamically
@@ -16171,6 +16345,7 @@ function setupDogs(scene, camera, level) {
     bloom: { strength: 0.22, threshold: 0.96 },
     hands: { skinColor: 0xd4a07a, sleeveColor: 0x3a3d4f },
     surface: "wood",
+    groundY: -1,       // room floor — feet + eye line anchored to it
     interact(controls) {
       if (!controls) return null;
       const dx = controls.position.x - dog.position.x;
@@ -17045,6 +17220,7 @@ function setupSpiders(scene, camera, level) {
       cameraModeLocked: "fp",
     },
     surface: "hard",   // tile floor in the spider room
+    groundY: -1,       // feet + eye line anchored to the tile floor
     interact(controls) {
       if (scriptedGesture && performance.now() < scriptedGestureUntil) {
         return { gesture: scriptedGesture, hint: "" };
@@ -17653,6 +17829,10 @@ function setupEnclosed(scene, camera, level) {
     },
     hands: { skinColor: 0xd4a07a, sleeveColor: 0x3d3d45 },
     surface: "hard",   // closed-room tile / linoleum
+    groundY: -roomH / 2,
+    // Standing eye line, but never through the ceiling — the MRI-bore rungs
+    // have a ceiling well below standing height.
+    eyeY: Math.min(-roomH / 2 + 1.62, roomH / 2 - 0.22),
     interact(controls) {
       if (!controls) return null;
       // Distance to the door (in walkable space)
@@ -19403,6 +19583,7 @@ function setupSnakes(scene, camera, level) {
     // generic first-person hands too would render a second forearm on top.
     bloom: { strength: 0.35, threshold: 0.92 },
     surface: "grass",   // outdoor path with grass + dirt
+    groundY: -1,        // feet + eye line anchored to the path
     update(t, controls, dt) {
       if (controls) snakesControls = controls;
       // Small no-overlap collider around the coiled snake — you can still get
@@ -21498,6 +21679,9 @@ function setupDark(scene, camera, level) {
   scene.add(wardrobe);
   // Left-hinged door (its own group so rotation pivots at the hinge edge)
   const wardrobeDoor = new THREE.Group();
+  // The door ANIMATES (creaks open) — exclude it from the static collider
+  // sweep; the wardrobe body's box already blocks the corner.
+  wardrobeDoor.userData.noCollide = true;
   const doorPanel = new THREE.Mesh(new THREE.BoxGeometry(0.56, 1.95, 0.04), darkWood);
   doorPanel.position.x = 0.28;
   doorPanel.castShadow = true;
@@ -21698,6 +21882,7 @@ function setupDark(scene, camera, level) {
     hands: { skinColor: 0xd4a07a, sleeveColor: 0x1a1c22 },
     bloom: { strength: 0.5, threshold: 0.85 },
     surface: "soft",   // carpeted dim room
+    groundY: -1,       // feet + eye line anchored to the bedroom floor
     update(t, controls, dt) {
       const d = dt || 0.016;
       // Keep the player out of the furniture.
