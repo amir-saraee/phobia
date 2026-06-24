@@ -7587,6 +7587,85 @@ function moonIcon() {
   return `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#7cd1c5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8 A8 8 0 1 1 11.2 3 a6 6 0 0 0 9.8 9.8z"/><circle cx="17" cy="6" r=".7" fill="#7cd1c5"/><circle cx="20" cy="9" r=".7" fill="#7cd1c5"/></svg>`;
 }
 
+// ---------- In-scene action / command icons (SVG) ----------
+// These replace the emoji glyphs that used to label the scene command bars,
+// achievement toasts, quick-bar pills and camera toggle. They follow the same
+// convention as the phobia icons above (24×24 viewBox, 2px stroke, teal
+// accent) but render at the size of their parent — every svg carries
+// width="100%" height="100%" so the .cmd-icon CSS box controls the rendered
+// size. One coherent icon set = "feels like a real game", not "prototype".
+const C = "#7cd1c5";   // accent (matches --accent)
+const CM = "#94a3b8";  // muted (matches --muted), for secondary detail
+function _svg(inner) {
+  return `<svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="${C}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+}
+// --- Directions: a single arrow() helper draws clean strokes for every
+// kind of step / look / lean / swap the command bars need. ---
+function arrowIcon(dir) {
+  const a = {
+    // graph arrows (walk toward / away)
+    right:  `<path d="M4 12h13"/><path d="M13 6l6 6-6 6"/>`,
+    left:   `<path d="M20 12H7"/><path d="M11 6l-6 6 6 6"/>`,
+    // diagonals (walk to edge / step back)
+    "br":   `<path d="M7 17L17 7"/><path d="M9 7h8v8"/>`,
+    "tl":   `<path d="M17 7L7 17"/><path d="M15 17H7V9"/>`,
+    // verticals (look down / lean over)
+    down:   `<path d="M12 4v13"/><path d="M6 11l6 6 6-6"/>`,
+    up:     `<path d="M12 20V7"/><path d="M6 13l6-6 6 6"/>`,
+    // swap / camera toggle (two-way)
+    swap:   `<path d="M7 7h11l-3-3"/><path d="M17 17H6l3 3"/>`,
+    // indicator (driving, left-then-right waggle)
+    wag:    `<path d="M5 9l3 3-3 3"/><path d="M19 9l-3 3 3 3"/><path d="M8 12h8"/>`,
+    // u-turn (step back / retreat)
+    back:   `<path d="M19 9v5a4 4 0 0 1-4 4H7"/><path d="M10 7L7 9l3 3"/>`,
+  };
+  return _svg(a[dir] || a.right);
+}
+// --- Actions (deduplicated across all 12 scenes) ---
+const iconPaw       = () => _svg(`<circle cx="7" cy="8" r="1.6"/><circle cx="11" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="18.5" cy="8.5" r="1.6"/><path d="M12 11c-3 0-5 2.5-5 5 0 2 1.8 3 4 3h2c2.2 0 4-1 4-3 0-2.5-2-5-5-5z"/>`);
+const iconBall      = () => _svg(`<circle cx="12" cy="12" r="8"/><path d="M4 12c4 2 12 2 16 0M12 4c2 4 2 12 0 16"/>`);
+const iconBone      = () => _svg(`<path d="M6 7a2.2 2.2 0 1 0-2.2 2.2 2.2 2.2 0 1 0 2.2 2.2v0a2.2 2.2 0 1 0 2.2-2.2A2.2 2.2 0 1 0 6 7z" transform="rotate(45 6 7)"/><path d="M9.5 9.5l5 5"/><path d="M18 17a2.2 2.2 0 1 0 2.2-2.2 2.2 2.2 0 1 0-2.2-2.2v0a2.2 2.2 0 1 0-2.2 2.2A2.2 2.2 0 1 0 18 17z" transform="rotate(45 18 17)"/>`);
+const iconWave      = () => _svg(`<path d="M5 14v-2a2 2 0 1 1 4 0v3"/><path d="M9 13V8a2 2 0 1 1 4 0v6"/><path d="M13 10a2 2 0 1 1 4 0v6a5 5 0 0 1-5 5h-2a4 4 0 0 1-3-1.5L4 16"/>`);
+const iconCoin      = () => _svg(`<circle cx="12" cy="12" r="8"/><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 0 1 0 3h-3a1.5 1.5 0 0 0 0 3h4"/>`);
+const iconSplash    = () => _svg(`<path d="M12 3c3 4 5 7 5 10a5 5 0 0 1-10 0c0-3 2-6 5-10z"/><path d="M8 16c-1 1-2 1-3 0M16 16c1 1 2 1 3 0"/>`);
+const iconJar       = () => _svg(`<path d="M7 7h10v11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z"/><path d="M6 7h12"/><path d="M8 7V5h8v2"/><path d="M7 11h10"/>`);
+const iconWindow    = () => _svg(`<rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M12 4v16M4 12h16"/>`);
+const iconHands     = () => _svg(`<path d="M8 11V6a1.5 1.5 0 0 1 3 0v4"/><path d="M11 10V5a1.5 1.5 0 0 1 3 0v5"/><path d="M14 10V7a1.5 1.5 0 0 1 3 0v6a6 6 0 0 1-6 6 4 4 0 0 1-4-4v-1l-2-2a1.4 1.4 0 0 1 2-2l1 1"/>`);
+const iconTray      = () => _svg(`<rect x="3" y="13" width="18" height="3" rx="1"/><path d="M5 13l1.5-4a2 2 0 0 1 1.9-1.4h7.2a2 2 0 0 1 1.9 1.4L19 13"/><path d="M3 16v1a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-1"/>`);
+const iconLungs     = () => _svg(`<path d="M12 3v8"/><path d="M9 11c0 3-1 4-3 5-1.5.8-2 2-2 3.5C4 21 5 21 6 21c2 0 3-2 3-5"/><path d="M15 11c0 3 1 4 3 5 1.5.8 2 2 2 3.5 0 1.5-1 1.5-2 1.5-2 0-3-2-3-5"/><path d="M9 8c0-1 1.3-2 3-2s3 1 3 2"/>`);
+const iconMic       = () => _svg(`<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 12a7 7 0 0 0 14 0M12 19v3"/>`);
+const iconDrop      = () => _svg(`<path d="M12 3c3 4 5 7 5 10a5 5 0 0 1-10 0c0-3 2-6 5-10z"/>`);
+const iconNotes     = () => _svg(`<path d="M5 4h11l3 3v13H5z"/><path d="M8 9h7M8 13h7M8 17h4"/>`);
+const iconDoor      = () => _svg(`<path d="M6 21V4a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v17"/><path d="M4 21h14"/><circle cx="13" cy="12" r="1" fill="${C}"/>`);
+const iconHand      = () => _svg(`<path d="M7 11V6a1.5 1.5 0 0 1 3 0v4"/><path d="M10 10V5a1.5 1.5 0 0 1 3 0v5"/><path d="M13 10V7a1.5 1.5 0 0 1 3 0v6a6 6 0 0 1-6 6 4 4 0 0 1-4-4v-1l-2-2a1.4 1.4 0 0 1 2-2l1 1"/>`);
+const iconBulb      = () => _svg(`<path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10c.8.8 1 1.5 1 3h6c0-1.5.2-2.2 1-3a6 6 0 0 0-4-10z"/>`);
+const iconEye       = () => _svg(`<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>`);
+const iconEyeOff    = () => _svg(`<path d="M4 4l16 16"/><path d="M9.5 9.6A3 3 0 0 0 12 15a3 3 0 0 0 2.4-1.2"/><path d="M6.5 6.7C3.8 8.4 2 12 2 12s3.5 7 10 7c1.6 0 3-.3 4.2-.8M9.9 5.2A10 10 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-2.2 3"/>`);
+const iconBandage   = () => _svg(`<rect x="3" y="9" width="18" height="6" rx="3" transform="rotate(-45 12 12)"/><path d="M9 11v2M12 9v4M15 11v2" transform="rotate(-45 12 12)"/>`);
+const iconLotus     = () => _svg(`<path d="M12 13c-2 0-4-1-4-3 0-2 2-4 4-4s4 2 4 4c0 2-2 3-4 3z"/><path d="M5 14c-1 0-2-1-2-2 0-2 2-3 4-3"/><path d="M19 14c1 0 2-1 2-2 0-2-2-3-4-3"/><path d="M12 21c-3 0-5-2-5-5 0-1 .5-2 1-3M12 21c3 0 5-2 5-5 0-1-.5-2-1-3"/>`);
+const iconLeaf      = () => _svg(`<path d="M5 19c0-8 5-13 14-13 0 9-5 14-14 13z"/><path d="M9 15c2-3 4-5 7-6"/>`);
+const iconMirror    = () => _svg(`<rect x="5" y="3" width="14" height="16" rx="7"/><path d="M12 19v3"/>`);
+const iconBrake     = () => _svg(`<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 4v3M12 17v3M4 12h3M17 12h3"/>`);
+const iconCounter   = () => _svg(`<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h2M14 8h2M8 13h2M14 13h2M8 18h2M14 18h2"/>`);
+const iconHouse     = () => _svg(`<path d="M4 11l8-6 8 6"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/>`);
+const iconCandle    = () => _svg(`<path d="M12 3c1 1.5 1 2.5 0 4-1-1.5-1-2.5 0-4z"/><path d="M8 21v-6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v6z"/><path d="M7 21h10"/>`);
+const iconFlash     = () => _svg(`<path d="M9 3h6l-1 5h3l-8 13 2-9H7z"/>`);
+const iconMatch     = () => _svg(`<path d="M6 3c1 2 1 3 0 5 2-1 3-1 5 0-1-2-1-3 0-5-2 1-3 1-5 0z"/><path d="M9 8l8 12"/>`);
+const iconFocus     = () => _svg(`<circle cx="11" cy="11" r="6"/><path d="M15.5 15.5L21 21"/>`);
+const iconPause     = () => _svg(`<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>`);
+const iconSpark     = () => _svg(`<path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><path d="M12 8c1 2 2 3 4 4-2 1-3 2-4 4-1-2-2-3-4-4 2-1 3-2 4-4z"/>`);
+const iconPeak      = () => _svg(`<path d="M3 20l5-11 4 6 3-5 6 10z"/>`);
+const iconChute     = () => _svg(`<path d="M21 11a9 9 0 0 0-18 0z"/><path d="M3 11l4 4 5-4 5 4 4-4"/><path d="M12 11v9"/>`);
+const iconPawFriend = () => _svg(`<circle cx="8" cy="7" r="1.4"/><circle cx="12" cy="5.5" r="1.4"/><circle cx="16" cy="7" r="1.4"/><path d="M12 10c-2.5 0-4 2-4 4 0 1.5 1.5 2.5 3 2.5h2c1.5 0 3-1 3-2.5 0-2-1.5-4-4-4z"/><path d="M18 14l3-1-1 3 2 1-3 1"/>`);
+const iconShake     = () => _svg(`<path d="M9 11l-3 3a2 2 0 0 0 3 3l3-3"/><path d="M13 8l3-3a2 2 0 0 1 3 3l-6 6"/><path d="M7 15l-2 4M17 9l2-4"/>`);
+const iconMedal     = () => _svg(`<circle cx="12" cy="14" r="6"/><path d="M12 12.5l1 2h2l-1.6 1.3.6 1.9-2-1.3-2 1.3.6-1.9L9 14.5h2z" fill="${C}"/><path d="M8 9l-2-5M16 9l2-5"/>`);
+// Muted variants for the quick-bar pills (voice / audio) — these sit in the
+// scene corner and read better at lower contrast than the action glyphs.
+const iconVoiceOn   = () => _svg(`<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a3 3 0 0 1 0 6"/><path d="M18.5 6.5a7 7 0 0 1 0 11"/>`);
+const iconVoiceOff  = () => _svg(`<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a3 3 0 0 1 0 6"/><path d="M3 3l18 18"/>`);
+const iconSoundOn   = () => _svg(`<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 8a5 5 0 0 1 0 8"/><path d="M19.5 5.5a9 9 0 0 1 0 13"/>`);
+const iconSoundOff  = () => _svg(`<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 8a5 5 0 0 1 0 8"/><path d="M3 3l18 18"/>`);
+
 // ---------- Phobia scene thumbnails ----------
 // Larger, richer SVG scene-sketches used on the home page showcase. Each one
 // gives a sense of the phobia at a glance — the visual hook that the icon
@@ -9283,8 +9362,14 @@ class FPControls {
     // swayed along world-X, which reversed whenever you faced ±x.
     const swayAmt = Math.sin(this._walkPhase * 0.5) * 0.016 * this._walkAmt * fpBobScale;
     const rSinY = Math.sin(this.yaw), rCosY = Math.cos(this.yaw);
+    // Crouch eye-drop: a scene (e.g. greeting a low dog) can ask the head to
+    // dip so the player bends toward what they're reaching for. Only the FP eye
+    // lowers — this.position.y (TP framing / collision origin) is untouched —
+    // and it fades out in TP where the body's own crouch pose reads instead.
+    this._eyeDrop = (this._eyeDrop || 0)
+      + (((this._eyeDropTarget || 0)) - (this._eyeDrop || 0)) * Math.min(1, dt * 6);
     const fpX = this.position.x + rCosY * swayAmt;
-    const fpY = this.position.y + bobY + breathY;
+    const fpY = this.position.y + bobY + breathY - this._eyeDrop * (1 - this.tpBlend);
     const fpZ = this.position.z - rSinY * swayAmt;
     // Roll target for next frame: yaw-velocity lean + strafe lean + footfall.
     const yawVel = dt > 0 ? (this.yaw - (this._prevYawRoll ?? this.yaw)) / dt : 0;
@@ -9419,6 +9504,11 @@ class FPControls {
       shuffle: this._shuffleAmt || 0,
     };
   }
+  // Scene-driven crouch eye-drop in metres (0..0.7). The FP camera dips toward
+  // what the player is reaching for (e.g. a low dog) without moving the logical
+  // eye used by TP framing and collision.
+  setEyeDrop(m) { this._eyeDropTarget = Math.max(0, Math.min(0.7, m || 0)); }
+
   // Static XZ box colliders {minX,maxX,minZ,maxZ} auto-collected from the
   // scene's solid meshes at mount. Separate from the dynamic circle
   // obstacles (creatures) which scenes refresh per frame.
@@ -10986,6 +11076,7 @@ class TherapistNPC {
 // ---------- First-person hands ----------
 // Two procedurally built hands attached to the camera. They idle-sway while
 // breathing and animate to scene-specific gestures: pet, grab, paddle, touch.
+const _UP = new THREE.Vector3(0, 1, 0);   // default surface normal for reach
 class Hands {
   constructor(scene, camera, opts = {}) {
     this.camera = camera;
@@ -11000,6 +11091,29 @@ class Hands {
     // disembodied hands. This flag hides the entire hand group when the
     // camera mode is "tp" so it's clearly ONE character.
     this.cameraMode = "fp";
+
+    // ---- World-anchored reach + surface contact ----
+    // Scenes can call setReachTarget(worldPoint, opts) each frame while
+    // something is touchable (a dog's back, a railing). The matching hand then
+    // drives to the REAL world point — converted into camera space — and
+    // conforms its palm to the surface normal, fingers curling on contact. This
+    // is what turns "pet"/"grab" from a fixed mid-air pose into an actual touch
+    // that tracks the moving object. Default null → zero change for scenes that
+    // don't opt in. Scratch objects are pre-allocated to avoid per-frame GC.
+    this._reach = null;
+    this._reachStrength = 0;
+    this._reachWorld   = new THREE.Vector3();
+    this._rcLocal      = new THREE.Vector3();
+    this._rcShoulder   = new THREE.Vector3();
+    this._rcArm        = new THREE.Vector3();
+    this._rcDir        = new THREE.Vector3();
+    this._rcNormal     = new THREE.Vector3();
+    this._rcZ          = new THREE.Vector3();
+    this._rcY          = new THREE.Vector3();
+    this._rcX          = new THREE.Vector3();
+    this._rcMat        = new THREE.Matrix4();
+    this._rcQ          = new THREE.Quaternion();
+    this._rcCamQ       = new THREE.Quaternion();
 
     // Skin / sleeve lit by the scene (almost no self-emission), so the hands
     // read with natural light + shadow like your real hands under the room's
@@ -11118,12 +11232,37 @@ class Hands {
   // Trigger a brief animation pulse (e.g. after a click)
   fireAction() { this.actionPulse = 1.0; }
 
+  // Drive the matching hand(s) to a REAL world point with surface contact.
+  // Call every frame while the target is touchable; call clearReachTarget()
+  // (or pass null) when it isn't. opts:
+  //   hand:    "right" | "left" | "both"   (default "right")
+  //   grip:    "flat"  (lay palm on a surface — petting)
+  //          | "wrap"  (curl fingers around a bar — railing grip)
+  //   normal:  THREE.Vector3 world-space surface normal (palm faces it)
+  //   maxReach: arm length in metres before the hand stops at full stretch
+  //   curl:    optional explicit finger curl override (0..1.4)
+  setReachTarget(world, opts = {}) {
+    if (!world) { this._reach = null; return; }
+    this._reachWorld.copy(world);
+    this._reach = {
+      hand: opts.hand || "right",
+      grip: opts.grip || "flat",
+      normal: opts.normal || null,
+      maxReach: opts.maxReach || 0.62,
+      curl: opts.curl,
+      spread: opts.spread || 0,   // for "both" on a bar: lateral half-gap per hand
+    };
+  }
+  clearReachTarget() { this._reach = null; }
+
   update(t, dt, controls) {
     const d = dt || 0.016;
     // Delta-timed smoothing (the old per-frame 0.12 factor ran 2× faster on
     // 120 Hz displays).
     this.gestureStrength += (this.gestureTargetStrength - this.gestureStrength) * Math.min(1, d * 7.5);
     this.actionPulse = Math.max(0, this.actionPulse - d * 1.4);
+    // Ease the world-reach blend in/out so a hand glides to/from a real target.
+    this._reachStrength += ((this._reach ? 1 : 0) - this._reachStrength) * Math.min(1, d * 6);
 
     // Body-feel inputs: the walk gait (hands counter-sway like real arms),
     // breath that quickens with fear, and a fear tremor that puts the
@@ -11245,6 +11384,67 @@ class Hands {
       // Universal pulse: hand jiggles up slightly with the squeeze so
       // even idle hands react visibly to a click.
       hand.position.y += this.actionPulse * 0.018 * (side === 1 ? 1 : 0.5);
+
+      // ---- World-anchored reach + surface contact (override) ----
+      // Applied last, scaled by _reachStrength, so when no scene sets a target
+      // this is a no-op and the gesture system above is untouched.
+      const reach = this._reach;
+      const rk = this._reachStrength;
+      const reachThisHand = reach && (reach.hand === "both"
+        || (reach.hand === "right" && side === 1)
+        || (reach.hand === "left"  && side === -1));
+      if (reachThisHand && rk > 0.001) {
+        // World point → camera-local (the hand group rides the camera at an
+        // identity transform, so camera space IS hand-parent space). Refresh
+        // the camera's world matrix first — hands.update() runs before render.
+        this.camera.updateWorldMatrix(true, false);
+        const local = this._rcLocal.copy(this._reachWorld);
+        this.camera.worldToLocal(local);
+        // Two-handed bar grip: spread the hands shoulder-width along the bar
+        // (camera-local x ≈ the bar's tangent when you face it).
+        if (reach.spread) local.x += side * reach.spread;
+        // Clamp to arm reach from a per-side shoulder anchor: a too-far target
+        // reads as "reaching at full stretch" rather than teleporting out.
+        const sh = this._rcShoulder.set(side * 0.17, -0.22, -0.02);
+        const arm = this._rcArm.copy(local).sub(sh);
+        const armLen = arm.length() || 1e-6;
+        const maxR = reach.maxReach;
+        const overshoot = Math.max(0, armLen - maxR);
+        if (overshoot > 0) { arm.multiplyScalar(maxR / armLen); local.copy(sh).add(arm); }
+        // 1 when the hand is essentially on the surface, fading as it falls short.
+        const contactK = Math.max(0, Math.min(1, 1 - overshoot / 0.25));
+        // Fingers (-Z) point at the target; palm (+Y local) faces the surface
+        // normal so the hand lies flat on / wraps the surface.
+        const reachDir = this._rcDir.copy(local).sub(sh);
+        if (reachDir.lengthSq() < 1e-6) reachDir.set(0, 0, -1);
+        reachDir.normalize();
+        const camQ = this.camera.getWorldQuaternion(this._rcCamQ);
+        const nrm = this._rcNormal.copy(reach.normal || _UP).applyQuaternion(camQ.invert());
+        if (nrm.lengthSq() < 1e-6) nrm.set(0, 1, 0);
+        nrm.normalize();
+        const zAxis = this._rcZ.copy(reachDir).negate();          // local +Z = away from target
+        const yAxis = this._rcY.copy(nrm);
+        yAxis.addScaledVector(zAxis, -yAxis.dot(zAxis));          // orthonormalise vs z
+        if (yAxis.lengthSq() < 1e-6) { yAxis.set(0, 1, 0).addScaledVector(zAxis, -zAxis.y); }
+        yAxis.normalize();
+        const xAxis = this._rcX.crossVectors(yAxis, zAxis).normalize();
+        const q = this._rcQ.setFromRotationMatrix(this._rcMat.makeBasis(xAxis, yAxis, zAxis));
+        const k = Math.min(1, d * 10) * rk;
+        hand.position.lerp(local, k);
+        hand.quaternion.slerp(q, k);
+        // Finger conform: relaxed flat for petting, full wrap for a grip,
+        // closing as contact is made.
+        const baseCurl = reach.curl != null ? reach.curl : (reach.grip === "wrap" ? 1.25 : 0.20);
+        const reachCurl = baseCurl * (0.4 + 0.6 * contactK);
+        for (const finger of hand.userData.fingers) {
+          finger.rotation.x += (reachCurl * 1.2 - finger.rotation.x) * rk;
+          const distal = finger.userData.distal;
+          if (distal) distal.rotation.x += (reachCurl * 1.4 - distal.rotation.x) * rk;
+        }
+        if (hand.userData.thumb && reach.grip === "wrap") {
+          hand.userData.thumb.rotation.x += (reachCurl * 0.7 - hand.userData.thumb.rotation.x) * rk;
+        }
+      }
     });
   }
 
@@ -12610,6 +12810,44 @@ function makeEdgeStripeTexture() {
 }
 
 // ---------- Heights ----------
+// Procedural city-street ground: a tiling block+road grid so looking straight
+// down from height reads as a real city (streets, lane markings, sidewalks,
+// block rooftops) instead of a flat sheet of asphalt with floating car-dots.
+// One texture tile == one ~30 m city block; repeated across the ground plane.
+function makeCityGridTexture(tod) {
+  const dark = tod === "twilight";
+  const dusk = tod === "golden";
+  const S = 512;
+  const c = document.createElement("canvas"); c.width = c.height = S;
+  const x = c.getContext("2d");
+  // Block / rooftop fill
+  const blockCol = dark ? "#15171d" : dusk ? "#2a2622" : "#2d3036";
+  x.fillStyle = blockCol; x.fillRect(0, 0, S, S);
+  // Rooftop speckle so blocks aren't flat
+  for (let i = 0; i < 900; i++) {
+    const v = Math.random() * 0.10 - 0.05;
+    x.fillStyle = `rgba(${v > 0 ? 255 : 0},${v > 0 ? 255 : 0},${v > 0 ? 255 : 0},${Math.abs(v)})`;
+    x.fillRect(Math.random() * S, Math.random() * S, 2, 2);
+  }
+  // Roads run along two edges of the tile → continuous grid when tiled.
+  const roadW = 96;                                  // ≈ wide street
+  const roadCol = dark ? "#0c0d11" : dusk ? "#1c1916" : "#202227";
+  const walkCol = dark ? "#23252c" : "#3a3d44";       // sidewalk
+  x.fillStyle = walkCol; x.fillRect(0, 0, roadW + 14, S); x.fillRect(0, 0, S, roadW + 14);
+  x.fillStyle = roadCol; x.fillRect(0, 0, roadW, S);    x.fillRect(0, 0, S, roadW);
+  // Lane dashes down the centre of each road
+  x.strokeStyle = dark ? "rgba(200,180,90,0.55)" : "rgba(225,205,110,0.7)";
+  x.lineWidth = 3; x.setLineDash([22, 26]);
+  x.beginPath(); x.moveTo(roadW / 2, 0); x.lineTo(roadW / 2, S);
+  x.moveTo(0, roadW / 2); x.lineTo(S, roadW / 2); x.stroke();
+  x.setLineDash([]);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 function setupHeights(scene, camera, level) {
   const h = level.height;            // 0..1
   const cameraY = 1.6 + h * 120;     // standing height to skyscraper top
@@ -12797,14 +13035,14 @@ function setupHeights(scene, camera, level) {
   // Ground (street level — always at y=0; we change camera height instead).
   // Brighter base colour at warmer times of day so the user can clearly see
   // what's down there. Fog still does its work for distance.
-  const asphalt = makeAsphaltTexture();
-  asphalt.repeat.set(60, 60);
-  const groundColor = (tod === "twilight") ? 0x16181e
-                    : (tod === "golden")   ? 0x3a3028
-                                           : 0x32363c;
+  // City-street grid: one tile ≈ a 30 m block, repeated across the 2000 m plane
+  // so the streets line up with the building blocks and read as a real city
+  // from above (the single biggest "I'm actually high up" cue when looking down).
+  const cityTex = makeCityGridTexture(tod);
+  cityTex.repeat.set(66, 66);
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(2000, 2000),
-    new THREE.MeshStandardMaterial({ map: asphalt, color: groundColor, roughness: 0.95 })
+    new THREE.MeshStandardMaterial({ map: cityTex, color: 0xffffff, roughness: 0.95 })
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
@@ -12911,13 +13149,44 @@ function setupHeights(scene, camera, level) {
     metalness:    0.0,
     envMapIntensity: tod === "twilight" ? 0.6 : 0.4,
   });
-  const platform = new THREE.Mesh(new THREE.BoxGeometry(platLen, 0.25, platDepth), platMat);
-  platform.position.set(0, cameraY - 1.6, platCenterZ);
+  // Glass skywalk: from the mid rungs up, the front strip of the floor is a
+  // transparent glass panel — walk onto it and the city is straight down
+  // through your feet. The single most iconic acrophobia trigger, and a clear
+  // escalation: solid ground low down, glass over the void up high.
+  const hasGlass = h >= 0.45;
+  const glassDepth = hasGlass ? Math.min(1.8, platDepth * 0.42) : 0;
+  const concreteDepth = platDepth - glassDepth;
+  const concreteCenterZ = platCenterZ + glassDepth / 2;   // front edge retreats to make room
+  const platform = new THREE.Mesh(new THREE.BoxGeometry(platLen, 0.25, concreteDepth), platMat);
+  platform.position.set(0, cameraY - 1.6, concreteCenterZ);
   // aoMap requires a second UV channel — copy the default one
   platform.geometry.setAttribute("uv2", platform.geometry.attributes.uv);
   platform.castShadow = true;
   platform.receiveShadow = true;
   scene.add(platform);
+  if (hasGlass) {
+    const glassTopY = cameraY - 1.6 + 0.125;              // flush with the concrete surface
+    const glassZ = -0.5 + glassDepth / 2;
+    const glass = new THREE.Mesh(
+      new THREE.BoxGeometry(platLen, 0.06, glassDepth),
+      new THREE.MeshStandardMaterial({
+        color: 0xdde8ee, transparent: true, opacity: 0.08,
+        roughness: 0.14, metalness: 0.0, envMapIntensity: 0.3, depthWrite: false,
+      })
+    );
+    glass.position.set(0, glassTopY - 0.02, glassZ);
+    glass.renderOrder = 2;
+    scene.add(glass);
+    // Metal frame ribs so the pane reads as solid glass you can stand on, not a
+    // hole in the floor.
+    const ribMat = new THREE.MeshStandardMaterial({ color: 0x8fa6b6, metalness: 0.7, roughness: 0.4 });
+    const ribs = Math.max(2, Math.round(platLen / 2.5));
+    for (let i = 1; i < ribs; i++) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.07, glassDepth), ribMat);
+      rib.position.set(-platLen / 2 + i * (platLen / ribs), glassTopY - 0.02, glassZ);
+      scene.add(rib);
+    }
+  }
 
   // ---------- Rooftop access (compact, off-centre) ----------
   // A small access structure to the LEFT side of the back of the platform —
@@ -13024,20 +13293,25 @@ function setupHeights(scene, camera, level) {
   // timer. Uses NORMAL alpha-blending (was additive — additive teal on
   // bright concrete bloomed near-white and obscured the ground in TP).
   // Pulses gently. Fades away once the user reaches it (in update()).
-  const goalZone = new THREE.Mesh(
-    new THREE.RingGeometry(0.20, 0.55, 48),
-    new THREE.MeshBasicMaterial({
-      color: 0x7cd1c5,
-      transparent: true,
-      opacity: 0.40,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-      fog: false,
-    })
-  );
-  goalZone.rotation.x = -Math.PI / 2;
-  goalZone.position.set(0, cameraY - 1.46, 0.30);
-  scene.add(goalZone);
+  // Skipped on glass-floor rungs — the glass panel itself marks the edge zone,
+  // and a teal ring laid over the glass at a grazing angle reads as a blob.
+  let goalZone = null;
+  if (!hasGlass) {
+    goalZone = new THREE.Mesh(
+      new THREE.RingGeometry(0.20, 0.55, 48),
+      new THREE.MeshBasicMaterial({
+        color: 0x7cd1c5,
+        transparent: true,
+        opacity: 0.40,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        fog: false,
+      })
+    );
+    goalZone.rotation.x = -Math.PI / 2;
+    goalZone.position.set(0, cameraY - 1.46, 0.30);
+    scene.add(goalZone);
+  }
 
   // Lip / kerb at the very edge — a low concrete lip so the eye reads the
   // platform as a real solid edge, not a paper-thin slab. About 6 cm tall.
@@ -13209,6 +13483,36 @@ function setupHeights(scene, camera, level) {
     cloud.userData.driftSpeed = 0.6 + Math.random() * 1.2;
     scene.add(cloud);
     clouds.push(cloud);
+  }
+
+  // ---- Wind particles ----
+  // Fine motes (dust / mist / the odd bit of debris) streaking laterally past
+  // the viewer, faster and denser the higher you are and during gusts. Real
+  // height in real wind has visible air movement — it's a strong "there is
+  // wind up here" cue that the audio alone can't give. Cheap: one Points cloud
+  // in a box around the camera, wrapped as motes drift out of range.
+  let windParticles = null;
+  if (!IS_LOW_POWER && h > 0.15) {
+    const WP = Math.floor(70 + h * 90);
+    const wpPos = new Float32Array(WP * 3);
+    const wpVel = new Float32Array(WP);            // per-mote speed scatter
+    for (let i = 0; i < WP; i++) {
+      wpPos[i * 3]     = camera.position.x + (Math.random() - 0.5) * 24;
+      wpPos[i * 3 + 1] = cameraY + (Math.random() - 0.5) * 12;
+      wpPos[i * 3 + 2] = camera.position.z + (Math.random() - 0.5) * 16 - 2;
+      wpVel[i] = 0.6 + Math.random() * 0.9;
+    }
+    const wpGeo = new THREE.BufferGeometry();
+    wpGeo.setAttribute("position", new THREE.BufferAttribute(wpPos, 3));
+    const wpMat = new THREE.PointsMaterial({
+      color: tod === "twilight" ? 0xc8d2e4 : 0xeae4d6,
+      size: 0.06, transparent: true, opacity: 0.5,
+      depthWrite: false, sizeAttenuation: true, fog: true,
+    });
+    windParticles = new THREE.Points(wpGeo, wpMat);
+    windParticles.userData = { vel: wpVel, count: WP };
+    windParticles.frustumCulled = false;
+    scene.add(windParticles);
   }
 
   // Birds — small dark V-silhouettes drifting in formations far away.
@@ -13553,6 +13857,10 @@ function setupHeights(scene, camera, level) {
 
   // Fence-shake state: which segments are wobbling, and timer
   let shakeT = 0;
+  // Wind-gust state for chaotic (non-sinusoidal) sway, and a reusable vector
+  // for driving the FP hands onto the real top rail.
+  let _gustT = 0, _gustDur = 0, _gustPeak = 0, _gustDir = 1, _nextGust = 2;
+  const _railGrip = new THREE.Vector3();
   // Auto-look-down animation state (driven by the "Look down" command button)
   let autoLookT = 0;
   let autoLookFrom = 0, autoLookTarget = 0;
@@ -13841,15 +14149,55 @@ function setupHeights(scene, camera, level) {
           controls.position.z + (leaning * 0.005));
       }
 
-      // Vertigo sway — stronger the higher we are; harsher at the cliff
-      const swayBoost = h > 0.85 ? 2.5 : 1.0;
-      camera.position.x += Math.sin(t * 0.5) * 0.06 * (0.4 + h) * swayBoost;
-      camera.position.y += Math.sin(t * 0.7) * 0.05 * (0.4 + h) * swayBoost;
-      camera.rotation.z += Math.sin(t * 0.45) * 0.006 * h * swayBoost;
-      // Sudden micro-jolts at the top — like a footstep too close to the edge
-      if (h > 0.85 && Math.random() < 0.003) {
-        camera.position.x += (Math.random() - 0.5) * 0.12;
-        camera.rotation.z += (Math.random() - 0.5) * 0.02;
+      // ---- Wind sway: chaotic gusts, not a clean sine ----
+      // Real edge-of-a-tall-building sway is unpredictable — a low constant
+      // jitter with sudden gusts that shove you, then ease off. A predictable
+      // sine lets the body "learn" the rhythm and the dread fades; layered
+      // incommensurate noise + Poisson-timed gusts keep it unsettling. Scaled
+      // by the reduce-motion accessibility setting (cached on the controller).
+      const mScale = controls && controls._reduceMotion ? 0.3 : 1;
+      const swayBoost = (h > 0.85 ? 2.2 : 1.0) * mScale;
+      _gustT += dt || 0.016;
+      if (_gustT > _nextGust) {
+        _gustT = 0;
+        _nextGust = (1.4 + Math.random() * 3.4) / (0.5 + h);   // gusts come faster up high
+        _gustDur  = 0.5 + Math.random() * 1.3;
+        _gustPeak = 0.45 + Math.random() * 0.9;
+        _gustDir  = Math.random() < 0.5 ? -1 : 1;
+      }
+      const gust = _gustT < _gustDur ? Math.sin((_gustT / _gustDur) * Math.PI) * _gustPeak : 0;
+      // Incommensurate sines → no perceptible period (cheap value-noise).
+      const nX = Math.sin(t * 1.7) + 0.6 * Math.sin(t * 3.31 + 1.3) + 0.4 * Math.sin(t * 5.13 + 2.7);
+      const nY = Math.sin(t * 1.27 + 2.1) + 0.5 * Math.sin(t * 2.91 + 0.7);
+      const amp = (0.35 + h) * swayBoost;
+      camera.position.x += nX * 0.018 * amp + _gustDir * gust * 0.05 * amp;
+      camera.position.y += nY * 0.014 * amp;
+      camera.rotation.z += (nX * 0.0035 + _gustDir * gust * 0.012) * h * mScale;
+      camera.rotation.x += nY * 0.0016 * gust * h * mScale;   // a gust nudges your gaze
+      // Store gust for the wind-particle drift below.
+      active._windGust = gust; active._windDir = _gustDir;
+
+      // ---- Wind particles drift ---- motes stream past in the gust direction,
+      // faster/denser up high and during gusts.
+      if (windParticles) {
+        const pos = windParticles.geometry.attributes.position;
+        const vel = windParticles.userData.vel;
+        const baseWind = 0.5 + h * 1.5;
+        const gNow = gust;
+        const dirN = _gustDir;
+        const dtN = dt || 0.016;
+        for (let i = 0; i < windParticles.userData.count; i++) {
+          pos.array[i * 3]     += dirN * (baseWind + gNow * 6) * vel[i] * dtN;
+          pos.array[i * 3 + 1] += Math.sin(t * 2 + i) * 0.008;
+          const rx = pos.array[i * 3] - camera.position.x;
+          if (rx > 12)       pos.array[i * 3] = camera.position.x - 12;
+          else if (rx < -12) pos.array[i * 3] = camera.position.x + 12;
+          const ry = pos.array[i * 3 + 1] - cameraY;
+          if (ry > 7)       pos.array[i * 3 + 1] = cameraY - 6;
+          else if (ry < -7) pos.array[i * 3 + 1] = cameraY + 6;
+        }
+        pos.needsUpdate = true;
+        windParticles.material.opacity = 0.22 + Math.min(0.45, h * 0.3 + gNow * 0.3);
       }
 
       // ---- Edge-proximity vertigo intensity ----
@@ -13860,7 +14208,11 @@ function setupHeights(scene, camera, level) {
       // scarf flutter, and a subtle stomach-drop FOV punch.
       let vertigo = 0;
       if (controls) {
-        const edgeProx = Math.max(0, Math.min(1, (controls.position.z + 0.2) / 1.6));
+        // edgeProx: 1 at the railing (low z), 0 at the back of the platform.
+        // (This was previously inverted — vertigo/fear/wind peaked at the BACK
+        // and fell to nothing at the edge. Now they correctly intensify as the
+        // user approaches the drop.)
+        const edgeProx = Math.max(0, Math.min(1, 1 - (controls.position.z + 0.2) / 1.6));
         const lookProx = Math.max(0, Math.min(1, (-controls.pitch - 0.10) / 1.2));
         vertigo = (edgeProx * 0.5 + lookProx * 0.7) * (0.4 + h);
         vertigo = Math.max(0, Math.min(1, vertigo));
@@ -14008,29 +14360,29 @@ function setupHeights(scene, camera, level) {
         lastHowlAt = t;
       }
 
-      // Stomach-drop FOV punch — when the user JUST tipped their head past
-      // the threshold, the FOV widens then snaps back. The eye reads this as
-      // "the ground rushed forward" — the same visceral signal as a real
-      // cliff peer. Only fires once per pitch cross to avoid pumping.
+      // ---- Vertigo FOV ----
+      // The view widens CONTINUOUSLY as you near the edge AND look down — the
+      // periphery stretches and the ground seems to pull away, a real
+      // peripheral-vision vertigo cue rather than a one-shot punch. A brief
+      // extra punch still fires the instant you tip past a hard look-down, for
+      // the stomach-drop. Smoothed so it breathes with you instead of snapping.
       if (controls) {
-        const wasDown = active._lastWasLookingDown || false;
+        const baseFov = 62 + h * 8;
         const isDown = controls.pitch < -0.85;
-        if (isDown && !wasDown) {
-          // Schedule a short FOV ramp (handled by writing to camera.fov)
-          active._fovPunchT = 0.45;
-          active._fovPunchBase = camera.fov;
-        }
+        if (isDown && !active._lastWasLookingDown) active._fovPunchT = 0.5;
         active._lastWasLookingDown = isDown;
+        let punch = 0;
         if (active._fovPunchT > 0) {
-          const k = active._fovPunchT / 0.45;
-          camera.fov = active._fovPunchBase + (1 - k) * 6 * Math.sin(k * Math.PI);
-          camera.updateProjectionMatrix();
-          active._fovPunchT -= dt;
-          if (active._fovPunchT <= 0 && active._fovPunchBase) {
-            camera.fov = active._fovPunchBase;
-            camera.updateProjectionMatrix();
-          }
+          const k = active._fovPunchT / 0.5;
+          punch = Math.sin(k * Math.PI) * 5;
+          active._fovPunchT -= dt || 0.016;
         }
+        const fovTarget = baseFov + vertigo * 9 + punch;
+        active._fovSm = (active._fovSm == null)
+          ? baseFov
+          : active._fovSm + (fovTarget - active._fovSm) * Math.min(1, (dt || 0.016) * 5);
+        camera.fov = active._fovSm;
+        camera.updateProjectionMatrix();
       }
 
       // Sync the body's wind exposure with the vertigo intensity so the scarf
@@ -14069,6 +14421,19 @@ function setupHeights(scene, camera, level) {
           armSpread,
           crouch: 0,
         });
+        // FP hands physically wrap the REAL top rail when you're at it and
+        // facing the drop — knuckles on the metal instead of a canned grab
+        // pose floating in the air. The rail top sits at cameraY-0.5, z=-0.4.
+        if (active.hands && active.hands.setReachTarget) {
+          if (reach > 0.25 && Math.cos(controls.yaw) > 0.2 && z > -0.55) {
+            _railGrip.set(controls.position.x, cameraY - 0.5, -0.4);
+            active.hands.setReachTarget(_railGrip, {
+              hand: "both", grip: "wrap", normal: _UP, spread: 0.24, maxReach: 0.74,
+            });
+          } else {
+            active.hands.clearReachTarget();
+          }
+        }
       }
 
       // Frame-rate normaliser: all the per-frame ambient motion below was
@@ -15193,6 +15558,32 @@ function buildDog(opts = {}) {
       }
     });
 
+    // Add procedural fur micro-detail so the flat-shaded coat catches light like
+    // real fur instead of smooth plastic. We apply only the strand NORMAL +
+    // matte ROUGHNESS maps (UV-safe relief + break-up) and leave the model's own
+    // palette colours alone — skipping the eyes/nose (very dark) and teeth/
+    // eye-whites (very light). makeFurMaps() was built for exactly this and was
+    // previously generated but never bound.
+    try {
+      const fur = makeFurMaps();
+      model.traverse((o) => {
+        if (!o.isMesh || !o.material) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => {
+          if (!m || !m.color) return;
+          const lum = 0.299 * m.color.r + 0.587 * m.color.g + 0.114 * m.color.b;
+          if (lum < 0.06 || lum > 0.9) return;     // skip eyes/nose & teeth/whites
+          const nrm = fur.normal.clone();    nrm.repeat.set(4, 4); nrm.needsUpdate = true;
+          const rgh = fur.roughness.clone(); rgh.repeat.set(4, 4); rgh.needsUpdate = true;
+          m.normalMap = nrm;
+          if (m.normalScale) m.normalScale.set(0.5, 0.5);
+          m.roughnessMap = rgh;
+          if (m.roughness == null || m.roughness < 0.6) m.roughness = 0.85;
+          m.needsUpdate = true;
+        });
+      });
+    } catch (e) { console.warn("[dogs] fur maps:", e); }
+
     // Measure the (untransformed) bind pose, then scale to the requested world
     // height and drop the feet onto the Group origin (local y = 0). setupDogs
     // puts the Group at floor height, so the feet sit on the floor at any size.
@@ -15283,6 +15674,15 @@ class DogController {
     this._walkBucket = -1;
     this._sitTimer = 0;
     this._headLowSm = 0;
+    // ---- Procedural "alive" layer (added on top of the clip pose each frame):
+    // tail wag, resting breath, walk body-bob, ear sway. Bone refs bind lazily
+    // once the model has streamed in.
+    this._rig = null;
+    this._wagPhase = 0;
+    this._wagImpulse = 0;        // decaying; scene bumps via this.tailWag
+    this._breathPhase = 0;
+    this._walkAmtSm = 0;
+    this.happy = 0;             // scene sets 0..1 (trust) → resting wag baseline
     // Start the resting clip as soon as the model is available.
     if (dog.userData.ready) {
       this._play("Idle", 0);
@@ -15485,6 +15885,66 @@ class DogController {
     if (this.state === "sit") this._sitTimer += d;
 
     p.mixer.update(d);
+    this._bodyLife(t, d);
+  }
+
+  // Procedural life layered ON TOP of the current clip pose (the mixer has just
+  // written each bone, so we read it and ADD a small delta — no compounding).
+  // Gives a resting dog breath + tail wag, a walking dog a body bob, and ears
+  // that sway with motion. This is what turns the clip-puppet into a creature.
+  _bodyLife(t, d) {
+    const model = this.parts.model;
+    if (!model) return;
+    if (!this._rig) {
+      const find = (n) => { let r = null; model.traverse(o => { if (!r && o.isBone && o.name === n) r = o; }); return r; };
+      this._rig = {
+        tail:  [find("Tail1"), find("Tail2"), find("Tail3")].filter(Boolean),
+        chest: [find("Torso"), find("Torso2"), find("Torso3"), find("Back")].filter(Boolean),
+        neck:  find("Neck2"),
+        earsL: [find("Ear1L"), find("Ear2L")].filter(Boolean),
+        earsR: [find("Ear1R"), find("Ear2R")].filter(Boolean),
+      };
+    }
+    const rig = this._rig;
+    const resting = this.state === "idle" || this.state === "sit" || this.state === "lay";
+
+    // ---- Tail wag ----
+    // Fold the scene's tailWag pokes into a decaying impulse; baseline wag comes
+    // from trust (happy) + active petting. Faster + wider when happier.
+    this._wagImpulse = Math.min(2.5, this._wagImpulse + (this.tailWag || 0));
+    this.tailWag = 0;
+    this._wagImpulse *= Math.pow(0.35, d);
+    const calmWag = resting ? 0.10 + this.happy * 0.25 : 0.04;
+    const wagAmp = Math.min(1, calmWag + this._petAmountSm * 0.8 + this._wagImpulse * 0.5);
+    this._wagPhase += d * (5 + wagAmp * 11);
+    for (let i = 0; i < rig.tail.length; i++) {
+      // Whip: amplitude grows toward the tip, with a slight phase lag per joint.
+      rig.tail[i].rotation.y += Math.sin(this._wagPhase - i * 0.5) * wagAmp * (0.14 + i * 0.07);
+    }
+
+    // ---- Breathing ---- (chest rises/falls; subtle, faster when keyed up)
+    const breatheK = resting ? 1 : 0.45;
+    this._breathPhase += d * (this.state === "bark" ? 4.2 : 1.7);
+    const br = Math.sin(this._breathPhase);
+    for (const b of rig.chest) b.rotation.x += br * 0.012 * breatheK;
+    if (rig.neck) rig.neck.rotation.x -= br * 0.007 * breatheK;   // keep head level
+
+    // ---- Walk body-bob + shoulder roll ----
+    this._walkAmtSm += ((this.state === "walking" ? 1 : 0) - this._walkAmtSm) * Math.min(1, d * 8);
+    let bobP = 0;
+    if (this._walkAmtSm > 0.01) {
+      bobP = (this._action ? this._action.time : t) * Math.PI * 4.4;   // ~2 bobs/stride
+      this.dog.position.y = this.baseY + Math.abs(Math.sin(bobP)) * 0.022 * this._walkAmtSm;
+      if (rig.chest[0]) rig.chest[0].rotation.z += Math.sin(bobP * 0.5) * 0.05 * this._walkAmtSm;
+    } else if (this.dog.position.y !== this.baseY) {
+      this.dog.position.y += (this.baseY - this.dog.position.y) * Math.min(1, d * 6);
+    }
+
+    // ---- Ears ---- (gentle sway + a bounce while trotting)
+    const earOsc = Math.sin(this._wagPhase * 0.5) * 0.025
+      + (this._walkAmtSm > 0.01 ? Math.sin(bobP) * 0.06 * this._walkAmtSm : 0);
+    for (let i = 0; i < rig.earsL.length; i++) rig.earsL[i].rotation.x += earOsc * (0.5 + i * 0.3);
+    for (let i = 0; i < rig.earsR.length; i++) rig.earsR[i].rotation.x += earOsc * (0.5 + i * 0.3);
   }
 }
 
@@ -15902,6 +16362,13 @@ function setupDogs(scene, camera, level) {
   let petPulse = 0;
   let nextSpontaneousBark = intensity === "barking" ? 1.5 : Infinity;
   let dogsControls = null;
+  // Scratch vectors for driving the FP hand onto the real dog (no per-frame GC).
+  const _petPt = new THREE.Vector3();
+  const _petN  = new THREE.Vector3();
+  // Ambient breathing/panting so the dog reads as alive between cues, plus an
+  // "exertion" level that rises with barking/charging and speeds the breath.
+  let dogPantTimer = 1.2;
+  let dogExertion = 0;
   let storedActiveControls = null;
   // Auto-approach scheduling — initialised on first update tick once `t` is
   // known, then reset to a future time after each approach attempt.
@@ -16346,7 +16813,7 @@ function setupDogs(scene, camera, level) {
     hands: { skinColor: 0xd4a07a, sleeveColor: 0x3a3d4f },
     surface: "wood",
     groundY: -1,       // room floor — feet + eye line anchored to it
-    interact(controls) {
+    interact(controls, hands, t) {
       if (!controls) return null;
       const dx = controls.position.x - dog.position.x;
       const dz = controls.position.z - dog.position.z;
@@ -16354,9 +16821,34 @@ function setupDogs(scene, camera, level) {
       if (intensity === "barking") {
         // At "barking" the dog is keyed up; user shouldn't approach but
         // tell them they can step back if it's too much.
+        if (hands) hands.clearReachTarget();
         return { gesture: "rest", hint: dist < 3.5
           ? `${dogName} is alert. Stay back. Notice the breath.`
           : "" };
+      }
+      // Within reach, drive the ACTUAL right hand onto the dog's upper back /
+      // head so petting is a real touch that tracks the dog as it moves — and
+      // strokes slowly along the spine while you're actively petting. Replaces
+      // the old fixed mid-air "pet" wave.
+      if (hands && dist < 2.2 && dog.userData.ready) {
+        const parts = dog.userData.parts;
+        const dogH = (parts && parts.height) || 0.6;
+        const inv = 1 / (dist || 1);
+        const tpx = dx * inv, tpz = dz * inv;          // unit vector dog → player
+        // Land on the near-side neck/head — the closest part, which the dog
+        // raises toward you when you're close — then stroke back over the
+        // withers while you're actively petting.
+        const stroke = petPulse > 0.05 ? Math.sin((t || 0) * 3) * dogH * 0.12 * petPulse : 0;
+        const nearNudge = dogH * 0.42 - stroke;       // +stroke pulls back over the back
+        _petPt.set(
+          dog.position.x + tpx * nearNudge,
+          dog.position.y + dogH * (0.74 - petPulse * 0.05),
+          dog.position.z + tpz * nearNudge
+        );
+        _petN.set(tpx * 0.4, 1, tpz * 0.4).normalize();
+        hands.setReachTarget(_petPt, { hand: "right", grip: "flat", normal: _petN, maxReach: 0.92 });
+      } else if (hands) {
+        hands.clearReachTarget();
       }
       // Character-driven hints: change as the player closes the distance.
       // No "click button" instructions — the player figures out the world
@@ -16384,7 +16876,21 @@ function setupDogs(scene, camera, level) {
       // Drive the dog's lean-into-pet from the petPulse so the dog actually
       // reacts to contact instead of just absorbing clicks silently.
       dogCtrl.petAmount = petPulse;
+      dogCtrl.happy = trust;            // resting tail-wag baseline scales with trust
       dogCtrl.update(t, d);
+
+      // ---- Ambient panting / breathing ----
+      // A real dog breathes audibly at rest and pants harder after exertion.
+      // Fire dogPant() on a self-scheduling timer, faster when keyed up.
+      dogExertion = Math.max(0, dogExertion - d * 0.12);
+      dogPantTimer -= d;
+      if (dogPantTimer <= 0) {
+        const calm = dogCtrl.state === "idle" || dogCtrl.state === "sit" || dogCtrl.state === "lay";
+        if ((calm || dogExertion > 0.2) && window.PhobiaAudio?.dogPant) {
+          try { window.PhobiaAudio.dogPant(0.3 + dogExertion * 0.55, dog.position); } catch {}
+        }
+        dogPantTimer = (calm ? 1.1 + Math.random() * 0.9 : 0.5 + Math.random() * 0.4) / (1 + dogExertion * 1.5);
+      }
 
       // Keep the player from walking through the props or the dog. Rebuilt each
       // frame so the dog (a moving obstacle) is always current.
@@ -16439,6 +16945,21 @@ function setupDogs(scene, camera, level) {
             lean,
             armSpread: 0,
           });
+          // Bend the FP head down toward a low dog so the hand can actually
+          // reach its back — you crouch to greet a small dog. Targets a comfy
+          // eye height ~0.78 m above the dog's back; a tall dog needs ~none.
+          if (controls.setEyeDrop) {
+            const parts = dog.userData.parts;
+            const dogH = (parts && parts.height) || 0.6;
+            const contactY = dog.position.y + dogH * 0.72;
+            const closeness = Math.max(0, Math.min(1, (2.2 - playerDist) / 1.0));
+            const drop = playerDist < 2.2
+              ? Math.max(0, controls.position.y - (contactY + 0.55)) * closeness
+              : 0;
+            controls.setEyeDrop(Math.min(0.62, drop));
+          }
+        } else if (controls.setEyeDrop) {
+          controls.setEyeDrop(0);
         }
       }
 
@@ -16891,6 +17412,7 @@ function setupDogs(scene, camera, level) {
           if (t > stalkWoofT) {
             stalkWoofT = t + 1.6 + Math.random() * 2.0;
             if (window.PhobiaAudio) window.PhobiaAudio.bark(0.3 * trustQuiet, dogPos, barkOpts);
+            dogExertion = Math.min(1, dogExertion + 0.25);
           }
           // Commit to a charge on the timer — but only if you're within a
           // believable lunge range. If you've backed off, it just keeps stalking.
@@ -16898,6 +17420,7 @@ function setupDogs(scene, camera, level) {
             lungeState = "charging"; lungeT = 0; snapFired = false;
             heldGroundDist = distP;
             dogCtrl.walkSpeed = baseWalkSpeed * 2.6;       // a real run
+            dogExertion = Math.min(1, dogExertion + 0.5); // running → harder panting after
           }
         }
 
