@@ -11,7 +11,7 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v9.2-recorded-voice";
+const VERSION = "mira-v9.3-dog-audio";
 const SHELL = [
   "./",
   "./index.html",
@@ -29,6 +29,9 @@ const SHELL = [
   // play via the runtime network-first handler; a missing clip falls back to
   // live TTS, so partial caches degrade gracefully offline).
   "./assets/voice/manifest.json",
+  // Dog vocal sample bank manifest (samples cache at runtime like voice
+  // clips; a missing/uncached sample falls back to synthesis per-kind).
+  "./assets/audio/dog/manifest.json",
 ];
 
 self.addEventListener("install", (event) => {

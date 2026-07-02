@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "credits": "CC0/royalty-free recordings: BigSoundBank.com (Joseph Sardin) and lavenderdotpet/CC0-Public-Domain-Sounds; sliced + loudness-normalized for this app.",
+  "kinds": {
+    "bark": ["bark_a.m4a", "bark_b.m4a", "bark_c.m4a", "bark_d.m4a"],
+    "bark_big": ["bark_big_a.m4a", "bark_big_b.m4a", "bark_big_c.m4a", "bark_big_d.m4a", "bark_big_e.m4a"],
+    "woof": ["woof_a.m4a", "woof_b.m4a", "woof_c.m4a"],
+    "growl": ["growl_a.m4a", "growl_b.m4a", "growl_c.m4a"],
+    "pant": ["pant_a.m4a", "pant_b.m4a", "pant_c.m4a"]
+  }
+}
