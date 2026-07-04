@@ -3530,6 +3530,118 @@ const PhobiaAudio = (() => {
     }
   }
 
+  // ---- Spider foley (all new, additive; the near-silent spider's movement IS
+  // the fear channel). Everything routes through spatial(...,{air,reverb}) so
+  // far skitters read duller + wetter automatically. ----
+  // Dense 8-leg claw-tick train that accelerates as the dart commits — the
+  // audible approach. Richer sibling of skitterBurst (kept separate).
+  function skitterTicks(pos = null, opts = {}) {
+    const c = ensureCtx(); if (!c) return;
+    const duration = opts.duration || 0.35, legRate = opts.legRate || 42;
+    const k = Math.max(0.2, Math.min(1, opts.intensity == null ? 1 : opts.intensity));
+    const out = spatial(pos, { refDistance: 1.0, maxDistance: 22, rolloffFactor: 1.9, creature: true, air: true, reverb: 0.14 });
+    const nb = noiseBuffer(1);
+    const now = c.currentTime;
+    let when = now, tick = 0;
+    while (when < now + duration) {
+      const src = c.createBufferSource(); src.buffer = nb;
+      const bp = c.createBiquadFilter();
+      bp.type = "bandpass"; bp.frequency.value = 3000 + Math.random() * 3400; bp.Q.value = 1.4;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, when);
+      g.gain.exponentialRampToValueAtTime(0.028 * k + 0.014, when + 0.0008);
+      g.gain.exponentialRampToValueAtTime(0.0006, when + 0.010);
+      src.connect(bp).connect(g).connect(out);
+      src.start(when); src.stop(when + 0.05);
+      // Every 4th click: a faint low body-drag layer (reads as 8 legs, a body).
+      if (tick % 4 === 0) {
+        const ds = c.createBufferSource(); ds.buffer = nb;
+        const dl = c.createBiquadFilter(); dl.type = "lowpass"; dl.frequency.value = 260; dl.Q.value = 1;
+        const dgn = c.createGain();
+        dgn.gain.setValueAtTime(0.0001, when);
+        dgn.gain.exponentialRampToValueAtTime(0.012 * k, when + 0.002);
+        dgn.gain.exponentialRampToValueAtTime(0.0006, when + 0.018);
+        ds.connect(dl).connect(dgn).connect(out);
+        ds.start(when); ds.stop(when + 0.05);
+      }
+      // Accelerate: inter-click gap shrinks from 1/legRate to 0.62/legRate.
+      const frac = (when - now) / duration;
+      const gap = (1 / legRate) * (1 - 0.38 * frac) * (0.75 + Math.random() * 0.5);
+      when += Math.max(0.006, gap);
+      tick++;
+    }
+  }
+  // Dry leaf/bristle friction fired once at the start of a dart.
+  function bristleRustle(pos = null, opts = {}) {
+    const c = ensureCtx(); if (!c) return;
+    const intensity = opts.intensity == null ? 0.6 : opts.intensity;
+    const out = spatial(pos, { refDistance: 1.2, maxDistance: 18, creature: true, air: true, reverb: 0.12 });
+    const now = c.currentTime, dur = 0.12 + Math.random() * 0.06;
+    const nb = noiseBuffer(dur + 0.05);
+    const src = c.createBufferSource(); src.buffer = nb;
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.8;
+    bp.frequency.setValueAtTime(5200, now); bp.frequency.exponentialRampToValueAtTime(2600, now + dur);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.05 * intensity, now + 0.02); g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    // Ratchety dry-friction gate (tremolo on the gain).
+    const trem = c.createOscillator(); trem.type = "square"; trem.frequency.value = 60 + Math.random() * 30;
+    const tg = c.createGain(); tg.gain.value = 0.4 * 0.05 * intensity;
+    trem.connect(tg).connect(g.gain); trem.start(now); trem.stop(now + dur);
+    src.connect(bp).connect(g).connect(out);
+    src.start(now); src.stop(now + dur + 0.02);
+  }
+  // Sharp single "tik" at the pounce apex (reserved for the real lunge).
+  function chitinTik(pos = null, opts = {}) {
+    const c = ensureCtx(); if (!c) return;
+    const intensity = opts.intensity == null ? 1 : opts.intensity;
+    const out = spatial(pos, { refDistance: 0.8, maxDistance: 20, rolloffFactor: 2.0, creature: true, reverb: 0.18 });
+    const now = c.currentTime;
+    const nb = noiseBuffer(0.05);
+    const src = c.createBufferSource(); src.buffer = nb;
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 4200; bp.Q.value = 3;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(0.11 * intensity, now + 0.0006); g.gain.exponentialRampToValueAtTime(0.0008, now + 0.020);
+    src.connect(bp).connect(g).connect(out); src.start(now); src.stop(now + 0.05);
+    const o = c.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(520, now); o.frequency.exponentialRampToValueAtTime(300, now + 0.04);
+    const og = c.createGain();
+    og.gain.setValueAtTime(0.0001, now); og.gain.exponentialRampToValueAtTime(0.06 * intensity, now + 0.003); og.gain.exponentialRampToValueAtTime(0.0008, now + 0.04);
+    o.connect(og).connect(out); o.start(now); o.stop(now + 0.06);
+  }
+  // Faint plucked web-strand (coil telegraph / wall framing).
+  function webPluck(pos = null, opts = {}) {
+    const c = ensureCtx(); if (!c) return;
+    const intensity = opts.intensity == null ? 0.5 : opts.intensity;
+    const out = spatial(pos, { refDistance: 1.5, maxDistance: 16, creature: true, reverb: 0.22, air: true });
+    const now = c.currentTime, f = 180 + Math.random() * 90;
+    const o = c.createOscillator(); o.type = "triangle";
+    o.frequency.setValueAtTime(f, now); o.frequency.exponentialRampToValueAtTime(f * 0.86, now + 0.4);
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = f * 3; bp.Q.value = 6;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(0.045 * intensity, now + 0.004); g.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    o.connect(bp).connect(g).connect(out); o.start(now); o.stop(now + 0.52);
+  }
+  // Looped cellar bed: low hum + periodic pitch-dropping drips. Returns {stop}.
+  function startCellarAmbient(opts = {}) {
+    const c = ensureCtx(); if (!c) return { stop() {} };
+    const intensity = opts.intensity == null ? 0.4 : opts.intensity;
+    const hum = startLoop({ baseFreq: 70 + intensity * 30, q: 1.3, gain: 0.09 + intensity * 0.10, lfoRate: 0.08, lfoDepth: 24, pink: true });
+    let alive = true, timer = null;
+    const drip = () => {
+      if (!alive) return;
+      const now = c.currentTime;
+      const out = spatial({ x: (Math.random() - 0.5) * 3, y: 1.6, z: -1 - Math.random() * 3 }, { refDistance: 1, maxDistance: 14, reverb: 0.3, air: true });
+      const o = c.createOscillator(); o.type = "sine";
+      o.frequency.setValueAtTime(900, now); o.frequency.exponentialRampToValueAtTime(260, now + 0.09);
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(0.05, now + 0.004); g.gain.exponentialRampToValueAtTime(0.0008, now + 0.12);
+      o.connect(g).connect(out); o.start(now); o.stop(now + 0.14);
+      timer = setTimeout(drip, 3500 + Math.random() * 7000);
+    };
+    timer = setTimeout(drip, 1500 + Math.random() * 4000);
+    return { stop() { alive = false; if (timer) clearTimeout(timer); try { hum && hum.stop && hum.stop(); } catch {} } };
+  }
+
   function startMRI() {
     const c = ensureCtx(); if (!c) return { stop() {} };
     let alive = true, timer = null;
@@ -4574,6 +4686,8 @@ const PhobiaAudio = (() => {
     startEngineDrone, startHiss, startAudienceMurmur, startAmbientPad,
     startRain, startDrivingDrone,
     hissOnce, startSlither, skitterBurst,
+    // Spider foley (additive)
+    skitterTicks, bristleRustle, chitinTik, webPluck, startCellarAmbient,
     bark, splash, doorCreak, thunder, indicatorClick, footstep,
     // Dog vocalisations — dogVocal is the unified entry (samples-first with
     // synth fallback); the individual synths stay exported for direct use.
@@ -4864,12 +4978,37 @@ const PhobiaNarrator = (() => {
       ],
     },
     spiders: {
-      arrival: ["You see the spider across the room. It's where it is."],
-      walking: ["You're walking closer. Notice your breath."],
-      close: ["You're close to it. It hasn't moved toward you."],
-      panic: ["You're safe. The spider is small. You can step back."],
-      avoidance: ["You stepped back. That's allowed."],
-      habituation: ["Your fear was lower this time. Real progress."],
+      arrival: [
+        "You're in the room. The spider is over there, keeping to itself.",
+        "Take the room in first. Cool air, concrete, one small creature.",
+      ],
+      walking: [
+        "You're stepping closer. Slow is fine. Notice your feet.",
+        "Your body is doing this — one step, then the next.",
+      ],
+      close: [
+        "You're close now. You can watch the legs move. You can also step back.",
+        "It's small and it's busy. You are here, watching, safe.",
+      ],
+      panic: [
+        "You're safe. It's small. Feet on the floor, slow breath out.",
+        "Step back whenever you need to. The jar is always there.",
+      ],
+      // Used INSTEAD of panic while the spider is actively darting/pouncing —
+      // the guide must never say "it hasn't moved" over a skitter.
+      threatened: [
+        "It darted. You flinched and stayed. That's the whole skill.",
+        "Fast legs, small body. The fear spikes, then it settles. Stay with it.",
+        "You can jar it any time. For this breath, just hold your ground.",
+      ],
+      avoidance: [
+        "You gave yourself space. Good. Step back in when you're ready.",
+        "There's no rush. It'll keep to its corner.",
+      ],
+      habituation: [
+        "Your fear was lower this time. Your body is learning it's safe.",
+        "You stayed longer than last time. Real progress.",
+      ],
     },
     snakes: {
       arrival: ["The snake is on the path ahead. It's coiled, calm."],
@@ -5242,12 +5381,14 @@ const VOICE_LINES = {
     ["A large dog, close. You can hear it breathe.", "Stay. Breathe through your nose. Soft jaw."],
     ["Right in front of you. Big sound.", "Loud is not the same as dangerous. Notice the urge to flee. You can stay."],
   ],
+  // Lines describe the real cellar + skitter + jar + on-wall arc — never claim
+  // the spider is motionless (it skitters and pounces).
   spiders: [
-    ["A tiny dot. Maybe a spider, maybe not.", "Just look. Curiosity, not fear."],
-    ["Small spider. Across the room.", "Notice the legs. Notice your breath."],
-    ["Medium spider, halfway closer.", "Soften your gaze. It is not coming for you."],
-    ["A large spider, near your foot.", "You can step back any time. For now, just stay."],
-    ["At eye level. Legs twitching.", "Look at it. Really look. The fear will rise. Then settle."],
+    ["A dim cellar. Something small in the far corner.", "Just look from here. Notice your feet on the cold floor."],
+    ["A small spider on the concrete. It shifts, then stills.", "Watch the legs. Watch your breath. Both can happen at once."],
+    ["It's closer now, and it darts when it moves.", "When it skitters, your body jumps. Let it. Then settle."],
+    ["A big one, near your feet. You can see the legs work.", "Step back any time. Or lower the jar over it. You're in control."],
+    ["On the wall, right at eye level. Legs twitching.", "Hold your ground for one breath. If it lunges, you can back away."],
   ],
   enclosed: [
     ["A spacious room. Doors visible.", "Notice the air. There is plenty of it."],
@@ -5377,12 +5518,21 @@ const PHOBIAS = {
     label: "Spiders",
     icon: spiderIcon(),
     blurb: "Fear of spiders — the legs, the sudden movement.",
+    // `intensity` (calm/alert/apex) mirrors the dog taxonomy and drives credit
+    // thresholds + the narrator threat gate. `behavior` makes each rung a
+    // distinct encounter (skitter cadence, whether it approaches/pounces,
+    // the on-wall apex) instead of differing by `size` alone.
     levels: [
-      { title: "A tiny dot, far",     desc: "Could be a spider. Too small to tell.", size: 0.15 },
-      { title: "Small spider, still", desc: "On the floor across the room.",          size: 0.35 },
-      { title: "Medium spider",       desc: "Halfway across. Not moving (yet).",      size: 0.55 },
-      { title: "Large spider, close", desc: "Near your foot. You can see its eyes.",  size: 0.80 },
-      { title: "On the wall by you",  desc: "Right at eye level. Legs twitch.",       size: 1.00 }
+      { title: "A tiny dot, far",     desc: "A dim cellar. Something small in the far corner.", size: 0.15, intensity: "calm",
+        behavior: { skitter: false, approach: false, pounce: false, inZoneDist: 2.2, fearMul: 0.35, firstSkitterAt: Infinity, still: true } },
+      { title: "Small spider, near",  desc: "A small spider on the concrete. It shifts, then stills.", size: 0.35, intensity: "calm",
+        behavior: { skitter: true, approach: false, pounce: false, homeRadius: 0.9, inZoneDist: 2.6, fearMul: 0.55, firstSkitterAt: 8, skitterEvery: [3.5, 6.0], skitterSpeed: 0.9, jagAmt: 0.6, approachBias: 0.0 } },
+      { title: "Medium spider, darts",desc: "Closer now — and it darts when it moves.", size: 0.55, intensity: "alert",
+        behavior: { skitter: true, approach: true, pounce: false, homeRadius: 2.2, inZoneDist: 3.0, fearMul: 0.72, firstSkitterAt: 6, skitterEvery: [2.5, 4.5], skitterSpeed: 1.5, jagAmt: 1.0, approachBias: 0.5, guardDist: 1.2, escalate: true, settleAfter: 40 } },
+      { title: "Large spider, close", desc: "A big one, near your feet. You can see the legs work.", size: 0.80, intensity: "alert",
+        behavior: { skitter: true, approach: true, pounce: true, homeRadius: 3.0, inZoneDist: 3.4, fearMul: 0.88, firstSkitterAt: 4, skitterEvery: [1.8, 3.5], skitterSpeed: 2.0, jagAmt: 1.2, approachBias: 0.8, guardDist: 0.7, firstPounceAt: 35, pounceEvery: [10, 16], coilDur: [0.7, 1.1], escalate: true, settleAfter: 50 } },
+      { title: "On the wall by you",  desc: "On the wall, right at eye level. Legs twitching.", size: 1.00, intensity: "apex",
+        behavior: { skitter: true, approach: false, pounce: true, onWall: true, wallZ: -2.6, wallEyeY: 0.5, homeRadius: 0.5, inZoneDist: 3.8, fearMul: 1.0, firstSkitterAt: 2, skitterEvery: [1.4, 2.8], skitterSpeed: 1.4, jagAmt: 0.5, twitch: true, guardDist: 0.9, firstPounceAt: 20, pounceEvery: [8, 13], coilDur: [0.6, 0.9], escalate: true } }
     ],
     sceneClass: "scene-approach",
     render: renderSpider
@@ -14304,6 +14454,102 @@ function makeLeafTexture() {
   return t;
 }
 
+// Cold damp cellar plaster: grey concrete-plaster base + vertical water-stain
+// streaks + pale efflorescence blooms. Same pipeline as makePlasterMaps but a
+// different palette — the opposite of the dog room's warm interior.
+function makeDampPlasterMaps() {
+  const SIZE = sceneQuality() === "low" ? 128 : 256;
+  const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
+  const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
+  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d");
+  aCtx.fillStyle = "#5b5f63"; aCtx.fillRect(0, 0, SIZE, SIZE);
+  hCtx.fillStyle = "#808080"; hCtx.fillRect(0, 0, SIZE, SIZE);
+  // Low-frequency cold mottling
+  for (let i = 0; i < 8; i++) {
+    const x = Math.random() * SIZE, y = Math.random() * SIZE, r = SIZE * (0.2 + Math.random() * 0.3);
+    const grad = aCtx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, "rgba(30,38,44,0.10)");
+    grad.addColorStop(1, "rgba(30,38,44,0)");
+    aCtx.fillStyle = grad;
+    aCtx.beginPath(); aCtx.arc(x, y, r, 0, Math.PI * 2); aCtx.fill();
+  }
+  // Vertical water-stain streaks (the damp cellar tell)
+  const streaks = sceneQuality() === "low" ? 8 : 13;
+  for (let i = 0; i < streaks; i++) {
+    const sx = Math.random() * SIZE, sw = 3 + Math.random() * 7;
+    const grad = aCtx.createLinearGradient(0, 0, 0, SIZE);
+    grad.addColorStop(0, "rgba(24,30,36,0.02)");
+    grad.addColorStop(0.4, `rgba(24,30,36,${0.10 + Math.random() * 0.08})`);
+    grad.addColorStop(1, "rgba(24,30,36,0.04)");
+    aCtx.fillStyle = grad;
+    aCtx.fillRect(sx, 0, sw, SIZE);
+  }
+  // Efflorescence — pale mineral blooms near the top
+  for (let i = 0; i < 4; i++) {
+    const x = Math.random() * SIZE, y = Math.random() * SIZE * 0.4, r = SIZE * (0.06 + Math.random() * 0.09);
+    const grad = aCtx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, "rgba(150,160,170,0.06)");
+    grad.addColorStop(1, "rgba(150,160,170,0)");
+    aCtx.fillStyle = grad;
+    aCtx.beginPath(); aCtx.arc(x, y, r, 0, Math.PI * 2); aCtx.fill();
+  }
+  // Fine speckle + height noise
+  for (let i = 0; i < 2600; i++) {
+    const v = Math.round((Math.random() - 0.5) * 16);
+    const x = Math.random() * SIZE, y = Math.random() * SIZE;
+    aCtx.fillStyle = `rgba(${88 + v},${94 + v},${99 + v},0.22)`;
+    aCtx.fillRect(x, y, 1, 1);
+    const hv = 128 + Math.round((Math.random() - 0.5) * 12);
+    hCtx.fillStyle = `rgb(${hv},${hv},${hv})`;
+    hCtx.fillRect(x, y, 1, 1);
+  }
+  // Low tier: flat walls (skip the normal-map bake)
+  const nrm = sceneQuality() === "low" ? null : heightCanvasToNormal(heightC, 0.6);
+  return canvasMapSet(albedo, nrm, null);
+}
+
+// Cobweb alpha texture: radial spokes + concentric catenary arcs from a corner
+// origin. Used as map+alphaMap on a translucent plane tucked in a wall corner.
+function makeWebTexture() {
+  const S = 128;
+  const c = document.createElement("canvas");
+  c.width = c.height = S;
+  const ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, S, S);
+  ctx.strokeStyle = "rgba(210,214,220,0.5)";
+  ctx.lineWidth = 0.7;
+  const ox = 4, oy = S - 4;               // corner origin (bottom-left)
+  const spokes = 7, R = S - 8;
+  const ang = [];
+  for (let i = 0; i < spokes; i++) {
+    const a = (i / (spokes - 1)) * (Math.PI / 2);   // 0..90°
+    ang.push(a);
+    ctx.beginPath();
+    ctx.moveTo(ox, oy);
+    ctx.lineTo(ox + Math.cos(a) * R, oy - Math.sin(a) * R);
+    ctx.stroke();
+  }
+  // Concentric catenary arcs connecting adjacent spokes, sagging inward
+  for (let ring = 1; ring <= 5; ring++) {
+    const rr = (ring / 5.5) * R;
+    ctx.beginPath();
+    for (let i = 0; i < spokes; i++) {
+      const px = ox + Math.cos(ang[i]) * rr;
+      const py = oy - Math.sin(ang[i]) * rr;
+      if (i === 0) ctx.moveTo(px, py);
+      else {
+        // sag toward the origin at the midpoint
+        const pa = ang[i - 1], mx = ox + Math.cos((pa + ang[i]) / 2) * rr * 0.86;
+        const my = oy - Math.sin((pa + ang[i]) / 2) * rr * 0.86;
+        ctx.quadraticCurveTo(mx, my, px, py);
+      }
+    }
+    ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  return t;
+}
+
 // Yellow / black hazard stripe along the platform edge. Drawn as a long thin
 // canvas (1024×32) so it reads at any zoom — the bright edge marker tells the
 // user exactly where the drop begins.
@@ -20175,64 +20421,438 @@ function setupDogs(scene, camera, level, levelIdx) {
   };
 }
 
+// ---------- Procedural spider "alive" layer ----------
+// Mirrors DogController._bodyLife: after the mixer writes each clip pose, we
+// READ the bones and ADD small deltas (never accumulate) — 8-leg micro-twitch,
+// a breathing bob, front-leg feelers, an alert stilt-stand when the player is
+// close, a coil-load before a pounce, and a fangs-first rear at the apex.
+// Scene-scoped (spiders only); the scene owns locomotion + the pounce machine.
+class SpiderController {
+  constructor(spider, scene, camera) {
+    this.spider = spider; this.scene = scene; this.camera = camera;
+    this.parts = spider.userData.parts;
+    this.baseY = spider.position.y;
+    this.height = (this.parts && this.parts.height) || 0.3;
+    this.span = (this.parts && this.parts.span) || 0.9;
+    this.walkAmt = 0; this._walkAmtSm = 0;      // scene sets 1 while skittering
+    this.alert = 0; this._alertSm = 0;          // drawn-up defensive posture
+    this.coil = 0; this._coilSm = 0;            // pounce load telegraph
+    this.pounceImpulse = 0; this._pounceSm = 0; // one-shot rear at the apex
+    this._legPhase = 0; this._breathPhase = 0;
+    this._twitchT = []; for (let i = 0; i < 8; i++) this._twitchT.push(Math.random() * Math.PI * 2);
+    this._twitchClock = 0.8 + Math.random() * 2.2; this._flickLeg = 0; this._flickT = 0;
+    this._poseYOff = 0;
+    this._rig = null;
+    this.suspend = false;    // scene sets true during jar / removed states (skips whole layer)
+    this.suspendY = false;   // scene sets true when it owns y (wall-pounce parabola)
+  }
+  setAlert(a) { this.alert = Math.max(0, Math.min(1, a)); }
+  setCoil(c) { this.coil = Math.max(0, Math.min(1, c)); }
+  pounceRear(a = 1) { this.pounceImpulse = Math.max(this.pounceImpulse, a); }
+  update(t, d) {
+    const p = this.parts;
+    if (!p || !p.mixer) return;
+    p.mixer.update(d);
+    if (this.suspend) return;
+    this._bodyLife(t, d);
+  }
+  _bodyLife(t, d) {
+    const model = this.parts.model;
+    if (!model) return;
+    if (!this._rig) {
+      const find = (n) => { let r = null; model.traverse(o => { if (!r && o.isBone && o.name === n) r = o; }); return r; };
+      // Quaternius spider bone names carry NO dot: FrontLegL / FrontLeg2L /
+      // FrontLeg3L (femur / tibia / tarsus), sides L|R.
+      const bases = ["FrontLeg", "MidFrontLeg", "MidBackLeg", "BackLeg"];
+      const legs = [];
+      for (const base of bases) for (const side of ["L", "R"]) {
+        const up = find(base + side), mid = find(base + "2" + side), tip = find(base + "3" + side);
+        if (up || mid || tip) legs.push({ up, mid, tip, isFeeler: base === "FrontLeg" });
+      }
+      this._rig = { body: find("Body") || find("Thorax"), legs };
+      if (!this._rig.body && !legs.length) { this._rig = { body: null, legs: [] }; }
+    }
+    const rig = this._rig;
+    const legs = rig.legs;
+    const poseYPrev = this._poseYOff || 0;
+    this._poseYOff = 0;
+
+    // ---- Breath ---- (abdomen swell faked on the Body bone)
+    this._breathPhase += d * (this._coilSm > 0.3 ? 2.5 : 1.9);
+    const br = Math.sin(this._breathPhase);
+    if (rig.body) rig.body.rotation.x += br * 0.010;
+
+    // ---- Walk cadence + body bob ----
+    this._walkAmtSm += ((this.walkAmt || 0) - this._walkAmtSm) * Math.min(1, d * 8);
+    this._legPhase += d * (6 + this._walkAmtSm * 22);   // idle ~1Hz → dart ~4.5Hz
+    const bobP = this._legPhase;
+
+    // ---- Gait leg swing (alternating tetrapod, only while moving) ----
+    if (this._walkAmtSm > 0.01) {
+      for (let i = 0; i < legs.length; i++) {
+        const off = (i % 2) * Math.PI + Math.floor(i / 2) * 0.5;
+        const sw = Math.sin(bobP + off);
+        if (legs[i].mid) legs[i].mid.rotation.z += sw * 0.18 * this._walkAmtSm;
+        if (legs[i].tip) legs[i].tip.rotation.z += sw * 0.12 * this._walkAmtSm;
+        if (legs[i].up)  legs[i].up.rotation.y += Math.cos(bobP + off) * 0.06 * this._walkAmtSm;
+      }
+    }
+
+    // ---- Idle micro-twitch + isolated single-leg flick (the "it's alive" tell) ----
+    const stillness = 1 - Math.min(1, this._coilSm + this._pounceSm);   // no fidget while loaded
+    for (let i = 0; i < legs.length; i++) {
+      const ph = this._twitchT[i] + t * (2.2 + (i % 3) * 0.6);
+      if (legs[i].tip) legs[i].tip.rotation.x += Math.sin(ph) * 0.03 * (1 - 0.6 * this._walkAmtSm) * stillness;
+      if (legs[i].mid) legs[i].mid.rotation.x += Math.sin(ph * 0.7) * 0.015 * stillness;
+    }
+    this._twitchClock -= d;
+    if (this._twitchClock <= 0 && stillness > 0.5) {
+      this._twitchClock = 0.8 + Math.random() * 2.2;
+      this._flickLeg = Math.floor(Math.random() * Math.max(1, legs.length));
+      this._flickT = 0.22;
+    }
+    if (this._flickT > 0) {
+      this._flickT -= d;
+      const f = Math.sin((1 - this._flickT / 0.22) * Math.PI);
+      const L = legs[this._flickLeg];
+      if (L) { if (L.tip) L.tip.rotation.x += f * 0.35; if (L.mid) L.mid.rotation.x += f * 0.18; }
+    }
+
+    // ---- Feeler wave (the two front legs paw the air) ----
+    const feelDamp = 1 - 0.7 * this._coilSm;
+    const feelP = t * 3.4;
+    let fi = 0;
+    for (const L of legs) {
+      if (!L.isFeeler) continue;
+      const side = (fi++) * Math.PI;
+      if (L.up)  L.up.rotation.x  -= (0.12 + Math.sin(feelP + side) * 0.14) * feelDamp;
+      if (L.mid) L.mid.rotation.x -= 0.10 * feelDamp;
+      if (L.tip) L.tip.rotation.x += Math.sin(feelP * 1.3 + side) * 0.10 * feelDamp;
+    }
+
+    // ---- Alert posture (hikes up on its legs, front legs raise) ----
+    this._alertSm += (this.alert - this._alertSm) * Math.min(1, d * 6);
+    if (this._alertSm > 0.01) {
+      const a = this._alertSm;
+      this._poseYOff += 0.08 * a * this.height;
+      const quiver = Math.sin(t * 30) * 0.012 * a;
+      for (let i = 0; i < legs.length; i++) {
+        const L = legs[i];
+        if (L.up)  L.up.rotation.x  -= 0.18 * a + (L.isFeeler || i < 4 ? 0.22 * a : 0);
+        if (L.mid) L.mid.rotation.x += 0.28 * a + quiver;
+        if (L.tip) L.tip.rotation.x -= 0.10 * a;
+      }
+    }
+
+    // ---- Coil telegraph (hunkers + gathers legs, loading the spring) ----
+    this._coilSm += (this.coil - this._coilSm) * Math.min(1, d * 8);
+    if (this._coilSm > 0.01) {
+      const c = this._coilSm;
+      this._poseYOff -= 0.06 * c * this.height;
+      for (let i = 0; i < legs.length; i++) {
+        const L = legs[i];
+        if (L.up)  L.up.rotation.x  += 0.30 * c + (L.isFeeler ? 0.15 * c : 0);
+        if (L.mid) L.mid.rotation.x -= 0.40 * c - (L.isFeeler ? 0.10 * c : 0);
+        if (L.tip) L.tip.rotation.x += 0.20 * c;
+      }
+    }
+
+    // ---- Pounce rear (one-shot at the apex: body pitches up, front legs throw up) ----
+    this.pounceImpulse = Math.max(0, this.pounceImpulse - d * 2.2);
+    this._pounceSm += (this.pounceImpulse - this._pounceSm) * Math.min(1, d * 14);
+    if (this._pounceSm > 0.01) {
+      const r = this._pounceSm;
+      this._poseYOff += 0.10 * r * this.height;
+      if (rig.body) rig.body.rotation.x -= 0.45 * r;
+      for (let i = 0; i < legs.length; i++) {
+        const L = legs[i];
+        if (L.isFeeler || i < 4) { if (L.up) L.up.rotation.x -= 0.55 * r; if (L.tip) L.tip.rotation.x -= 0.30 * r; }
+      }
+    }
+
+    // ---- Body bob applied through the ABSOLUTE y write (poseY accumulator) ----
+    // Skipped when the scene owns y (the wall-rung pounce parabola).
+    if (!this.suspendY) {
+      const bob = this._walkAmtSm > 0.01
+        ? Math.abs(Math.sin(bobP * 0.5)) * 0.010 * this.height * this._walkAmtSm : 0;
+      if (this._walkAmtSm > 0.01) {
+        this.spider.position.y = this.baseY + poseYPrev + bob;
+      } else {
+        this.spider.position.y += (this.baseY + poseYPrev - this.spider.position.y) * Math.min(1, d * 6);
+      }
+    }
+  }
+}
+
 // ---------- Spiders ----------
-function setupSpiders(scene, camera, level) {
+function setupSpiders(scene, camera, level, levelIdx) {
   const size = level.size;
+  const intensity = level.intensity || "calm";
+  const B = level.behavior || {};
+  const rung = Math.max(0, Math.min(4, levelIdx || 0));
+  const clamp01 = (x) => Math.max(0, Math.min(1, x));
+  // Teardown registries + shell tracking (this scene had NO dispose before).
+  const sceneTimers = [];
+  const liveAudio = [];
+  const shellPieces = [];
 
-  scene.background = new THREE.Color(0x303138);
-  scene.fog = new THREE.Fog(0x303138, 9, 30);
+  // ---- Per-rung cellar MOOD (cold/dim/damp, tighter + darker toward rung 5) ----
+  const MOODS = [
+    { bg: 0x0d0f12, bulbC: 0xf6ead0, bulbI: 1.15, bulbY: 1.35, fillC: 0x223040, fillI: 0.34, keyC: 0xcdd6e2, keyI: 0.85, keyPos: [2.4, 3.2, 1.0] },
+    { bg: 0x0b0d10, bulbC: 0xf3e4c6, bulbI: 1.05, bulbY: 1.30, fillC: 0x1f2c3a, fillI: 0.30, keyC: 0xc6d0dd, keyI: 0.80, keyPos: [2.2, 3.0, 0.8] },
+    { bg: 0x090b0e, bulbC: 0xefdcbc, bulbI: 0.95, bulbY: 1.25, fillC: 0x1b2733, fillI: 0.26, keyC: 0xbfcbd8, keyI: 0.78, keyPos: [2.0, 2.9, 0.6] },
+    { bg: 0x07080b, bulbC: 0xecd6b2, bulbI: 0.88, bulbY: 1.20, fillC: 0x18222d, fillI: 0.22, keyC: 0xb8c4d2, keyI: 0.80, keyPos: [1.8, 2.7, 0.4] },
+    { bg: 0x050608, bulbC: 0xe6cca6, bulbI: 0.80, bulbY: 1.15, fillC: 0x141d27, fillI: 0.18, keyC: 0xb0bccb, keyI: 0.85, keyPos: [1.6, 2.5, 0.2] },
+  ];
+  const mood = MOODS[rung];
+  scene.background = new THREE.Color(mood.bg);
+  // No fog — a real enclosed cellar shell; cameraFar tightens depth precision.
+  const _coolKey = new THREE.Color(0x8fa4bd);
+  const _coolBg = new THREE.Color(0x020304);
+  let _fearGrade = 0;
 
-  // Dramatic raking key so the spider is sharply modelled and throws a long
-  // menacing shadow — seeing every leg clearly is scarier than a murky blob.
-  // Low ambient keeps the shadow side moody; a cold rim edge-lights the legs.
-  const key = new THREE.DirectionalLight(0xe6ecf2, 2.8);
-  key.position.set(3, 8, 2);
-  key.target.position.set(0, -0.6, -3);
-  key.castShadow = true;
-  key.shadow.mapSize.set(1024, 1024);
-  key.shadow.camera.left = -8;  key.shadow.camera.right = 8;
-  key.shadow.camera.top = 8;    key.shadow.camera.bottom = -8;
-  if (key.shadow.radius !== undefined) key.shadow.radius = 3;
-  scene.add(key); scene.add(key.target);
-  const rim = new THREE.DirectionalLight(0x9fb6d8, 1.4);
-  rim.position.set(-5, 3, -7);
-  scene.add(rim);
-  scene.add(new THREE.AmbientLight(0x3a4150, 0.26));
+  // Reset the shared engagement accumulator + set honest per-rung credit
+  // thresholds so full credit is reachable on the gentle rungs (proximity
+  // alone caps low). setScene resets these to 30/10 for every scene.
+  if (window.PhobiaFear) {
+    window.PhobiaFear._duration = 0;
+    if (window.PhobiaFear.setCreditThresholds) {
+      if (intensity === "calm") window.PhobiaFear.setCreditThresholds(18, 6);
+      else if (intensity === "alert") window.PhobiaFear.setCreditThresholds(26, 9);
+      // apex keeps 30/10 defaults
+    }
+  }
 
+  // ---- Cellar lighting: one motivated bare bulb + cold fill + tracking rim ----
+  const bulbBase = new THREE.Vector3(0.8, mood.bulbY, -3.0);
+  const bulbMat = new THREE.MeshStandardMaterial({ color: mood.bulbC, emissive: mood.bulbC, emissiveIntensity: 2.4, fog: false });
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), bulbMat);
+  bulb.position.copy(bulbBase);
+  scene.add(bulb); shellPieces.push(bulb);
+  const cord = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.004, 0.004, Math.max(0.05, 1.6 - mood.bulbY), 4),
+    new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 })
+  );
+  cord.position.set(bulbBase.x, (1.6 + mood.bulbY) / 2, bulbBase.z);
+  scene.add(cord); shellPieces.push(cord);
+  const bulbLight = new THREE.PointLight(mood.bulbC, mood.bulbI, 9, 2);
+  bulbLight.position.copy(bulbBase);
+  bulbLight.castShadow = !IS_LOW_POWER;
+  if (bulbLight.castShadow) {
+    bulbLight.shadow.mapSize.set(sceneQuality() === "high" ? 2048 : 1024, sceneQuality() === "high" ? 2048 : 1024);
+    bulbLight.shadow.camera.near = 0.3; bulbLight.shadow.camera.far = 14;
+    bulbLight.shadow.bias = -0.0004; bulbLight.shadow.normalBias = 0.02;
+  }
+  scene.add(bulbLight); shellPieces.push(bulbLight);
+  // Raking key — edge-models the legs, gated by the shell (reads as spill).
+  const key = new THREE.DirectionalLight(mood.keyC, mood.keyI);
+  key.position.set(...mood.keyPos);
+  key.target.position.set(0, -0.9, -3);
+  key.castShadow = !IS_LOW_POWER;
+  if (key.castShadow) {
+    const mr = sceneQuality() === "high" ? 2048 : 1024;
+    key.shadow.mapSize.set(mr, mr);
+    key.shadow.camera.left = -6; key.shadow.camera.right = 6;
+    key.shadow.camera.top = 6; key.shadow.camera.bottom = -6;
+    key.shadow.camera.near = 0.5; key.shadow.camera.far = 24;
+    key.shadow.bias = -0.0003; key.shadow.normalBias = 0.02;
+  }
+  scene.add(key); scene.add(key.target); shellPieces.push(key, key.target);
+  // Cold fill (hemisphere lifts shadows without killing the mood).
+  const fill = new THREE.HemisphereLight(mood.fillC, 0x0a0c10, mood.fillI);
+  scene.add(fill); shellPieces.push(fill);
+  // Rim tracked behind the spider each frame (sharp cold edge on the legs).
+  const spiderRim = new THREE.PointLight(0xbcd0e8, 0.0, 5, 2);
+  scene.add(spiderRim); shellPieces.push(spiderRim);
+  const lightBase = { bulbI: bulbLight.intensity, bulbC: bulbLight.color.getHex(), keyI: key.intensity, keyC: key.color.getHex(), fillI: fill.intensity };
+
+  // ---- Room shell (real cellar sized to the play space) ----
+  const ROOM = { x0: -4.0, x1: 4.0, z0: -9.5, z1: 5.6, ceilY: 1.6 };
+  const wallH = ROOM.ceilY - (-1);   // 2.6 m — a low, oppressive cellar ceiling
+  const addShell = (mesh, cast) => {
+    mesh.castShadow = !!cast && !IS_LOW_POWER;
+    mesh.receiveShadow = true;
+    mesh.userData.noCollide = true;
+    scene.add(mesh); shellPieces.push(mesh);
+    return mesh;
+  };
+  // Damp concrete floor (reuse the shared concrete maps, tinted cold).
+  const cMaps = makeConcreteMaps();
+  [cMaps.albedo, cMaps.normal, cMaps.roughness].forEach(tx => { if (tx) tx.repeat.set(5, 9); });
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(30, 30),
-    new THREE.MeshStandardMaterial({ map: makeTileTexture(), roughness: 0.9 })
+    new THREE.PlaneGeometry(8.4, 15.5),
+    new THREE.MeshStandardMaterial({ map: cMaps.albedo, normalMap: cMaps.normal, roughnessMap: cMaps.roughness, color: 0x6a6e74, envMapIntensity: 0.3 })
   );
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.y = -1;
-  floor.receiveShadow = true;
-  scene.add(floor);
+  if (floor.material.normalMap) floor.material.normalScale.set(0.9, 0.9);
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, -1, (ROOM.z0 + ROOM.z1) / 2);
+  floor.receiveShadow = true; floor.userData.noCollide = true;
+  scene.add(floor); shellPieces.push(floor);
+  // Damp plaster walls.
+  const wMaps = makeDampPlasterMaps();
+  [wMaps.albedo, wMaps.normal].forEach(tx => { if (tx) tx.repeat.set(3.5, 1.2); });
+  const wallMat = new THREE.MeshStandardMaterial({ map: wMaps.albedo, normalMap: wMaps.normal, color: 0xffffff, roughness: 0.94, envMapIntensity: 0.25 });
+  if (wallMat.normalMap) wallMat.normalScale.set(0.7, 0.7);
+  const midZ = (ROOM.z0 + ROOM.z1) / 2;
+  const backWall = addShell(new THREE.Mesh(new THREE.BoxGeometry(8.0, wallH, 0.12), wallMat), true);
+  backWall.position.set(0, -1 + wallH / 2, ROOM.z0);
+  const leftWall = addShell(new THREE.Mesh(new THREE.BoxGeometry(0.12, wallH, ROOM.z1 - ROOM.z0), wallMat), true);
+  leftWall.position.set(ROOM.x0, -1 + wallH / 2, midZ);
+  const rightWall = addShell(new THREE.Mesh(new THREE.BoxGeometry(0.12, wallH, ROOM.z1 - ROOM.z0), wallMat), false);
+  rightWall.position.set(ROOM.x1, -1 + wallH / 2, midZ);
+  const ceilMat = wallMat.clone(); ceilMat.color.setHex(0x2a2a2e);
+  const ceiling = addShell(new THREE.Mesh(new THREE.BoxGeometry(8.0, 0.10, 15.1), ceilMat), true);
+  ceiling.position.set(0, ROOM.ceilY, midZ);
+  // Front wall + door: inward-facing single-sided planes (dollhouse trick).
+  const frontWall = new THREE.Mesh(new THREE.PlaneGeometry(8.0, wallH), wallMat);
+  frontWall.rotation.y = Math.PI; frontWall.position.set(0, -1 + wallH / 2, ROOM.z1);
+  frontWall.receiveShadow = true; frontWall.userData.noCollide = true;
+  scene.add(frontWall); shellPieces.push(frontWall);
+  const doorX = -1.4;
+  const jambMat = new THREE.MeshStandardMaterial({ color: 0x3a3a40, roughness: 0.85 });
+  const doorMat = new THREE.MeshStandardMaterial({ color: 0x4a4640, roughness: 0.8 });
+  const dPlane = (w, h, x, y, z, mat) => { const p = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); p.rotation.y = Math.PI; p.position.set(x, y, z); p.userData.noCollide = true; scene.add(p); shellPieces.push(p); };
+  for (const dx of [-0.55, 0.55]) dPlane(0.08, 2.05, doorX + dx, -1 + 2.05 / 2, ROOM.z1 - 0.03, jambMat);
+  dPlane(1.10, 0.08, doorX, 1.09, ROOM.z1 - 0.03, jambMat);
+  dPlane(0.94, 2.0, doorX, -1 + 1.0, ROOM.z1 - 0.05, doorMat);
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.09, 8), new THREE.MeshStandardMaterial({ color: 0x2a2a2a, metalness: 0.6, roughness: 0.4 }));
+  handle.position.set(doorX + 0.34, -0.05, ROOM.z1 - 0.09); handle.userData.noCollide = true;
+  scene.add(handle); shellPieces.push(handle);
+  // Skirting.
+  const baseMat = new THREE.MeshStandardMaterial({ color: 0x35322e, roughness: 0.9 });
+  const skirt = (w, dpt, x, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, 0.09, dpt), baseMat); b.position.set(x, -0.955, z); b.userData.noCollide = true; scene.add(b); shellPieces.push(b); };
+  skirt(8.0, 0.02, 0, ROOM.z0 + 0.08);
+  skirt(0.02, ROOM.z1 - ROOM.z0, ROOM.x0 + 0.08, midZ);
+  skirt(0.02, ROOM.z1 - ROOM.z0, ROOM.x1 - 0.08, midZ);
 
-  const wall = new THREE.Mesh(
-    new THREE.PlaneGeometry(30, 15),
-    new THREE.MeshStandardMaterial({ color: 0x3a3a40, roughness: 0.95 })
-  );
-  wall.position.set(0, 4, -8);
-  wall.receiveShadow = true;
-  scene.add(wall);
+  // ---- Cobwebs in the corners + dust motes in the bulb light ----
+  const webTex = makeWebTexture();
+  const webMat = new THREE.MeshBasicMaterial({ map: webTex, alphaMap: webTex, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, fog: false });
+  const webCount = sceneQuality() === "low" ? 2 : 4;
+  const webSpots = [
+    [ROOM.x0 + 0.04, 1.15, ROOM.z0 + 0.3, Math.PI / 4],
+    [ROOM.x1 - 0.04, 1.15, ROOM.z0 + 0.3, -Math.PI / 4],
+    [ROOM.x0 + 0.04, 1.15, -3.0, Math.PI / 4],
+    [doorX + 0.7, 1.05, ROOM.z1 - 0.08, Math.PI],
+  ];
+  for (let i = 0; i < webCount; i++) {
+    const [wx, wy, wz, wr] = webSpots[i];
+    const web = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.7), webMat);
+    web.position.set(wx, wy, wz); web.rotation.y = wr; web.userData.noCollide = true;
+    scene.add(web); shellPieces.push(web);
+  }
+  // Dust motes drifting under the bulb (single THREE.Points, cold tint).
+  const dustCount = sceneQuality() === "high" ? 90 : sceneQuality() === "medium" ? 50 : 25;
+  const dustData = [];
+  const dustPos = new Float32Array(dustCount * 3);
+  const spawnMote = (i) => {
+    const ang = Math.random() * Math.PI * 2, r = Math.random() * 1.4;
+    dustPos[i * 3] = bulbBase.x + Math.cos(ang) * r;
+    dustPos[i * 3 + 1] = -1 + Math.random() * (bulbBase.y + 1);
+    dustPos[i * 3 + 2] = bulbBase.z + Math.sin(ang) * r;
+  };
+  for (let i = 0; i < dustCount; i++) { spawnMote(i); dustData.push({ vx: (Math.random() - 0.5) * 0.03, vy: -0.02 - Math.random() * 0.03, vz: (Math.random() - 0.5) * 0.03, phaseX: Math.random() * 6.28, phaseY: Math.random() * 6.28 }); }
+  const dustGeo = new THREE.BufferGeometry();
+  const dustAttr = new THREE.BufferAttribute(dustPos, 3); dustAttr.setUsage(THREE.DynamicDrawUsage);
+  dustGeo.setAttribute("position", dustAttr);
+  const discC = document.createElement("canvas"); discC.width = discC.height = 32;
+  const dctx = discC.getContext("2d");
+  const dg = dctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+  dg.addColorStop(0, "rgba(200,210,224,1)"); dg.addColorStop(1, "rgba(200,210,224,0)");
+  dctx.fillStyle = dg; dctx.fillRect(0, 0, 32, 32);
+  const dustPoints = new THREE.Points(dustGeo, new THREE.PointsMaterial({ size: 0.018, map: new THREE.CanvasTexture(discC), transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true }));
+  dustPoints.userData.noCollide = true;
+  scene.add(dustPoints); shellPieces.push(dustPoints);
 
-  // Build spider — real rigged GLTF (Quaternius "Easy Enemies", CC0), replacing
-  // the old procedural sphere-and-cylinder spider. `size` drives how close it is
-  // and how big it reads; the model is fully animated (idle / walk / attack).
+  // ---- Set dressing (drain grate, cardboard boxes; the spider's homes) ----
+  const drainPos = new THREE.Vector3(1.2, -1, -4.5);
+  const drain = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.02, 0.42), new THREE.MeshStandardMaterial({ color: 0x14151a, metalness: 0.4, roughness: 0.6 }));
+  drain.position.set(drainPos.x, -0.985, drainPos.z); drain.receiveShadow = true; drain.userData.noCollide = true;
+  scene.add(drain); shellPieces.push(drain);
+  const slatMat = new THREE.MeshStandardMaterial({ color: 0x22242a, metalness: 0.3, roughness: 0.7 });
+  for (let s = -2; s <= 2; s++) { const bar = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.012, 0.03), slatMat); bar.position.set(drainPos.x, -0.975, drainPos.z + s * 0.08); bar.userData.noCollide = true; scene.add(bar); shellPieces.push(bar); }
+  if (sceneQuality() !== "low") {
+    const boxMat = new THREE.MeshStandardMaterial({ color: 0x8a6d47, roughness: 0.95 });
+    const boxDefs = [[-2.8, -0.65, -6.5, 0.6, 0.15], [-2.55, -0.72, -6.1, 0.5, -0.3], [-2.95, -0.4, -6.6, 0.55, 0.1]];
+    for (const [bx, by, bz, bs, brot] of boxDefs) { const box = addShell(new THREE.Mesh(new THREE.BoxGeometry(bs, bs, bs), boxMat), true); box.position.set(bx, by, bz); box.rotation.y = brot; }
+  }
+
+  // ---- Room reverb + cellar ambient (dead concrete acoustics) ----
+  {
+    const A = window.PhobiaAudio;
+    if (A && A.roomReverb && sceneQuality() !== "low") liveAudio.push(A.roomReverb({ level: 0.20 }));
+    if (A && A.startCellarAmbient) liveAudio.push(A.startCellarAmbient({ intensity: 0.35 + size * 0.25 }));
+  }
+
+  // Build spider — real rigged GLTF (Quaternius, CC0). `size` drives how close
+  // it reads; on the apex rung it sits VERTICAL on a wall at eye level.
   const distance = 8.2 - size * 7.2;
   const spider = buildCreature(CREATURE_MODELS.spider, {
-    targetSize: 0.75 + size * 0.95,   // leg-span in world units (~0.9 -> ~1.7)
+    targetSize: 0.75 + size * 0.95,
     axis: "max",
   });
-  spider.position.set(0, -1, -distance);   // floor plane sits at y = -1
-  spider.userData.onReady = () => { try { spider.userData.parts.play("Idle"); } catch {} };
+  const GROUND_NUDGE = 0.03;
+  const onWall = !!B.onWall;
+  if (onWall) {
+    // A cellar support pillar gives the vertical spider a real surface to sit
+    // on at eye level (the back wall is 7 m away). Concrete column, floor→ceiling.
+    const wallZ = B.wallZ ?? -2.6;
+    const pillar = new THREE.Mesh(
+      new THREE.BoxGeometry(0.7, wallH, 0.5),
+      new THREE.MeshStandardMaterial({ map: wMaps.albedo ? wMaps.albedo.clone() : null, color: 0x5d6167, roughness: 0.95, envMapIntensity: 0.22 })
+    );
+    if (pillar.material.map) { pillar.material.map.repeat.set(1, 1.4); pillar.material.map.needsUpdate = true; }
+    pillar.position.set(1.0, -1 + wallH / 2, wallZ - 0.25);
+    pillar.castShadow = !IS_LOW_POWER; pillar.receiveShadow = true; pillar.userData.noCollide = true;
+    scene.add(pillar); shellPieces.push(pillar);
+    // Vertical on the pillar's front face at eye level (Package B rung-5 placement).
+    spider.position.set(1.0, -1 + (B.wallEyeY ?? 0.5) + 1.0, wallZ + 0.02);
+    spider.rotation.z = -Math.PI / 2;   // roll so "down" is into the surface
+    spider.rotation.y = 0;
+  } else {
+    spider.position.set(0, -1, -distance);
+  }
+  const spiderCtrl = new SpiderController(spider, scene, camera);
+  spiderCtrl.suspend = true;   // stays suspended until the model is ready
+  spider.userData.onReady = () => {
+    try {
+      const pp = spider.userData.parts;
+      // Dark chitinous material pass — a slightly-glossy near-black carapace so
+      // the cold key + rim catch every leg edge sharply against the cellar.
+      const model = pp.model;
+      let furNrm = null;
+      try { furNrm = makeFurMaps().normal; } catch {}
+      model.traverse(o => {
+        if (!o.isMesh || !o.material) return;
+        if (o.geometry && typeof ensureBoxUV === "function") { try { ensureBoxUV(o.geometry, pp.span || 1); } catch {} }
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach(m => {
+          if (!m || !m.color) return;
+          m.color.multiplyScalar(0.32);
+          m.color.lerp(new THREE.Color(0x1a1614), 0.4);
+          m.metalness = 0;
+          m.roughness = 0.42;
+          m.envMapIntensity = 0.35;
+          if (furNrm) { const n = furNrm.clone(); n.repeat.set(4, 4); n.needsUpdate = true; m.normalMap = n; if (m.normalScale) m.normalScale.set(0.35, 0.35); }
+          m.needsUpdate = true;
+        });
+      });
+      pp.play("Idle");
+      spiderCtrl.height = pp.height || 0.3;
+      spiderCtrl.span = pp.span || 0.9;
+      spiderCtrl.baseY = spider.position.y;
+      spiderCtrl._needsGround = !onWall;   // self-calibrate feet onto the floor
+      spiderCtrl.suspend = false;
+    } catch (e) { console.warn("[spiders] onReady:", e); }
+  };
   scene.add(spider);
 
-  // Camera looks down at the floor
+  // Camera framing (eye = groundY+1.62; mount overrides initialPos.y).
   camera.fov = 55;
   camera.updateProjectionMatrix();
-  const spiderPitch = Math.atan2(-(1.0 + 0.6), distance);
-  const minZ = -distance + 0.6;
+  const spiderPitch = onWall
+    ? 0
+    : Math.atan2(-(1.62 - 0.5), distance);
+  const minZ = onWall ? -6.0 : -distance + 0.6;
 
   // ---- Skitter state (the arachnophobic apex) ----
   // Instead of a timid 0.5 m crawl-and-retreat, the spider darts TOWARD you in
@@ -20241,6 +20861,7 @@ function setupSpiders(scene, camera, level) {
   // it under the jar, or simply back away (the scene is walkable). Speed and
   // frequency scale with the rung's `size`.
   const baseZ = spider.position.z;
+  const homeAnchor = { x: spider.position.x, z: spider.position.z };
   let skitterState = "lurking";       // lurking | skittering | pausing
   let skitterT = 0;
   let nextSkitter = 2.5 + Math.random() * 2.5;
@@ -20252,6 +20873,17 @@ function setupSpiders(scene, camera, level) {
   let spiderControls = null;
   let scriptedGesture = null;   // overrides the default "rest" gesture briefly
   let scriptedGestureUntil = 0;
+  // ---- Pounce machine (coil→pounce→recoil), rungs with B.pounce only ----
+  let pounceState = "idle";     // idle | coiling | pouncing | recoiling
+  let pounceT = 0;
+  let elapsed = 0;              // scene clock
+  let nextPounceAt = B.firstPounceAt ?? Infinity;
+  let coilStartDist = 0, thisCoil = 0.9, pounceFired = false;
+  let heldCycles = 0, retreatPraised = false, holdPraised = false;
+  let completionBeatDone = false;
+  let arousalFloor = 0, engageDur = 0;
+  const GUARD = B.guardDist ?? 0.7;
+  const LENS_FLOOR = 0.85;      // spider XZ never closer than this to the camera
 
   // ----- Glass jar (humane catch) -----
   // The user can lower a real glass jar over the spider. The spider stays
@@ -20287,16 +20919,22 @@ function setupSpiders(scene, camera, level) {
   }
   function dropJarAt(x, z) {
     if (jarPhase !== "idle") return;
+    // A catch mid-pounce MISSES (the spider has left its spot) — timing the
+    // jar between pounces is the skill, parallel to the dog's coil-cancel.
+    const staleMiss = pounceState === "pouncing";
     if (!jar) { jar = buildJar(); scene.add(jar); }
+    jar.userData.staleMiss = staleMiss;
     jar.position.set(x, 4.0, z);    // start above the floor, drops in
     jarPhase = "falling";
     jarLifeT = 0;
-    // The spider sees it coming — a rear-up startle (the rig's Jump clip,
-    // played once and held) right before the glass lands. A creature that
-    // REACTS to your action is what makes the catch feel real.
+    // The spider sees it coming — a rear-up startle (the rig's Jump clip)
+    // right before the glass lands. A creature that REACTS feels real.
     const pp = spider.userData.parts;
     if (pp && pp.play && spider.position.y > -10) {
       pp.play("Jump", 0.06, { once: true });
+      spiderCtrl.pounceRear(0.6);
+      const A = window.PhobiaAudio;
+      if (A && A.chitinTik) try { A.chitinTik({ x: spider.position.x, y: spider.position.y, z: spider.position.z }, { intensity: 0.6 }); } catch {}
       if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.25);
     }
   }
@@ -20316,33 +20954,41 @@ function setupSpiders(scene, camera, level) {
     return spRaycaster.intersectObject(scene, true)[0] || null;
   }
   let spDownX = 0, spDownY = 0, spDownT = 0, spDownPid = -1;
+  function onSpDown(e) {
+    spDownX = e.clientX; spDownY = e.clientY;
+    spDownT = performance.now(); spDownPid = e.pointerId;
+  }
+  function onSpUp(e) {
+    if (e.pointerId !== spDownPid) return;
+    // Under pointer lock the click aims at the crosshair (canvas centre).
+    const locked = !!(spiderControls && spiderControls.isPointerLocked && spiderControls.isPointerLocked());
+    if (spiderControls && spiderControls.wasJustLocked && spiderControls.wasJustLocked()) return;
+    const dx = e.clientX - spDownX, dy = e.clientY - spDownY;
+    if (!locked && (Math.hypot(dx, dy) > 6 || performance.now() - spDownT > 350)) return;
+    const rect = spCanvasDom.getBoundingClientRect();
+    const px = locked ? rect.left + rect.width / 2 : e.clientX;
+    const py = locked ? rect.top + rect.height / 2 : e.clientY;
+    const hit = spPickWorld(px, py, spCanvasDom);
+    if (!hit) return;
+    // Drop the jar over wherever the user clicked (preferring the spider)
+    let p = hit.object, hitSpider = false;
+    while (p) { if (p === spider) { hitSpider = true; break; } p = p.parent; }
+    if (jarMode || hitSpider) {
+      const tx = hitSpider ? spider.position.x : hit.point.x;
+      const tz = hitSpider ? spider.position.z : hit.point.z;
+      dropJarAt(tx, tz);
+      if (window.PhobiaVoice) window.PhobiaVoice.speak("Jar down. It's contained. Slow breath.");
+      jarMode = false;
+    }
+  }
   function bindSpiderClicks() {
     if (spCanvasDom) return;
     spCanvasDom = document.querySelector("#stage canvas");
     if (!spCanvasDom) return;
-    spCanvasDom.addEventListener("pointerdown", (e) => {
-      spDownX = e.clientX; spDownY = e.clientY;
-      spDownT = performance.now(); spDownPid = e.pointerId;
-    });
-    spCanvasDom.addEventListener("pointerup", (e) => {
-      if (e.pointerId !== spDownPid) return;
-      const dx = e.clientX - spDownX, dy = e.clientY - spDownY;
-      if (Math.hypot(dx, dy) > 6 || performance.now() - spDownT > 350) return;
-      const hit = spPickWorld(e.clientX, e.clientY, spCanvasDom);
-      if (!hit) return;
-      // Drop the jar over wherever the user clicked (preferring the spider)
-      let p = hit.object, hitSpider = false;
-      while (p) { if (p === spider) { hitSpider = true; break; } p = p.parent; }
-      if (jarMode || hitSpider) {
-        const tx = hitSpider ? spider.position.x : hit.point.x;
-        const tz = hitSpider ? spider.position.z : hit.point.z;
-        dropJarAt(tx, tz);
-        if (window.PhobiaVoice) window.PhobiaVoice.speak("Jar down. It's contained. Slow breath.");
-        jarMode = false;
-      }
-    });
+    spCanvasDom.addEventListener("pointerdown", onSpDown);
+    spCanvasDom.addEventListener("pointerup", onSpUp);
   }
-  setTimeout(bindSpiderClicks, 60);
+  sceneTimers.push(setTimeout(bindSpiderClicks, 60));
 
   function wireSpiderCmds() {
     const bar = document.querySelector('.scene-cmd-bar[data-scene="spiders"]');
@@ -20375,6 +21021,7 @@ function setupSpiders(scene, camera, level) {
               c.yaw   = fromY + (targetYaw - fromY) * k;
               c.pitch = fromP + (targetPitch - fromP) * k;
             }, 16);
+            sceneTimers.push(id);
             if (window.PhobiaVoice) window.PhobiaVoice.speak("Look at it. Really look. The fear will rise. Then settle.");
             break;
           }
@@ -20399,41 +21046,63 @@ function setupSpiders(scene, camera, level) {
       };
     });
   }
-  setTimeout(wireSpiderCmds, 0);
+  sceneTimers.push(setTimeout(wireSpiderCmds, 0));
+
+  // The hold-completion fanfare must never fire mid-coil / mid-pounce.
+  window.__holdCelebrationGate = () =>
+    !B.pounce || pounceState === "idle" || pounceState === "recoiling";
 
   return {
     controls: {
       mode: "walkable",
       // Spawn near the doorway, well back from the spider. Approach is the
-      // exposure — the user has to step toward the spider, not start on top
-      // of it. First-person locked: spider phobia is an intimate fear (the
-      // spider is small, close, in your space) — third-person dilutes it.
-      initialPos: [0, 1.0, 4.0],
+      // exposure. Gentle rungs open in third-person (watch your body cross
+      // the cellar); the close/apex rungs lock first-person for the intimate,
+      // in-your-space framing arachnophobia lives in.
+      initialPos: [0, 0.62, 4.0],
       initialYaw: 0,
       initialPitch: spiderPitch * 0.4,
-      bounds: { minX: -3, maxX: 3, minZ: minZ, maxZ: 5 },
+      bounds: { minX: -3.6, maxX: 3.6, minZ: minZ, maxZ: 5.2 },
       speed: 1.4,
       lookSpeed: 0.0035,
-      cameraModeLocked: "fp",
+      preferredCameraMode: rung <= 2 ? "tp" : "fp",
+      cameraModeLocked: rung === 4 ? "fp" : undefined,
+      tpShoulder: 0.6, tpDistance: 3.6, tpHeight: 0.5,
+      // Embodiment opt-ins (mirror dogs): captured-mouse look, smoothing, and
+      // fear-modulated gait (approach slows/trembles at high fear, retreat never).
+      pointerLock: true,
+      lookSmoothing: 10,
+      fearGait: true,
     },
-    surface: "hard",   // tile floor in the spider room
-    groundY: -1,       // feet + eye line anchored to the tile floor
+    collisionObjects: [backWall, leftWall, rightWall, ceiling],
+    bloom: { strength: 0.16, threshold: 0.97 },   // dim room — only the filament blooms
+    fearGradePass: true,
+    cameraFar: 30,
+    hands: { skinColor: 0xc99a72, sleeveColor: 0x2b2e38 },
+    messageQueue: true,
+    surface: "hard",   // concrete cellar floor
+    groundY: -1,       // feet + eye line anchored to the floor
     interact(controls) {
       if (scriptedGesture && performance.now() < scriptedGestureUntil) {
         return { gesture: scriptedGesture, hint: "" };
       }
       if (jarPhase !== "idle") {
-        return { gesture: "rest", hint: "the spider is contained — wait for release" };
+        return { gesture: "rest", hint: "contained — slow breath, it releases in a moment" };
       }
       if (controls) {
         const dx = spider.position.x - controls.position.x;
         const dz = spider.position.z - controls.position.z;
-        if (Math.hypot(dx, dz) < 4) {
-          return {
-            gesture: "rest",
-            hint: jarMode ? "click the spider to lower the jar" : "click the spider to capture it under a jar",
-          };
+        const dist = Math.hypot(dx, dz);
+        if (dist > 4) return { gesture: "rest", hint: "" };
+        // During a dart / close pass, prefer a calming ground-oriented hint
+        // over a raw tooltip so the UX doesn't read as a game prompt mid-spike.
+        if (pounceState !== "idle" || (skitterState === "skittering" && dist < 1.6)) {
+          return { gesture: "rest", hint: "it's fast — you can step back, or jar it" };
         }
+        return {
+          gesture: "rest",
+          hint: jarMode ? "click the spider to lower the jar" : "click the spider to catch it under a jar",
+        };
       }
       return { gesture: "rest" };
     },
@@ -20442,158 +21111,349 @@ function setupSpiders(scene, camera, level) {
     onClick(controls) {},
     update(t, controls, dt) {
       if (controls) spiderControls = controls;
-      // Small no-overlap collider so you can't stand inside the spider — but
-      // small enough that you can still step right up to observe it.
+      const d = dt || 0.016;
+      elapsed += d;
+      const A = window.PhobiaAudio;
+      const loose = jarPhase === "idle" && spider.position.y > -10;
+      // No-overlap collider (shrunk during a pounce so retreat stays possible).
       if (controls && controls.setObstacles && jarPhase === "idle") {
-        controls.setObstacles([{ x: spider.position.x, z: spider.position.z, r: 0.3 }]);
+        controls.setObstacles([{ x: spider.position.x, z: spider.position.z, r: pounceState === "pouncing" ? 0.15 : 0.3 }]);
       } else if (controls && controls.setObstacles) {
         controls.setObstacles(null);
       }
-      const d = dt || 0.016;
-      // ---- Feed fear state from proximity to the spider ----
-      // Without this, the in-zone hold timer would count wall-clock for the
-      // spider scene since fear never climbs above 25.
+
+      // ---- Feed the fear model (honest, non-inverted gaze) ----
       if (controls && window.PhobiaFear) {
-        const dxs = controls.position.x - spider.position.x;
-        const dzs = controls.position.z - spider.position.z;
+        const SP = spider.position, CP = controls.position;
+        const dxs = SP.x - CP.x, dzs = SP.z - CP.z;
         const distS = Math.hypot(dxs, dzs);
-        // Closeness rises from 0 at 5m to 1 at 1m
-        const closeness = Math.max(0, Math.min(1, 1 - (distS - 1.0) / 4.0));
-        window.PhobiaFear.setInput("proximity", closeness * 0.85);
-        // Gaze: looking down toward the spider (it's small + on the floor)
-        const lookDownAmt = Math.max(0, Math.min(1, (-controls.pitch - 0.1) / 0.8));
-        window.PhobiaFear.setInput("gaze", lookDownAmt * (closeness > 0.3 ? 0.8 : 0.3));
-        const isAway = distS > 4.0;
-        window.PhobiaFear.bumpAvoidance(d, isAway);
+        const closeness = clamp01(1 - (distS - 1.0) / 4.0);
+        window.PhobiaFear.setInput("proximity", closeness * (B.fearMul ?? 0.6));
+        // Gaze: facing the spider yields high gaze (yaw + look-elevation).
+        const dirTo = Math.atan2(dxs, dzs);
+        const yawDelta = Math.abs(((controls.yaw - dirTo + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+        const yawAlign = Math.max(0, 1 - yawDelta / 1.0);
+        const needPitch = Math.atan2(SP.y - CP.y, Math.max(0.2, Math.hypot(dxs, dzs)));
+        const pitchAlign = Math.max(0, 1 - Math.abs(controls.pitch - needPitch) / 0.7);
+        const gazeAlign = yawAlign * (0.5 + 0.5 * pitchAlign);
+        window.PhobiaFear.setInput("gaze", gazeAlign * (B.fearMul ?? 0.6) * 0.8);
+        // Duration: sustained engagement + a post-pounce arousal floor.
+        const engaged = distS < (B.inZoneDist ?? 3.0) || jarPhase !== "idle" || (intensity === "apex" && yawAlign > 0.35);
+        engageDur = Math.max(0, Math.min(24, engageDur + (engaged ? d : -d * 0.35)));
+        arousalFloor = Math.max(0, arousalFloor - d / 12);
+        window.PhobiaFear._duration = engageDur;
+        window.PhobiaFear.setInput("duration", Math.max(engageDur / 24, arousalFloor));
+        const isAway = distS > (B.inZoneDist ?? 3.0) + 1.5;
+        window.PhobiaFear.bumpAvoidance(d, isAway && engageDur > 2);
+        if (window.PhobiaNarrator) {
+          window.PhobiaNarrator.tick("spiders", {
+            minGap: 30,
+            threat: intensity === "apex" || pounceState === "coiling" || pounceState === "pouncing",
+          });
+        }
       }
+
+      // ---- Fear-grade the room (bulb dims/cools, fill drains, bg darkens) ----
+      const fear01 = (window.PhobiaFear && window.PhobiaFear.get) ? clamp01(window.PhobiaFear.get() / 100) : 0;
+      {
+        const target = fear01 * (window.__rungHoldComplete ? 0.35 : 1);
+        _fearGrade += (target - _fearGrade) * Math.min(1, d * 2.5);
+        const g = _fearGrade;
+        bulbLight.intensity = lightBase.bulbI * (1 - g * 0.45);
+        bulbLight.color.setHex(lightBase.bulbC).lerp(_coolKey, g * 0.6);
+        key.intensity = lightBase.keyI * (1 + g * 0.15);
+        key.color.setHex(lightBase.keyC).lerp(_coolKey, g * 0.7);
+        fill.intensity = lightBase.fillI * (1 - g * 0.55);
+        scene.background.setHex(mood.bg).lerp(_coolBg, g * 0.6);
+        // Bulb flicker + sway (motivated, grows with dread)
+        const flick = 1 - (0.03 + g * 0.10) * (0.5 + 0.5 * Math.sin(t * 37.0) * Math.sin(t * 13.3));
+        bulbLight.intensity *= Math.max(0.55, flick);
+        if (bulb.material) bulb.material.emissiveIntensity = 2.4 * Math.max(0.5, flick);
+        bulb.position.set(bulbBase.x + Math.sin(t * 0.7) * 0.05, bulbBase.y, bulbBase.z + Math.cos(t * 0.55) * 0.04);
+        bulbLight.position.copy(bulb.position);
+      }
+      // Spider rim tracks behind the spider at leg height.
+      if (loose && controls) {
+        const cpos = controls.position;
+        const rdx = spider.position.x - cpos.x, rdz = spider.position.z - cpos.z;
+        const rdist = Math.hypot(rdx, rdz) || 1;
+        spiderRim.position.set(spider.position.x + (rdx / rdist) * 0.7, spider.position.y + 0.25, spider.position.z + (rdz / rdist) * 0.7);
+        const close = clamp01((4 - rdist) / 3);
+        spiderRim.intensity = 0.35 + close * 1.1 + _fearGrade * 0.6;
+      } else {
+        spiderRim.intensity = 0;
+      }
+      // Dust motes drift.
+      for (let i = 0; i < dustData.length; i++) {
+        const dd = dustData[i];
+        dustPos[i * 3] += dd.vx * d + Math.sin(t + dd.phaseX) * 0.0010;
+        dustPos[i * 3 + 1] += dd.vy * d;
+        dustPos[i * 3 + 2] += dd.vz * d + Math.cos(t + dd.phaseY) * 0.0010;
+        if (dustPos[i * 3 + 1] < -0.95) spawnMote(i);
+      }
+      dustAttr.needsUpdate = true;
+
       // ---- Glass jar physics ----
       if (jar && jarPhase === "falling") {
         jarLifeT += d;
-        // Ease the jar down to floor over ~0.5 s
         const k = Math.min(1, jarLifeT / 0.5);
         const yStart = 4.0, yEnd = -0.95;
         jar.position.y = yStart + (yEnd - yStart) * (1 - Math.pow(1 - k, 2));
         if (k >= 1) {
-          jar.position.y = yEnd;
-          jarPhase = "held";
-          jarLifeT = 0;
-          // Spider position freezes inside the jar
-          spider.position.x = jar.position.x;
-          spider.position.z = jar.position.z;
+          jar.position.y = yEnd; jarPhase = "held"; jarLifeT = 0;
+          // A catch that landed while the spider fled MISSES — flag it so the
+          // lift path knows not to remove the spider (it wasn't caught).
+          if (jar.userData.staleMiss || Math.hypot(jar.position.x - spider.position.x, jar.position.z - spider.position.z) > 0.5) {
+            jar.userData.staleMiss = true;
+            jarPhase = "lifting"; jarLifeT = 0;
+            if (window.PhobiaVoice) window.PhobiaVoice.speak("It moved — try again when it settles.");
+          } else {
+            spider.position.x = jar.position.x; spider.position.z = jar.position.z;
+            pounceState = "idle";
+          }
         }
       } else if (jar && jarPhase === "held") {
         jarLifeT += d;
-        // Hold for 2 seconds, then "release" (lift the jar + remove the spider)
         if (jarLifeT > 2.0) {
-          jarPhase = "lifting";
-          jarLifeT = 0;
+          jarPhase = "lifting"; jarLifeT = 0;
           if (window.PhobiaVoice) window.PhobiaVoice.speak("Released outside. You did that calmly.");
+          // A settled catch is a legitimate completion route — route it through
+          // the same honest hold path (the fanfare still waits for the gate).
+          window.__rungHoldComplete = true;
+          if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.15);
         }
       } else if (jar && jarPhase === "lifting") {
         jarLifeT += d;
         const k = Math.min(1, jarLifeT / 0.6);
-        // Spider fades out as the "user takes it outside" — opacity controlled
-        // via traversing materials. Implemented as a vertical lift + scale-down.
         jar.position.y = -0.95 + k * 5.0;
-        spider.scale.setScalar(1 - k);     // group base scale is 1 (model is pre-scaled)
+        // Only shrink the spider on a real catch (it's "taken outside"); a miss
+        // leaves it in place.
+        if (!jar.userData.staleMiss) spider.scale.setScalar(1 - k);
         if (k >= 1) {
-          // Tear down jar; spider is gone for the rest of this rung
           scene.remove(jar);
-          jar.traverse(o => {
-            if (o.geometry) o.geometry.dispose();
-            if (o.material) o.material.dispose();
-          });
-          jar = null;
-          jarPhase = "idle";
-          // Move spider far off-screen so the rest of the loop doesn't tick it
-          spider.position.set(0, -50, 0);
+          jar.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+          const missed = jar.userData.staleMiss;
+          jar = null; jarPhase = "idle";
+          if (missed) { spider.scale.setScalar(1); }
+          else { spider.position.set(0, -50, 0); }   // released — gone for the rung
         }
       }
-      // ---- Drive the rigged spider's animation ----
-      // The model's own clips do all the leg motion; we just pick idle vs walk
-      // and advance the mixer. Skip while the spider is jarred / removed.
+
       const p = spider.userData.parts;
       if (p && p.mixer) {
-        // Highest rungs: a sudden short crawl toward you, then a small retreat —
-        // the spider's Walk clip plays during the crawl, idle otherwise.
-        // Erratic skitter toward you — only while the spider is loose (not
-        // jarred/removed) and we have player controls. Bigger rungs skitter
-        // faster and more often.
-        if (size >= 0.4 && jarPhase === "idle" && controls && spider.position.y > -10) {
-          skitterT += d;
-          const dxp = controls.position.x - spider.position.x;
-          const dzp = controls.position.z - spider.position.z;
-          const distP = Math.hypot(dxp, dzp) || 0.0001;
+        // Self-calibrate grounding once: the rest-pose leg tips sit at a fixed
+        // offset from the group origin (bind-pose bbox differs from the animated
+        // stance), so measure the lowest tip and plant it on the floor.
+        if (spiderCtrl._needsGround) {
+          spiderCtrl._needsGround = false;
+          let lowTip = Infinity;
+          spider.traverse(o => { if (o.isBone && /Leg3[LR]$/.test(o.name)) { const v = new THREE.Vector3(); o.getWorldPosition(v); lowTip = Math.min(lowTip, v.y); } });
+          // Plant the rest-pose tip a touch above the floor so the gait's
+          // downward dips land at floor level rather than sinking through.
+          if (isFinite(lowTip)) spiderCtrl.baseY = -1 - (lowTip - spider.position.y) + 0.045;
+        }
+        const dxp = controls ? controls.position.x - spider.position.x : 0;
+        const dzp = controls ? controls.position.z - spider.position.z : 0;
+        const distP = Math.hypot(dxp, dzp) || 0.0001;
 
+        // ---- Ambient skitter machine (data-driven, suppressed during a pounce) ----
+        if (B.skitter && loose && controls && pounceState === "idle" && elapsed > (B.firstSkitterAt ?? 0)) {
+          skitterT += d;
+          const esc = B.escalate ? clamp01((elapsed - (B.firstSkitterAt ?? 0)) / (B.settleAfter ?? 45)) : 0;
+          const baseSpd = (B.skitterSpeed ?? 1.2) * (1 + 0.4 * esc);
+          const evr = B.skitterEvery ?? [2.5, 4.5];
           if (skitterState === "lurking") {
-            // Micro-shuffle: a tiny sidestep well before the real dart. The
-            // "it's alive and fidgeting" tell — stillness reads as a choice
-            // the spider is making, not a freeze-frame.
             if (skitterT > microShuffleAt && skitterT < nextSkitter * 0.8) {
               skitterState = "skittering"; skitterT = 0;
-              skitterDur = 0.10 + Math.random() * 0.10;
-              skitterSpeedMul = 0.3;
+              skitterDur = 0.10 + Math.random() * 0.10; skitterSpeedMul = 0.3;
               const ang = Math.random() * Math.PI * 2;
               skitterDir = { x: Math.sin(ang), z: Math.cos(ang) };
               skitterTargetYaw = ang;
               microShuffleAt = 1.5 + Math.random() * 2.5;
               if (p.play) p.play("Walk", 0.06, { timeScale: 1.2 });
+              if (A && A.skitterTicks) try { A.skitterTicks({ x: spider.position.x, y: -0.9, z: spider.position.z }, { duration: 0.10, intensity: 0.22, legRate: 26 }); } catch {}
             } else if (skitterT > nextSkitter) {
               skitterState = "skittering"; skitterT = 0;
-              skitterDur = 0.22 + Math.random() * 0.4;          // short, fast burst
-              skitterSpeedMul = 1;
-              const jag = (Math.random() - 0.5) * 1.3;          // unpredictable sideways jag
-              let vx = dxp / distP + jag, vz = dzp / distP;
+              skitterDur = 0.22 + Math.random() * 0.4; skitterSpeedMul = 1;
+              // Heading = approachBias·(toward player) + jag·(sideways) + wander.
+              const bias = B.approachBias ?? 0;
+              const jag = (Math.random() - 0.5) * 2 * (B.jagAmt ?? 1.0);
+              const wander = Math.random() * Math.PI * 2;
+              let vx = bias * (dxp / distP) + jag + (1 - bias) * Math.sin(wander) * 0.5;
+              let vz = bias * (dzp / distP) + (1 - bias) * Math.cos(wander) * 0.5;
+              // Non-pounce rungs stop short of the player (guardDist).
+              if (!B.pounce && distP < (B.guardDist ?? 1.2) + 0.4) { vx -= (dxp / distP) * 0.8; vz -= (dzp / distP) * 0.8; }
               const m = Math.hypot(vx, vz) || 1;
               skitterDir = { x: vx / m, z: vz / m };
-              skitterTargetYaw = Math.atan2(skitterDir.x, skitterDir.z);   // (+Z fwd)
-              // Leg rate matches ground speed — fast dart, frantic legs.
-              const spd = 1.2 + size * 1.7;
-              if (p.play) p.play("Walk", 0.06, { timeScale: Math.max(1, Math.min(2.6, spd / 0.9)) });
-              // The dash is audible exactly while it happens, where it happens.
-              if (window.PhobiaAudio && window.PhobiaAudio.skitterBurst) {
-                window.PhobiaAudio.skitterBurst(
-                  { x: spider.position.x, y: -0.9, z: spider.position.z },
-                  skitterDur, 0.5 + size * 0.5
-                );
-              }
+              skitterTargetYaw = Math.atan2(skitterDir.x, skitterDir.z);
+              if (p.play) p.play("Walk", 0.06, { timeScale: Math.max(1, Math.min(2.6, baseSpd / 0.9)) });
+              if (A && A.bristleRustle) try { A.bristleRustle({ x: spider.position.x, y: -0.9, z: spider.position.z }, { intensity: 0.5 + size * 0.4 }); } catch {}
+              if (A && A.skitterTicks) try { A.skitterTicks({ x: spider.position.x, y: -0.9, z: spider.position.z }, { duration: skitterDur, intensity: 0.5 + size * 0.5, legRate: 34 + Math.min(26, baseSpd * 12) }); } catch {}
             }
           } else if (skitterState === "skittering") {
-            const speed = (1.2 + size * 1.7) * skitterSpeedMul; // m/s — fast and jittery
-            if (distP > 0.45) {
+            const speed = baseSpd * skitterSpeedMul;
+            if (onWall) {
+              // Climb within a wall patch: move along x + up/down y, not z.
+              spider.position.x += skitterDir.x * speed * d;
+              spider.position.y += (skitterDir.z) * speed * d * 0.5;
+              spider.position.x = Math.max(homeAnchor.x - (B.homeRadius ?? 0.5), Math.min(homeAnchor.x + (B.homeRadius ?? 0.5), spider.position.x));
+              spider.position.y = Math.max(-0.4, Math.min(1.0, spider.position.y));
+            } else if (distP > 0.45) {
               spider.position.x += skitterDir.x * speed * d;
               spider.position.z += skitterDir.z * speed * d;
+              // Keep home-zone rungs near their spot.
+              if (B.homeRadius != null) {
+                const hdx = spider.position.x - homeAnchor.x, hdz = spider.position.z - homeAnchor.z;
+                const hr = Math.hypot(hdx, hdz);
+                if (hr > B.homeRadius) { spider.position.x = homeAnchor.x + hdx / hr * B.homeRadius; spider.position.z = homeAnchor.z + hdz / hr * B.homeRadius; }
+              }
             }
             if (skitterT > skitterDur) {
               skitterState = "pausing"; skitterT = 0;
               if (p.play) p.play("Idle", 0.12);
-              // A sudden freeze close to you after a dart = a startle spike.
-              // (Micro-shuffles don't spike — they're the background fidget.)
-              if (skitterSpeedMul >= 1 && distP < 1.5 && window.PhobiaFear) {
-                window.PhobiaFear.pulseEvent(0.45 + 0.45 * (1 - distP / 1.5));
-              }
+              if (skitterSpeedMul >= 1 && distP < 1.5 && window.PhobiaFear) window.PhobiaFear.pulseEvent(0.35 + 0.4 * (1 - distP / 1.5));
             }
-          } else { // pausing — the classic dead-still spider freeze, then decide again
+          } else {   // pausing
             if (skitterT > 0.3 + Math.random() * 0.7) {
               skitterState = "lurking"; skitterT = 0;
               microShuffleAt = 1.2 + Math.random() * 2.2;
-              // Backing away buys a longer reprieve; staying close invites more.
-              nextSkitter = (distP > 3.5 ? 2.5 : 0.6) + Math.random() * 1.8;
+              nextSkitter = (distP > 3.5 ? evr[1] : evr[0]) + Math.random() * (evr[1] - evr[0]);
             }
           }
-          // Spiders pivot fast — but over a few frames, not in one. A snap
-          // rotation is the single biggest "it's a video game" tell.
-          {
-            let dy = skitterTargetYaw - spider.rotation.y;
-            dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-            spider.rotation.y += dy * Math.min(1, d * 14);
-          }
-          // Keep it on the floor within sane bounds.
-          spider.position.x = Math.max(-4, Math.min(4, spider.position.x));
-          spider.position.z = Math.max(-9, Math.min(2.5, spider.position.z));
         }
-        p.mixer.update(d);
+
+        // ---- Orientation: dart heading, or slowly FACE the player at rest ----
+        if (loose && !onWall) {
+          if (skitterState === "skittering") {
+            let dy = skitterTargetYaw - spider.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+            spider.rotation.y += dy * Math.min(1, d * 14);
+          } else if (controls && distP < 5.0) {
+            const faceYaw = Math.atan2(dxp, dzp);
+            const k = pounceState === "idle" ? d * 2.5 : d * 9;
+            let dy = faceYaw - spider.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+            spider.rotation.y += dy * Math.min(1, k);
+          }
+          spider.position.x = Math.max(ROOM.x0 + 0.3, Math.min(ROOM.x1 - 0.3, spider.position.x));
+          spider.position.z = Math.max(ROOM.z0 + 0.3, Math.min(2.5, spider.position.z));
+        }
+
+        // ---- Alert posture from proximity ----
+        spiderCtrl.setAlert(clamp01((3.0 - distP) / 2.2) * (pounceState === "idle" ? 1 : 0));
+
+        // ---- Pounce machine (coil → pounce → recoil), pounce rungs only ----
+        if (B.pounce && loose && controls && spider.userData.ready) {
+          if (pounceState === "idle") {
+            spiderCtrl.setCoil(0);
+            if (elapsed > nextPounceAt && distP < (B.inZoneDist ?? 3.4) && distP > GUARD * 1.2) {
+              pounceState = "coiling"; pounceT = 0; coilStartDist = distP; pounceFired = false;
+              const cd = B.coilDur ?? [0.7, 1.1];
+              thisCoil = cd[0] + Math.random() * (cd[1] - cd[0]);
+              if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.3);
+              if (A && A.webPluck) try { A.webPluck({ x: spider.position.x, y: spider.position.y, z: spider.position.z }, { intensity: 0.4 }); } catch {}
+            }
+          } else if (pounceState === "coiling") {
+            pounceT += d; spiderCtrl.setCoil(1);
+            // RETREAT CANCELS — real, learnable agency.
+            if (distP > coilStartDist + 0.5 || distP > (B.inZoneDist ?? 3.4) + 0.6) {
+              pounceState = "recoiling"; pounceT = 0; spiderCtrl.setCoil(0);
+              nextPounceAt = elapsed + 4 + Math.random() * 3;
+              if (!retreatPraised && window.PhobiaVoice) { retreatPraised = true; window.PhobiaVoice.speak("It backed down when you did. You control this distance."); }
+            } else if (pounceT > thisCoil) {
+              pounceState = "pouncing"; pounceT = 0; spiderCtrl.setCoil(0);
+              if (p.play) p.play("Jump", 0.05, { once: true, timeScale: 1.4 });
+              arousalFloor = Math.max(arousalFloor, 0.5);
+            }
+          } else if (pounceState === "pouncing") {
+            pounceT += d;
+            const aim = Math.max(LENS_FLOOR, GUARD);
+            const tx = controls.position.x - (dxp / distP) * aim;
+            const tz = controls.position.z - (dzp / distP) * aim;
+            const step = 5.5 * d;
+            spider.position.x += (tx - spider.position.x) * Math.min(1, step / (Math.hypot(tx - spider.position.x, tz - spider.position.z) || 1));
+            spider.position.z += (tz - spider.position.z) * Math.min(1, step / (Math.hypot(tx - spider.position.x, tz - spider.position.z) || 1));
+            if (onWall) {
+              // Parabolic hop off the wall toward eye level, then drop.
+              const k = Math.min(1, pounceT / 0.35);
+              spider.position.y = (-1 + (B.wallEyeY ?? 0.5) + 1.0) + Math.sin(k * Math.PI) * 0.3 - k * (B.wallEyeY ?? 0.5) * 1.4;
+            }
+            // Full-3D lens clamp so the front never crosses the near plane.
+            const d3 = Math.hypot(spider.position.x - controls.position.x, spider.position.y - controls.position.y, spider.position.z - controls.position.z);
+            if (d3 < LENS_FLOOR) {
+              const s = LENS_FLOOR / d3;
+              spider.position.x = controls.position.x + (spider.position.x - controls.position.x) * s;
+              spider.position.z = controls.position.z + (spider.position.z - controls.position.z) * s;
+            }
+            let dy = Math.atan2(dxp, dzp) - spider.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+            if (!onWall) spider.rotation.y += dy * Math.min(1, d * 12);
+            if (!pounceFired) {
+              pounceFired = true;
+              const closeness = clamp01((2.0 - distP) / 2.0);
+              if (p.play) p.play("Attack", 0.04, { once: true });
+              spiderCtrl.pounceRear(1);
+              if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.8 + 0.2 * closeness);
+              if (controls.kickShake) controls.kickShake(0.05 + 0.04 * closeness);
+              if (controls.snapLookAt) controls.snapLookAt(spider.position.x, spider.position.y + 0.05, spider.position.z, 0.6);
+              if (A && A.chitinTik) try { A.chitinTik({ x: spider.position.x, y: spider.position.y, z: spider.position.z }, { intensity: 0.9 }); } catch {}
+              arousalFloor = 1.0;
+              if (!holdPraised && window.PhobiaVoice) { holdPraised = true; window.PhobiaVoice.speak("It rushed you, and you stayed. Nothing happened. That is the fear letting go."); }
+            }
+            if (pounceT > 0.35 || distP <= aim + 0.2) { pounceState = "recoiling"; pounceT = 0; }
+          } else if (pounceState === "recoiling") {
+            pounceT += d;
+            const homeX = onWall ? homeAnchor.x : (controls.position.x - (dxp / distP) * ((B.inZoneDist ?? 3.4)));
+            const homeZ = onWall ? homeAnchor.z : (spider.position.z - (dzp / distP) * 1.2);
+            const homeY = onWall ? (-1 + (B.wallEyeY ?? 0.5) + 1.0) : spider.position.y;
+            spider.position.x += (homeX - spider.position.x) * Math.min(1, d * 3);
+            spider.position.z += (homeZ - spider.position.z) * Math.min(1, d * 3);
+            if (onWall) spider.position.y += (homeY - spider.position.y) * Math.min(1, d * 3);
+            if (p.play && pounceT < 0.1) p.play("Walk", 0.06, { timeScale: 2.0 });
+            if (pounceT > 0.9) {
+              if (Math.hypot(spider.position.x - controls.position.x, spider.position.z - controls.position.z) < 1.8) heldCycles++;
+              pounceState = "idle"; pounceT = 0;
+              if (p.play) p.play("Idle", 0.15);
+              const pev = B.pounceEvery ?? [10, 16];
+              nextPounceAt = elapsed + (pev[0] + Math.random() * (pev[1] - pev[0])) * (1 + Math.min(0.6, heldCycles * 0.15));
+            }
+          }
+        }
+
+        // ---- Diegetic completion beat ----
+        if (window.__rungHoldComplete && !completionBeatDone) {
+          if (!B.pounce) { completionBeatDone = true; }
+          else if (pounceState === "idle" || pounceState === "recoiling") {
+            completionBeatDone = true;
+            nextPounceAt = Infinity;
+            if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt("It settled. You outlasted it.", 4500);
+          }
+        }
+
+        // ---- Drive the procedural spider (owns mixer.update + the pose layer) ----
+        spiderCtrl.walkAmt = skitterState === "skittering" ? 1 : 0;
+        spiderCtrl.suspend = jarPhase !== "idle" || spider.position.y < -10;
+        // On the wall rung the SCENE owns y at all times (climb + pounce hop +
+        // recoil). If the controller's absolute y-write ran, it would snap the
+        // climbing spider back to baseY every frame — a dead vertical skitter.
+        spiderCtrl.suspendY = onWall;
+        spiderCtrl.update(t, d);
+        // Observability for scene-verification hooks (nothing in-app reads this).
+        spider.userData.spiderDebug = { pounceState, skitterState, elapsed: +elapsed.toFixed(1), nextPounceAt: isFinite(nextPounceAt) ? +nextPounceAt.toFixed(1) : "Inf", distP: +distP.toFixed(2) };
       }
+    },
+    dispose() {
+      try { sceneTimers.forEach(id => { clearTimeout(id); clearInterval(id); }); } catch {}
+      try { if (spCanvasDom) { spCanvasDom.removeEventListener("pointerdown", onSpDown); spCanvasDom.removeEventListener("pointerup", onSpUp); } } catch {}
+      try { spider.userData.disposed = true; if (spider.userData.parts && spider.userData.parts.mixer) spider.userData.parts.mixer.stopAllAction(); } catch {}
+      try { window.__holdCelebrationGate = null; window.__rungHoldComplete = false; } catch {}
+      try { liveAudio.forEach(h => h && h.stop && h.stop()); } catch {}
+      try {
+        shellPieces.forEach(m => {
+          scene.remove(m);
+          if (m.geometry) m.geometry.dispose();
+          if (m.material) (Array.isArray(m.material) ? m.material : [m.material]).forEach(x => x && x.dispose && x.dispose());
+        });
+      } catch {}
+      try { if (jar) { scene.remove(jar); jar.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); jar = null; } } catch {}
+      try { const bar = document.querySelector('.scene-cmd-bar[data-scene="spiders"]'); if (bar) bar.dataset.wired = ""; } catch {}
     },
   };
 }
