@@ -3970,6 +3970,147 @@ const PhobiaAudio = (() => {
     };
   }
 
+  // ---- Snake foley (all new, additive; the existing hissOnce/startSlither are
+  // left untouched). Outdoors → no reverb, air lowpass for distance. ----
+  // Breathy sibilant hiss with a warn/strike intensity contour.
+  function snakeHiss(pos = null, opts = {}) {
+    const c = ensureCtx(); if (!c) return;
+    const intensity = Math.max(0.2, Math.min(1, opts.intensity == null ? 0.6 : opts.intensity));
+    const dur = (opts.dur != null ? opts.dur : 0.85 + Math.random() * 0.35) * (0.7 + 0.3 * intensity);
+    const out = spatial(pos, { refDistance: 1.0, maxDistance: 26, rolloffFactor: 1.7, creature: true, air: true });
+    const now = c.currentTime;
+    const nb = noiseBuffer(dur + 0.1);
+    const src = c.createBufferSource(); src.buffer = nb;
+    const bp = c.createBiquadFilter(); bp.type = "bandpass";
+    const fCore = 4600 + intensity * 1800; bp.Q.value = 0.9 + (1 - intensity) * 0.8;
+    bp.frequency.setValueAtTime(fCore * 0.86, now);
+    bp.frequency.exponentialRampToValueAtTime(fCore, now + dur * 0.28);
+    bp.frequency.exponentialRampToValueAtTime(fCore * 0.80, now + dur);
+    const lfo = c.createOscillator(); const lg = c.createGain();
+    lfo.frequency.value = 6 + intensity * 4; lg.gain.value = 500 + intensity * 700;
+    lfo.connect(lg).connect(bp.frequency);
+    const src2 = c.createBufferSource(); src2.buffer = nb;
+    const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 560 + intensity * 260; lp.Q.value = 0.6;
+    const g2 = c.createGain();
+    g2.gain.setValueAtTime(0.0001, now);
+    g2.gain.exponentialRampToValueAtTime(0.035 * intensity, now + 0.06);
+    g2.gain.exponentialRampToValueAtTime(0.0006, now + dur);
+    src2.connect(lp).connect(g2).connect(out);
+    const g = c.createGain();
+    const peak = 0.10 + 0.08 * intensity;
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(peak, now + (intensity > 0.8 ? 0.02 : 0.06));
+    g.gain.setValueAtTime(peak, now + dur * 0.55);
+    g.gain.exponentialRampToValueAtTime(0.0007, now + dur);
+    src.connect(bp).connect(g).connect(out);
+    src.start(now); src.stop(now + dur); src2.start(now); src2.stop(now + dur);
+    lfo.start(now); lfo.stop(now + dur);
+  }
+  // Grass-rustle slither, keyed to ground speed with a low body-drag layer.
+  function startSnakeSlither() {
+    const c = ensureCtx(); if (!c) return { set() {}, stop() {} };
+    const panner = c.createPanner();
+    panner.panningModel = "HRTF"; panner.distanceModel = "inverse";
+    panner.refDistance = 1.2; panner.maxDistance = 24; panner.rolloffFactor = 1.8;
+    panner.connect(creatureBus);
+    const shear = c.createBufferSource(); shear.buffer = noiseBuffer(2.2); shear.loop = true;
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1500; bp.Q.value = 0.8;
+    const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 5400;
+    const gShear = c.createGain(); gShear.gain.value = 0;
+    shear.connect(bp).connect(lp).connect(gShear).connect(panner);
+    const drag = c.createBufferSource(); drag.buffer = noiseBuffer(2.2); drag.loop = true;
+    const dlp = c.createBiquadFilter(); dlp.type = "lowpass"; dlp.frequency.value = 340; dlp.Q.value = 0.7;
+    const gDrag = c.createGain(); gDrag.gain.value = 0;
+    drag.connect(dlp).connect(gDrag).connect(panner);
+    shear.start(); drag.start();
+    let alive = true;
+    return {
+      set(pos, intensity) {
+        if (!alive) return;
+        try {
+          const k = Math.max(0, Math.min(1, intensity));
+          if (panner.positionX) { panner.positionX.value = pos.x; panner.positionY.value = pos.y; panner.positionZ.value = pos.z; }
+          else if (panner.setPosition) panner.setPosition(pos.x, pos.y, pos.z);
+          gShear.gain.setTargetAtTime(0.10 * k, c.currentTime, 0.12);
+          gDrag.gain.setTargetAtTime(0.05 * Math.max(0, (k - 0.35)) / 0.65, c.currentTime, 0.15);
+          bp.frequency.setTargetAtTime(1300 + k * 900, c.currentTime, 0.15);
+        } catch {}
+      },
+      stop() { alive = false; try { gShear.gain.setTargetAtTime(0, c.currentTime, 0.2); gDrag.gain.setTargetAtTime(0, c.currentTime, 0.2); setTimeout(() => { try { shear.stop(); drag.stop(); } catch {} }, 700); } catch {} },
+    };
+  }
+  // Very short faint dry tongue tick (fires in pairs from the flick).
+  function tongueFlick(pos = null, opts = {}) {
+    const c = ensureCtx(); if (!c) return;
+    const k = Math.max(0.2, Math.min(1, opts.intensity == null ? 0.5 : opts.intensity));
+    const out = spatial(pos, { refDistance: 0.8, maxDistance: 12, rolloffFactor: 2.2, creature: true, air: true });
+    const now = c.currentTime;
+    const nb = noiseBuffer(0.03);
+    const src = c.createBufferSource(); src.buffer = nb;
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 6800 + Math.random() * 1200; bp.Q.value = 2.2;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.022 * k, now + 0.0006);
+    g.gain.exponentialRampToValueAtTime(0.0005, now + 0.012);
+    src.connect(bp).connect(g).connect(out);
+    src.start(now); src.stop(now + 0.03);
+  }
+  // The strike apex: a downward air-cut whoosh + a low body thud, then a hiss peak.
+  function snakeStrike(pos = null, opts = {}) {
+    const c = ensureCtx(); if (!c) return;
+    const k = Math.max(0.4, Math.min(1, opts.intensity == null ? 1 : opts.intensity));
+    const out = spatial(pos, { refDistance: 0.7, maxDistance: 22, rolloffFactor: 2.0, creature: true, air: true });
+    const now = c.currentTime;
+    const nb = noiseBuffer(0.18);
+    const w = c.createBufferSource(); w.buffer = nb;
+    const wbp = c.createBiquadFilter(); wbp.type = "bandpass"; wbp.Q.value = 0.7;
+    wbp.frequency.setValueAtTime(3200, now); wbp.frequency.exponentialRampToValueAtTime(700, now + 0.12);
+    const wg = c.createGain();
+    wg.gain.setValueAtTime(0.0001, now);
+    wg.gain.exponentialRampToValueAtTime(0.14 * k, now + 0.012);
+    wg.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+    w.connect(wbp).connect(wg).connect(out); w.start(now); w.stop(now + 0.18);
+    const o = c.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(180, now); o.frequency.exponentialRampToValueAtTime(110, now + 0.09);
+    const og = c.createGain();
+    og.gain.setValueAtTime(0.0001, now); og.gain.exponentialRampToValueAtTime(0.05 * k, now + 0.006); og.gain.exponentialRampToValueAtTime(0.0007, now + 0.10);
+    o.connect(og).connect(out); o.start(now); o.stop(now + 0.12);
+    setTimeout(() => { try { snakeHiss(pos, { intensity: Math.min(1, 0.85 * k + 0.15), dur: 0.5 }); } catch {} }, 40);
+  }
+  // Warm outdoor bed: gentle breeze + intermittent distant birds + cicada shimmer.
+  function startClearingAmbient(opts = {}) {
+    const c = ensureCtx(); if (!c) return { stop() {} };
+    const intensity = opts.intensity == null ? 0.4 : opts.intensity;
+    const breeze = startLoop({ baseFreq: 380 + intensity * 260, q: 0.7, gain: 0.05 + intensity * 0.05, lfoRate: 0.16, lfoDepth: 180 * intensity, pink: true });
+    let alive = true, birdTimer = null, cicTimer = null;
+    const bird = () => {
+      if (!alive) return; const now = c.currentTime;
+      const out = spatial({ x: (Math.random() - 0.5) * 10, y: 2.5 + Math.random() * 2, z: -4 - Math.random() * 8 }, { refDistance: 2, maxDistance: 30, air: true });
+      const n = 2 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) {
+        const t0 = now + i * (0.10 + Math.random() * 0.06); const f = 2200 + Math.random() * 1200;
+        const o = c.createOscillator(); o.type = "sine";
+        o.frequency.setValueAtTime(f, t0); o.frequency.exponentialRampToValueAtTime(f * (0.9 + Math.random() * 0.3), t0 + 0.07);
+        const g = c.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.018, t0 + 0.008); g.gain.exponentialRampToValueAtTime(0.0006, t0 + 0.09);
+        o.connect(g).connect(out); o.start(t0); o.stop(t0 + 0.12);
+      }
+      birdTimer = setTimeout(bird, 6000 + Math.random() * 11000);
+    };
+    const cicada = () => {
+      if (!alive) return; const now = c.currentTime; const dur = 0.8 + Math.random() * 1.2;
+      const out = spatial({ x: (Math.random() - 0.5) * 8, y: 0.2, z: -3 - Math.random() * 7 }, { refDistance: 2, maxDistance: 24, air: true });
+      const src = c.createBufferSource(); src.buffer = noiseBuffer(dur + 0.1);
+      const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 4200 + Math.random() * 900; bp.Q.value = 6;
+      const g = c.createGain(); g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(0.012, now + 0.3); g.gain.setValueAtTime(0.012, now + dur - 0.3); g.gain.exponentialRampToValueAtTime(0.0006, now + dur);
+      const trem = c.createOscillator(); trem.type = "sine"; trem.frequency.value = 42 + Math.random() * 10; const tg = c.createGain(); tg.gain.value = 0.006; trem.connect(tg).connect(g.gain);
+      src.connect(bp).connect(g).connect(out); src.start(now); src.stop(now + dur); trem.start(now); trem.stop(now + dur);
+      cicTimer = setTimeout(cicada, 9000 + Math.random() * 14000);
+    };
+    birdTimer = setTimeout(bird, 2500 + Math.random() * 4000);
+    cicTimer = setTimeout(cicada, 5000 + Math.random() * 6000);
+    return { stop() { alive = false; if (birdTimer) clearTimeout(birdTimer); if (cicTimer) clearTimeout(cicTimer); try { breeze && breeze.stop && breeze.stop(); } catch {} } };
+  }
+
   // Audience murmur — sustained crowd-mumble bed. Pink noise through a bandpass
   // that SLOWLY sweeps (a formant wobble) reads as vowel-like babble rather than
   // a steady vent hiss.
@@ -4686,6 +4827,8 @@ const PhobiaAudio = (() => {
     startEngineDrone, startHiss, startAudienceMurmur, startAmbientPad,
     startRain, startDrivingDrone,
     hissOnce, startSlither, skitterBurst,
+    // Snake foley (additive)
+    snakeHiss, startSnakeSlither, tongueFlick, snakeStrike, startClearingAmbient,
     // Spider foley (additive)
     skitterTicks, bristleRustle, chitinTik, webPluck, startCellarAmbient,
     bark, splash, doorCreak, thunder, indicatorClick, footstep,
@@ -5011,12 +5154,37 @@ const PhobiaNarrator = (() => {
       ],
     },
     snakes: {
-      arrival: ["The snake is on the path ahead. It's coiled, calm."],
-      walking: ["Walking closer. Slow breath."],
-      close: ["You're close. The snake hasn't moved."],
-      panic: ["You're safe. You can walk back any time."],
-      avoidance: ["You stepped back. There's no rush."],
-      habituation: ["Lower fear than last time. Your body is learning."],
+      arrival: [
+        "A snake basking in the sun ahead. It's coiled, tongue testing the air.",
+        "Take the clearing in first. Warm light, long grass, one snake sunning itself.",
+      ],
+      walking: [
+        "You're stepping closer. Slow is the whole point here. Notice your feet.",
+        "Move gently — a snake reads fast movement as a threat. Your pace is the lesson.",
+      ],
+      close: [
+        "You're close. It's watching you, tongue flicking. You are watching it.",
+        "It rears to keep an eye on you. You can hold here, or ease back. Both are fine.",
+      ],
+      panic: [
+        "You're safe. It wants distance as much as you do. Slow breath out.",
+        "Step back whenever you need to. Stay calm and it will move away, not toward you.",
+      ],
+      // Used INSTEAD of panic while the snake is hissing / rearing to strike —
+      // the guide must never say "it hasn't moved" over a strike.
+      threatened: [
+        "It struck the air and stopped short. You are still standing. That's the skill.",
+        "That was a warning, not an attack. Ease back, slow down — slow reads as safe.",
+        "The hiss is big. The danger is not. Long breath out, and give it room.",
+      ],
+      avoidance: [
+        "You gave it space. Good. Try easing a little closer when you're ready.",
+        "There's no rush. It'll keep to its warm patch of ground.",
+      ],
+      habituation: [
+        "Your fear was lower this time. Your body is learning the snake is not chasing you.",
+        "You held longer than last time, and slower. Real progress.",
+      ],
     },
     water: {
       arrival: ["You're at the shore. The water is here. You can wade in or not."],
@@ -5412,11 +5580,11 @@ const VOICE_LINES = {
     ["The injection.", "Less than a second. Then it is over. Notice the relief."],
   ],
   snakes: [
-    ["A picture of a snake.", "Just paper and ink. Look at the patterns."],
-    ["A snake behind glass.", "It cannot reach you. Look at how it moves."],
-    ["A snake across the path.", "It is more afraid of you. Stand still and watch."],
-    ["Coiled, watching.", "Steady breath. You are larger than it imagines."],
-    ["Close. Alert. Tongue flicking.", "Even now, you are safe. Stay. Notice the urge to run."],
+    ["A snake sunning itself, far across the clearing.", "Just watch from here. Notice your feet on the warm path."],
+    ["The same snake, nearer now, tongue tasting the air.", "Slow movement reads as safety. Let your shoulders drop."],
+    ["It slides across the path ahead of you. Movement, not threat.", "Stay still and it settles. You are larger than it fears."],
+    ["Coiled on a warm rock, reared, watching you.", "Hold your pace. Hold still and it will choose to leave."],
+    ["Close and alert. The tongue flicks. It may strike the air.", "If it strikes, it stops short. Stay slow. Notice the urge to run, and stay."],
   ],
   speaking: [
     ["An empty room.", "Hear your own voice. It is yours. It belongs."],
@@ -5587,12 +5755,22 @@ const PHOBIAS = {
     label: "Snakes",
     icon: snakeIcon(),
     blurb: "Fear of snakes — sudden movement, the way they slide.",
+    // One coherent warm clearing for all rungs; the snake gets closer + bolder.
+    // `intensity` (calm/alert/apex) drives credit thresholds + the narrator threat
+    // gate; `behavior` re-parameterizes the (preserved) snakeCtl brain per rung so
+    // rungs differ by behavior, not raw size. The therapeutic core is kept: calm/
+    // stillness makes the snake LEAVE; rushing the apex snake makes it strike short.
     levels: [
-      { title: "A picture in a book", desc: "Just a still image of a coiled snake.", size: 0.20 },
-      { title: "Behind glass",        desc: "A small snake at the zoo. Curled up.",  size: 0.40 },
-      { title: "On a path nearby",    desc: "Across the trail. Slow movement.",      size: 0.60 },
-      { title: "Coiled on a rock",    desc: "A few metres away. Looking at you.",    size: 0.85 },
-      { title: "Close, alert",        desc: "Right there. Tongue flicking.",         size: 1.00 }
+      { title: "A snake, basking far off", desc: "On a warm rock across the clearing. Coiled, still, sunning itself.", size: 0.20, intensity: "calm",
+        behavior: { still: true, wander: false, cross: false, rear: false, strike: false, homeRadius: 0.6, baskDur: [5.0, 9.0], watchDist: 2.4, retreatStill: 0.35, inZoneDist: 5.0, fearMul: 0.42, tongueEvery: [4.0, 7.0] } },
+      { title: "It shifts in its patch",   desc: "A little closer. Now and then it slides a short way, then settles again.", size: 0.40, intensity: "calm",
+        behavior: { still: false, wander: true, cross: false, rear: false, strike: false, homeRadius: 1.4, baskDur: [3.5, 7.0], wanderSpeed: 0.40, watchDist: 2.8, retreatStill: 0.30, inZoneDist: 4.2, fearMul: 0.58, tongueEvery: [3.0, 5.5] } },
+      { title: "It crosses the path ahead",desc: "It slides across the trail in front of you, tongue flicking, then reads the air.", size: 0.60, intensity: "alert",
+        behavior: { still: false, wander: true, cross: true, crossChance: 0.55, rear: false, strike: false, homeRadius: 2.2, baskDur: [2.5, 5.5], wanderSpeed: 0.52, watchDist: 3.0, retreatStill: 0.30, inZoneDist: 3.6, fearMul: 0.72, warnHissDist: 1.7, warnHissEvery: 9, tongueEvery: [2.0, 4.0] } },
+      { title: "It rears and watches you", desc: "A few metres away. When you come close it lifts its head, holds your eye, and hisses low.", size: 0.85, intensity: "alert",
+        behavior: { still: false, wander: true, cross: true, crossChance: 0.40, rear: true, strike: false, homeRadius: 1.6, baskDur: [2.5, 5.0], wanderSpeed: 0.48, watchDist: 3.4, rearDist: 2.6, retreatStill: 0.28, inZoneDist: 3.2, fearMul: 0.86, warnHissDist: 2.0, warnHissEvery: 8, tongueEvery: [1.6, 3.2] } },
+      { title: "Close, coiled, alert",     desc: "Right there on the path. Rush it and it coils to strike; stay slow and it settles.", size: 1.00, intensity: "apex",
+        behavior: { still: false, wander: true, cross: true, crossChance: 0.30, rear: true, strike: true, homeRadius: 1.2, baskDur: [2.0, 4.0], wanderSpeed: 0.42, watchDist: 3.6, rearDist: 3.0, retreatStill: 0.26, inZoneDist: 3.0, fearMul: 1.0, warnHissDist: 2.2, warnHissEvery: 6, strikeDist: 1.45, strikeApproach: 0.55, strikeCooldown: 12, tongueEvery: [1.2, 2.6] } }
     ],
     sceneClass: "scene-approach",
     render: renderSnake
@@ -14287,6 +14465,58 @@ function canvasMapSet(albedoC, normalC, roughC) {
   };
 }
 
+// Warm bare earth: soil grain + organic blotches + pebbles (the dirt path).
+function makeEarthMaps() {
+  const SIZE = sceneQuality() === "low" ? 128 : 256;
+  const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
+  const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
+  const rough = document.createElement("canvas"); rough.width = rough.height = SIZE;
+  const a = albedo.getContext("2d"), h = heightC.getContext("2d"), r = rough.getContext("2d");
+  a.fillStyle = "#6a5a38"; a.fillRect(0, 0, SIZE, SIZE);
+  h.fillStyle = "#808080"; h.fillRect(0, 0, SIZE, SIZE);
+  r.fillStyle = "rgb(210,210,210)"; r.fillRect(0, 0, SIZE, SIZE);
+  for (let i = 0; i < 40; i++) {
+    const x = Math.random() * SIZE, y = Math.random() * SIZE, rr = 12 + Math.random() * 18;
+    const g = a.createRadialGradient(x, y, 0, x, y, rr);
+    g.addColorStop(0, "rgba(74,61,38,0.3)"); g.addColorStop(1, "rgba(74,61,38,0)");
+    a.fillStyle = g; a.beginPath(); a.arc(x, y, rr, 0, Math.PI * 2); a.fill();
+  }
+  for (let i = 0; i < 3000; i++) {
+    const x = Math.random() * SIZE, y = Math.random() * SIZE, s = 0.5 + Math.random() * 1.5;
+    a.fillStyle = Math.random() < 0.5 ? "rgba(87,74,46,0.4)" : "rgba(125,106,66,0.4)";
+    a.fillRect(x, y, s, s);
+    if (Math.random() < 0.15) { const hv = 128 + 18 + Math.floor(Math.random() * 22); h.fillStyle = `rgb(${hv},${hv},${hv})`; h.fillRect(x, y, s + 0.5, s + 0.5); r.fillStyle = "rgba(160,160,160,0.5)"; r.fillRect(x, y, s, s); }
+  }
+  for (let i = 0; i < 12; i++) { h.fillStyle = "rgb(98,98,98)"; h.fillRect(Math.random() * SIZE, Math.random() * SIZE, 1, 8 + Math.random() * 20); }
+  return canvasMapSet(albedo, heightCanvasToNormal(heightC, 2.0), rough);
+}
+
+// Warm olive grass: short blade strokes + macro tone patches.
+function makeGrassMaps() {
+  const SIZE = sceneQuality() === "low" ? 128 : 256;
+  const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
+  const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
+  const rough = document.createElement("canvas"); rough.width = rough.height = SIZE;
+  const a = albedo.getContext("2d"), h = heightC.getContext("2d"), r = rough.getContext("2d");
+  a.fillStyle = "#59702f"; a.fillRect(0, 0, SIZE, SIZE);
+  h.fillStyle = "#808080"; h.fillRect(0, 0, SIZE, SIZE);
+  r.fillStyle = "rgb(230,230,230)"; r.fillRect(0, 0, SIZE, SIZE);
+  for (let i = 0; i < 24; i++) {
+    const x = Math.random() * SIZE, y = Math.random() * SIZE, rr = SIZE * (0.15 + Math.random() * 0.2);
+    const g = a.createRadialGradient(x, y, 0, x, y, rr);
+    const dl = (Math.random() - 0.5) * 0.15;
+    g.addColorStop(0, `rgba(${89 + dl * 60},${112 + dl * 60},${47 + dl * 40},0.18)`); g.addColorStop(1, "rgba(0,0,0,0)");
+    a.fillStyle = g; a.beginPath(); a.arc(x, y, rr, 0, Math.PI * 2); a.fill();
+  }
+  for (let i = 0; i < 2500; i++) {
+    const x = Math.random() * SIZE, y = Math.random() * SIZE, len = 5 + Math.random() * 6, ang = -Math.PI / 2 + (Math.random() - 0.5);
+    a.strokeStyle = Math.random() < 0.5 ? "rgba(74,102,38,0.7)" : "rgba(111,138,58,0.7)";
+    a.lineWidth = 1; a.beginPath(); a.moveTo(x, y); a.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len); a.stroke();
+    if (Math.random() < 0.2) { const hv = 128 + 8 + Math.floor(Math.random() * 10); h.fillStyle = `rgb(${hv},${hv},${hv})`; h.fillRect(x, y, 1, len); }
+  }
+  return canvasMapSet(albedo, heightCanvasToNormal(heightC, 1.4), rough);
+}
+
 // Oak plank floor: one 1.4×1.4 m tile, 4 plank columns with staggered end
 // joints, per-plank hue jitter, grain streaks, knots. Halved resolution on
 // the low tier — these bake once per dog-scene mount.
@@ -17178,6 +17408,40 @@ function setupWater(scene, camera, level) {
 // direction. The base colour can be overridden so warm gold, dark brown, etc.
 // share the same procedural variety. Cached by base colour so repeated
 // builds (e.g. each scene mount) don't re-run the canvas work.
+// Reptile scale normal map — staggered rows of overlapping scale humps, run
+// through the shared Sobel height→normal step. Cached (built once). Tiled fine
+// along a snake body for a scaled-skin read.
+let _scaleNormalCache = null;
+function makeScaleNormal() {
+  if (_scaleNormalCache) return _scaleNormalCache;
+  const SIZE = 256;
+  const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
+  const h = heightC.getContext("2d");
+  h.fillStyle = "#808080"; h.fillRect(0, 0, SIZE, SIZE);
+  const cols = 16, rows = 22, cw = SIZE / cols, rh = SIZE / rows;
+  for (let ry = 0; ry < rows; ry++) {
+    const off = (ry % 2) * cw * 0.5;   // brick-stagger
+    for (let cx = 0; cx < cols + 1; cx++) {
+      const x = cx * cw - off + cw * 0.5, y = ry * rh + rh * 0.5;
+      const grad = h.createRadialGradient(x, y - rh * 0.15, 0, x, y, cw * 0.62);
+      grad.addColorStop(0, "rgb(168,168,168)");   // raised scale centre
+      grad.addColorStop(0.7, "rgb(120,120,120)");
+      grad.addColorStop(1, "rgb(96,96,96)");        // recessed lip
+      h.fillStyle = grad;
+      h.beginPath();
+      h.ellipse(x, y, cw * 0.6, rh * 0.72, 0, 0, Math.PI * 2);
+      h.fill();
+    }
+  }
+  const t = (typeof heightCanvasToNormal === "function")
+    ? new THREE.CanvasTexture(heightCanvasToNormal(heightC, 2.2))
+    : new THREE.CanvasTexture(heightC);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  _scaleNormalCache = t;
+  return t;
+}
+
 const _furCache = new Map();
 function makeFurMaps(baseColor = 0xd6a06a) {
   const cached = _furCache.get(baseColor);
@@ -21449,7 +21713,14 @@ function setupSpiders(scene, camera, level, levelIdx) {
         shellPieces.forEach(m => {
           scene.remove(m);
           if (m.geometry) m.geometry.dispose();
-          if (m.material) (Array.isArray(m.material) ? m.material : [m.material]).forEach(x => x && x.dispose && x.dispose());
+          if (m.material) (Array.isArray(m.material) ? m.material : [m.material]).forEach(x => {
+            if (!x) return;
+            // Also dispose the material's generated CanvasTextures — some set-dressing
+            // maps are uncached, so a fresh set leaks every mount, and the global
+            // disposeObject walk can't reach them once removed from the graph here.
+            for (const k in x) { const v = x[k]; if (v && v.isTexture) v.dispose(); }
+            x.dispose && x.dispose();
+          });
         });
       } catch {}
       try { if (jar) { scene.remove(jar); jar.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); jar = null; } } catch {}
@@ -23131,66 +23402,293 @@ function setupNeedles(scene, camera, level) {
   };
 }
 
+// ---------- Procedural snake "alive" layer ----------
+// Runs the additive bone deltas AFTER the mixer writes each clip pose (the
+// scene owns locomotion + the behaviour brain; this owns body slither, the
+// tongue flick, jaw, and the cobra rear). Owns the SOLE mixer.update. Mirrors
+// SpiderController's _poseYOff discipline.
+class SnakeController {
+  constructor(snake, scene, camera) {
+    this.snake = snake; this.scene = scene; this.camera = camera;
+    this.parts = snake.userData.parts;
+    this.baseY = snake.position.y;
+    this.height = (this.parts && this.parts.height) || 0.6;
+    this.span = (this.parts && this.parts.span) || 0.6;
+    this._slitherPhase = 0; this._breathPhase = 0;
+    this.slitherAmt = 0.35; this._slitherAmtSm = 0; this._slitherSpeed = 0;
+    this.rearTarget = 0; this._rear = 0;
+    this.jawTarget = 0; this._jaw = 0;
+    this._tongueT = -1; this._tongueNext = 1.5; this._tongueFast = false;
+    this._poseYOff = 0; this._rig = null; this._needsGround = false;
+    this.suspend = true;
+  }
+  setRear(r) { this.rearTarget = Math.max(0, Math.min(1, r)); }
+  setJaw(j) { this.jawTarget = Math.max(0, Math.min(1, j)); }
+  setSlither(a) { this.slitherAmt = Math.max(0, Math.min(1.4, a)); }
+  requestTongueFlick(fast) { if (this._tongueT < 0) this._tongueNext = 0; this._tongueFast = !!fast; }
+  update(t, d) {
+    const p = this.parts;
+    if (!p || !p.mixer) return;
+    p.mixer.update(d);
+    if (this.suspend) return;
+    this._bodyLife(t, d);
+  }
+  _bodyLife(t, d) {
+    const model = this.parts.model;
+    if (!model) return;
+    if (!this._rig) {
+      const find = (n) => { let r = null; model.traverse(o => { if (!r && o.isBone && o.name === n) r = o; }); return r; };
+      this._rig = {
+        body: find("Body"), chest: find("Chest"), neck: find("Neck"), head: find("Head"),
+        tail: [find("Tail"), find("Tail1"), find("Tail2"), find("Tail3")].filter(Boolean),
+        mouth: find("Mouth"), lowerMouth: find("LowerMouth"),
+        tongue: [find("Tongue1"), find("Tongue2"), find("Tongue3")].filter(Boolean),
+      };
+    }
+    const rig = this._rig;
+    const poseYPrev = this._poseYOff || 0;
+    this._poseYOff = 0;
+
+    // Belly grounding self-calibration (reared idle floats; plant the belly).
+    if (this._needsGround) {
+      this._needsGround = false;
+      let lowY = Infinity; const _v = new THREE.Vector3();
+      const belly = [rig.body, rig.chest, ...rig.tail];
+      for (const bn of belly) { if (bn) { bn.getWorldPosition(_v); lowY = Math.min(lowY, _v.y); } }
+      if (isFinite(lowY)) this.baseY = this.snake.position.y - (lowY - this.snake.position.y) + 0.02;
+    }
+
+    // ---- Body slither ---- a small travelling wave down Chest→Body→Tail.
+    // (The Walk clip carries the primary undulation; this adds life at rest.)
+    this._slitherAmtSm += (this.slitherAmt - this._slitherAmtSm) * Math.min(1, d * 6);
+    this._slitherPhase += d * (2.2 + this._slitherSpeed * 3.0);
+    const SL = 0.055;
+    const chain = [rig.chest, rig.body, ...rig.tail].filter(Boolean);
+    for (let i = 0; i < chain.length; i++) {
+      const amp = SL * (0.35 + i * 0.18);
+      const ph = this._slitherPhase - i * 0.7;
+      chain[i].rotation.y += Math.sin(ph) * amp * this._slitherAmtSm;
+    }
+    if (rig.neck) rig.neck.rotation.y += Math.sin(this._slitherPhase + 0.4) * SL * 0.5 * this._slitherAmtSm;
+
+    // ---- Cobra rear ---- lift the forebody (Neck+Head pitch) + a small root lift.
+    this._rear += (this.rearTarget - this._rear) * Math.min(1, d * 4);
+    if (this._rear > 0.01) {
+      const r = this._rear;
+      if (rig.neck) rig.neck.rotation.x -= 0.35 * r;
+      if (rig.head) rig.head.rotation.x -= 0.25 * r;
+      this._poseYOff += 0.05 * r * this.height;
+    }
+
+    // ---- Jaw ---- open the LowerMouth (hinges on local x; bind ~-0.38).
+    this._jaw += (this.jawTarget - this._jaw) * Math.min(1, d * (this.jawTarget > this._jaw ? 18 : 10));
+    if (this._jaw > 0.01) {
+      if (rig.lowerMouth) rig.lowerMouth.rotation.x -= this._jaw * 0.6;
+      if (rig.mouth) rig.mouth.rotation.x += this._jaw * 0.12;
+    }
+
+    // ---- Tongue flick ---- self-scheduling forked flick (d-driven, no timer).
+    const FLICK_DUR = 0.42;
+    if (this._tongueT < 0) {
+      this._tongueNext -= d;
+      if (this._tongueNext <= 0) {
+        this._tongueT = 0;
+        // Faint dry tongue tick (a pair), only when close enough to hear.
+        const A = window.PhobiaAudio;
+        if (A && A.tongueFlick && this.camera) {
+          const hp = new THREE.Vector3(); (rig.head || rig.mouth || this.snake).getWorldPosition(hp);
+          if (hp.distanceTo(this.camera.position) < 4) {
+            const inten = this._tongueFast ? 0.7 : 0.45;
+            try { A.tongueFlick(hp, { intensity: inten }); } catch {}
+            setTimeout(() => { try { A.tongueFlick(hp, { intensity: inten - 0.05 }); } catch {} }, 55);
+          }
+        }
+      }
+    } else {
+      this._tongueT += d;
+      const u = this._tongueT / FLICK_DUR;
+      let ext; if (u < 0.35) ext = u / 0.35; else if (u < 0.7) ext = 1; else ext = Math.max(0, 1 - (u - 0.7) / 0.3);
+      const fork = (u > 0.3 && u < 0.75) ? Math.sin((u - 0.3) / 0.45 * Math.PI) : 0;
+      const tg = rig.tongue;
+      if (tg[0]) tg[0].rotation.x += ext * 1.5;
+      if (tg[1]) tg[1].rotation.x += ext * 1.0;
+      if (tg[2]) tg[2].rotation.x += ext * 0.7;
+      if (tg[2]) tg[2].rotation.z += Math.sin(u * 40) * 0.22 * fork;
+      if (tg[1]) tg[1].rotation.z += 0.16 * fork;
+      if (u >= 1) {
+        this._tongueT = -1;
+        const rmin = this._tongueFast ? 0.5 : (this.tongueRest ? this.tongueRest[0] : 2.2);
+        const rmax = this._tongueFast ? 1.0 : (this.tongueRest ? this.tongueRest[1] : 5.0);
+        this._tongueNext = rmin + Math.random() * (rmax - rmin);
+      }
+    }
+
+    // ---- Single absolute y-write (belly plant + pose offset) ----
+    this.snake.position.y += (this.baseY + poseYPrev - this.snake.position.y) * Math.min(1, d * 6);
+  }
+}
+
 // ---------- Snakes ----------
-function setupSnakes(scene, camera, level) {
+function setupSnakes(scene, camera, level, levelIdx) {
   const size = level.size;
+  const intensity = level.intensity || (size >= 0.9 ? "apex" : size >= 0.55 ? "alert" : "calm");
+  const B = level.behavior || {};
+  const rung = Math.max(0, Math.min(4, levelIdx || 0));
+  const clamp01 = (x) => Math.max(0, Math.min(1, x));
+  // Teardown registries + shell tracking (extends the existing dispose).
+  const sceneTimers = [];
+  const liveAudio = [];
+  const shellPieces = [];
+  // Honest per-intensity credit thresholds so full credit is reachable on the
+  // gentle rungs (proximity·fearMul caps the fear ceiling low there).
+  if (window.PhobiaFear) {
+    window.PhobiaFear._duration = 0;
+    if (window.PhobiaFear.setCreditThresholds) {
+      if (intensity === "calm") window.PhobiaFear.setCreditThresholds(20, 7);
+      else if (intensity === "alert") window.PhobiaFear.setCreditThresholds(27, 10);
+      // apex keeps the 30/10 defaults
+    }
+  }
 
-  scene.background = new THREE.Color(0x3a4030);
-  scene.fog = new THREE.Fog(0x3a4030, 8, 30);
+  // ---- Warm sun-dappled clearing (per-rung MOOD; no fog — a real place) ----
+  const MOODS = [
+    { bg: 0x9fb4c8, sunC: 0xfff2d2, sunI: 2.2, sunPos: [7, 13, 5], hemiSky: 0xbfe0ff, hemiGnd: 0x5a5230, hemiI: 0.85, glowC: 0xffe6b8, glowI: 0.55, skyTop: "#7fb4e8", skyHz: "#f3e6c4", beamO: 0.030, treeC: "rgba(58,74,48,0.9)" },
+    { bg: 0x98adc2, sunC: 0xffedc8, sunI: 2.1, sunPos: [7, 12, 5], hemiSky: 0xb6d8fb, hemiGnd: 0x574f2e, hemiI: 0.80, glowC: 0xffe2b0, glowI: 0.55, skyTop: "#79aee2", skyHz: "#f1e0bc", beamO: 0.034, treeC: "rgba(56,70,46,0.9)" },
+    { bg: 0x93a6bb, sunC: 0xffe4b6, sunI: 2.2, sunPos: [8, 10, 6], hemiSky: 0xacd0f4, hemiGnd: 0x524b2c, hemiI: 0.72, glowC: 0xffd9a4, glowI: 0.60, skyTop: "#6fa4d8", skyHz: "#f0dbb0", beamO: 0.040, treeC: "rgba(52,66,44,0.9)" },
+    { bg: 0x8e9fb2, sunC: 0xffd9a2, sunI: 2.4, sunPos: [9, 8, 6], hemiSky: 0xa4c6ea, hemiGnd: 0x4c4629, hemiI: 0.62, glowC: 0xffce94, glowI: 0.65, skyTop: "#679cce", skyHz: "#eecfa2", beamO: 0.050, treeC: "rgba(48,60,40,0.92)" },
+    { bg: 0x8899ab, sunC: 0xffcf90, sunI: 2.6, sunPos: [10, 6.5, 6.5], hemiSky: 0x9cbee2, hemiGnd: 0x453f26, hemiI: 0.54, glowC: 0xffc684, glowI: 0.72, skyTop: "#5f93c6", skyHz: "#ecc596", beamO: 0.062, treeC: "rgba(44,56,38,0.94)" },
+  ];
+  const mood = MOODS[rung];
+  scene.background = new THREE.Color(mood.bg);
+  const _coolSun = new THREE.Color(0xcdd6dc);
+  const _chargeBg = new THREE.Color(0x6f7a86);
+  let _fearGrade = 0;
 
-  const sun = new THREE.DirectionalLight(0xfff0c0, 1.6);
-  sun.position.set(8, 12, 4);
-  sun.castShadow = true;
-  scene.add(sun);
-  scene.add(new THREE.HemisphereLight(0x88a070, 0x4a3a25, 0.5));
+  const sun = new THREE.DirectionalLight(mood.sunC, mood.sunI);
+  sun.position.set(...mood.sunPos);
+  sun.target.position.set(0, -1, -6);
+  sun.castShadow = !IS_LOW_POWER;
+  if (sun.castShadow) {
+    const mapRes = sceneQuality() === "high" ? 2048 : 1024;
+    sun.shadow.mapSize.set(mapRes, mapRes);
+    sun.shadow.camera.left = -9; sun.shadow.camera.right = 9; sun.shadow.camera.top = 9; sun.shadow.camera.bottom = -9;
+    sun.shadow.camera.near = 0.5; sun.shadow.camera.far = 34; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02;
+  }
+  scene.add(sun); scene.add(sun.target); shellPieces.push(sun, sun.target);
+  const hemi = new THREE.HemisphereLight(mood.hemiSky, mood.hemiGnd, mood.hemiI);
+  scene.add(hemi); shellPieces.push(hemi);
+  const groundGlow = new THREE.PointLight(mood.glowC, mood.glowI, 12, 2);
+  scene.add(groundGlow); shellPieces.push(groundGlow);
+  const lightBase = { sunI: sun.intensity, sunC: sun.color.getHex(), hemiI: hemi.intensity, glowI: groundGlow.intensity };
 
-  // Earth/grass floor
+  // Earth/grass floor (PBR) + a slightly-bowed dirt path.
+  const grassMaps = makeGrassMaps();
+  [grassMaps.albedo, grassMaps.normal, grassMaps.roughness].forEach(tx => { if (tx) tx.repeat.set(10, 10); });
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(40, 40),
-    new THREE.MeshStandardMaterial({ color: 0x5e6b3a, roughness: 0.95 })
+    new THREE.PlaneGeometry(44, 44),
+    new THREE.MeshStandardMaterial({ map: grassMaps.albedo, normalMap: grassMaps.normal, roughnessMap: grassMaps.roughness, color: 0xffffff, envMapIntensity: 0.35 })
   );
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.y = -1;
-  floor.receiveShadow = true;
-  scene.add(floor);
-  // Dirt path running through the grass — gives the user a clear sense of
-  // standing on a trail with the snake on or near the path.
-  const path = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.4, 40),
-    new THREE.MeshStandardMaterial({ color: 0x8a6d40, roughness: 0.95 })
-  );
-  path.rotation.x = -Math.PI / 2;
-  path.position.set(0, -0.99, 0);
-  path.receiveShadow = true;
-  scene.add(path);
-  // Tufts of grass alongside (small flat blades). Each gets a random wind
-  // phase — they sway gently in update() so the meadow reads alive, and the
-  // snake's rustle has something visibly rustling.
-  const grassTufts = [];
-  for (let i = 0; i < 60; i++) {
-    const g = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.3, 0.5),
-      new THREE.MeshStandardMaterial({ color: 0x6d7a3a, roughness: 1.0, side: THREE.DoubleSide, transparent: true, opacity: 0.85 })
+  if (floor.material.normalMap) floor.material.normalScale.set(0.9, 0.9);
+  floor.rotation.x = -Math.PI / 2; floor.position.y = -1; floor.receiveShadow = true;
+  scene.add(floor); shellPieces.push(floor);
+  const earthMaps = makeEarthMaps();
+  [earthMaps.albedo, earthMaps.normal, earthMaps.roughness].forEach(tx => { if (tx) tx.repeat.set(1.6, 10); });
+  const pathGeo = new THREE.PlaneGeometry(2.6, 44, 1, 24);
+  { const pos = pathGeo.attributes.position; for (let i = 0; i < pos.count; i++) pos.setX(i, pos.getX(i) + 0.7 * Math.sin(pos.getY(i) * 0.28)); pos.needsUpdate = true; pathGeo.computeVertexNormals(); }
+  const path = new THREE.Mesh(pathGeo, new THREE.MeshStandardMaterial({ map: earthMaps.albedo, normalMap: earthMaps.normal, roughnessMap: earthMaps.roughness, color: 0xffffff, envMapIntensity: 0.3 }));
+  path.rotation.x = -Math.PI / 2; path.position.set(0, -0.985, 0); path.receiveShadow = true;
+  scene.add(path); shellPieces.push(path);
+
+  // Parallax tree-line / sky backdrop.
+  const bdC = document.createElement("canvas"); bdC.width = 1024; bdC.height = 512;
+  const bd = bdC.getContext("2d");
+  const sky = bd.createLinearGradient(0, 0, 0, 512 * 0.6);
+  sky.addColorStop(0, mood.skyTop); sky.addColorStop(1, mood.skyHz);
+  bd.fillStyle = sky; bd.fillRect(0, 0, 1024, 512 * 0.62);
+  bd.fillStyle = "rgba(120,150,120,0.55)";
+  for (let i = 0; i < 10; i++) { bd.beginPath(); bd.arc(i * 105 + (Math.random() - 0.5) * 60, 512 * 0.5, 40 + Math.random() * 50, Math.PI, 0); bd.fill(); }
+  bd.fillStyle = mood.treeC;
+  for (let i = 0; i < 9; i++) { const tx = i * 118 + (Math.random() - 0.5) * 50; bd.beginPath(); bd.arc(tx, 512 * 0.55, 55 + Math.random() * 55, Math.PI, 0); bd.fill(); bd.fillRect(tx - 6, 512 * 0.55, 10 + Math.random() * 6, 512 * 0.11); }
+  bd.fillStyle = "rgba(70,92,50,0.9)"; bd.fillRect(0, 512 * 0.64, 1024, 512 * 0.10);
+  const lawn = bd.createLinearGradient(0, 512 * 0.72, 0, 512); lawn.addColorStop(0, "#8a9a58"); lawn.addColorStop(1, "#6a7c44");
+  bd.fillStyle = lawn; bd.fillRect(0, 512 * 0.72, 1024, 512 * 0.28);
+  const bdTex = new THREE.CanvasTexture(bdC); bdTex.colorSpace = THREE.SRGBColorSpace;
+  const backdropMat = new THREE.MeshStandardMaterial({ map: bdTex, emissiveMap: bdTex, emissive: 0xffffff, emissiveIntensity: 0.5, roughness: 1.0, fog: false });
+  const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(60, 20), backdropMat);
+  backdrop.position.set(0, 3.5, -22); backdrop.userData.noCollide = true;
+  scene.add(backdrop); shellPieces.push(backdrop);
+
+  // God-ray shaft + dappled canopy gobo + drifting dust (tier-gated).
+  const _rayTop = new THREE.Vector3(2.0, 8.0, -4.0);
+  const _sdir = new THREE.Vector3(0, -1, -6).sub(new THREE.Vector3(...mood.sunPos)).normalize();
+  const _rayLen = (_rayTop.y - (-1)) / Math.max(0.05, -_sdir.y);
+  const _rayFloor = _rayTop.clone().addScaledVector(_sdir, _rayLen);
+  groundGlow.position.copy(_rayFloor).add(new THREE.Vector3(0, 0.8, 0));
+  let gobo = null, dustPoints = null, dustPos = null, dustAttr = null; const dustData = [];
+  if (sceneQuality() !== "low") {
+    const godray = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.7, 1.4, _rayLen, 16, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xffe8bc, transparent: true, opacity: mood.beamO, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false })
     );
+    godray.position.copy(_rayTop).addScaledVector(_sdir, _rayLen / 2);
+    godray.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), _sdir.clone().negate());
+    godray.userData.noCollide = true; scene.add(godray); shellPieces.push(godray);
+    // Canopy gobo: a shadow-casting plane with alpha holes → dappled light.
+    const goboC = document.createElement("canvas"); goboC.width = goboC.height = 256;
+    const gc = goboC.getContext("2d"); gc.fillStyle = "#000"; gc.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 60; i++) { const x = Math.random() * 256, y = Math.random() * 256, rr = 8 + Math.random() * 18; const g = gc.createRadialGradient(x, y, 0, x, y, rr); g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(1, "rgba(255,255,255,0)"); gc.fillStyle = g; gc.beginPath(); gc.arc(x, y, rr, 0, Math.PI * 2); gc.fill(); }
+    const goboTex = new THREE.CanvasTexture(goboC);
+    if (!IS_LOW_POWER) {
+      gobo = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.MeshStandardMaterial({ transparent: true, alphaMap: goboTex, opacity: 1, alphaTest: 0.35, side: THREE.DoubleSide, depthWrite: false, colorWrite: false }));
+      gobo.rotation.x = -Math.PI / 2; gobo.position.set(0, 5.0, -4); gobo.castShadow = true; gobo.receiveShadow = false; gobo.userData.noCollide = true;
+      scene.add(gobo); shellPieces.push(gobo);
+    }
+  }
+  // Dust motes in the shaft (single Points; count scales with tier).
+  const dustCount = sceneQuality() === "high" ? 90 : sceneQuality() === "medium" ? 50 : 24;
+  dustPos = new Float32Array(dustCount * 3);
+  const spawnMote = (i) => { const s = Math.random() * _rayLen; const p = _rayTop.clone().addScaledVector(_sdir, s); dustPos[i * 3] = p.x + (Math.random() - 0.5) * 1.6; dustPos[i * 3 + 1] = p.y + (Math.random() - 0.5) * 0.6; dustPos[i * 3 + 2] = p.z + (Math.random() - 0.5) * 1.6; };
+  for (let i = 0; i < dustCount; i++) { spawnMote(i); dustData.push({ vx: (Math.random() - 0.5) * 0.03, vy: -0.02 - Math.random() * 0.03, vz: (Math.random() - 0.5) * 0.03, phaseX: Math.random() * 6.28, phaseY: Math.random() * 6.28 }); }
+  const dustGeo = new THREE.BufferGeometry(); dustAttr = new THREE.BufferAttribute(dustPos, 3); dustAttr.setUsage(THREE.DynamicDrawUsage); dustGeo.setAttribute("position", dustAttr);
+  const dC = document.createElement("canvas"); dC.width = dC.height = 32; const dctx = dC.getContext("2d"); const dg = dctx.createRadialGradient(16, 16, 0, 16, 16, 16); dg.addColorStop(0, "rgba(255,244,214,1)"); dg.addColorStop(1, "rgba(255,244,214,0)"); dctx.fillStyle = dg; dctx.fillRect(0, 0, 32, 32);
+  dustPoints = new THREE.Points(dustGeo, new THREE.PointsMaterial({ size: 0.02, map: new THREE.CanvasTexture(dC), transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true }));
+  dustPoints.userData.noCollide = true; scene.add(dustPoints); shellPieces.push(dustPoints);
+
+  // Basking rock (the snake's home) — a LOW flat warm slab at the snake's
+  // spawn spot, top ≈ ground-belly height so the snake reads as coiled on it
+  // and wandering onto the grass stays seamless.
+  const _snakeZ = -(9 - size * 8);
+  const rock = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.6, 0.18, 11), new THREE.MeshStandardMaterial({ color: 0x8f8574, roughness: 0.9, envMapIntensity: 0.3, normalMap: earthMaps.normal ? earthMaps.normal.clone() : null }));
+  if (rock.material.normalMap) { rock.material.normalMap.repeat.set(2, 2); rock.material.normalMap.needsUpdate = true; }
+  rock.position.set(0, -0.99, _snakeZ); rock.receiveShadow = true; rock.castShadow = true; rock.userData.noCollide = true;
+  scene.add(rock); shellPieces.push(rock);
+  const logMat = new THREE.MeshStandardMaterial({ color: 0x5a4630, roughness: 0.92, envMapIntensity: 0.25, normalMap: earthMaps.normal ? earthMaps.normal.clone() : null });
+  const log = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 4.5, 12), logMat);
+  log.rotation.z = Math.PI / 2; log.rotation.y = 0.4; log.position.set(-3.2, -0.7, -3.5); log.castShadow = true; log.receiveShadow = true; log.userData.noCollide = true;
+  scene.add(log); shellPieces.push(log);
+  const bushMat = new THREE.MeshStandardMaterial({ color: 0x4c6a2e, roughness: 0.95, flatShading: true });
+  for (const [bx, by, bz] of [[4.5, -0.7, -5], [-4.5, -0.6, -7], [3.0, -0.65, -1]]) {
+    const bush = new THREE.Group();
+    for (let j = 0; j < 4; j++) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.4 + Math.random() * 0.3, 6, 5), bushMat); b.position.set((Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.6); b.castShadow = !IS_LOW_POWER; bush.add(b); }
+    bush.position.set(bx, by, bz); bush.userData.noCollide = true; scene.add(bush); shellPieces.push(bush);
+  }
+  const grassTufts = [];
+  const grassN = sceneQuality() === "high" ? 120 : sceneQuality() === "medium" ? 80 : 40;
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0x6d7a3a, roughness: 1.0, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+  for (let i = 0; i < grassN; i++) {
+    const g = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.5), bladeMat);
     const sx = (i % 2 === 0 ? -1 : 1) * (1.4 + Math.random() * 6);
     g.position.set(sx, -0.75, (Math.random() - 0.5) * 18);
     g.rotation.y = Math.random() * Math.PI;
     g.userData.windPhase = Math.random() * Math.PI * 2;
     g.userData.windAmp = 0.05 + Math.random() * 0.05;
-    grassTufts.push(g);
-    scene.add(g);
+    grassTufts.push(g); scene.add(g); shellPieces.push(g);
   }
 
-  // Stones scattered
-  for (let i = 0; i < 8; i++) {
-    const stone = new THREE.Mesh(
-      new THREE.SphereGeometry(0.2 + Math.random() * 0.3, 8, 6),
-      new THREE.MeshStandardMaterial({ color: 0x6a6a5a, roughness: 0.95 })
-    );
-    stone.position.set((Math.random() - 0.5) * 8, -0.9, -2 - Math.random() * 6);
-    stone.scale.y = 0.5 + Math.random() * 0.3;
-    stone.castShadow = true;
-    scene.add(stone);
+  // Warm outdoor ambient bed (breeze + distant birds + cicadas). No reverb.
+  {
+    const A = window.PhobiaAudio;
+    if (A && A.startClearingAmbient) liveAudio.push(A.startClearingAmbient({ intensity: sceneQuality() === "low" ? 0.2 : (0.25 + size * 0.25) }));
   }
 
   // Snake — real rigged GLTF (Quaternius "Easy Enemies", CC0), replacing the
@@ -23210,13 +23708,48 @@ function setupSnakes(scene, camera, level) {
   snake.userData.onReady = () => {
     try {
       const pp = snake.userData.parts;
+      // Scale-material pass — pull the flat cartoon colours toward a realistic
+      // scaled serpent (dark olive/brown, low sheen, a fine scale normal),
+      // taming the loud purple/yellow/red accents; keep teeth + a dark-red
+      // mouth readable.
+      try {
+        // Only built when it will actually be applied (non-low tier, per the
+        // guard below) — skip the 256×256 Sobel height→normal pass on low power.
+        const scaleNrm = sceneQuality() === "low" ? null : ((typeof makeScaleNormal === "function") ? makeScaleNormal() : (makeFurMaps().normal));
+        pp.model.traverse(o => {
+          if (!o.isMesh || !o.material) return;
+          if (o.geometry && typeof ensureBoxUV === "function") { try { ensureBoxUV(o.geometry, pp.span || 0.6); } catch {} }
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach(m => {
+            if (!m || !m.color) return;
+            const name = (m.name || "").toLowerCase();
+            const isTeeth = name.includes("teeth") || name.includes("tooth");
+            const isMouth = name === "red" || (name.includes("red") && !name.includes("dark"));
+            if (isTeeth) { m.color.setHex(0xe8e2d0); m.roughness = 0.55; m.envMapIntensity = 0.4; m.needsUpdate = true; return; }
+            if (isMouth) { m.color.lerp(new THREE.Color(0x7a1410), 0.4); m.roughness = 0.42; m.envMapIntensity = 0.55; m.needsUpdate = true; return; }
+            const hsl = {}; m.color.getHSL(hsl);
+            hsl.s *= 0.35; hsl.l *= 0.62;
+            hsl.h = hsl.h + (0.16 - hsl.h) * 0.55;   // pull toward olive
+            m.color.setHSL(hsl.h, hsl.s, hsl.l);
+            if (name.includes("purple") || name.includes("yellow")) m.color.lerp(new THREE.Color(0x4a4326), 0.5);
+            m.metalness = 0; m.roughness = 0.5; m.envMapIntensity = 0.4;
+            if (scaleNrm && sceneQuality() !== "low") { const n = scaleNrm.clone(); n.repeat.set(6, 18); n.needsUpdate = true; m.normalMap = n; if (m.normalScale) m.normalScale.set(0.5, 0.5); }
+            m.needsUpdate = true;
+          });
+        });
+      } catch (e) { console.warn("[snakes] scale material:", e); }
       pp.play("Idle");
       headAnchor.position.set(0, pp.height * 0.78, pp.span * 0.18);
-      // Bone handles for head tracking + a live head anchor. The rig names
-      // its chain Root/Body/Chest/Neck/Head — grab what exists, degrade to
-      // the static anchor if the model changed.
       pp.headBone = pp.model.getObjectByName("Head") || null;
       pp.neckBone = pp.model.getObjectByName("Neck") || null;
+      // Wake the procedural controller + calibrate belly grounding.
+      if (snakeCtl.ctrl) {
+        snakeCtl.ctrl.suspend = false;
+        snakeCtl.ctrl._needsGround = true;
+        snakeCtl.ctrl.tongueRest = B.tongueEvery || [2.2, 5.0];
+        snakeCtl.ctrl.height = pp.height || 0.6;
+        snakeCtl.ctrl.span = pp.span || 0.6;
+      }
     } catch {}
   };
   scene.add(snake);
@@ -23261,12 +23794,33 @@ function setupSnakes(scene, camera, level) {
     defenseCooldown: 0,
     defensiveSpoken: false,
     lastWarnHiss: -99,
+    // Strike sub-state machine (Package B drives the head lunge + jaw); the
+    // scene owns the phase so the narrator + celebration gate can read it.
+    strikePhase: "none",  // none | telegraph | lunge | recoil
+    strikeT: 0,
+    striking: false,
+    jawTarget: 0,
+    strikeFired: false,
+    sniffing: false,
+    ctrl: null,           // the SnakeController (Package B)
   };
+  snakeCtl.ctrl = new SnakeController(snake, scene, camera);
   const SNAKE_BOUNDS = { minX: -3.4, maxX: 3.4, minZ: -9.3, maxZ: 1.2 };
   const SNAKE_REF_SPEED = 0.5;   // m/s at Walk clip timeScale 1 — tuned by eye
+  const STRIKE_LENS_FLOOR = 0.7; // head world-pos never crosses this from the lens
   let slitherSound = null;       // lazy spatial rustle handle
   let prevPlayerDist = null, approachSpeed = 0;  // radial m/s toward the snake
+  let arousalFloor = 0, engageDur = 0;           // honest-credit state
+  let completionBeatDone = false;
+  let retreatPraised = false, holdPraised = false;
   const _snkV1 = new THREE.Vector3();
+  const _snkHead = new THREE.Vector3();
+  const _snkPalm = new THREE.Vector3();
+  const _snkHead2 = new THREE.Vector3();
+
+  // The hold-completion fanfare must never fire mid-strike (apex rung).
+  window.__holdCelebrationGate = () =>
+    intensity !== "apex" || (snakeCtl.strikePhase === "none" && snakeCtl.state !== "defensive");
 
   function snakeClampToBounds(p) {
     p.x = Math.max(SNAKE_BOUNDS.minX, Math.min(SNAKE_BOUNDS.maxX, p.x));
@@ -23276,7 +23830,7 @@ function setupSnakes(scene, camera, level) {
   function snakePickWanderTarget(controls) {
     // Higher rungs sometimes cross the open path 2–4 m ahead of the player —
     // the classic "it moved!" beat — otherwise roam near home turf.
-    if (size >= 0.6 && controls && Math.random() < 0.45) {
+    if (B.cross && controls && Math.random() < (B.crossChance ?? 0.45)) {
       const aheadZ = Math.max(SNAKE_BOUNDS.minZ + 0.4,
         Math.min(1.0, controls.position.z - (2.2 + Math.random() * 2.0)));
       const side = snake.position.x >= 0 ? -1 : 1;
@@ -23302,7 +23856,7 @@ function setupSnakes(scene, camera, level) {
     const sp = snake.userData.parts;
     const hasRig = sp && sp.mixer && sp.play;
     if (state === "bask") {
-      snakeCtl.baskDur = (size >= 0.6 ? 2.0 : 3.5) + Math.random() * (size >= 0.6 ? 4 : 6);
+      { const bd = B.baskDur || (size >= 0.6 ? [2.0, 6.0] : [3.5, 9.5]); snakeCtl.baskDur = bd[0] + Math.random() * (bd[1] - bd[0]); }
       snakeCtl.target = null;
       if (hasRig) sp.play("Idle", 0.5);
     } else if (state === "wander") {
@@ -23330,17 +23884,22 @@ function setupSnakes(scene, camera, level) {
       }
       if (hasRig) sp.play("Walk", 0.3);
     } else if (state === "defensive") {
+      // Strike TELEGRAPH onset — reared, jaw parting, a warning hiss. The Attack
+      // clip is reserved for the actual lunge (fired in the 'lunge' phase); this
+      // is the window the player can still back away from.
       snakeCtl.target = null;
-      if (hasRig) sp.play("Attack", 0.08, { once: true });
+      snakeCtl.strikePhase = "telegraph"; snakeCtl.strikeT = 0; snakeCtl.striking = true; snakeCtl.jawTarget = 0.5;
+      if (hasRig) sp.play("Idle", 0.15);
       const hp = new THREE.Vector3();
       headAnchor.getWorldPosition(hp);
-      if (window.PhobiaAudio && window.PhobiaAudio.hissOnce) window.PhobiaAudio.hissOnce(hp, 1.0);
-      if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.85);
+      if (window.PhobiaAudio) { if (window.PhobiaAudio.snakeHiss) window.PhobiaAudio.snakeHiss(hp, { intensity: 1.0 }); else if (window.PhobiaAudio.hissOnce) window.PhobiaAudio.hissOnce(hp, 1.0); }
+      if (snakeCtl.ctrl) snakeCtl.ctrl.requestTongueFlick(true);
+      if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.55);
       if (!snakeCtl.defensiveSpoken && window.PhobiaVoice) {
         snakeCtl.defensiveSpoken = true;
-        window.PhobiaVoice.speak("It warned you — that's all it was. Step back, slow down. Slow movement reads as safety.");
+        window.PhobiaVoice.speak("It's warning you. Ease back, slow down — slow movement reads as safety.");
       }
-      snakeCtl.defenseCooldown = 14;
+      snakeCtl.defenseCooldown = B.strikeCooldown ?? 14;
     }
   }
   // Per-frame brain + root motion. `sniffing` comes from the extend-hand
@@ -23351,6 +23910,12 @@ function setupSnakes(scene, camera, level) {
     const hasRig = sp && sp.mixer && sp.play;
     snakeCtl.stateT += dtN;
     snakeCtl.defenseCooldown = Math.max(0, snakeCtl.defenseCooldown - dtN);
+    // The warn-hiss parts the jaw (jawTarget→0.4) while watching; clear it once
+    // the snake is no longer alert or striking, so a snake that settled back to
+    // basking/wandering doesn't sit with its mouth stuck open (breaks the "it
+    // settled, it's calm now" evidence). 'watch' keeps the parted jaw; the strike
+    // phases own it while striking.
+    if (snakeCtl.strikePhase === "none" && snakeCtl.state !== "watch") snakeCtl.jawTarget = 0;
 
     // Player kinematics — RADIAL approach speed (m/s closing on the snake),
     // not raw walk speed: max walk speed is only 1.2 m/s here, so "rushing"
@@ -23366,22 +23931,24 @@ function setupSnakes(scene, camera, level) {
       prevPlayerDist = playerDist;
     }
 
-    // --- Defensive trigger (top rungs): rushing into its space ---
-    if (size >= 0.75 && snakeCtl.state !== "defensive" && snakeCtl.defenseCooldown <= 0
-        && controls && playerDist < 1.45 && approachSpeed > 0.9) {
-      // Face the player before the feint so the display is unmistakably aimed.
+    // --- Strike trigger (APEX rung only): RUSHING into its space ---
+    // Rushing provokes the coil-and-strike display; staying calm defuses it
+    // (the stillness→retreat inversion below). This is the ophidiophobia lesson.
+    if (B.strike && snakeCtl.state !== "defensive" && snakeCtl.defenseCooldown <= 0
+        && !completionBeatDone
+        && controls && playerDist < (B.strikeDist ?? 1.45) && approachSpeed > (B.strikeApproach ?? 0.9)) {
       snakeCtl.heading = Math.atan2(controls.position.x - snake.position.x, controls.position.z - snake.position.z);
       snake.rotation.y = snakeCtl.heading;
       snakeEnter("defensive", controls);
     }
 
-    // --- State transitions ---
+    // --- State transitions (per-rung distances) ---
     if (snakeCtl.state === "bask") {
-      if (controls && playerDist < 3.2) snakeEnter("watch", controls);
-      else if (stillness > 0.3 && controls && playerDist < 5) snakeEnter("retreat", controls);
-      else if (snakeCtl.stateT > snakeCtl.baskDur) snakeEnter("wander", controls);
+      if (controls && playerDist < (B.watchDist ?? 3.2)) snakeEnter("watch", controls);
+      else if (stillness > (B.retreatStill ?? 0.3) && controls && playerDist < 5) snakeEnter("retreat", controls);
+      else if (!B.still && snakeCtl.stateT > snakeCtl.baskDur) snakeEnter("wander", controls);
     } else if (snakeCtl.state === "wander") {
-      if (controls && playerDist < (snakeCtl.crossing ? 1.6 : 2.6)) snakeEnter("watch", controls);
+      if (controls && playerDist < (snakeCtl.crossing ? 1.6 : (B.watchDist ?? 2.6))) snakeEnter("watch", controls);
       else if (snakeCtl.target) {
         const d = Math.hypot(snakeCtl.target.x - snake.position.x, snakeCtl.target.z - snake.position.z);
         if (d < 0.35 || snakeCtl.stateT > 18) snakeEnter("bask", controls);
@@ -23389,24 +23956,67 @@ function setupSnakes(scene, camera, level) {
     } else if (snakeCtl.state === "watch") {
       if (sniffing) {
         // Engaged with the offered hand — hold position, stay reared.
-      } else if (stillness > 0.3) snakeEnter("retreat", controls);
-      else if (!controls || playerDist > 4.2) snakeEnter("bask", controls);
+      } else if (stillness > (B.retreatStill ?? 0.3)) snakeEnter("retreat", controls);
+      else if (!controls || playerDist > (B.watchDist != null ? B.watchDist + 1 : 4.2)) snakeEnter("bask", controls);
     } else if (snakeCtl.state === "retreat") {
       const d = snakeCtl.target
         ? Math.hypot(snakeCtl.target.x - snake.position.x, snakeCtl.target.z - snake.position.z)
         : 0;
       if (d < 0.35 || snakeCtl.stateT > 8) snakeEnter("bask", controls);
     } else if (snakeCtl.state === "defensive") {
-      // Attack clip is ~0.67 s; once the feint lands, withdraw.
-      if (snakeCtl.stateT > 0.72) snakeEnter("retreat", controls);
+      // --- The strike: telegraph → lunge → recoil (Package B moves the head) ---
+      const TELE_DUR = 0.55, LUNGE_DUR = 0.30;
+      snakeCtl.strikeT += dtN;
+      if (snakeCtl.strikePhase === "telegraph") {
+        snakeCtl.striking = true; snakeCtl.jawTarget = 0.5;
+        // RETREAT CANCELS — the disconfirming window (mirror the spider coil-cancel).
+        if (playerDist > 1.9 || approachSpeed < -0.2) {
+          snakeCtl.strikePhase = "recoil"; snakeCtl.strikeT = 0; snakeCtl.jawTarget = 0;
+          if (!retreatPraised && window.PhobiaVoice) { retreatPraised = true; window.PhobiaVoice.speak("You backed off, and it stood down. Slow reads as safe."); }
+        } else if (snakeCtl.strikeT > TELE_DUR) {
+          snakeCtl.strikePhase = "lunge"; snakeCtl.strikeT = 0; snakeCtl.jawTarget = 1.0; snakeCtl.strikeFired = false;
+          const sp2 = snake.userData.parts; if (sp2 && sp2.play) sp2.play("Attack", 0.05, { once: true, timeScale: 1.3 });
+          headAnchor.getWorldPosition(_snkV1);
+          if (window.PhobiaAudio) { if (window.PhobiaAudio.snakeStrike) window.PhobiaAudio.snakeStrike(_snkV1); else if (window.PhobiaAudio.hissOnce) window.PhobiaAudio.hissOnce(_snkV1, 1.0); }
+          if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.9);
+          arousalFloor = Math.max(arousalFloor, 0.8);
+        }
+      } else if (snakeCtl.strikePhase === "lunge") {
+        // Fast forward dart toward the player, clamped so the HEAD bone's world
+        // pos never crosses the lens floor (full-3D, like the spider pounce).
+        const dirx = controls ? controls.position.x - snake.position.x : 0;
+        const dirz = controls ? controls.position.z - snake.position.z : 0;
+        const dd = Math.hypot(dirx, dirz) || 1e-3;
+        const step = 3.2 * dtN;
+        snake.position.x += (dirx / dd) * step;
+        snake.position.z += (dirz / dd) * step;
+        const sp3 = snake.userData.parts;
+        if (controls && sp3 && sp3.headBone) {
+          sp3.headBone.getWorldPosition(_snkHead);
+          const d3 = _snkHead.distanceTo(controls.position);
+          if (d3 < STRIKE_LENS_FLOOR) { const s = STRIKE_LENS_FLOOR - d3; snake.position.x -= (dirx / dd) * s; snake.position.z -= (dirz / dd) * s; }
+          if (!snakeCtl.strikeFired) {
+            snakeCtl.strikeFired = true;
+            if (controls.kickShake) controls.kickShake(0.06);
+            if (controls.snapLookAt) controls.snapLookAt(_snkHead.x, _snkHead.y, _snkHead.z, 0.7);
+          }
+        }
+        if (snakeCtl.strikeT > LUNGE_DUR) { snakeCtl.strikePhase = "recoil"; snakeCtl.strikeT = 0; snakeCtl.jawTarget = 0; snakeCtl.strikeFired = false;
+          if (!holdPraised && window.PhobiaVoice) { holdPraised = true; window.PhobiaVoice.speak("It struck, and stopped. Nothing reached you. That is the fear, not the danger."); }
+        }
+      } else { // recoil
+        snakeCtl.striking = false; snakeCtl.jawTarget = 0;
+        if (snakeCtl.stateT > 0.72 || snakeCtl.strikeT > 0.3) { snakeCtl.strikePhase = "none"; snakeEnter("retreat", controls); }
+      }
     }
 
-    // --- Warning hiss when looming over it on mid+ rungs (throttled) ---
-    if ((snakeCtl.state === "watch") && size >= 0.6 && controls && playerDist < 1.7
-        && !sniffing && (t - snakeCtl.lastWarnHiss) > 9) {
+    // --- Warning hiss when looming over it (throttled, per-rung) ---
+    if ((snakeCtl.state === "watch") && (B.warnHissDist != null) && controls && playerDist < B.warnHissDist
+        && !sniffing && (t - snakeCtl.lastWarnHiss) > (B.warnHissEvery ?? 9)) {
       snakeCtl.lastWarnHiss = t;
       headAnchor.getWorldPosition(_snkV1);
-      if (window.PhobiaAudio && window.PhobiaAudio.hissOnce) window.PhobiaAudio.hissOnce(_snkV1, 0.55);
+      if (window.PhobiaAudio) { if (window.PhobiaAudio.snakeHiss) window.PhobiaAudio.snakeHiss(_snkV1, { intensity: 0.55 }); else if (window.PhobiaAudio.hissOnce) window.PhobiaAudio.hissOnce(_snkV1, 0.55); }
+      snakeCtl.jawTarget = Math.max(snakeCtl.jawTarget, 0.4);
       if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.3);
     }
 
@@ -23424,7 +24034,7 @@ function setupSnakes(scene, camera, level) {
       dh = Math.atan2(Math.sin(dh), Math.cos(dh));
       const turnRate = snakeCtl.state === "retreat" ? 2.6 : 1.6;
       snakeCtl.heading += Math.max(-turnRate * dtN, Math.min(turnRate * dtN, dh));
-      desiredSpeed = (snakeCtl.state === "retreat" ? 0.85 : 0.45 + size * 0.25);
+      desiredSpeed = (snakeCtl.state === "retreat" ? 0.85 : (B.wanderSpeed ?? (0.45 + size * 0.25)));
       desiredSpeed *= Math.min(1, dist / 0.8);            // ease in on arrival
       desiredSpeed *= Math.max(0.25, 1 - Math.abs(dh) / Math.PI); // slow in tight turns
       // Never slither into the camera: full stop just outside personal space.
@@ -23462,11 +24072,20 @@ function setupSnakes(scene, camera, level) {
       headAnchor.position.copy(snake.worldToLocal(_snkV1));
     }
 
-    // --- Post-mixer head tracking while watching ---
-    // The mixer rewrites bone rotations every frame, so the gentle "it is
-    // looking at you" turn is applied after mixer.update as a small additive
-    // twist on Neck + Head. Angles are clamped tight — a hint, not an owl.
-    if (hasRig) sp.mixer.update(dtN);
+    // --- Procedural "alive" layer (owns the SOLE mixer.update) ---
+    // Set per-frame flags from the behaviour state, then advance the controller
+    // (which does mixer.update then applies body slither / tongue / jaw / rear).
+    const st = snakeCtl.state;
+    const slAmp = (st === "wander" || st === "retreat" || st === "defensive" || snakeCtl.striking) ? 1.0 : 0.35;
+    snakeCtl.ctrl.setSlither(slAmp * Math.min(1, 0.5 + size * 0.6));
+    snakeCtl.ctrl._slitherSpeed = Math.min(1, snakeCtl.speed / SNAKE_REF_SPEED);
+    const rearAmt = (st === "watch" || st === "defensive" || snakeCtl.striking) ? (0.6 + 0.4 * size) : (sniffing ? 0.5 : 0);
+    snakeCtl.ctrl.setRear(B.rear === false ? Math.min(rearAmt, sniffing ? 0.5 : 0) : rearAmt);
+    snakeCtl.ctrl.setJaw(snakeCtl.jawTarget || 0);
+    snakeCtl.ctrl._tongueFast = sniffing || st === "watch" || snakeCtl.striking;
+    if (hasRig) snakeCtl.ctrl.update(t, dtN);
+
+    // --- Post-mixer head tracking while watching (composes on the rear pitch) ---
     const trackWeight = (snakeCtl.state === "watch" || snakeCtl.state === "defensive") ? 1 : 0;
     if (hasRig && (trackWeight > 0 || Math.abs(snakeCtl.headYaw) > 0.001) && controls && sp.neckBone) {
       const worldYaw = Math.atan2(controls.position.x - snake.position.x, controls.position.z - snake.position.z);
@@ -23479,8 +24098,9 @@ function setupSnakes(scene, camera, level) {
     }
 
     // --- Slither rustle tracks the moving body ---
-    if (window.PhobiaAudio && window.PhobiaAudio.startSlither) {
-      if (!slitherSound && snakeCtl.speed > 0.05) slitherSound = window.PhobiaAudio.startSlither();
+    const _slFn = window.PhobiaAudio && (window.PhobiaAudio.startSnakeSlither || window.PhobiaAudio.startSlither);
+    if (_slFn) {
+      if (!slitherSound && snakeCtl.speed > 0.05) { slitherSound = _slFn(); liveAudio.push(slitherSound); }
       if (slitherSound) {
         slitherSound.set(
           { x: snake.position.x, y: snake.position.y + 0.1, z: snake.position.z },
@@ -23501,6 +24121,7 @@ function setupSnakes(scene, camera, level) {
   let extensionTarget = 0;
   let sniffT = 0;            // builds while the hand is near the snake's head
   let sniffMet = false;      // becomes true once sniffT reaches threshold
+  let _lastSniffFlick = 0;   // throttles the sniff tongue-flick request
   // Visible procedural hand pinned to the camera. We add it as a child of
   // camera so it follows look direction; extension drives a forward offset.
   const handGroup = new THREE.Group();
@@ -23617,7 +24238,7 @@ function setupSnakes(scene, camera, level) {
     leaf.userData = { vy: -0.5, vx: (Math.random() - 0.5) * 0.4, vz: (Math.random() - 0.5) * 0.4, spin: Math.random() * 6, settled: false };
     scene.add(leaf);
   }
-  setTimeout(wireSnakesCmds, 0);
+  sceneTimers.push(setTimeout(wireSnakesCmds, 0));
 
   return {
     controls: {
@@ -23625,20 +24246,27 @@ function setupSnakes(scene, camera, level) {
       // Spawn back along the path so the snake is something to walk TOWARD,
       // not stand on top of. The path narrows visually toward the snake so
       // the eye reads "this is the way forward" without needing markers.
-      initialPos: [0, 1.0, 4.0],
+      initialPos: [0, 0.62, 4.0],
       initialYaw: 0,
       initialPitch: snakePitch * 0.4,
       bounds: { minX: -3, maxX: 3, minZ: -distance + 1.0, maxZ: 5 },
       speed: 1.2,
       lookSpeed: 0.0035,
-      // Snake phobia is intimate — first-person locked so the user is
-      // genuinely looking at the creature, not watching themselves.
+      // Snake phobia is intimate — first-person locked (the hand-extend gesture
+      // + DOM command bar rule out pointer lock / third-person). Fear-gait +
+      // look-smoothing still apply; fear-gait's approach-slow reinforces the
+      // scene's whole lesson: don't rush the snake.
       cameraModeLocked: "fp",
+      lookSmoothing: 10,
+      fearGait: true,
     },
     // NOTE: no generic `hands` here — this scene builds its own palm-up
     // `handGroup` (below) for the "extend hand" mechanic. Requesting the
     // generic first-person hands too would render a second forearm on top.
-    bloom: { strength: 0.35, threshold: 0.92 },
+    bloom: { strength: 0.24, threshold: 0.95 },
+    fearGradePass: true,
+    cameraFar: 45,
+    messageQueue: true,
     surface: "grass",   // outdoor path with grass + dirt
     groundY: -1,        // feet + eye line anchored to the path
     update(t, controls, dt) {
@@ -23649,17 +24277,62 @@ function setupSnakes(scene, camera, level) {
         controls.setObstacles([{ x: snake.position.x, z: snake.position.z, r: 0.35 }]);
       }
       const dtN = dt || 0.016;
-      // ---- Feed fear state from proximity to the snake ----
+      // ---- Feed the fear model (honest, non-inverted gaze) ----
       if (controls && window.PhobiaFear) {
-        const dxs = controls.position.x - snake.position.x;
-        const dzs = controls.position.z - snake.position.z;
+        const SP = snake.position, CP = controls.position;
+        const dxs = SP.x - CP.x, dzs = SP.z - CP.z;
         const distS = Math.hypot(dxs, dzs);
-        const closeness = Math.max(0, Math.min(1, 1 - (distS - 1.2) / 5.0));
-        window.PhobiaFear.setInput("proximity", closeness * 0.80);
-        const lookDownAmt = Math.max(0, Math.min(1, (-controls.pitch - 0.1) / 0.7));
-        window.PhobiaFear.setInput("gaze", lookDownAmt * (closeness > 0.3 ? 0.75 : 0.3));
-        const isAway = distS > 4.5;
-        window.PhobiaFear.bumpAvoidance(dtN, isAway);
+        const closeness = clamp01(1 - (distS - 1.2) / 5.0);
+        window.PhobiaFear.setInput("proximity", closeness * (B.fearMul ?? 0.80));
+        // Gaze: facing the snake yields high gaze. The snake is LOW, so the
+        // needed pitch is downward — but yaw-facing is required, so turning
+        // away collapses gaze even while pitched down (the spider gaze fix).
+        const dirTo = Math.atan2(dxs, dzs);
+        const yawDelta = Math.abs(((controls.yaw - dirTo + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+        const yawAlign = Math.max(0, 1 - yawDelta / 1.0);
+        const needPitch = Math.atan2(SP.y - CP.y, Math.max(0.2, distS));
+        const pitchAlign = Math.max(0, 1 - Math.abs(controls.pitch - needPitch) / 0.7);
+        const gazeAlign = yawAlign * (0.5 + 0.5 * pitchAlign);
+        window.PhobiaFear.setInput("gaze", gazeAlign * (B.fearMul ?? 0.80) * 0.85);
+        // Duration: sustained engagement + a post-strike arousal floor.
+        const engaged = distS < (B.inZoneDist ?? 3.2) || snakeCtl.sniffing || snakeCtl.state === "watch" || (intensity === "apex" && yawAlign > 0.35);
+        engageDur = Math.max(0, Math.min(24, engageDur + (engaged ? dtN : -dtN * 0.35)));
+        arousalFloor = Math.max(0, arousalFloor - dtN / 12);
+        window.PhobiaFear._duration = engageDur;
+        window.PhobiaFear.setInput("duration", Math.max(engageDur / 24, arousalFloor));
+        const isAway = distS > (B.inZoneDist ?? 3.2) + 1.5;
+        window.PhobiaFear.bumpAvoidance(dtN, isAway && engageDur > 2);
+        if (window.PhobiaNarrator) {
+          window.PhobiaNarrator.tick("snakes", {
+            minGap: 30,
+            threat: intensity === "apex" && (snakeCtl.state === "defensive" || snakeCtl.strikePhase === "telegraph" || snakeCtl.strikePhase === "lunge"),
+          });
+        }
+        // Diegetic completion beat: once the hold is earned, the snake settles
+        // for good (no more strikes) — the disconfirming evidence, staged.
+        if (window.__rungHoldComplete && !completionBeatDone) {
+          completionBeatDone = true;
+          snakeCtl.defenseCooldown = Infinity;
+          // If the hold completes mid-strike, the strike branch that clears these
+          // stops running the moment we leave "defensive" — reset them here or the
+          // snake settles with its mouth locked open / striking flag stuck true.
+          snakeCtl.strikePhase = "none"; snakeCtl.striking = false; snakeCtl.jawTarget = 0;
+          if (snakeCtl.state !== "retreat") snakeEnter(intensity === "apex" && distS < 3 ? "retreat" : "bask", controls);
+          if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt("It settled. You held your ground and it stood down.", 4500);
+        }
+      }
+      // ---- Fear grade the daylight (subtle — it stays a sunny clearing) ----
+      {
+        const fear01 = (window.PhobiaFear && window.PhobiaFear.get) ? clamp01(window.PhobiaFear.get() / 100) : 0;
+        const target = fear01 * (window.__rungHoldComplete ? 0.35 : 1);
+        _fearGrade += (target - _fearGrade) * Math.min(1, dtN * 2.5);
+        const g = _fearGrade;
+        sun.intensity = lightBase.sunI * (1 - g * 0.18);
+        sun.color.setHex(lightBase.sunC).lerp(_coolSun, g * 0.30);
+        hemi.intensity = lightBase.hemiI * (1 - g * 0.35);
+        groundGlow.intensity = lightBase.glowI * (1 - g * 0.30);
+        if (backdropMat) backdropMat.emissiveIntensity = 0.5 * (1 - g * 0.30);
+        scene.background.setHex(mood.bg).lerp(_chargeBg, g * 0.35);
       }
       // Falling leaf — physics + spin until it lands; snake briefly tracks it
       if (leaf) {
@@ -23675,10 +24348,10 @@ function setupSnakes(scene, camera, level) {
             leaf.rotation.x = -Math.PI / 2;   // lay flat on the ground
             leaf.userData.settled = true;
             // After 4 s, fade away
-            setTimeout(() => {
+            sceneTimers.push(setTimeout(() => {
               if (!leaf) return;
               scene.remove(leaf); leaf.geometry.dispose(); leaf.material.dispose(); leaf = null;
-            }, 4000);
+            }, 4000));
           }
         }
         // (Orientation toward the leaf is handled by the locomotion
@@ -23704,17 +24377,20 @@ function setupSnakes(scene, camera, level) {
       // Tilt the palm up slightly as it extends (offering posture)
       handGroup.rotation.x = -extension * 0.25;
       // World-space distance from the extended palm to the snake's head
-      const palmWorld = new THREE.Vector3();
-      sPalm.getWorldPosition(palmWorld);
-      const headWorld = new THREE.Vector3();
-      headAnchor.getWorldPosition(headWorld);
-      const headWorldDist = palmWorld.distanceTo(headWorld);
+      // (reuse closure temps — this runs every frame).
+      sPalm.getWorldPosition(_snkPalm);
+      headAnchor.getWorldPosition(_snkHead2);
+      const headWorldDist = _snkPalm.distanceTo(_snkHead2);
       // Sniff trust builds when the palm is within ~0.7 m of the snake head
       // AND the user is holding the extend button (active gesture, not by
       // accident). Decays slowly otherwise.
       const sniffing = extendHeld && extension > 0.6 && headWorldDist < 0.9 && !moving;
+      snakeCtl.sniffing = sniffing;   // published for the fear feed + tongue cadence
       if (sniffing) {
         sniffT = Math.min(1, sniffT + dtN * 0.30);
+        // The snake visibly tongue-tastes the offered hand — the "it's
+        // investigating, not attacking" beat that fills trust.
+        if (snakeCtl.ctrl && t - _lastSniffFlick > 0.6) { _lastSniffFlick = t; snakeCtl.ctrl.requestTongueFlick(true); }
         if (sniffT >= 0.999 && !sniffMet) {
           sniffMet = true;
           if (window.PhobiaVoice) {
@@ -23736,10 +24412,42 @@ function setupSnakes(scene, camera, level) {
         const g = grassTufts[gi];
         g.rotation.z = Math.sin(t * 1.7 + g.userData.windPhase) * g.userData.windAmp * gust;
       }
+      // Canopy shimmer + drifting dust motes (tier-gated pieces).
+      if (gobo) { gobo.position.x = Math.sin(t * 0.13) * 0.6; gobo.position.z = -4 + Math.cos(t * 0.09) * 0.5; }
+      if (dustPoints && dustAttr) {
+        for (let i = 0; i < dustData.length; i++) {
+          const dd = dustData[i];
+          dustPos[i * 3] += dd.vx * dtN + Math.sin(t + dd.phaseX) * 0.0010;
+          dustPos[i * 3 + 1] += dd.vy * dtN;
+          dustPos[i * 3 + 2] += dd.vz * dtN + Math.cos(t + dd.phaseY) * 0.0010;
+          if (dustPos[i * 3 + 1] < -0.95) spawnMote(i);
+        }
+        dustAttr.needsUpdate = true;
+      }
     },
     dispose() {
+      try { sceneTimers.forEach(id => { clearTimeout(id); clearInterval(id); }); } catch {}
+      try { liveAudio.forEach(h => h && h.stop && h.stop()); } catch {}
+      try { window.__holdCelebrationGate = null; window.__rungHoldComplete = false; } catch {}
+      try { const bar = document.querySelector('.scene-cmd-bar[data-scene="snakes"]'); if (bar) bar.dataset.wired = ""; } catch {}
+      try { snake.userData.disposed = true; if (snake.userData.parts && snake.userData.parts.mixer) snake.userData.parts.mixer.stopAllAction(); } catch {}
       // Stop the moving slither rustle (it's a looping source, not a one-shot).
       try { if (slitherSound) { slitherSound.stop(); slitherSound = null; } } catch {}
+      // Free the set-dressing this overhaul added (generated textures + materials).
+      try {
+        shellPieces.forEach(m => {
+          scene.remove(m);
+          if (m.geometry) m.geometry.dispose();
+          if (m.material) (Array.isArray(m.material) ? m.material : [m.material]).forEach(x => {
+            if (!x) return;
+            // Also dispose the material's generated CanvasTextures — some set-dressing
+            // maps are uncached, so a fresh set leaks every mount, and the global
+            // disposeObject walk can't reach them once removed from the graph here.
+            for (const k in x) { const v = x[k]; if (v && v.isTexture) v.dispose(); }
+            x.dispose && x.dispose();
+          });
+        });
+      } catch {}
       // Dispose the hand group's own geometry/materials BEFORE detaching it.
       // (The global disposer walks the scene graph; once we remove handGroup
       // from the camera it's unreachable, so we must free it here ourselves.)
