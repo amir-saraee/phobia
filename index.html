@@ -11760,6 +11760,20 @@ class Body {
         this._camYawSm = controls.yaw;
       }
       this.group.rotation.y = this._camYawSm + Math.PI - this._travelOff;
+      // Head leads, body follows: in TP the head tracks the camera's aim
+      // (clamped to a natural neck range) while the body lags behind. This
+      // is the single strongest "someone is in there" cue the avatar has.
+      let aimYaw = 0, aimPitch = 0;
+      if (this.cameraMode === "tp") {
+        aimYaw = (controls.yaw - this._camYawSm) + this._travelOff;
+        while (aimYaw > Math.PI) aimYaw -= Math.PI * 2;
+        while (aimYaw < -Math.PI) aimYaw += Math.PI * 2;
+        aimYaw = Math.max(-0.75, Math.min(0.75, aimYaw));
+        aimPitch = Math.max(-0.45, Math.min(0.55, -(controls.pitch || 0) * 0.45));
+      }
+      if (this._headAimYaw == null) { this._headAimYaw = 0; this._headAimPitch = 0; }
+      this._headAimYaw += (aimYaw - this._headAimYaw) * Math.min(1, dtB * 9);
+      this._headAimPitch += (aimPitch - this._headAimPitch) * Math.min(1, dtB * 9);
     }
     // Subtle breath (always-on idle motion). Bigger amplitude when standing
     // still (idle), smaller when walking (overshadowed by step bob anyway).
@@ -11790,7 +11804,11 @@ class Body {
     }
     this._headTurnAmount += (this._headTurnTarget - this._headTurnAmount) * 0.04;
     if (this.head) {
-      this.head.rotation.y = this._headTurnAmount;
+      // Aim tracking dominates; the idle wander only shows through when the
+      // camera is near-centred (otherwise the head would fidget mid-aim).
+      const aimY = this._headAimYaw || 0;
+      const wanderK = Math.max(0, 1 - Math.abs(aimY) * 3);
+      this.head.rotation.y = this._headTurnAmount * wanderK + aimY;
       // Tiny pitch wobble for life
       this.head.rotation.x = Math.sin(t * 0.7) * 0.02;
     }
@@ -11881,10 +11899,9 @@ class Body {
     }
     // Head tilts WITH the chest (about 60% as much, so the user can still
     // see forward when leaning over a railing).
-    if (this.head && totalLean > 0.001) {
-      this.head.rotation.x = totalLean * 0.6;
-    } else if (this.head) {
-      this.head.rotation.x = 0;
+    if (this.head) {
+      // Chest-follow lean + camera aim pitch (TP head tracking) compose.
+      this.head.rotation.x = totalLean * 0.6 + (this._headAimPitch || 0);
     }
     // Crouch — bend the legs forward and drop the chest + head by a few
     // centimetres for the crouched silhouette. Feet stay on the floor (we
@@ -15401,6 +15418,10 @@ function setupHeights(scene, camera, level) {
   // major occluders here and pass them to the camera as collision targets
   // (set on the controls in the return-result wiring).
   const collisionObjects = [];
+  // The TP camera must not dip below the roof slab (looking up drops the
+  // orbit camera by up to 1.4 m — it could clip under the platform and show
+  // the void beneath the building).
+  collisionObjects.push(platform);
   if (h > 0.05) {
     const backZ = platDepth - 0.5;
     const sideX = -platLen * 0.30;                // left side of the platform
@@ -18182,8 +18203,9 @@ class DogController {
     if (this.followPlayer && this.state !== "walking" && this.state !== "galloping"
         && this.state !== "eat" && this.state !== "bark"
         && this.state !== "sit" && this.state !== "lay") {
-      const dx = this.camera.position.x - this.dog.position.x;
-      const dz = this.camera.position.z - this.dog.position.z;
+      const pp = this.playerPos || this.camera.position;
+      const dx = pp.x - this.dog.position.x;
+      const dz = pp.z - this.dog.position.z;
       const dist = Math.hypot(dx, dz);
       if (dist > this.followRadius + 0.6) {
         const k = (dist - this.followRadius) / dist;
@@ -18272,11 +18294,25 @@ class DogController {
       // Gently turn the whole body to watch the player when they're near and
       // we're not mid-sniff (headPitch high). Reads as a dog tracking you.
       if (this.headPitch < 0.3) {
-        const dx = this.camera.position.x - this.dog.position.x;
-        const dz = this.camera.position.z - this.dog.position.z;
+        const pp = this.playerPos || this.camera.position;
+        const dx = pp.x - this.dog.position.x;
+        const dz = pp.z - this.dog.position.z;
         const dist = Math.hypot(dx, dz);
         if (dist > 0.001 && dist < 5.0) {
-          this.dog.rotation.y = this._easeYaw(this.dog.rotation.y, Math.atan2(dx, dz), d * 1.6);
+          // Angular dead-zone with hysteresis: a standing dog tracks you with
+          // its HEAD (gaze layer); the body only re-orients once you've moved
+          // well off its nose (>0.55 rad), then turns until squared up again
+          // (<0.1). The old constant slow rotation read as the dog skating
+          // on a turntable whenever the player circled it.
+          const wantYaw = Math.atan2(dx, dz);
+          let off = wantYaw - this.dog.rotation.y;
+          while (off > Math.PI) off -= Math.PI * 2;
+          while (off < -Math.PI) off += Math.PI * 2;
+          if (Math.abs(off) > 0.55) this._watchTurn = true;
+          else if (Math.abs(off) < 0.10) this._watchTurn = false;
+          if (this._watchTurn) {
+            this.dog.rotation.y = this._easeYaw(this.dog.rotation.y, wantYaw, d * 2.4);
+          }
         }
       }
     }
@@ -19410,6 +19446,7 @@ function setupDogs(scene, camera, level, levelIdx) {
   }
 
   const dogCtrl = new DogController(dog, scene, camera);
+  dog.userData.ctrl = dogCtrl;   // observability for the scene-verification hooks
   // ---- Solid props the dog + player walk around (circle colliders) ----
   // The water bowl is intentionally NOT a collider (it's flat, and the dog
   // needs to reach it to drink).
@@ -19987,6 +20024,10 @@ function setupDogs(scene, camera, level, levelIdx) {
       // reacts to contact instead of just absorbing clicks silently.
       dogCtrl.petAmount = petPulse;
       dogCtrl.happy = trust;            // resting tail-wag baseline scales with trust
+      // The dog reacts to the PLAYER'S body, not the camera — in third person
+      // the camera floats metres behind the avatar, and follow/watch angles
+      // computed against it were visibly wrong (dog staring past you).
+      dogCtrl.playerPos = controls ? controls.position : null;
       dogCtrl.update(t, d);
 
       // ---- Attention (gaze) priorities ----
