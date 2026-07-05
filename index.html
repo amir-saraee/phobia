@@ -11684,7 +11684,29 @@ class Body {
     // permanently facing the camera (and moonwalking away from it), and
     // looking down in first person put your toes pointing backwards.
     if (controls && typeof controls.yaw === "number") {
-      this.group.rotation.y = controls.yaw + Math.PI;
+      // Third-person travel facing: a person walking left TURNS left and
+      // strides forward — only a camera-locked FP torso crab-walks. Yaw the
+      // body toward the direction of travel (smoothed, shortest-path); pure
+      // backpedal keeps facing forward (nobody snaps 180° for two steps
+      // back). FP keeps the offset at 0 so the head never fights the camera.
+      let offTarget = 0;
+      if (this.cameraMode === "tp" && controls.getWalkState) {
+        const wsT = controls.getWalkState();
+        if (wsT.amount > 0.2 && Math.hypot(wsT.fwd, wsT.side) > 0.2) {
+          let aT = Math.atan2(wsT.side, wsT.fwd);
+          if (Math.abs(aT) > Math.PI / 2 + 0.05) aT = Math.atan2(-wsT.side, -wsT.fwd);
+          offTarget = aT;
+        } else if (this._travelOff != null) {
+          offTarget = this._travelOff * 0.0; // idle → settle back to camera yaw
+        }
+      }
+      if (this._travelOff == null) this._travelOff = 0;
+      let dOff = offTarget - this._travelOff;
+      while (dOff > Math.PI) dOff -= Math.PI * 2;
+      while (dOff < -Math.PI) dOff += Math.PI * 2;
+      const dtB = Math.min(0.05, Math.max(0.001, t - (this._lastBodyT || t)));
+      this._travelOff += dOff * Math.min(1, dtB * 7);
+      this.group.rotation.y = controls.yaw + Math.PI - this._travelOff;
     }
     // Subtle breath (always-on idle motion). Bigger amplitude when standing
     // still (idle), smaller when walking (overshadowed by step bob anyway).
@@ -11737,6 +11759,15 @@ class Body {
       const ws = controls.getWalkState();
       gaitFwd = ws.fwd;
       gaitSide = ws.side;
+      // The body may be yawed toward the travel direction (TP travel facing
+      // above) — express the stride in the TURNED body's frame, so a strafe
+      // becomes a forward walk once the body has rotated into it.
+      const off = this._travelOff || 0;
+      if (Math.abs(off) > 0.001) {
+        const c = Math.cos(off), s = Math.sin(off);
+        gaitFwd = ws.fwd * c + ws.side * s;
+        gaitSide = -ws.fwd * s + ws.side * c;
+      }
       if (ws.amount > walkAmt) walkAmt = ws.amount;   // shuffle feeds the gait
     }
     const fwdShare = Math.abs(gaitFwd);
@@ -18120,15 +18151,33 @@ class DogController {
         // speed almost to the end — a charging dog doesn't politely decelerate.
         const ease = galloping ? Math.min(1, dist / 0.25) : Math.min(1, dist / 0.6);
         const step = Math.min(dist, this.walkSpeed * ease * d);
-        let nx = this.dog.position.x + (dx / dist) * step;
-        let nz = this.dog.position.z + (dz / dist) * step;
+        // Steer like an animal, not a puck: turn the body toward the target
+        // and move along the FACING. The old straight-line step translated
+        // the dog sideways while it was still rotating — a visible skate at
+        // every walk start and direction change. Alignment scales speed, so
+        // a dog asked to go somewhere behind it turns first, then walks —
+        // tracing a natural arc instead of sliding into the new heading.
+        this.targetYaw = Math.atan2(dx, dz);
+        this.dog.rotation.y = this._easeYaw(this.dog.rotation.y, this.targetYaw, d * (galloping ? 9 : 6));
+        const fy = this.dog.rotation.y;
+        let dyaw = this.targetYaw - fy;
+        while (dyaw > Math.PI) dyaw -= Math.PI * 2;
+        while (dyaw < -Math.PI) dyaw += Math.PI * 2;
+        // Docking: inside ~0.6 m head straight for the point so the arc
+        // can't orbit the target forever.
+        const dock = Math.max(0, Math.min(1, (0.6 - dist) / 0.45));
+        const align = Math.max(galloping ? 0.35 : 0.15,
+          Math.cos(Math.min(Math.PI / 2, Math.abs(dyaw)))) * (1 - dock) + dock;
+        const mvx = (Math.sin(fy) * (1 - dock) + (dx / dist) * dock);
+        const mvz = (Math.cos(fy) * (1 - dock) + (dz / dist) * dock);
+        const mvl = Math.hypot(mvx, mvz) || 1;
+        let nx = this.dog.position.x + (mvx / mvl) * step * align;
+        let nz = this.dog.position.z + (mvz / mvl) * step * align;
         const r = this._resolve(nx, nz);
         nx = r.x; nz = r.z;
         const moved = Math.hypot(nx - this.dog.position.x, nz - this.dog.position.z);
         this.dog.position.x = nx;
         this.dog.position.z = nz;
-        this.targetYaw = Math.atan2(dx, dz);                    // face travel dir
-        this.dog.rotation.y = this._easeYaw(this.dog.rotation.y, this.targetYaw, d * (galloping ? 9 : 6));
         // GROUND THE FEET: play the clip at the speed implied by how fast the
         // dog actually moves, so the paws plant on the floor instead of
         // skating. Walk and Gallop imply different ground speeds per cycle.
