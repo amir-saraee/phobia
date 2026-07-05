@@ -10862,8 +10862,11 @@ class FPControls {
     // just before the hit point so we never see through walls or have the
     // camera land inside geometry. Standard third-person game technique.
     let safeTpX = tpX, safeTpY = tpY, safeTpZ = tpZ;
+    // (Guard used to require window.THREE — which is never assigned; THREE is
+    // module-scoped here. That single dead check silently disabled ALL camera
+    // collision, letting the TP camera orbit straight through walls.)
     if (this._collisionScene && this._collisionScene.length > 0
-        && window.THREE && this.tpBlend > 0.05) {
+        && this.tpBlend > 0.05) {
       try {
         if (!this._tpRay) this._tpRay = new THREE.Raycaster();
         const ro = this._tpRay.ray.origin;
@@ -10882,7 +10885,10 @@ class FPControls {
             for (const h of hits) {
               if (h.distance < closest) closest = h.distance;
             }
-            const safeDist = Math.max(0.6, closest - 0.20);
+            // Floor is 0.25, not 0.6: with your back to a wall the wall can
+            // be nearer than 0.6 m, and a larger floor pushed the camera
+            // INSIDE it. Close-ups near walls beat clipping through them.
+            const safeDist = Math.max(0.25, closest - 0.20);
             safeTpX = ro.x + rd.x * safeDist;
             safeTpY = ro.y + rd.y * safeDist;
             safeTpZ = ro.z + rd.z * safeDist;
@@ -10907,6 +10913,40 @@ class FPControls {
       this._tpSmoothPos.x += dx * k;
       this._tpSmoothPos.y += dy * k;
       this._tpSmoothPos.z += dz * k;
+    }
+    // Hard wall clamp on the SMOOTHED position. The pull-in above only
+    // sanitises the TARGET — the damped follower itself sweeps an arc during
+    // a fast mouse orbit, and that arc can pass straight through a wall even
+    // when both endpoints are clear. Re-cast player→camera every frame and
+    // clamp with no smoothing: the camera never spends a single frame behind
+    // geometry.
+    if (this._collisionScene && this._collisionScene.length > 0 && this.tpBlend > 0.05 && this._tpSmoothPos) {
+      try {
+        if (!this._tpRay) this._tpRay = new THREE.Raycaster();
+        const ro = this._tpRay.ray.origin, rd = this._tpRay.ray.direction;
+        ro.set(this.position.x, this.position.y - 0.4, this.position.z);
+        const dx = this._tpSmoothPos.x - ro.x;
+        const dy = this._tpSmoothPos.y - ro.y;
+        const dz = this._tpSmoothPos.z - ro.z;
+        const dCam = Math.hypot(dx, dy, dz);
+        if (dCam > 0.05) {
+          rd.set(dx / dCam, dy / dCam, dz / dCam);
+          this._tpRay.far = dCam;
+          const hits = this._tpRay.intersectObjects(this._collisionScene, true);
+          if (hits && hits.length > 0) {
+            let closest = dCam;
+            for (const h of hits) {
+              if (h.distance < closest) closest = h.distance;
+            }
+            const lim = Math.max(0.25, closest - 0.20);
+            if (lim < dCam) {
+              this._tpSmoothPos.x = ro.x + rd.x * lim;
+              this._tpSmoothPos.y = ro.y + rd.y * lim;
+              this._tpSmoothPos.z = ro.z + rd.z * lim;
+            }
+          }
+        }
+      } catch {}
     }
 
     // Blend FP and TP positions
@@ -11706,7 +11746,20 @@ class Body {
       while (dOff < -Math.PI) dOff += Math.PI * 2;
       const dtB = Math.min(0.05, Math.max(0.001, t - (this._lastBodyT || t)));
       this._travelOff += dOff * Math.min(1, dtB * 7);
-      this.group.rotation.y = controls.yaw + Math.PI - this._travelOff;
+      // In TP the body LAGS the camera yaw — a person turns with mass, not
+      // welded to the mouse. Faster follow while walking (you steer with
+      // your whole body), lazier when standing (head-first, body follows).
+      // FP stays instant so your own torso never fights where you look.
+      if (this._camYawSm == null) this._camYawSm = controls.yaw;
+      if (this.cameraMode === "tp") {
+        let dYawC = controls.yaw - this._camYawSm;
+        while (dYawC > Math.PI) dYawC -= Math.PI * 2;
+        while (dYawC < -Math.PI) dYawC += Math.PI * 2;
+        this._camYawSm += dYawC * Math.min(1, dtB * (walkAmt > 0.3 ? 11 : 5.5));
+      } else {
+        this._camYawSm = controls.yaw;
+      }
+      this.group.rotation.y = this._camYawSm + Math.PI - this._travelOff;
     }
     // Subtle breath (always-on idle motion). Bigger amplitude when standing
     // still (idle), smaller when walking (overshadowed by step bob anyway).
@@ -13442,7 +13495,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // higher angle so the damped follow naturally dollies in to the
       // over-the-shoulder target over ~1 second. Tiny touch but it's the
       // signature "scene establishes itself" feel of a real game.
-      if (controls.cameraMode === "tp" && window.THREE) {
+      if (controls.cameraMode === "tp") {
         const sinY = Math.sin(controls.yaw), cosY = Math.cos(controls.yaw);
         const wideDist = controls.tpDistance * 1.8;
         const wideHeight = controls.tpHeight + 0.9;
