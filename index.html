@@ -16702,7 +16702,11 @@ function setupHeights(scene, camera, level) {
         for (let i = 0; i < pos.count; i++) {
           pos.array[i * 3] += (0.6 + h * 0.6) * fpsAdj;
           pos.array[i * 3 + 1] -= 0.3 * fpsAdj;
-          if (pos.array[i * 3] > 60) pos.array[i * 3] = -60;
+          // Scatter the wrap so motes don't re-enter as a synchronized line
+          if (pos.array[i * 3] > 60) {
+            pos.array[i * 3] = -60 - Math.random() * 12;
+            pos.array[i * 3 + 1] = cameraY - 28 + Math.random() * 56;
+          }
           if (pos.array[i * 3 + 1] < cameraY - 30) pos.array[i * 3 + 1] = cameraY + 30;
         }
         pos.needsUpdate = true;
@@ -19190,6 +19194,7 @@ function setupDogs(scene, camera, level, levelIdx) {
   // bounce so the eye reads it as a real thrown ball, not a teleported orb.
   let item = null;        // { mesh, kind: "treat"|"ball", state, vel: Vector3 }
   let fetchPhase = "idle";
+  const _rollAxis = new THREE.Vector3();   // scratch — ball roll axis per frame
 
   function clearItem() {
     if (!item) return;
@@ -19199,9 +19204,19 @@ function setupDogs(scene, camera, level, levelIdx) {
     item = null;
   }
   function buildBall() {
+    // Classic fetch ball: red with a white equator band. A solid-colour
+    // sphere hides its own rotation completely — the flight spin, bounces
+    // and roll-out only read as motion when there's a stripe to track.
+    const cv = document.createElement("canvas");
+    cv.width = 8; cv.height = 64;
+    const cx = cv.getContext("2d");
+    cx.fillStyle = "#d84545"; cx.fillRect(0, 0, 8, 64);
+    cx.fillStyle = "#f2ece2"; cx.fillRect(0, 26, 8, 12);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
     const ball = new THREE.Mesh(
       new THREE.SphereGeometry(0.10, 18, 14),
-      new THREE.MeshStandardMaterial({ color: 0xd84545, roughness: 0.5, metalness: 0.05 })
+      new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.05 })
     );
     ball.castShadow = true;
     return ball;
@@ -19263,8 +19278,6 @@ function setupDogs(scene, camera, level, levelIdx) {
       lz = -0.26 - u * 0.10;       // and forward into release
     }
     item.mesh.position.set(lx, ly, lz);
-    // Item spin during windup (small)
-    item.mesh.rotation.x += d * 4;
     if (k >= 1) releaseItem();
   }
   function releaseItem() {
@@ -19283,7 +19296,12 @@ function setupDogs(scene, camera, level, levelIdx) {
     const dist = Math.hypot(dx, dz);
     const T = Math.max(0.5, dist * 0.25);
     const g = 9.8;
-    const vy = (g * T / 2) + 1.4;
+    // Solve the ballistic arc so the item reaches FLOOR level exactly at the
+    // clicked point at time T. The old fixed lob (g·T/2 + 1.4) was still
+    // 1.4·T metres above the hand when it crossed the target, so every throw
+    // sailed a couple of metres past where the user aimed.
+    const restY = item.kind === "ball" ? -0.90 : -0.94;
+    const vy = (restY - worldStart.y) / T + (g * T / 2);
     const vx = dx / T, vz = dz / T;
     item.vel.set(vx, vy, vz);
     item.state = "flying";
@@ -20401,11 +20419,24 @@ function setupDogs(scene, camera, level, levelIdx) {
         m.position.x += item.vel.x * d;
         m.position.y += item.vel.y * d;
         m.position.z += item.vel.z * d;
-        // Spin while flying
-        m.rotation.x += d * 6;
-        m.rotation.z += d * 4;
-        // Floor at y=-0.94 (top of floor at y=-1 + ball radius)
+        // Rest height = floor top (-1) + item radius
         const floorY = item.kind === "ball" ? -0.90 : -0.94;
+        const onGround = m.position.y <= floorY + 0.002;
+        // Walls contain the throw — a hard lob at the skirting board comes
+        // back off it instead of vanishing into the wall.
+        const R = 0.10;
+        if (m.position.x < ROOM.x0 + R) { m.position.x = ROOM.x0 + R; item.vel.x = Math.abs(item.vel.x) * 0.45; }
+        if (m.position.x > ROOM.x1 - R) { m.position.x = ROOM.x1 - R; item.vel.x = -Math.abs(item.vel.x) * 0.45; }
+        if (m.position.z < ROOM.z0 + R) { m.position.z = ROOM.z0 + R; item.vel.z = Math.abs(item.vel.z) * 0.45; }
+        if (m.position.z > ROOM.z1 - R) { m.position.z = ROOM.z1 - R; item.vel.z = -Math.abs(item.vel.z) * 0.45; }
+        // Roll about the axis perpendicular to travel — airborne it's a lazy
+        // tumble, on the floor it's true rolling (angle = distance / radius),
+        // which the stripe makes legible.
+        const spd = Math.hypot(item.vel.x, item.vel.z);
+        if (spd > 0.02) {
+          _rollAxis.set(item.vel.z, 0, -item.vel.x).normalize();
+          m.rotateOnWorldAxis(_rollAxis, (spd * d / 0.10) * (onGround ? 1 : 0.45));
+        }
         if (m.position.y <= floorY) {
           m.position.y = floorY;
           if (item.kind === "ball" && item.bounces < 2 && Math.abs(item.vel.y) > 1.5) {
@@ -20416,6 +20447,12 @@ function setupDogs(scene, camera, level, levelIdx) {
             item.vel.y = -item.vel.y * 0.55;
             item.vel.x *= 0.7; item.vel.z *= 0.7;
             item.bounces++;
+          } else if (item.kind === "ball" && spd > 0.18) {
+            // Roll-out: after the last bounce the ball rolls to a stop under
+            // friction instead of freezing mid-motion.
+            item.vel.y = 0;
+            const f = Math.max(0, 1 - d * 2.2);
+            item.vel.x *= f; item.vel.z *= f;
           } else {
             // Settled — a soft final tick for the ball, then the fetch leg
             if (item.kind === "ball" && window.PhobiaAudio?.ballBounce) {
@@ -20439,6 +20476,7 @@ function setupDogs(scene, camera, level, levelIdx) {
           }
           const k = 1 / (dog.scale.x || 1);
           item.mesh.position.set(0, -0.005, (item.kind === "ball" ? 0.10 : 0.08) * k);
+          item.mesh.rotation.set(0, 0, 0);   // settle level in the mouth — no frozen mid-tumble pose
           item.mesh.scale.setScalar(k);
           fetchPhase = "carrying";
           setTimeout(() => {
