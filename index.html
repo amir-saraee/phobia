@@ -6523,6 +6523,7 @@ function openSettings() {
   const graphics = (() => { try { return localStorage.getItem("fobia.quality") || "auto"; } catch { return "auto"; } })();
   const lightMode = (() => { try { return localStorage.getItem("fobia.theme") === "light"; } catch { return false; } })();
   const remindersOn = (() => { try { return localStorage.getItem("fobia.reminders") === "1"; } catch { return false; } })();
+  const countdownOn = (() => { try { return localStorage.getItem("fobia.skipCountdown") !== "1"; } catch { return true; } })();
   const canNotify = "Notification" in window;
 
   drawer.innerHTML = `
@@ -6619,6 +6620,13 @@ function openSettings() {
         <div class="small">Bright theme. Easier in daylight.</div>
       </div>
       <div class="toggle ${lightMode ? "on" : ""}" id="toggleTheme"></div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Pre-scene countdown</label>
+        <div class="small">"Get ready · 3 · 2 · 1" breathing beat before each scene.</div>
+      </div>
+      <div class="toggle ${countdownOn ? "on" : ""}" id="toggleCountdown"></div>
     </div>
 
     <div class="settings-section">Reminders</div>
@@ -6799,6 +6807,12 @@ function openSettings() {
     note.textContent = "Saved — applied next time you open a scene.";
     qSel.parentElement.appendChild(note);
     setTimeout(() => note.remove(), 2200);
+  };
+  // Pre-scene countdown toggle (stored inverted: "1" = skip the countdown)
+  drawer.querySelector("#toggleCountdown").onclick = (e) => {
+    const next = !(localStorage.getItem("fobia.skipCountdown") !== "1"); // next = countdown ON?
+    try { localStorage.setItem("fobia.skipCountdown", next ? "0" : "1"); } catch {}
+    e.currentTarget.classList.toggle("on", next);
   };
   // Light/dark mode toggle
   drawer.querySelector("#toggleTheme").onclick = (e) => {
@@ -8076,15 +8090,21 @@ function mountExposure(phobiaKey, levelIdx) {
   // ---- Pre-stage countdown ("Get ready · 3 · 2 · 1 · go") ----
   // The user can tap "Start when you're ready" to skip the wait, OR just
   // wait for the count to finish — either way the scene starts predictably.
+  // Respecting the user's pace: skipping the count ONCE turns the countdown
+  // off for good (re-enable any time in Settings → "Pre-scene countdown").
+  const countdownOff = (() => { try { return localStorage.getItem("fobia.skipCountdown") === "1"; } catch { return false; } })();
   const countdown = document.createElement("div");
-  countdown.className = "countdown";
-  countdown.innerHTML = `
-    <div class="label">Get ready — there's no rush</div>
-    <div class="num" id="cdNum">3</div>
-    <div class="hint">Notice your breath. Soften your shoulders.<br>Take a moment.</div>
-    <button class="btn-ghost" id="cdStartNow" style="margin-top:14px;font-size:13px;padding:6px 14px;">Start when you're ready</button>
-  `;
-  stage.appendChild(countdown);
+  if (!countdownOff) {
+    countdown.className = "countdown";
+    countdown.innerHTML = `
+      <div class="label">Get ready — there's no rush</div>
+      <div class="num" id="cdNum">3</div>
+      <div class="hint">Notice your breath. Soften your shoulders.<br>Take a moment.</div>
+      <button class="btn-ghost" id="cdStartNow" style="margin-top:14px;font-size:13px;padding:6px 14px;">Start when you're ready</button>
+      <div class="hint" style="margin-top:8px;font-size:11px;opacity:.55">Starting early skips this countdown from now on</div>
+    `;
+    stage.appendChild(countdown);
+  }
 
   let started = false;
   let stageAudio = []; // collection of audio handles to stop on unmount
@@ -8112,7 +8132,11 @@ function mountExposure(phobiaKey, levelIdx) {
     // because the user is actually afraid, not because the level number is big.)
     // Schedule scripted voice cues — about every 14 seconds (slower cadence
     // so the user has time to actually sit with the previous instruction).
-    const lines = (VOICE_LINES[phobiaKey] || [])[levelIdx] || [];
+    // Quiet on replays: a rung the user has already completed doesn't need
+    // the same guidance read out again — repetition turns coaching into
+    // nagging. Event-driven cues and the grounding exit still speak.
+    const rungReplay = (() => { try { return getProgress(phobiaKey).highestCompleted >= levelIdx; } catch { return false; } })();
+    const lines = rungReplay ? [] : ((VOICE_LINES[phobiaKey] || [])[levelIdx] || []);
     lines.forEach((line, i) => {
       const delay = 1400 + i * 14000;
       voiceTimers.push(setTimeout(() => {
@@ -8144,24 +8168,34 @@ function mountExposure(phobiaKey, levelIdx) {
   const cdNum = countdown.querySelector("#cdNum");
   let cdTimers = [];
   let cdDone = false;
-  // Faster count — 800 ms per number for a snappier "ready, set, go" feel.
-  // Total wait drops from ~3.3 s to ~2.4 s. Users can still skip via the
-  // "Start when you're ready" button below.
-  cdTimers.push(setTimeout(() => { if (cdNum) cdNum.textContent = "2"; }, 800));
-  cdTimers.push(setTimeout(() => { if (cdNum) cdNum.textContent = "1"; }, 1600));
-  cdTimers.push(setTimeout(() => {
-    if (cdDone || !countdown.isConnected) return;
+  if (countdownOff) {
+    // User opted out of the countdown — start right away (one tick later so
+    // the scene mount settles before audio/voice kick in).
     cdDone = true;
-    countdown.style.opacity = "0";
-    startScene();
-    setTimeout(() => countdown.remove(), 600);
-  }, 2400));
+    cdTimers.push(setTimeout(startScene, 250));
+  } else {
+    // Faster count — 800 ms per number for a snappier "ready, set, go" feel.
+    // Total wait drops from ~3.3 s to ~2.4 s. Users can still skip via the
+    // "Start when you're ready" button below.
+    cdTimers.push(setTimeout(() => { if (cdNum) cdNum.textContent = "2"; }, 800));
+    cdTimers.push(setTimeout(() => { if (cdNum) cdNum.textContent = "1"; }, 1600));
+    cdTimers.push(setTimeout(() => {
+      if (cdDone || !countdown.isConnected) return;
+      cdDone = true;
+      countdown.style.opacity = "0";
+      startScene();
+      setTimeout(() => countdown.remove(), 600);
+    }, 2400));
+  }
   // Manual override: skip the rest of the count if the user is ready early.
+  // Doing so remembers the preference — future scenes start instantly
+  // (Settings → "Pre-scene countdown" turns it back on).
   const startNowBtn = countdown.querySelector("#cdStartNow");
   if (startNowBtn) {
     startNowBtn.onclick = () => {
       if (cdDone || !countdown.isConnected) return;
       cdDone = true;
+      try { localStorage.setItem("fobia.skipCountdown", "1"); } catch {}
       cdTimers.forEach(id => clearTimeout(id));
       cdTimers = [];
       countdown.style.opacity = "0";
@@ -10476,6 +10510,22 @@ class FPControls {
     return !!(this._moveAxis && this._moveAxis.y < -0.25);
   }
 
+  // True when the user is pushing in ANY direction (keys or joystick past the
+  // dead zone). Scenes use this to yield scripted auto-walks to manual input —
+  // the player's own hands always outrank an animation.
+  hasMoveInput() {
+    if (this.keys && (this.keys.KeyW || this.keys.ArrowUp ||
+                      this.keys.KeyS || this.keys.ArrowDown ||
+                      this.keys.KeyA || this.keys.ArrowLeft ||
+                      this.keys.KeyD || this.keys.ArrowRight)) return true;
+    return !!(this._moveAxis && Math.hypot(this._moveAxis.x, this._moveAxis.y) > 0.08);
+  }
+
+  isMovingBackward() {
+    if (this.keys && (this.keys.KeyS || this.keys.ArrowDown)) return true;
+    return !!(this._moveAxis && this._moveAxis.y > 0.25);
+  }
+
   update(dt) {
     if (!this.enabled) return;
     // Smoothed look: filter yaw/pitch toward the input targets. At the
@@ -11888,6 +11938,46 @@ class Body {
       // armSpread: shoulder pitched LATERALLY (rotation.z, not x). Arms out.
       // Implemented below via z-rotation; we don't change shoulder.x for it.
 
+      // ---- World-anchored arm aim (third-person twin of the FP hand IK) ----
+      // When the FP hands have a live reach target (petting the dog, gripping
+      // the rail), aim the SAME world point with the avatar's arm via a tiny
+      // two-bone IK — so in third person the character visibly reaches toward
+      // the thing, not vaguely forward. Reuses the Hands reach state so every
+      // scene gets this for free.
+      let aim = null;
+      if (hands && hands._reach && hands._reachStrength > 0.02 && hands._reachWorld) {
+        const yaw = this.group.rotation.y;
+        const wx = hands._reachWorld.x - this.group.position.x;
+        const wy = hands._reachWorld.y;
+        const wz = hands._reachWorld.z - this.group.position.z;
+        // Rotate the offset into body-local space (group only ever yaws)
+        const cy = Math.cos(-yaw), sy = Math.sin(-yaw);
+        const lx = wx * cy + wz * sy;
+        const lz = -wx * sy + wz * cy;
+        const armY = this.group.position.y + this.opts.chestTopY - 0.10;
+        const ly = wy - armY;
+        const horiz = Math.hypot(lx, lz);
+        const dist = Math.max(0.05, Math.hypot(horiz, ly));
+        // Two-bone IK: elbow bend + shoulder correction from the triangle
+        // (upper 0.30, forearm 0.26), clamped so full stretch stays sane.
+        const A = 0.30, B = 0.26;
+        const d = Math.max(Math.abs(A - B) + 0.02, Math.min(A + B - 0.01, dist));
+        const cosE = Math.max(-1, Math.min(1, (A * A + B * B - d * d) / (2 * A * B)));
+        const bend = Math.PI - Math.acos(cosE);
+        const cosS = Math.max(-1, Math.min(1, (A * A + d * d - B * B) / (2 * A * d)));
+        const corr = Math.acos(cosS);
+        aim = {
+          side: hands._reach.hand === "left" ? -1 : (hands._reach.hand === "both" ? 0 : 1),
+          k: hands._reachStrength,
+          // Horizontal swing clamped to what a shoulder can do — past ~50°
+          // the whole body would turn (and does, via the controls yaw);
+          // letting the arm chase further folds it across the chest.
+          yawTo: Math.max(-0.9, Math.min(0.9, Math.atan2(lx, -lz) * 0.8)),
+          pitch: -(Math.atan2(horiz, -ly) + corr * 0.6), // from hanging-down, toward target
+          elbow: bend,
+        };
+      }
+
       this.arms.forEach((arm) => {
         const side = arm.side;       // +1 right, -1 left
         // Right arm phase = LEFT leg phase, and vice versa, so the arm
@@ -11906,7 +11996,7 @@ class Body {
         // mannequin in third-person. Fades out as the walk swing takes over.
         const idle = 1 - walkAmt;
         const idleSway = Math.sin(t * 0.9 + side * 1.7) * 0.025 * idle;
-        arm.root.rotation.x =
+        let rotX =
             shoulderTarget * gestureWeight
           + reachShoulder  * reachWeight
           + (swing + 0.05 * idle + idleSway * 0.6) * swingWeight;
@@ -11918,10 +12008,20 @@ class Body {
         // Elbow: gesture > reach > walk passive bend (slightly relaxed at rest
         // so the forearm isn't a straight stick).
         const passiveBend = 0.24 + Math.max(0, Math.sin(armPhase)) * 0.30 * walkAmt + idleSway * 0.5;
-        arm.elbow.rotation.x =
+        let elbX =
             elbowTarget   * gestureWeight
           + reachElbow    * reachWeight
           + passiveBend   * swingWeight;
+        // World-aim overrides the layered pose for the reaching arm(s).
+        let rotY = 0;
+        if (aim && (aim.side === 0 || aim.side === side)) {
+          rotX = rotX + (aim.pitch - rotX) * aim.k;
+          elbX = elbX + (aim.elbow - elbX) * aim.k;
+          rotY = aim.yawTo * aim.k;
+        }
+        arm.root.rotation.x = rotX;
+        arm.root.rotation.y = rotY;
+        arm.elbow.rotation.x = elbX;
       });
     }
     // Shoulders bob with the walk
@@ -13352,6 +13452,10 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
           ? "You're at the shoreline. <b>Use the joystick</b> to wade in when you're ready."
           : "You're at the shoreline. <b>Press W or ↑</b> to wade in when you're ready.") + escNote,
       };
+      // Replays of a rung the user already completed get a one-line reminder
+      // instead of the full orientation — they know the room by now, and the
+      // frozen-user nudge/movement-gating below would read as nagging.
+      const rungReplay = (() => { try { return getProgress(phobiaKey).highestCompleted >= levelIdx; } catch { return false; } })();
       const intro = sceneIntros[phobiaKey];
       hint.innerHTML = intro || (IS_COARSE_POINTER
         ? (walkable
@@ -13363,8 +13467,12 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // Approach-style hints get a longer reveal — 16 s — because the user
       // is doing something deliberate (walking) and might not have started
       // yet. Other scenes auto-hide after 11 s as before.
-      const hintDuration = sceneIntros[phobiaKey] ? 16000 : 11000;
-      if (walkable && controls && controls.position) {
+      let hintDuration = sceneIntros[phobiaKey] ? 16000 : 11000;
+      if (rungReplay) {
+        hint.innerHTML = escNote.replace(/^ &nbsp;·&nbsp; /, "");
+        hintDuration = 6000;
+      }
+      if (!rungReplay && walkable && controls && controls.position) {
         // Movement-GATED hint: a frightened person often freezes at the
         // entrance with no idea how to move (desktop has no on-screen walk
         // control). Keep the walk instruction up until they've actually moved;
@@ -13950,7 +14058,15 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   ctxPrompt.className = "ctx-prompt";
   container.appendChild(ctxPrompt);
   let ctxPromptHideT = null;
+  // Dedupe: scenes fire the same beat text every time its trigger re-fires
+  // ("The dog is coming to you…" on every approach). Showing it once is
+  // guidance; showing it five times is noise. A given text repeats only
+  // after a 90 s quiet window; the map dies with the scene mount.
+  const ctxPromptSeen = new Map();
   function showContextPrompt(text, durationMs = 4500) {
+    const lastAt = ctxPromptSeen.get(text) || 0;
+    if (performance.now() - lastAt < 90000) return;
+    ctxPromptSeen.set(text, performance.now());
     if (ctxPromptHideT) { clearTimeout(ctxPromptHideT); ctxPromptHideT = null; }
     ctxPrompt.textContent = text;
     ctxPrompt.classList.add("visible");
@@ -15861,6 +15977,7 @@ function setupHeights(scene, camera, level) {
   // Wind-gust state for chaotic (non-sinusoidal) sway, and a reusable vector
   // for driving the FP hands onto the real top rail.
   let _gustT = 0, _gustDur = 0, _gustPeak = 0, _gustDir = 1, _nextGust = 2;
+  let _vertigoSm = 0;   // smoothed vertigo — raw value can step instantly
   const _railGrip = new THREE.Vector3();
   // Auto-look-down animation state (driven by the "Look down" command button)
   let autoLookT = 0;
@@ -16085,6 +16202,9 @@ function setupHeights(scene, camera, level) {
 
       // Auto "Look down" animation — smoothly drive pitch to the target,
       // hold for a moment, then return. Implemented as a 0..1 timer.
+      // The user's own look input outranks the scripted tilt — dragging
+      // cancels the auto-look instead of fighting it frame by frame.
+      if (autoLookT > 0 && controls && controls.dragging) autoLookT = 0;
       if (autoLookT > 0 && controls) {
         autoLookT -= (dt || 0.016) * 0.25;       // ~4-second total run
         const k = 1 - autoLookT;                 // 0..1
@@ -16100,6 +16220,10 @@ function setupHeights(scene, camera, level) {
       // the captured start to the target over ~2.5 seconds, easing in/out.
       // Feeding moving=true into FPControls drives the body's leg cycle so
       // the user visibly walks (in third-person) instead of sliding.
+      // Manual movement input cancels the auto-walk immediately — otherwise
+      // the animation keeps overwriting position.z and the player feels
+      // dragged along rails they can't get off.
+      if (walkAnimT > 0 && controls && controls.hasMoveInput && controls.hasMoveInput()) walkAnimT = 0;
       if (walkAnimT > 0 && controls) {
         walkAnimT -= (dt || 0.016) * 0.40;       // ~2.5-second total
         const k = Math.max(0, Math.min(1, 1 - walkAnimT));
@@ -16119,6 +16243,16 @@ function setupHeights(scene, camera, level) {
       // intensity (computed below) will spike during this animation, ramping
       // the heartbeat / wind howl, since pitch and edge proximity both peak.
       if (leanT > 0 && controls) {
+        // Retreat is sacred: pulling back (S/↓/stick-down) mid-lean skips
+        // straight to the lean-back phase instead of pinning the player over
+        // the railing for the full three seconds.
+        if (controls.isMovingBackward && controls.isMovingBackward() && (1 - leanT) < 0.65) {
+          const kNow = Math.max(0, 1 - leanT);
+          // Mirror progress into the return phase so pitch/position continue
+          // from where they are (no snap to full lean before coming back).
+          const u = kNow < 0.35 ? kNow / 0.35 : 1;        // how far out we got
+          leanT = 1 - (0.65 + 0.35 * (1 - u));
+        }
         leanT -= (dt || 0.016) * 0.33;            // ~3 s total
         const k = Math.max(0, Math.min(1, 1 - leanT));
         let p, z;
@@ -16144,10 +16278,13 @@ function setupHeights(scene, camera, level) {
 
       // Lean-forward: when looking very steeply down, the camera nudges
       // slightly toward the railing — the body language of peering over.
+      // A transient CAMERA offset, not a write into controls.position: the
+      // old version integrated a per-frame drift into the player position
+      // (frame-rate dependent, and aimed the wrong way — it crept the player
+      // backwards, away from the rail, the longer they dared to look down).
       if (controls) {
         const leaning = Math.max(0, -controls.pitch - 0.7) * 0.6;  // 0..~0.5
-        controls.position.z = Math.min(controls.opts.bounds.maxZ - 0.05,
-          controls.position.z + (leaning * 0.005));
+        camera.position.z -= leaning * 0.16;   // toward the drop (railing is at -z)
       }
 
       // ---- Wind sway: chaotic gusts, not a clean sine ----
@@ -16217,6 +16354,13 @@ function setupHeights(scene, camera, level) {
         const lookProx = Math.max(0, Math.min(1, (-controls.pitch - 0.10) / 1.2));
         vertigo = (edgeProx * 0.5 + lookProx * 0.7) * (0.4 + h);
         vertigo = Math.max(0, Math.min(1, vertigo));
+        // Smooth like a body, not a meter: real vertigo washes in over a
+        // beat and drains slower than it builds. Raw value could step from
+        // 0 to 1 in one frame (walk into railing while snapping gaze down),
+        // which popped the FOV, howl cadence and scarf all at once.
+        const vk = vertigo > _vertigoSm ? 3.5 : 1.6;
+        _vertigoSm += (vertigo - _vertigoSm) * Math.min(1, (dt || 0.016) * vk);
+        vertigo = _vertigoSm;
         // Feed the unified Fear state. Proximity drives the bulk; gaze (pitch
         // looking down) adds the second axis; duration is built up by Fear
         // itself when the player stays in-zone. The Fear value then drives
@@ -18041,7 +18185,10 @@ class DogController {
       if (this._headLowSm > 0.5 && this._action !== low) this._play("Idle_2_HeadLow", 0.25);
       else if (this._headLowSm <= 0.5 && this._action === low) this._play("Idle", 0.25);
     }
-    this.headPitch *= 0.86;
+    // Time-based decay (half-life ~0.45 s). The old per-frame ×0.86 emptied
+    // the pose in ~80 ms at 60 fps, so sniff/drink head-lows unstuck almost
+    // instantly — and the decay rate changed with the frame rate.
+    this.headPitch *= Math.pow(0.5, d / 0.45);
 
     // ---- Clip speed perk-up when petted (idle only; walking timeScale is
     // driven by ground speed above so the feet stay planted) ----
@@ -19438,7 +19585,11 @@ function setupDogs(scene, camera, level, levelIdx) {
     const sx = rect.left + (c.x * 0.5 + 0.5) * rect.width;
     const sy = rect.top + (-c.y * 0.5 + 0.5) * rect.height;
     const ty = rect.top + (-top.y * 0.5 + 0.5) * rect.height;
-    const apparentR = Math.max(26, Math.abs(sy - ty) * 1.05);   // ~silhouette radius, min 26px
+    // Forgiveness scales with the dog's on-screen size plus a small fixed
+    // slop for cursor error. A hard 26 px floor used to swallow clicks a
+    // metre beside a distant dog — turning "throw the ball near the dog"
+    // into an unwanted "come here" call.
+    const apparentR = Math.abs(sy - ty) * 1.05 + 10;
     return { behind: false, dist: Math.hypot(clientX - sx, clientY - sy), r: apparentR };
   }
 
@@ -19461,9 +19612,18 @@ function setupDogs(scene, camera, level, levelIdx) {
     }
     if (hitDog) {
       // Pet ↔ requires being close enough. If far, the dog comes to you.
+      // The boundary is soft: just past arm's reach (1.5–2.2 m) still counts
+      // as a pet and the dog closes the last step itself — a dog standing
+      // "right there" refusing to be petted read as rejection at the exact
+      // moment the user was being brave.
       const cx = camera.position.x, cz = camera.position.z;
       const dx = cx - dog.position.x, dz = cz - dog.position.z;
-      if (Math.hypot(dx, dz) < 1.8) {
+      const dogDist = Math.hypot(dx, dz);
+      if (dogDist < 2.2) {
+        if (dogDist > 1.5 && dogCtrl.mood !== "aggressive") {
+          const k = (dogDist - 1.1) / dogDist;   // point 1.1 m from the player
+          dogCtrl.walkTo(dog.position.x + dx * k, dog.position.z + dz * k);
+        }
         petPulse = 1.0;
         dogCtrl.tailWag += 8;
         // Trust grants are cooldown-gated (1.2 s): click-spam still pets the
