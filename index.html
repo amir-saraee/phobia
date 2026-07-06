@@ -21477,6 +21477,7 @@ function setupSpiders(scene, camera, level, levelIdx) {
     spider.position.set(0, -1, -distance);
   }
   const spiderCtrl = new SpiderController(spider, scene, camera);
+  spider.userData.ctrl = spiderCtrl;   // observability for scene-verification hooks
   spiderCtrl.suspend = true;   // stays suspended until the model is ready
   spider.userData.onReady = () => {
     try {
@@ -24206,6 +24207,7 @@ function setupSnakes(scene, camera, level, levelIdx) {
     ctrl: null,           // the SnakeController (Package B)
   };
   snakeCtl.ctrl = new SnakeController(snake, scene, camera);
+  snake.userData.ctrl = snakeCtl.ctrl;   // observability for scene-verification hooks
   const SNAKE_BOUNDS = { minX: -3.4, maxX: 3.4, minZ: -9.3, maxZ: 1.2 };
   const SNAKE_REF_SPEED = 0.5;   // m/s at Walk clip timeScale 1 — tuned by eye
   const STRIKE_LENS_FLOOR = 0.7; // head world-pos never crosses this from the lens
