@@ -11,7 +11,7 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v9.3-dog-audio";
+const VERSION = "mira-v9.4-polish";
 const SHELL = [
   "./",
   "./index.html",
@@ -19,6 +19,7 @@ const SHELL = [
   "./icon.svg",
   "./src/character.js",
   "./src/phobia-info.js",
+  "./src/i18n.js",
   // Real rigged creature models (Quaternius, CC0) used by the dog / spider /
   // snake scenes. Precached so those scenes work fully offline once installed.
   "./assets/models/ShibaInu.gltf",
