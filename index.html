@@ -13424,7 +13424,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   let hands = null;
   let body = null;
   let joystick = null;
-  let interactFn = null;     // optional: returns {gesture, hint, action} per frame
+  let interactFn = null;     // optional: returns {gesture, hint, action, target} per frame
+  let reachRing = null;      // in-world "this is reachable" ground ring (lazy)
+  let _cursorPointer = false;
   let onClickFn = null;      // optional: called when user taps the scene
   let result = null;
   try {
@@ -13852,6 +13854,40 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         hands.setGesture(probe.gesture || "rest");
         reachHint.textContent = probe.hint || "";
         reachHint.style.opacity = probe.hint ? "1" : "0";
+        // In-world affordance: scenes may return `target` (an Object3D) when
+        // something is genuinely reachable — a soft pulsing ring appears on
+        // the ground under it, and the cursor becomes a pointer. The bottom
+        // text hint alone was easy to miss, especially in third person.
+        if (probe.target && probe.target.position) {
+          if (!reachRing) {
+            reachRing = new THREE.Mesh(
+              new THREE.RingGeometry(0.82, 1.0, 40),
+              new THREE.MeshBasicMaterial({
+                color: 0x7cd1c5, transparent: true, opacity: 0.3,
+                depthWrite: false, side: THREE.DoubleSide,
+              })
+            );
+            reachRing.rotation.x = -Math.PI / 2;
+            reachRing.userData.noCollide = true;
+            scene.add(reachRing);
+          }
+          const rr = probe.targetRadius || 0.55;
+          reachRing.scale.setScalar(rr * (1 + Math.sin(t * 2.6) * 0.06));
+          reachRing.position.set(
+            probe.target.position.x,
+            (probe.targetY != null ? probe.targetY : probe.target.position.y) + 0.02,
+            probe.target.position.z
+          );
+          reachRing.material.opacity = 0.22 + (Math.sin(t * 2.6) * 0.5 + 0.5) * 0.16;
+          reachRing.visible = true;
+        } else if (reachRing) {
+          reachRing.visible = false;
+        }
+        const wantPointer = !!probe.hint && !(controls.isPointerLocked && controls.isPointerLocked());
+        if (wantPointer !== _cursorPointer) {
+          _cursorPointer = wantPointer;
+          renderer.domElement.style.cursor = wantPointer ? "pointer" : "grab";
+        }
       }
     } catch (e) { console.warn("scene interact:", e); }
     try { if (hands) hands.update(t, dt, controls); }
@@ -20057,6 +20093,8 @@ function setupDogs(scene, camera, level, levelIdx) {
       // No "click button" instructions — the player figures out the world
       // interactions by being close enough that a click on the dog or floor
       // makes sense.
+      // (No `target` here: this scene has its own goal ring around the dog —
+      // a second mount-level reach ring on top read as visual noise.)
       if (dist < 1.4) {
         return { gesture: "pet", hint: `${dogName} is right with you · click to pet` };
       }
