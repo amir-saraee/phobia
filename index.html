@@ -363,6 +363,7 @@ if ("serviceWorker" in navigator) {
      going full-fullscreen. Toggled via the 🎬 button in the quick bar. */
   .stage.theater {
     height: calc(100vh - 80px);
+    height: calc(100dvh - 80px); /* iOS: exclude browser chrome */
   }
   /* True browser fullscreen — the stage takes the whole screen. */
   .stage:fullscreen {
@@ -766,7 +767,9 @@ if ("serviceWorker" in navigator) {
   /* Compact hold-progress pill (top-centre) — the ONLY progress readout on
      ≤600px screens where the hold-bar is display:none. Hidden on desktop. */
   .stage .hold-pill {
-    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    /* Sits BELOW the top control row (camera toggle left, quick-bar right) —
+       at 375px a top-centred pill slid underneath the camera toggle. */
+    position: absolute; top: 52px; left: 50%; transform: translateX(-50%);
     z-index: 7; display: none; align-items: center; gap: 8px;
     background: rgba(10,14,28,.65);
     border: 1px solid rgba(124,209,197,.35);
@@ -788,7 +791,9 @@ if ("serviceWorker" in navigator) {
   /* The hold-bar is hidden ≤600px — the pill becomes the progress read.
      (This override must live AFTER the base display:none rule above.) */
   @media (max-width: 600px) {
-    .stage .hold-pill { display: flex; }
+    /* Left-aligned under the camera toggle: centred it slid under the trust
+       HUD, top-centred it slid under the toggle. This column is free. */
+    .stage .hold-pill { display: flex; left: 12px; transform: none; }
   }
 
   /* Touch panic-stop: a persistent "ground me" button above the joystick —
@@ -2561,7 +2566,7 @@ if ("serviceWorker" in navigator) {
      the camera toggle. Visible to the user as biofeedback. */
   .stage .fear-meter {
     position: absolute; top: 56px; left: 12px; z-index: 6;
-    width: 100px; height: 6px; border-radius: 999px;
+    width: clamp(60px, 20vw, 100px); height: 6px; border-radius: 999px;
     background: rgba(20, 24, 36, .60);
     border: 1px solid rgba(255,255,255,.15);
     pointer-events: none; overflow: hidden;
@@ -2620,7 +2625,8 @@ if ("serviceWorker" in navigator) {
     font-size: var(--text-sm); font-weight: 500; line-height: 1.35;
     backdrop-filter: blur(8px);
     box-shadow: var(--shadow-sm);
-    max-width: min(360px, 80%); text-align: center;
+    max-width: min(360px, 85%); text-align: center;
+    overflow-wrap: break-word;
     opacity: 0; pointer-events: none;
     transition: opacity .35s ease, transform .35s ease;
   }
@@ -2642,6 +2648,7 @@ if ("serviceWorker" in navigator) {
     padding: 8px 14px; border-radius: 999px;
     font: inherit; font-size: 13px; font-weight: 600;
     display: inline-flex; align-items: center; gap: 6px;
+    flex-shrink: 1; min-width: 0;   /* narrow phones: shrink + wrap, never overflow */
     cursor: pointer;
     transition: border-color .15s, background .15s, transform .08s;
   }
@@ -2700,11 +2707,12 @@ if ("serviceWorker" in navigator) {
       width: 100%; text-align: right;
     }
     .step-controls .hold-bar { display: none; }
-    .stage { height: 280px; }
+    /* Viewport-aware, not a fixed 280px — landscape phones got a crushed letterbox */
+    .stage { height: clamp(280px, 62vh, 640px); }
     .stage .joystick { left: 12px; bottom: 12px; width: 84px; height: 84px; }
     .stage .joystick-thumb { width: 36px; height: 36px; margin: -18px 0 0 -18px; }
     .stage .reach-hint { font-size: 12px; padding: 6px 12px; max-width: 80%; }
-    .stage .captions { font-size: 13px; max-width: 86%; padding: 6px 12px; bottom: 8px; }
+    .stage .captions { font-size: 12px; max-width: 90%; padding: 6px 12px; bottom: 8px; line-height: 1.3; overflow-wrap: break-word; }
     .phobia-grid { grid-template-columns: 1fr; }
     .info-grid { grid-template-columns: 1fr; }
     .char-badge-name { display: none; }
@@ -2809,7 +2817,9 @@ if ("serviceWorker" in navigator) {
     /* Stage caption / step-controls inset matches the panel inner padding
        so action buttons (Pause, Continue, etc.) line up with the rest of
        the panel content without clipping. */
-    .stage { height: clamp(320px, 65vh, 640px); }
+    /* Single source of truth for the mobile stage height (an earlier rule in
+       the other 600px block used to fight this one) — landscape-friendly. */
+    .stage { height: clamp(280px, 62vh, 640px); }
     .stage-caption, .step-controls { padding-left: 14px; padding-right: 14px; }
     .app { padding: 16px 14px 64px; }
     .stage-wrap { margin: 0 -14px; }
@@ -2819,7 +2829,7 @@ if ("serviceWorker" in navigator) {
       top: 8px; left: 8px;
       padding: 6px 12px; font-size: 12px;
     }
-    .stage .fear-meter { top: 44px; left: 8px; width: 80px; }
+    .stage .fear-meter { top: 92px; left: 12px; width: 80px; }  /* below the hold pill */
     .stage .cmd-toggle { right: 8px; bottom: 8px; }
     .stage .ctx-prompt { font-size: 12px; padding: 8px 12px; max-width: 90%; }
   }
@@ -2924,7 +2934,9 @@ const PhobiaAudio = (() => {
   }
   function duck(on) {
     duckLevel = on ? 0.4 : 1;
-    applyMasterGain(on ? 0.15 : 0.6);
+    // Restore in 0.35 s, not 0.6: with a voice line every ~14 s the slow
+    // swell back read as a "whoosh" after every sentence — ducking pump.
+    applyMasterGain(on ? 0.15 : 0.35);
   }
   function setMuted(m) {
     muted = !!m;
@@ -3685,6 +3697,10 @@ const PhobiaAudio = (() => {
   function startBreathing(rate = 0.22) {
     const c = ensureCtx(); if (!c) return { stop() {} };
     let alive = true;
+    // Swell in over the first two breath cycles — this loop starts the moment
+    // fear crosses a threshold, and a full-volume breath appearing from
+    // nowhere startled instead of calming.
+    let cycles = 0;
     function breath(inhale = true) {
       if (!alive) return;
       const dur = 1.4;
@@ -3694,8 +3710,10 @@ const PhobiaAudio = (() => {
       lp.type = "lowpass"; lp.frequency.value = inhale ? 700 : 380;
       const g = c.createGain();
       const now = c.currentTime;
+      const swell = Math.min(1, (cycles + 1) / 4);   // 0.25, 0.5, 0.75, 1…
+      cycles++;
       g.gain.setValueAtTime(0, now);
-      g.gain.linearRampToValueAtTime(0.13, now + dur * 0.4);
+      g.gain.linearRampToValueAtTime(0.13 * swell, now + dur * 0.4);
       g.gain.exponentialRampToValueAtTime(0.001, now + dur);
       src.connect(lp).connect(g).connect(master);
       src.start(now); src.stop(now + dur);
@@ -11736,8 +11754,19 @@ class Body {
           let aT = Math.atan2(wsT.side, wsT.fwd);
           if (Math.abs(aT) > Math.PI / 2 + 0.05) aT = Math.atan2(-wsT.side, -wsT.fwd);
           offTarget = aT;
-        } else if (this._travelOff != null) {
-          offTarget = this._travelOff * 0.0; // idle → settle back to camera yaw
+        } else if (hands && hands._reach && hands._reachStrength > 0.3 && hands._reachWorld) {
+          // Standing still with a live reach target (petting the dog,
+          // gripping the rail): square the body up to the thing being
+          // touched, even if the camera looks elsewhere — reaching sideways
+          // with a twisted arm read as a glitch, not an intention.
+          const rdx = hands._reachWorld.x - this.group.position.x;
+          const rdz = hands._reachWorld.z - this.group.position.z;
+          if (rdx * rdx + rdz * rdz > 0.04) {
+            let aR = (this._camYawSm != null ? this._camYawSm : controls.yaw) + Math.PI - Math.atan2(rdx, rdz);
+            while (aR > Math.PI) aR -= Math.PI * 2;
+            while (aR < -Math.PI) aR += Math.PI * 2;
+            offTarget = Math.max(-2.4, Math.min(2.4, aR));
+          }
         }
       }
       if (this._travelOff == null) this._travelOff = 0;
@@ -13209,6 +13238,7 @@ function unmount() {
     }
   }
   window.removeEventListener("resize", active.onResize);
+  if (active.resizeObs) { try { active.resizeObs.disconnect(); } catch {} }
   // Scene-specific dispose first so it can clean up its own listeners /
   // HUD elements before the renderer is torn down.
   if (active.sceneResult && typeof active.sceneResult.dispose === "function") {
@@ -13875,6 +13905,11 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     if (ssaoPass) ssaoPass.setSize(w, h);
   }
   window.addEventListener("resize", onResize);
+  // Container-only size changes (drawer toggle, keyboard pop, theater mode,
+  // orientation lock) never fire window.resize — without an observer the
+  // canvas kept rendering at the stale resolution, blurry or letterboxed.
+  let resizeObs = null;
+  try { resizeObs = new ResizeObserver(() => onResize()); resizeObs.observe(container); } catch {}
 
   // ----- "Tips" toggle for the collapsed command bar -----
   // Character-driven scenes (heights, dogs, etc.) have their button bar
@@ -14245,7 +14280,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   let therapist = null;
 
   active = {
-    renderer, scene, camera, composer, onResize, raf: 0,
+    renderer, scene, camera, composer, onResize, resizeObs, raf: 0,
     overlays: [loading, vignette, badge, hint, reachHint, cameraToggle, ctxPrompt,
                fearVignette, fearMeter, groundingOverlay, groundingText,
                achievementContainer],
@@ -19378,13 +19413,25 @@ function setupDogs(scene, camera, level, levelIdx) {
   function throwItem(kind, tx, tz) {
     clearItem();
     const mesh = kind === "ball" ? buildBall() : buildTreatMesh();
-    // Parent to camera so the item visually rides in your hand during windup.
-    // The local position is in front-right of the camera, at hand height.
-    mesh.position.set(0.18, -0.16, -0.32);
-    camera.add(mesh);
-    if (!scene.children.includes(camera)) scene.add(camera);
+    // Windup parent depends on the camera mode. FP: ride the camera so the
+    // item sits in "your" hand. TP: the camera is metres BEHIND the avatar —
+    // camera-parenting there made the windup completely invisible (the ball
+    // popped into existence mid-flight). Instead, put it in the avatar's
+    // actual right hand (end of the forearm) so the throw reads on-body.
+    const tpHold = !!(dogsControls && dogsControls.cameraMode === "tp"
+      && active && active.body && active.body.arms);
+    if (tpHold) {
+      const arm = active.body.arms.find(a => a.side > 0);
+      mesh.position.set(0, -0.30, -0.04);   // just past the forearm tip
+      arm.elbow.add(mesh);
+    } else {
+      // The local position is in front-right of the camera, at hand height.
+      mesh.position.set(0.18, -0.16, -0.32);
+      camera.add(mesh);
+      if (!scene.children.includes(camera)) scene.add(camera);
+    }
     item = {
-      mesh, kind,
+      mesh, kind, tpHold,
       state: "windup",
       windupT: 0,
       windupDuration: 0.4,
@@ -19405,17 +19452,25 @@ function setupDogs(scene, camera, level, levelIdx) {
     // Anticipation arc: mesh moves UP (y) and slightly BACK (z) then forward
     // as the throw releases. We use a curve that goes back-up-forward.
     // 0..0.7: hand winds back/up; 0.7..1: hand snaps forward (throw).
-    let lx = 0.18, ly = -0.16, lz = -0.32;
-    if (k < 0.7) {
-      const u = k / 0.7;       // 0..1 windup
-      ly = -0.16 + u * 0.18;   // rises
-      lz = -0.32 + u * 0.06;   // pulls back slightly (z increases = closer to camera)
+    if (item.tpHold) {
+      // Held in the avatar's hand — the windup shows as the arm itself
+      // raising (reach pulse below); the item just stays gripped.
+      if (active && active.body && active.body.setPosture) {
+        active.body.setPosture({ reach: 0.5 + k * 0.4, reachHeight: 0.8 });
+      }
     } else {
-      const u = (k - 0.7) / 0.3;   // 0..1 release
-      ly = 0.02 - u * 0.20;        // snaps down + forward
-      lz = -0.26 - u * 0.10;       // and forward into release
+      let lx = 0.18, ly = -0.16, lz = -0.32;
+      if (k < 0.7) {
+        const u = k / 0.7;       // 0..1 windup
+        ly = -0.16 + u * 0.18;   // rises
+        lz = -0.32 + u * 0.06;   // pulls back slightly (z increases = closer to camera)
+      } else {
+        const u = (k - 0.7) / 0.3;   // 0..1 release
+        ly = 0.02 - u * 0.20;        // snaps down + forward
+        lz = -0.26 - u * 0.10;       // and forward into release
+      }
+      item.mesh.position.set(lx, ly, lz);
     }
-    item.mesh.position.set(lx, ly, lz);
     if (k >= 1) releaseItem();
   }
   function releaseItem() {
@@ -19423,10 +19478,11 @@ function setupDogs(scene, camera, level, levelIdx) {
     // World position of the mesh at release moment
     const worldStart = new THREE.Vector3();
     item.mesh.getWorldPosition(worldStart);
-    // Re-parent to scene
-    camera.remove(item.mesh);
+    // Re-parent to scene (parent is the camera in FP, the avatar arm in TP)
+    if (item.mesh.parent) item.mesh.parent.remove(item.mesh);
     item.mesh.position.copy(worldStart);
     item.mesh.rotation.set(0, 0, 0);
+    item.mesh.scale.setScalar(1);
     scene.add(item.mesh);
     // Compute throw velocity from current world pos to target
     const tx = item.target.x, tz = item.target.z;
@@ -19857,7 +19913,7 @@ function setupDogs(scene, camera, level, levelIdx) {
     switch (cmd) {
       case "sit":
         dogCtrl.sit();
-        if (window.PhobiaVoice) window.PhobiaVoice.speak(`Easy, ${dogName}.`);
+        if (window.PhobiaVoice) window.PhobiaVoice.speak("Easy now. Settle.");
         break;
       case "stand":
         dogCtrl.stand();
@@ -19888,7 +19944,7 @@ function setupDogs(scene, camera, level, levelIdx) {
       case "call":
         // Calls the dog to you by name
         dogCtrl.walkTo(camera.position.x, camera.position.z + 0.6);
-        if (window.PhobiaVoice) window.PhobiaVoice.speak(`Come here, ${dogName}.`);
+        if (window.PhobiaVoice) window.PhobiaVoice.speak("Come here.");
         break;
       case "bark":
         if (window.PhobiaAudio && window.PhobiaAudio.dogVocal) {
@@ -20447,7 +20503,7 @@ function setupDogs(scene, camera, level, levelIdx) {
           && (dogCtrl._sitTimer || 0) > 8) {
         dogCtrl.lay();
         if (window.PhobiaVoice) {
-          window.PhobiaVoice.speak(`Settling in. ${dogName} feels safe with you.`);
+          window.PhobiaVoice.speak("Settling in. The dog feels safe with you.");
         }
       }
       // ---- Auto-approach at high trust ----
@@ -20475,7 +20531,7 @@ function setupDogs(scene, camera, level, levelIdx) {
           const k = (dist - targetDist) / dist;
           dogCtrl.walkTo(dog.position.x + dx * k, dog.position.z + dz * k);
           if (window.PhobiaVoice && Math.random() < 0.3) {
-            window.PhobiaVoice.speak(`${dogName} is coming over to you.`);
+            window.PhobiaVoice.speak("The dog is coming over to you.");
           }
         }
         nextAutoApproach = t + 18 + Math.random() * 14;   // ~18-32s between attempts
@@ -20903,7 +20959,11 @@ function setupDogs(scene, camera, level, levelIdx) {
             // once — repetition would cheapen it.
             if (!holdPraised && window.PhobiaVoice) {
               holdPraised = true;
-              window.PhobiaVoice.speak("It lunged, and you stayed. Nothing bad happened. That is the fear losing its grip.");
+              // Let the snap/recoil finish and the bark tail off before the
+              // calm voice comes in — praise landing mid-snarl read as chaos.
+              dogTimers.push(setTimeout(() => {
+                try { window.PhobiaVoice.speak("It lunged, and you stayed. Nothing bad happened. That is the fear losing its grip."); } catch {}
+              }, 900));
             }
           }
         }
@@ -22460,7 +22520,7 @@ function setupEnclosed(scene, camera, level) {
             }
             if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
             if (window.PhobiaVoice) {
-              window.PhobiaVoice.speak(`Floor ${floor}. The lift is moving. Breathe through the small space.`);
+              window.PhobiaVoice.speak("The lift is moving. Breathe through the small space.");
             }
             return;
           }
@@ -22609,7 +22669,7 @@ function setupEnclosed(scene, camera, level) {
             window.PhobiaAudio.doorCreak({ x: doorPos.x, y: doorPos.y, z: doorPos.z });
           }
           if (window.PhobiaVoice) {
-            window.PhobiaVoice.speak(`Arrived at floor ${currentFloor}. The doors are opening.`);
+            window.PhobiaVoice.speak("Arrived. The doors are opening.");
           }
         }
       }
@@ -26471,7 +26531,7 @@ function setupStorms(scene, camera, level) {
             const now = performance.now() / 1000;
             const elapsed = now - lastFlashT;
             const km = (elapsed / 3).toFixed(1);
-            if (lastFlashT > 0) window.PhobiaVoice.speak(`Last flash about ${km} kilometres away. The storm has a measure.`);
+            if (lastFlashT > 0) window.PhobiaVoice.speak("That flash was kilometres away. The storm has a measure.");
             else window.PhobiaVoice.speak("Watch for the next flash. Then count seconds. Each three is a kilometre.");
           }
         } else if (btn.dataset.cmd === "step-in") {
