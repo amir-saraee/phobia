@@ -23069,6 +23069,7 @@ function setupFlying(scene, camera, level) {
 // ---------- Needles (medical) ----------
 function setupNeedles(scene, camera, level) {
   const proximity = level.proximity;
+  let injectionPatch = null;    // the swab/skin site mesh — dimples on contact
 
   scene.background = new THREE.Color(0xd2dae4);
   // Clinical lighting — bright and cool, but tuned for the ACES tone-mapping so
@@ -23581,7 +23582,10 @@ function setupNeedles(scene, camera, level) {
   let injectPhase = "approach"; // approach | in | withdraw | done
   let injectHoldT = 0;
   let withdrawAmt = 0;
-  let injectionPatch = null;    // the swab/skin site mesh — dimples on contact
+  // (injectionPatch is declared near the top of setupNeedles — the arm-view
+  // rungs assign it during scene BUILD, well before this block runs. With the
+  // declaration here, those rungs died on a TDZ ReferenceError and silently
+  // fell back to the SVG scene.)
   // The NURSE moves toward the user (not the syringe alone). This is the
   // realistic motion: the clinician approaches with the syringe in hand.
   // Capture the nurse's resting position; approach target is right beside
@@ -23733,6 +23737,17 @@ function setupNeedles(scene, camera, level) {
       if (thumbJoint) {
         thumbJoint.rotation.z = -0.6 + fistAmt * 0.7;     // thumb folds in
         thumbJoint.rotation.x = fistAmt * 0.4;
+      }
+      // ---- Fear inputs ----
+      // Event pulses (the prick) existed but nothing fed the continuous
+      // channel, so the meter/vignette/credit sat dead between injections.
+      // Rung proximity is the baseline; the needle bearing down pushes it;
+      // looking away is real avoidance and genuinely dampens the gaze input.
+      if (window.PhobiaFear) {
+        const phaseK = injectPhase === "approach" ? 0.8
+          : (injectPhase === "in" ? 1.0 : 0.45);
+        window.PhobiaFear.setInput("proximity", (0.2 + proximity * 0.6) * phaseK);
+        window.PhobiaFear.setInput("gaze", (1 - lookAwayT) * (0.3 + proximity * 0.4));
       }
       // ---- Injection phase machine: approach → PRICK → hold → withdraw → reset
       const CONTACT = 0.86;          // needleAdvance at which the tip bites skin
@@ -25426,6 +25441,17 @@ function setupSpeaking(scene, camera, level) {
       } else {
         confidence = Math.max(0, confidence - d * 0.005);
       }
+      // ---- Fear inputs ----
+      // This scene never fed PhobiaFear, so the meter, heartbeat, vignette
+      // and fear-weighted hold credit were all dead during the one scene
+      // that is pure performance anxiety. Standing before the crowd is the
+      // baseline; actively speaking while they watch is the engagement;
+      // confidence earned by getting through lines softens both — which IS
+      // the habituation curve the rung is teaching.
+      if (window.PhobiaFear) {
+        window.PhobiaFear.setInput("proximity", (0.35 + crowd * 0.45) * (1 - confidence * 0.45));
+        window.PhobiaFear.setInput("gaze", speakingPressed ? (0.85 - confidence * 0.45) : 0.12);
+      }
 
       // ---- Sip animation ----
       // sipPhase 1.0 → 0 over ~1.6s. The glass lifts toward the camera, tips
@@ -26607,6 +26633,13 @@ function setupStorms(scene, camera, level) {
         if (matchLit <= 0) {
           handMatch.visible = false;
         }
+      }
+      // Being IN the storm is the stimulus — the dread between strikes is
+      // the phobia. Without a continuous baseline the fear meter sat at 0
+      // except for a blip at each flash, so vignette/heartbeat/credit were
+      // effectively dead. Strike spikes (pulseEvent below) ride on top.
+      if (window.PhobiaFear) {
+        window.PhobiaFear.setInput("proximity", 0.25 + intensity * 0.55);
       }
       // Lightning: strike every (3 + (1-intensity)*8) sec on average. Each
       // strike is a real branching bolt + a soft sky glow + a delayed thunder.
