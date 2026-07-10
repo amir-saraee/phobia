@@ -82,6 +82,10 @@ for (const rungs of Object.values(voiceLines))
 for (const m of html.matchAll(/\bspeak\(\s*"((?:[^"\\]|\\.)*)"/g)) {
   push(m[1].replace(/\\"/g, '"'));
 }
+// bumpTrust(kind, "reason") — the reason string is spoken via speak(reason).
+for (const m of html.matchAll(/\bbumpTrust\(\s*"[^"]*"\s*,\s*"((?:[^"\\]|\\.)*)"/g)) {
+  push(m[1].replace(/\\"/g, '"'));
+}
 
 // ---- 3. Render ----
 const all = [...lines].sort();

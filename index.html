@@ -2202,6 +2202,13 @@ if ("serviceWorker" in navigator) {
   .meter-value { font-size: 13px; color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
   .prediction-lesson { margin: 0; font-size: 14px; color: #cbd5e1; line-height: 1.55; }
   .prediction-good .prediction-lesson strong { color: var(--ok); }
+  /* Calm reward strip on the Complete screen — courage/streak/milestone. */
+  .reward-strip {
+    margin: 10px 0 4px; padding: 8px 14px; border-radius: 12px;
+    background: rgba(124,209,197,.10); border: 1px solid rgba(124,209,197,.28);
+    color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: .2px;
+  }
+  .reward-strip .reward-milestone { margin-top: 4px; color: var(--text); font-weight: 600; font-size: 12.5px; }
 
   /* Pill-shaped select element used in settings */
   .select-pill {
@@ -2603,6 +2610,23 @@ if ("serviceWorker" in navigator) {
     opacity: var(--fv-opacity, 0);
     mix-blend-mode: multiply;
     transition: opacity .15s ease;
+  }
+  /* Warm completion bloom — fires once when a rung is credited. Gives the "you
+     faced it, you're safe" payoff the same full-screen weight the fear got.
+     Opacity-only (reduce-motion safe). */
+  .stage .celebrate-glow {
+    position: absolute; inset: 0; z-index: 5; pointer-events: none; opacity: 0;
+    background: radial-gradient(ellipse at center,
+      rgba(124,209,197,0.30) 0%,
+      rgba(165,180,252,0.14) 42%,
+      rgba(0,0,0,0) 72%);
+    mix-blend-mode: screen;
+  }
+  .stage .celebrate-glow.on { animation: celebrateBloom 2.4s ease-out 1; }
+  @keyframes celebrateBloom {
+    0%   { opacity: 0; }
+    16%  { opacity: 0.55; }
+    100% { opacity: 0; }
   }
   /* Grounding-mode overlay — gentle desaturated calm when the user activates
      5-4-3-2-1. Soft blue tint, full vignette pulled OUT (very wide), no
@@ -5320,7 +5344,13 @@ const PhobiaNarrator = (() => {
     // An ACTIVE threat (dog lunging/coiling, snake striking) must never get a
     // calm "it's calm, you can pet it" line just because fear briefly dipped
     // below 70 between beats. Route to the honest threatened bank from fear 40.
-    else if (opts.threat && sceneLines.threatened && fear > 40) bucket = sceneLines.threatened;
+    else if (opts.threat && sceneLines.threatened && fear > 20) bucket = sceneLines.threatened;
+    // While a threat is active, the calm banks (close / walking / arrival —
+    // "The dog is calm. You can pet it.") are OFF LIMITS even at low fear:
+    // avoidance coaching is still fine, everything else stays silent.
+    else if (opts.threat) {
+      if (PhobiaFear.getAvoidanceTime() > 14) bucket = sceneLines.avoidance;
+    }
     else if (PhobiaFear.getAvoidanceTime() > 14) bucket = sceneLines.avoidance;
     else if (fear > 40 && inputs.gaze > 0.5) bucket = sceneLines.lookingDown || sceneLines.close;
     else if (fear > 30) bucket = sceneLines.close;
@@ -6069,6 +6099,7 @@ function awardCourage(points, reason) {
 }
 function getCourage() { return activeCharSlice().courage || 0; }
 
+let lastAward = null;   // {points, streakAfter, milestones[], key, ts} — surfaced on the Complete screen
 function markCompleted(phobiaKey, levelIdx, suds, predicted, peak, outcome) {
   const p = getProgress(phobiaKey);
   // Ladder honesty: the marker only advances on a real finish. An early exit
@@ -6093,7 +6124,16 @@ function markCompleted(phobiaKey, levelIdx, suds, predicted, peak, outcome) {
   const points = Math.round((isFirstTime ? basePoints * 2 : basePoints) * (finished ? 1 : 0.5));
   awardCourage(points, finished ? (isFirstTime ? "first time" : "well done") : "you showed up");
   // Check for newly-unlocked milestones (after the log push so they see this entry)
-  checkMilestones();
+  const newMilestones = checkMilestones() || [];
+  // Stash the concrete reward so the Complete screen can surface it at the peak
+  // motivation moment (the +courage prompt only shows in-scene and only >=20).
+  lastAward = {
+    points,
+    streakAfter: computeStreak(),
+    milestones: newMilestones.map(m => m.title),
+    key: `${phobiaKey}.${levelIdx}`,
+    ts: Date.now(),
+  };
   // Award an achievement toast for first-time completions
   if (wasNew) {
     const phobia = PHOBIAS[phobiaKey];
@@ -6180,6 +6220,7 @@ function checkMilestones() {
     newlyUnlocked.forEach((m, i) => setTimeout(() =>
       showAchievement(m.title, m.desc, m.icon), i * 1500));
   }
+  return newlyUnlocked;
 }
 
 // Modal dialog for setting / editing a per-phobia goal
@@ -6461,6 +6502,20 @@ function render(view, params) {
   if (view === "custom")    attachCustomHandlers(params.editing);
   if (view === "exposure")  mountExposure(params.phobia, params.level);
   if (view === "breathe")   runBreathing();
+
+  // Move focus to the new view's heading so keyboard + screen-reader users
+  // don't get stranded on the just-removed element (which drops focus to
+  // <body>, forcing a full re-Tab and announcing nothing). Never focus INTO
+  // the WebGL canvas on exposure — focus the container instead.
+  try {
+    requestAnimationFrame(() => {
+      if (!v || !v.isConnected) return;
+      const h = (view !== "exposure") ? v.querySelector("h1, h2") : null;
+      const target = h || v;
+      if (h && !h.hasAttribute("tabindex")) h.setAttribute("tabindex", "-1");
+      target.focus({ preventScroll: true });
+    });
+  } catch {}
 
   // ---- View entrance animation ----
   // Trigger the fade-up animation by toggling the .view-enter class. Strip
@@ -7256,7 +7311,7 @@ function viewWelcome() {
     </div>` : ""}
 
     <div class="panel" style="margin-top:18px">
-      <h3 style="margin-bottom:6px">Nine fears you can work with</h3>
+      <h3 style="margin-bottom:6px">${Object.keys(PHOBIAS).length} fears you can work with</h3>
       <p>Hover any one to read the science behind it. Pick yours when you start.</p>
       <div class="show-grid">${phobiaCards}</div>
     </div>
@@ -7739,6 +7794,11 @@ function viewInsights() {
         <div class="stat"><div class="stat-num">${completedRungs}</div><div class="stat-lbl">rungs climbed</div></div>
         <div class="stat"><div class="stat-num">${avgGap == null ? "—" : (avgGap >= 0 ? "+" : "") + avgGap.toFixed(1)}</div><div class="stat-lbl">avg over-prediction</div></div>
       </div>
+      ${(avgGap != null && predicted.length >= 2) ? `<p class="hint" style="margin-top:-4px;margin-bottom:16px">${
+        avgGap >= 0.8 ? `On average, your fear came in about <strong>${avgGap.toFixed(1)} point${avgGap >= 1.5 ? "s" : ""} lower</strong> than you predicted. Your brain keeps over-estimating the danger — and each rung is teaching it otherwise.`
+        : avgGap <= -0.8 ? `Lately it's felt a little worse than you expected. That's honest data — slow down and repeat rungs until the numbers settle.`
+        : `Your predictions are landing close to what you actually feel — you're getting accurate at reading your own body.`
+      }</p>` : ""}
       <div class="insights-grid">${cards}</div>
 
       ${(() => {
@@ -7771,15 +7831,17 @@ function viewInsights() {
 function viewPredict(phobiaKey, levelIdx) {
   const p = PHOBIAS[phobiaKey];
   const lv = p.levels[levelIdx];
-  // Suggest the predicted value based on past rungs of the same phobia
-  const past = state.log.filter(l => l.phobia === phobiaKey && l.level === levelIdx);
-  const suggested = past.length ? past[past.length - 1].suds : Math.min(8, 4 + levelIdx);
+  // A neutral rung-based starting point. Deliberately NOT seeded from the last
+  // actual SUDS — that made a repeat prediction just echo what happened, which
+  // hollows out the predict-vs-actual signal the whole mechanic depends on.
+  const suggested = Math.min(8, 4 + levelIdx);
   return `
     <div class="panel">
-      <span class="badge">Rung ${levelIdx+1} of ${p.levels.length} — ${p.label}</span>
+      <span class="badge">Rung ${levelIdx+1} of ${p.levels.length} — ${escapeHtml(p.label)}</span>
       <h2 style="margin-top:10px">Before you start</h2>
       <p>One thing that makes exposure work: <em>predict</em> what you think will happen, then see how it actually goes.
       Most people over-predict the fear — and that's the lesson the brain needs to update.</p>
+      <p class="hint" style="margin-top:14px">You'll be: <strong>${escapeHtml(lv.title)}</strong>${lv.desc ? ` — ${escapeHtml(lv.desc)}` : ""}</p>
 
       <div class="suds" style="margin-top:18px">
         <label for="predictedSuds">How anxious do you expect to feel during <strong>${escapeHtml(lv.title)}</strong>?</label>
@@ -7961,15 +8023,16 @@ function viewRate(phobiaKey, levelIdx) {
         <label for="suds">Anxiety level</label>
         <div class="scale-row">
           <span class="small">0 calm</span>
-          <input type="range" id="suds" min="0" max="10" value="3" />
+          <input type="range" id="suds" min="0" max="10" value="5" aria-label="Anxiety level, 0 calm to 10 panic" />
           <span class="small">10 panic</span>
-          <div class="value" id="sudsValue">3</div>
+          <div class="value" id="sudsValue">—</div>
         </div>
+        <div class="hint" id="sudsHint">Move the slider to record how it actually felt — there's no right answer.</div>
         <div class="hint">Low (0–3): you're ready to climb. &nbsp; Mid (4–6): a breath break helps. &nbsp; High (7–10): stay here, breathe, repeat.</div>
       </div>
       <div class="actions">
         <button class="btn-warn" data-action="do-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">Take a breath first</button>
-        <button class="btn-primary" data-action="submit-rate" data-phobia="${phobiaKey}" data-level="${levelIdx}">Save &amp; continue</button>
+        <button class="btn-primary" id="rateSubmit" data-action="submit-rate" data-phobia="${phobiaKey}" data-level="${levelIdx}" disabled>Save &amp; continue</button>
       </div>
     </div>
   `;
@@ -8010,7 +8073,11 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     let lesson, tone;
     if (diff >= 2) {
       tone = "good";
-      lesson = `Your fear was <strong>${diff} point${diff === 1 ? "" : "s"} smaller</strong> than you predicted. The brain learns by noticing this gap — please notice it.`;
+      // When the user braced for catastrophe (high prediction) and it landed
+      // low, name that explicitly — it's the single most therapeutic realisation.
+      lesson = (predicted >= 7 && suds <= 4)
+        ? `You expected this to be a <strong>${predicted}/10</strong> — near the top — and it turned out a <strong>${suds}/10</strong>. You braced for something that didn't come. That gap, felt directly, is your brain updating what's actually dangerous.`
+        : `Your fear was <strong>${diff} point${diff === 1 ? "" : "s"} smaller</strong> than you predicted. The brain learns by noticing this gap — please notice it.`;
     } else if (diff <= -2) {
       tone = "warn";
       lesson = `Your fear was a touch higher than you predicted. That's data too — sit with what surprised you, then plan a repeat.`;
@@ -8064,14 +8131,55 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     `;
   }
 
+  // Between-session habituation: the proof exposure works. If the user has done
+  // THIS rung before and rated it lower now, show it at the moment of impact —
+  // "last time X, this time Y". Only surfaced on a real drop (>=2), never on an
+  // increase (that would discourage), and never on an early exit.
+  let acrossBlock = "";
+  if (!early) {
+    const sameRung = state.log.filter(l => l.phobia === phobiaKey && l.level === levelIdx);
+    const prev = sameRung.length >= 2 ? sameRung[sameRung.length - 2] : null;
+    if (prev && typeof prev.suds === "number" && (prev.suds - suds) >= 2) {
+      acrossBlock = `
+      <div class="prediction-card prediction-good">
+        <div class="prediction-meters">
+          <div class="meter-row">
+            <span class="meter-label">Last time</span>
+            <div class="meter-track"><div class="meter-fill" style="width:${prev.suds * 10}%; background:#94a3b8"></div></div>
+            <span class="meter-value">${prev.suds}/10</span>
+          </div>
+          <div class="meter-row">
+            <span class="meter-label">This time</span>
+            <div class="meter-track"><div class="meter-fill" style="width:${suds * 10}%"></div></div>
+            <span class="meter-value">${suds}/10</span>
+          </div>
+        </div>
+        <p class="prediction-lesson">Last time this rung was a <strong>${prev.suds}/10</strong>. Today it's a <strong>${suds}/10</strong>. Same situation, less fear — that's your nervous system learning it's safe, across sessions. This is the whole point.</p>
+      </div>`;
+    }
+  }
+
+  // Concrete reward at the peak-motivation moment — courage earned, streak,
+  // any milestone. Gated to THIS session (key + fresh ts) so a hash re-nav
+  // doesn't replay a stale "+15". Calm strip, not confetti. (day-N only >=2 to
+  // avoid streak-pressure on day 1.)
+  let rewardStrip = "";
+  if (lastAward && lastAward.key === `${phobiaKey}.${levelIdx}` && last && Math.abs((last.ts || 0) - lastAward.ts) < 5000) {
+    const bits = [`+${lastAward.points} courage`];
+    if (lastAward.streakAfter >= 2) bits.push(`day ${lastAward.streakAfter} of practice`);
+    rewardStrip = `<div class="reward-strip">${bits.join(" · ")}${lastAward.milestones.length ? `<div class="reward-milestone">🏅 Milestone unlocked: ${escapeHtml(lastAward.milestones.join(", "))}</div>` : ""}</div>`;
+  }
+
   return `
     <div class="panel">
       <span class="badge">${early ? `Rung ${levelIdx+1} · early exit` : `Rung ${levelIdx+1} done`}</span>
       <h2 style="margin-top: 10px;">${early ? "You stepped out early — still a rep." : "Nice work."}</h2>
+      ${rewardStrip}
       <p>${early
         ? `You spent time with <strong>${escapeHtml(p.levels[levelIdx].title)}</strong> and rated your anxiety at <strong>${suds}/10</strong>.`
         : `You completed <strong>${escapeHtml(p.levels[levelIdx].title)}</strong>. You rated your anxiety at <strong>${suds}/10</strong>.`}</p>
       ${habituationBlock}
+      ${acrossBlock}
       ${predictionBlock}
       <p>${advice}</p>
 
@@ -8192,6 +8300,11 @@ function mountExposure(phobiaKey, levelIdx) {
   if (captionsEnabled) {
     captions = document.createElement("div");
     captions.className = "captions";
+    // Live region so screen readers announce the guidance even when the app's
+    // own TTS voice is muted (a legitimate choice) or fails to load.
+    captions.setAttribute("role", "status");
+    captions.setAttribute("aria-live", "polite");
+    captions.setAttribute("aria-atomic", "true");
     stage.appendChild(captions);
   }
   function onVoiceLine(e) {
@@ -8530,6 +8643,9 @@ function mountExposure(phobiaKey, levelIdx) {
         try { gateOpen = !gate || !!gate(); } catch {}
         if (gateOpen || Date.now() - celebrationDue > 6000) {
           celebrationFired = true;
+          // Warm full-screen bloom + reward haptic land WITH the voice line, so
+          // the resolution has the same physical weight the fear did.
+          if (window.PhobiaFX && window.PhobiaFX.celebrate) window.PhobiaFX.celebrate();
           if (window.PhobiaVoice) {
             try {
               window.PhobiaVoice.speak("You did it. You stayed with it. That is real progress.");
@@ -8575,11 +8691,22 @@ function mountExposure(phobiaKey, levelIdx) {
   // Also stop audio when 3D scene tears down (page navigation)
   window.addEventListener("beforeunload", stopAllAudio);
 
-  // SUDS slider live update (defensive — kept for legacy SVG path too)
+  // SUDS slider live update. The readout starts blank ("—") and Save stays
+  // disabled until the user actually moves the slider, so the rating is a
+  // self-generated reading, not a confirmed low default that skews the whole
+  // learning loop (predicted-vs-actual gap, habituation, insights).
   const suds = document.getElementById("suds");
   if (suds) {
     const out = document.getElementById("sudsValue");
-    suds.addEventListener("input", () => { if (out) out.textContent = suds.value; });
+    const submit = document.getElementById("rateSubmit");
+    const hint = document.getElementById("sudsHint");
+    const onFirst = () => {
+      if (out) out.textContent = suds.value;
+      if (submit) submit.disabled = false;
+      if (hint) hint.style.display = "none";
+    };
+    suds.addEventListener("input", onFirst);
+    suds.addEventListener("change", onFirst);
   }
 }
 
@@ -8685,6 +8812,12 @@ document.addEventListener("input", (e) => {
   if (e.target.id === "suds") {
     const out = document.getElementById("sudsValue");
     if (out) out.textContent = e.target.value;
+    // First move records the reading: reveal it + enable Save (starts disabled
+    // so an untouched default can't skew the loop). See viewRate.
+    const submit = document.getElementById("rateSubmit");
+    if (submit) submit.disabled = false;
+    const hint = document.getElementById("sudsHint");
+    if (hint) hint.style.display = "none";
   } else if (e.target.id === "predictedSuds") {
     const out = document.getElementById("predictedValue");
     if (out) out.textContent = e.target.value;
@@ -9931,7 +10064,7 @@ function runTutorialTour(stage, phobiaKey) {
   // dog users to "grip the rail / splash the water"). Character-driven scenes
   // are walk-up-and-interact; the button bar is a secondary affordance.
   const interactCopy = {
-    dogs: "Walk up to the dog, then click it to pet. You can also throw a ball, give a treat, or call it with the buttons under the scene.",
+    dogs: "Walk up to the dog, then click it to pet. Click the floor to throw a ball (shift-click for a treat) — the “Show controls” pill reveals buttons too.",
     heights: "Walk to the edge and look down when you're ready. Click things in the world to interact.",
     spiders: "Walk a little closer at your own pace. Click the spider to lower a glass jar over it.",
     snakes: "Walk toward the snake slowly. Hold still and it stays calm.",
@@ -10735,7 +10868,10 @@ class FPControls {
   // not the key flags.
   isMovingForward() {
     if (this.keys && (this.keys.KeyW || this.keys.ArrowUp)) return true;
-    return !!(this._moveAxis && this._moveAxis.y < -0.25);
+    // Same 0.08 dead zone as actual movement: an analog creep forward IS
+    // moving forward — a frightened user inching toward the rail must still
+    // trigger the scenes' approach cues.
+    return !!(this._moveAxis && this._moveAxis.y < -0.08);
   }
 
   // True when the user is pushing in ANY direction (keys or joystick past the
@@ -10853,7 +10989,10 @@ class FPControls {
       }
       if (this._hesHold > 0) {
         this._hesHold -= dt;
-        fearMul *= 0.15;
+        // The catch only ever grips the APPROACH. If the user reverses into
+        // a retreat mid-hold (the classic panic move during a lunge), speed
+        // must return instantly — flight is always available, full stop.
+        if (fwdInput > 0.1) fearMul *= 0.15;
       }
       maxSpeed *= fearMul;
     }
@@ -11416,6 +11555,10 @@ class Body {
     };
     this._postureSm = { lean: 0, crouch: 0, armSpread: 0, reach: 0, reachHeight: 0.5 };
     this.group = new THREE.Group();
+    // Scene click-pickers must see THROUGH the avatar: in third person the
+    // body stands dead centre and its meshes swallowed clicks meant for the
+    // world (dogs' pickWorld honours noPick up the parent chain).
+    this.group.userData.noPick = true;
     this._build();
     scene.add(this.group);
     // ---- Character fill light (third-person only) ----
@@ -11980,6 +12123,12 @@ class Body {
       const ldl = Math.hypot(ldx, ldz) || 1;
       this.fillLight.position.set(hx + (ldx / ldl) * 0.75, hy + 0.5, hz + (ldz / ldl) * 0.75);
     }
+    // Frame delta for all dt-based smoothing below. MUST live at method
+    // scope: it was declared inside the yaw-follow block, so every later
+    // use threw a ReferenceError that the render loop's try/catch swallowed
+    // — posture, arm animation, footsteps, hip twist and blinking were all
+    // silently dead. (this._lastBodyT is written near the end of update().)
+    const dtB = Math.min(0.05, Math.max(0.001, t - (this._lastBodyT || t)));
     // Fade the body out when the TP camera is pulled right up against it
     // (cornered against a wall): a chest filling the frame and clipping the
     // near plane reads as a glitch — ghosting out is the genre-standard fix.
@@ -12057,7 +12206,6 @@ class Body {
       let dOff = offTarget - this._travelOff;
       while (dOff > Math.PI) dOff -= Math.PI * 2;
       while (dOff < -Math.PI) dOff += Math.PI * 2;
-      const dtB = Math.min(0.05, Math.max(0.001, t - (this._lastBodyT || t)));
       this._travelOff += dOff * Math.min(1, dtB * 7);
       // In TP the body LAGS the camera yaw — a person turns with mass, not
       // welded to the mouse. Faster follow while walking (you steer with
@@ -13368,7 +13516,18 @@ class Hands {
         finalPos.x += Math.sin(t * 21 + side * 7) * tremor;
         finalPos.y += Math.sin(t * 27 + side * 3) * tremor * 0.7;
       }
-      const posK = Math.min(1, d * 11);
+      // A live world reach target owns this hand: attenuate the canned-pose
+      // lerp as the reach engages. Both lerps ran at full weight before, and
+      // their per-frame fight settled at a ~50/50 equilibrium — the palm
+      // permanently hovered ~20 cm short of the dog's back / the rail while
+      // the fingers curled around empty air.
+      const reach = this._reach;
+      const rk = this._reachStrength;
+      const reachThisHand = reach && (reach.hand === "both"
+        || (reach.hand === "right" && side === 1)
+        || (reach.hand === "left"  && side === -1));
+      const gestureK = (reachThisHand && rk > 0.001) ? Math.max(0, 1 - rk) : 1;
+      const posK = Math.min(1, d * 11) * gestureK;
       hand.position.lerp(finalPos, posK);
       hand.rotation.x += (baseRot.x + (targetRotX - baseRot.x) * this.gestureStrength - hand.rotation.x) * posK;
       hand.rotation.y += (baseRot.y + (targetRotY - baseRot.y) * this.gestureStrength - hand.rotation.y) * posK;
@@ -13390,13 +13549,9 @@ class Hands {
       hand.position.y += this.actionPulse * 0.018 * (side === 1 ? 1 : 0.5);
 
       // ---- World-anchored reach + surface contact (override) ----
-      // Applied last, scaled by _reachStrength, so when no scene sets a target
-      // this is a no-op and the gesture system above is untouched.
-      const reach = this._reach;
-      const rk = this._reachStrength;
-      const reachThisHand = reach && (reach.hand === "both"
-        || (reach.hand === "right" && side === 1)
-        || (reach.hand === "left"  && side === -1));
+      // Applied last, scaled by _reachStrength (computed above so the gesture
+      // lerp yields to it), so when no scene sets a target this is a no-op
+      // and the gesture system above is untouched.
       if (reachThisHand && rk > 0.001) {
         // World point → camera-local (the hand group rides the camera at an
         // identity transform, so camera space IS hand-parent space). Refresh
@@ -14083,7 +14238,13 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     if (controls && controls.wasJustLocked && controls.wasJustLocked()) return;
     const dist = Math.hypot(e.clientX - downX, e.clientY - downY);
     const dur = performance.now() - downT;
-    if (dist < 5 && dur < 350) onCanvasClick(e);
+    // A fingertip tap wobbles 8–15px and a nervous, deliberate tap is slow — a
+    // 5px/350ms mouse tolerance silently reclassified the emotional-peak touch
+    // (pet the dog, grip the rail) as a look-drag and did nothing. Widen on touch.
+    const touch = e.pointerType === "touch" || IS_COARSE_POINTER;
+    const slop = touch ? 16 : 5;
+    const maxDur = touch ? 600 : 350;
+    if (dist < slop && dur < maxDur) onCanvasClick(e);
   }
   renderer.domElement.addEventListener("pointerdown", onPointerDownTrack);
   renderer.domElement.addEventListener("pointerup", onPointerUpInteract);
@@ -14435,6 +14596,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   container.appendChild(groundingOverlay);
   const groundingText = document.createElement("div");
   groundingText.className = "grounding-text";
+  groundingText.setAttribute("role", "status");
+  groundingText.setAttribute("aria-live", "polite");
+  groundingText.setAttribute("aria-atomic", "true");
   container.appendChild(groundingText);
   // Desktop exit affordance — the mobile path has the "I'm okay — continue"
   // button, but desktop's only way out was an undocumented second Esc.
@@ -14696,6 +14860,24 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // visible grip feedback when the user touches an interactive object.
   window.PhobiaFX = window.PhobiaFX || {};
   window.PhobiaFX.firePulse = () => { if (hands) hands.fireAction(); };
+  // Positive haptic — until now the ONLY thing a phone let you FEEL was the fear
+  // heartbeat. Give bravery/affection/completion their own gentle taps (short +
+  // distinct from the fear pulse) so success is physiological, not just text.
+  window.PhobiaFX.haptic = (pattern) => { try { if (fxCanVibrate) navigator.vibrate(pattern); } catch {} };
+  // Warm completion bloom — the "you faced it and you're safe" payoff. The fear
+  // side gets a full-screen vignette + shake + heartbeat; this gives the
+  // resolution equal physical weight (opacity-only, so it's reduce-motion safe).
+  const celebrateGlow = document.createElement("div");
+  celebrateGlow.className = "celebrate-glow";
+  container.appendChild(celebrateGlow);
+  if (active && active.overlays) active.overlays.push(celebrateGlow);
+  window.PhobiaFX.celebrate = () => {
+    if (!celebrateGlow.isConnected) return;
+    celebrateGlow.classList.remove("on");
+    void celebrateGlow.offsetWidth;            // restart the keyframe
+    celebrateGlow.classList.add("on");
+    if (window.PhobiaFX.haptic) window.PhobiaFX.haptic([28, 60, 28]);
+  };
   // Drive the animation loop via setAnimationLoop so WebXR works correctly
   // (XR sessions require this method instead of requestAnimationFrame).
   // Three.js routes the loop through requestAnimationFrame in non-XR mode
@@ -18490,6 +18672,10 @@ class DogController {
     // can abandon an unreachable target and settle instead of marching on the
     // spot. Reset whenever a fresh target is issued.
     this._stuckT = 0;
+    // After the stuck-detector gives up on an unreachable follow target, hold
+    // off the follow urge for a beat — otherwise it re-issues walkTo the very
+    // next frame (resetting _stuckT) and the dog treadmills in place forever.
+    this._followSuppressT = 0;
     // ---- Procedural "alive" layer (added on top of the clip pose each frame):
     // tail wag, resting breath, walk body-bob, ear sway. Bone refs bind lazily
     // once the model has streamed in.
@@ -18571,6 +18757,10 @@ class DogController {
     next.timeScale = timeScale;
     next.fadeIn(fade).play();
     this._action = next;
+    // The new action starts at time 0 — resync the footfall phase tracker or
+    // the first walking frame reads a huge phase wrap and fires a burst of
+    // spurious paw strikes.
+    this._ffPrevPhase = 0;
   }
   // Play a clip once (bark / eat); the state machine returns to a loop after.
   _playOnce(name) {
@@ -18598,7 +18788,7 @@ class DogController {
   // so the dog is never sent to a point it physically can't stand on (the
   // old wander/fetch/lunge callers could pick a spot inside a prop, which the
   // per-frame resolver then cancelled — the dog walked in place forever).
-  walkTo(x, z) { const r = this._resolve(x, z); this._stuckT = 0; this.followTarget = { x: r.x, z: r.z }; this.setState("walking"); }
+  walkTo(x, z) { const r = this._resolve(x, z); this._stuckT = 0; this._followWalk = false; this.followTarget = { x: r.x, z: r.z }; this.setState("walking"); }
   bark() {
     // Hold the bark for the full Attack clip so the lunge plays out and
     // resolves back toward neutral, instead of snapping mid-rear.
@@ -18626,7 +18816,7 @@ class DogController {
   // Full-speed charge toward (x,z) using the Gallop clip. Same grounded
   // locomotion as walkTo — timeScale follows actual ground speed so the
   // bounds plant instead of sliding.
-  gallopTo(x, z) { const r = this._resolve(x, z); this._stuckT = 0; this.followTarget = { x: r.x, z: r.z }; this.setState("galloping"); }
+  gallopTo(x, z) { const r = this._resolve(x, z); this._stuckT = 0; this._followWalk = false; this.followTarget = { x: r.x, z: r.z }; this.setState("galloping"); }
 
   _easeYaw(cur, target, k) {
     let dy = target - cur;
@@ -18658,6 +18848,7 @@ class DogController {
     const p = this.parts;
     if (!p.mixer) return;        // model still streaming in
     const d = dt || 0.016;
+    if (this._followSuppressT > 0) this._followSuppressT = Math.max(0, this._followSuppressT - d);
 
     // Smooth the pet amount the scene pokes in (drives a small clip-speed
     // perk-up so a petted dog visibly livens).
@@ -18668,7 +18859,8 @@ class DogController {
     // overridden by the follow urge, or commands read as broken.
     if (this.followPlayer && this.state !== "walking" && this.state !== "galloping"
         && this.state !== "eat" && this.state !== "bark"
-        && this.state !== "sit" && this.state !== "lay") {
+        && this.state !== "sit" && this.state !== "lay"
+        && !(this._followSuppressT > 0)) {
       const pp = this.playerPos || this.camera.position;
       const dx = pp.x - this.dog.position.x;
       const dz = pp.z - this.dog.position.z;
@@ -18676,6 +18868,25 @@ class DogController {
       if (dist > this.followRadius + 0.6) {
         const k = (dist - this.followRadius) / dist;
         this.walkTo(this.dog.position.x + dx * k, this.dog.position.z + dz * k);
+        this._followWalk = true;
+      }
+    }
+    // While walking a FOLLOW leg, keep the target pinned to the player's live
+    // position. The old snapshot target made following stop-start: the dog
+    // walked to where you WERE, idled, then re-noticed you — a robotic
+    // stutter-follow. Refresh (through the same obstacle resolver) instead of
+    // re-issuing walkTo so the stuck detector still sees real progress.
+    if (this.followPlayer && this._followWalk && this.state === "walking" && this.followTarget) {
+      const pp = this.playerPos || this.camera.position;
+      const dx = pp.x - this.dog.position.x;
+      const dz = pp.z - this.dog.position.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > this.followRadius) {
+        const k = (dist - this.followRadius) / dist;
+        const r = this._resolve(this.dog.position.x + dx * k, this.dog.position.z + dz * k);
+        // A genuinely moved target is fresh information for the stuck detector.
+        if (Math.hypot(r.x - this.followTarget.x, r.z - this.followTarget.z) > 0.35) this._stuckT = 0;
+        this.followTarget.x = r.x; this.followTarget.z = r.z;
       }
     }
 
@@ -18726,6 +18937,7 @@ class DogController {
           if (moved < step * 0.3) this._stuckT += d; else this._stuckT = 0;
           if (this._stuckT > 0.4) {
             this._stuckT = 0; this.followTarget = null; this.setState("idle");
+            this._followSuppressT = 1.2;   // let the dog actually settle before the follow urge retries
           }
         }
         // GROUND THE FEET: play the clip at the speed implied by how fast the
@@ -19326,6 +19538,7 @@ function setupDogs(scene, camera, level, levelIdx) {
   const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(7, 5), backdropMat);
   backdrop.position.set(cx, 0.4, -8.2);
   backdrop.userData.noCollide = true;
+  backdrop.userData.noPick = true;
   scene.add(backdrop);
   // Glass: a whisper of PMREM sheen, no transmission needed.
   const glass = new THREE.Mesh(
@@ -19337,6 +19550,7 @@ function setupDogs(scene, camera, level, levelIdx) {
   );
   glass.position.set(cx, cy, wz + 0.02);
   glass.userData.noCollide = true;
+  glass.userData.noPick = true;
   scene.add(glass);
   // Thin wood frame + mullions. These CAST shadow on medium/high — with the
   // key aimed through the opening they print the classic window cross in the
@@ -19435,6 +19649,7 @@ function setupDogs(scene, camera, level, levelIdx) {
     new THREE.Vector3(0, 1, 0), kdir.clone().negate()
   );
   sunbeam.userData.noCollide = true;
+  sunbeam.userData.noPick = true;
   scene.add(sunbeam);
   // The bounce light sits above the beam's floor patch — daylight visibly
   // pools where the beam actually lands.
@@ -19808,6 +20023,8 @@ function setupDogs(scene, camera, level, levelIdx) {
   let item = null;        // { mesh, kind: "treat"|"ball", state, vel: Vector3 }
   let fetchPhase = "idle";
   let fetchToItemT = 0;   // time spent trying to reach a thrown item (stall guard)
+  let returnT = 0;                       // time spent on the return leg
+  const returnTgt = { x: 0, z: 0 };      // where the return walk was last aimed
   const _rollAxis = new THREE.Vector3();   // scratch — ball roll axis per frame
 
   function clearItem() {
@@ -19854,6 +20071,10 @@ function setupDogs(scene, camera, level, levelIdx) {
   function throwItem(kind, tx, tz) {
     clearItem();
     const mesh = kind === "ball" ? buildBall() : buildTreatMesh();
+    // Never a raycast answer: during the windup it sits 0.3 m in front of
+    // the camera, where it swallowed any quick second click and turned it
+    // into a throw-at-your-own-feet.
+    mesh.userData.noPick = true;
     // Windup parent depends on the camera mode. FP: ride the camera so the
     // item sits in "your" hand. TP: the camera is metres BEHIND the avatar —
     // camera-parenting there made the windup completely invisible (the ball
@@ -20115,7 +20336,8 @@ function setupDogs(scene, camera, level, levelIdx) {
     fill.style.width = pct + "%";
     trustHud.querySelector(".trust-pct").textContent = pct + "%";
   }
-  setTimeout(() => {
+  dogTimers.push(setTimeout(() => {
+    if (dog.userData.disposed) return;   // scene left within the delay
     const stage = document.getElementById("stage");
     if (!stage) return;
     // Reuse existing HUD if present (e.g. after re-mount)
@@ -20149,7 +20371,7 @@ function setupDogs(scene, camera, level, levelIdx) {
     }
     trustHud = hud;
     refreshTrustHud();
-  }, 50);
+  }, 50));
 
   // ---- Honest credit wiring ----
   // Calm rungs cap fear around 30 by design (proximity 0.40×55 ≈ 22 max), so
@@ -20189,8 +20411,21 @@ function setupDogs(scene, camera, level, levelIdx) {
       mouseVec.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     }
     raycaster.setFromCamera(mouseVec, camera);
+    // Points raycast with the default 1 m threshold means the dust motes in
+    // the sunbeam swallow clicks across half the room; sprites (hearts) and
+    // the transparent effect meshes (beam, glass, backdrop, goal ring) also
+    // sit between the player and the floor. Only solid, pickable meshes may
+    // answer a click — otherwise pets misfire and throws land at phantom
+    // mid-air points.
+    raycaster.params.Points = { threshold: 0.001 };
     const hits = raycaster.intersectObject(scene, true);
-    return hits[0] || null;
+    // noPick is honoured up the parent chain so one flag on a root (the TP
+    // avatar's body group, the held item) covers all its meshes.
+    const pickable = (o) => {
+      for (let p = o; p; p = p.parent) if (p.userData && p.userData.noPick) return false;
+      return true;
+    };
+    return hits.find(h => h.object.isMesh && !h.object.isSprite && pickable(h.object)) || null;
   }
   // Track if the user dragged (to look around) — only treat as a click if
   // the down/up happened within 6 px and within 250 ms.
@@ -20249,8 +20484,6 @@ function setupDogs(scene, camera, level, levelIdx) {
 
   function handleWorldClick(hit, alt, clientX, clientY, dom) {
     if (intensity === "barking") return;
-    // Visible grip feedback for every interactive click
-    if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
     // Did we click on the dog (or any of its parts)?
     let p = hit && hit.object;
     let hitDog = false;
@@ -20265,6 +20498,9 @@ function setupDogs(scene, camera, level, levelIdx) {
       if (cd && !cd.behind && cd.dist <= cd.r) hitDog = true;
     }
     if (hitDog) {
+      // Grip feedback only for clicks that DO something — a pulse on a dead
+      // click promised an action that never happened.
+      if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
       // Pet ↔ requires being close enough. If far, the dog comes to you.
       // The boundary is soft: just past arm's reach (1.5–2.2 m) still counts
       // as a pet and the dog closes the last step itself — a dog standing
@@ -20290,6 +20526,14 @@ function setupDogs(scene, camera, level, levelIdx) {
         if (nowSec - lastPetGrantT > 1.2) {
           lastPetGrantT = nowSec;
           bumpTrust("pet");
+          // Close the sensory loop: a soft contented pant + a gentle reward
+          // tap so the bond feels reciprocated ("it liked that"), not one-way.
+          // Only when the dog isn't coiled/aggressive (a happy sound mid-lunge
+          // would cross wires). Gated on the trust cooldown so spam can't stack it.
+          if (dogCtrl.mood !== "aggressive" && window.PhobiaAudio && window.PhobiaAudio.dogPant) {
+            try { window.PhobiaAudio.dogPant(0.32, { x: dog.position.x, y: dog.position.y + 0.35, z: dog.position.z }); } catch {}
+          }
+          if (window.PhobiaFX && window.PhobiaFX.haptic) window.PhobiaFX.haptic([20]);
         } else {
           popHeart();
         }
@@ -20308,12 +20552,16 @@ function setupDogs(scene, camera, level, levelIdx) {
     // a near-miss beside the dog never becomes the emotional opposite (a fetch)
     // at the bravest moment. A click into empty space does nothing.
     if (!hit || !hit.point) return;
+    if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
     const tx = hit.point.x, tz = hit.point.z;
     const kind = alt ? "treat" : "ball";
     throwItem(kind, tx, tz);
     fetchPhase = "flying";
+    // Literal speak() calls so the voice pre-render extractor sees these
+    // lines — a ternary argument fell back to browser TTS mid-scene.
     if (window.PhobiaVoice) {
-      window.PhobiaVoice.speak(kind === "treat" ? "Treat." : "Go fetch.");
+      if (kind === "treat") window.PhobiaVoice.speak("Treat.");
+      else window.PhobiaVoice.speak("Go fetch.");
     }
   }
 
@@ -20324,6 +20572,15 @@ function setupDogs(scene, camera, level, levelIdx) {
     const bar = document.querySelector('.scene-cmd-bar[data-scene="dogs"]');
     if (!bar) return;
     bar.querySelectorAll("[data-cmd]").forEach(btn => {
+      // The barking rung disables all commands (commandDog no-ops them) —
+      // show that honestly instead of leaving live-looking buttons dead at
+      // the scariest moment.
+      if (intensity === "barking") {
+        btn.disabled = true;
+        btn.title = "Not now — the dog is too worked up. Distance is your lever.";
+        return;
+      }
+      btn.disabled = false;
       btn.onclick = (e) => {
         e.stopPropagation();
         const cmd = btn.dataset.cmd;
@@ -20338,6 +20595,9 @@ function setupDogs(scene, camera, level, levelIdx) {
   // Lets desktop users use the mouse for the world + keyboard for commands.
   function onKey(e) {
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    // Browser shortcuts are not dog commands: Cmd/Ctrl+C (copy) was calling
+    // the dog over, Ctrl+T/B/E likewise.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     // Ignore auto-repeat: holding a key (especially to RETREAT) must never
     // machine-gun a command + its voice line ("Easy, Buddy. Easy, Buddy…").
     if (e.repeat) return;
@@ -20383,7 +20643,8 @@ function setupDogs(scene, camera, level, levelIdx) {
         throwItem(cmd === "treat" ? "treat" : "ball", tx, tz);
         fetchPhase = "flying";
         if (window.PhobiaVoice) {
-          window.PhobiaVoice.speak(cmd === "treat" ? "Treat." : "Go fetch.");
+          if (cmd === "treat") window.PhobiaVoice.speak("Treat.");
+          else window.PhobiaVoice.speak("Go fetch.");
         }
         break;
       }
@@ -20534,6 +20795,32 @@ function setupDogs(scene, camera, level, levelIdx) {
       // computed against it were visibly wrong (dog staring past you).
       dogCtrl.playerPos = controls ? controls.position : null;
       dogCtrl.update(t, d);
+
+      // ---- Carried item rides the real mouth ----
+      // The mouth anchor is a static Group child placed once from the bind
+      // pose, so a carried ball floated at a fixed body offset while the
+      // head bobbed, turned and dipped — visibly detached. Pin the anchor to
+      // the live Head bone (offset captured head-local on first carry).
+      if (item && (fetchPhase === "carrying" || fetchPhase === "returning") && dog.userData.ready) {
+        const parts = dog.userData.parts;
+        if (parts.model) {
+          if (parts._headBone === undefined) {
+            parts._headBone = null;
+            parts.model.traverse(o => { if (!parts._headBone && o.isBone && o.name === "Head") parts._headBone = o; });
+          }
+          const hb = parts._headBone;
+          if (hb) {
+            hb.updateWorldMatrix(true, false);
+            if (!parts._mouthOff) {
+              parts._mouthOff = hb.worldToLocal(parts.mouth.getWorldPosition(new THREE.Vector3()));
+            }
+            _petPt.copy(parts._mouthOff);
+            hb.localToWorld(_petPt);
+            dog.worldToLocal(_petPt);
+            parts.mouth.position.lerp(_petPt, Math.min(1, d * 18));
+          }
+        }
+      }
 
       // ---- Attention (gaze) priorities ----
       // The head tracks what a real dog would watch, fast, while the body
@@ -20753,6 +21040,8 @@ function setupDogs(scene, camera, level, levelIdx) {
           if (B.startPose !== "lay") {
             if (dogCtrl.followTarget) dogCtrl.followTarget = null;
             dogCtrl.setState("idle");
+            // Noticing the player outranks the load-in sniff trip.
+            dogCtrl._initialSniff = false;
           }
           if (window.PhobiaFX && window.PhobiaFX.achievement) {
             window.PhobiaFX.achievement(
@@ -20877,7 +21166,7 @@ function setupDogs(scene, camera, level, levelIdx) {
         bird.userData.nextAppearAt = t + 25 + Math.random() * 35;
       }
       // Dog notices the bird when it's perching — head pitches up briefly
-      if (bird.userData.state === "perching" && Math.random() < 0.005
+      if (bird.userData.state === "perching" && Math.random() < d * 0.3
           && (dogCtrl.state === "idle" || dogCtrl.state === "sit")) {
         dogCtrl._birdGaze = 1.0;
       }
@@ -20971,6 +21260,14 @@ function setupDogs(scene, camera, level, levelIdx) {
           window.PhobiaVoice.speak("Settling in. The dog feels safe with you.");
         }
       }
+      // At ordinary trust the sit ends on its own instead: a dog that parks
+      // in a sit forever (every fetch drop ends in one) reads frozen. After
+      // ~18 s it gets up and rejoins its own life — wander/drink take over.
+      // The completion beat's deliberate settle is exempt.
+      if (dogCtrl.state === "sit" && trust <= 0.7 && (dogCtrl._sitTimer || 0) > 18
+          && intensity !== "barking" && fetchPhase === "idle" && !_completedCalm) {
+        dogCtrl.stand();
+      }
       // ---- Auto-approach at high trust ----
       // Once the user has built up real trust (>0.5), the dog occasionally
       // walks closer on its own — the way a friendly dog wanders over to
@@ -21001,6 +21298,15 @@ function setupDogs(scene, camera, level, levelIdx) {
           }
         }
         nextAutoApproach = t + 18 + Math.random() * 14;   // ~18-32s between attempts
+      }
+
+      // The load-in walk was FLAGGED as a sniff trip but the flag was never
+      // consumed — the dog marched to the bed area and just stood there,
+      // breaking the "busy with its own thing" premise. On arrival, sniff.
+      if (dogCtrl._initialSniff && dogCtrl.state === "idle" && !sniffActive) {
+        dogCtrl._initialSniff = false;
+        sniffActive = true;
+        sniffEndsAt = t + 2.5 + Math.random() * 1.5;
       }
 
       // ---- Autonomous wandering & sniffing ----
@@ -21155,25 +21461,32 @@ function setupDogs(scene, camera, level, levelIdx) {
           item.mesh.rotation.set(0, 0, 0);   // settle level in the mouth — no frozen mid-tumble pose
           item.mesh.scale.setScalar(k);
           fetchPhase = "carrying";
-          setTimeout(() => {
-            if (fetchPhase !== "carrying") return;
+          dogTimers.push(setTimeout(() => {
+            if (fetchPhase !== "carrying" || dog.userData.disposed) return;
             const pp = (storedActiveControls && storedActiveControls.position) || camera.position;
-            const tx = pp.x;
-            const tz = pp.z + 0.6;
-            dogCtrl.walkTo(tx, tz);
+            returnTgt.x = pp.x; returnTgt.z = pp.z;
+            returnT = 0;
+            dogCtrl.walkTo(pp.x, pp.z + 0.6);
             fetchPhase = "returning";
             // A large animal running straight at you is fear-relevant even
             // when it's a game — fetch stops pausing progression.
             if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.25);
-          }, 250);
+          }, 250));
         }
       }
       if (fetchPhase === "returning" && item) {
         const pp = (storedActiveControls && storedActiveControls.position) || camera.position;
         const dx = dog.position.x - pp.x;
         const dz = dog.position.z - pp.z;
-        if (Math.hypot(dx, dz) < 1.4) {
-          // Drop at the player's feet
+        const distToPlayer = Math.hypot(dx, dz);
+        returnT += d;
+        // Deliver = drop at the player's feet. Give-up = the player is
+        // unreachable (walked off / wedged behind furniture for >8 s): drop
+        // where the dog stands so the session never jams with the ball in
+        // its mouth (drinking / wandering / honest credit are all gated on
+        // fetchPhase returning to "idle").
+        const giveUp = returnT > 8;
+        if (distToPlayer < 1.4 || giveUp) {
           const world = new THREE.Vector3();
           dog.userData.parts.jaw.getWorldPosition(world);
           dog.userData.parts.jaw.remove(item.mesh);
@@ -21184,31 +21497,41 @@ function setupDogs(scene, camera, level, levelIdx) {
           dogCtrl.sit();
           // If it was a treat, the dog "eats" it (mesh disappears)
           if (item.kind === "treat") {
-            setTimeout(() => {
+            dogTimers.push(setTimeout(() => {
               if (item) {
                 scene.remove(item.mesh);
                 item.mesh.geometry.dispose(); item.mesh.material.dispose();
                 item = null; fetchPhase = "idle";
                 dogCtrl.eat();
               }
-            }, 600);
-            bumpTrust("treat", "Good. That builds the bond.");
+            }, 600));
+            // The bond reward is for completing the exchange — a give-up
+            // drop still eats the treat but earns nothing.
+            if (!giveUp) bumpTrust("treat", "Good. That builds the bond.");
           } else {
             // Ball stays; user can throw again
-            bumpTrust("fetch", "Good fetch.");
-            setTimeout(() => {
+            if (!giveUp) bumpTrust("fetch", "Good fetch.");
+            dogTimers.push(setTimeout(() => {
               if (item && fetchPhase === "dropped") {
                 scene.remove(item.mesh);
                 item.mesh.geometry.dispose(); item.mesh.material.dispose();
                 item = null; fetchPhase = "idle";
               }
-            }, 4000);
+            }, 4000));
           }
+        } else if (Math.hypot(pp.x - returnTgt.x, pp.z - returnTgt.z) > 0.6
+            || (dogCtrl.state === "idle" && distToPlayer > 1.4)) {
+          // The return leg tracks the player LIVE: re-aim whenever they've
+          // moved off the captured target (or the dog arrived at a stale spot
+          // and idled). The old one-shot target left the dog frozen mid-room
+          // holding the ball whenever the player kept walking.
+          returnTgt.x = pp.x; returnTgt.z = pp.z;
+          dogCtrl.walkTo(pp.x, pp.z + 0.6);
         }
       }
 
       // ---- Pet pulse → trust gain (passive over time when very close) ----
-      if (petPulse > 0.5 && Math.random() < 0.04) {
+      if (petPulse > 0.5 && Math.random() < d * 2.5) {   // dt-based: same odds/second at any Hz
         // While actively petting, occasionally bump trust + spawn a heart
         bumpTrust("passive");
       }
@@ -21261,14 +21584,19 @@ function setupDogs(scene, camera, level, levelIdx) {
           : lungeState === "charging" ? 0.85
           : lungeState === "stalking" ? 0.55
           : 0.3 * (1 - 0.5 * trust);
-        const dxp = camera.position.x - dog.position.x;
-        const dzp = camera.position.z - dog.position.z;
+        // The dog charges the PLAYER'S body. In third person the camera
+        // floats ~4 m behind the avatar — measuring from it made every charge
+        // aim past the player and the coil-cancel band read the wrong
+        // distance. (camera.position === controls.position in first person.)
+        const ppl = (controls && controls.position) || camera.position;
+        const dxp = ppl.x - dog.position.x;
+        const dzp = ppl.z - dog.position.z;
         const distP = Math.hypot(dxp, dzp) || 0.0001;
         // Threat gaze: from coiling on, the dog holds an unblinking stare at
         // the player's face (this overrides the softer gaze set earlier in
         // the frame — last lookAt3 call wins).
         if (lungeState !== "stalking") {
-          dogCtrl.lookAt3({ x: camera.position.x, y: camera.position.y, z: camera.position.z }, 1);
+          dogCtrl.lookAt3({ x: ppl.x, y: ppl.y, z: ppl.z }, 1);
         }
 
         if (lungeState === "stalking") {
@@ -21371,8 +21699,8 @@ function setupDogs(scene, camera, level, levelIdx) {
             // floor at 1.0 m: whatever the geometry, the nose never reaches
             // the lens.
             const aim = Math.max(1.0, SNAP_DIST - 0.2);
-            const tx = camera.position.x - (dxp / distP) * aim;
-            const tz = camera.position.z - (dzp / distP) * aim;
+            const tx = ppl.x - (dxp / distP) * aim;
+            const tz = ppl.z - (dzp / distP) * aim;
             dogCtrl.gallopTo(tx, tz);
           } else {
             lungeState = "snapping"; lungeT = 0;
@@ -26927,6 +27255,17 @@ function setupStorms(scene, camera, level) {
   let flash = 0;
   let boltLife = 0;
   let restrikePending = false;
+  // Photosensitivity safety: users of an anxiety tool self-select for elevated
+  // odds of comorbid photosensitive epilepsy, and rapid full-field white flashes
+  // (WCAG 2.3.1 three-flash) are the classic trigger. When reduce-motion is set
+  // (app flag OR OS), soften the flashes and drop the 70 ms restrike double-flash.
+  const seizureSafe = (() => {
+    try {
+      const app = localStorage.getItem("fobia.reducedMotion") === "1";
+      const os = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+      return app || os;
+    } catch { return false; }
+  })();
   let shakeAmt = 0;            // concussion from a close strike's thunder
   let camFlashTint = 0;
   let lastFlashT = -10;
@@ -27202,6 +27541,7 @@ function setupStorms(scene, camera, level) {
         // and hit with a physical concussion (camera shake + a fear spike).
         const isClose = Math.random() < (0.22 + intensity * 0.5);
         flash = (isClose ? 0.8 : 0.45) + intensity * 0.3;
+        if (seizureSafe) flash = Math.min(0.3, flash);   // soft, non-triggering glow
         boltLife = isClose ? 1.3 : 1.0;   // bolt geometry is bright at strike, fades fast
         lastFlashT = t;
         nextStrike = t + 3 + (1 - intensity) * 8 + Math.random() * 2;
@@ -27215,7 +27555,7 @@ function setupStorms(scene, camera, level) {
         };
         // Real lightning often re-strikes within 60-120 ms — schedule a small
         // secondary flicker on the same bolt path for that classic look.
-        if (Math.random() < 0.6) {
+        if (!seizureSafe && Math.random() < 0.6) {   // skip the 70ms restrike double-flash entirely
           restrikePending = true;
           setTimeout(() => {
             if (disposed || !restrikePending) return;
@@ -27239,7 +27579,7 @@ function setupStorms(scene, camera, level) {
           }
           if (isClose) {
             shakeAmt = Math.max(shakeAmt, 1.0);            // the concussion you feel
-            flash = Math.max(flash, 0.65);                 // the boom briefly re-lights the sky
+            if (!seizureSafe) flash = Math.max(flash, 0.65);  // boom re-light — the fear pulse below is preserved either way
             if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.7 + intensity * 0.2);
           }
         }, thunderDelay);
@@ -27252,7 +27592,9 @@ function setupStorms(scene, camera, level) {
       flash = Math.max(0, flash - d * 4.5);
       // Soft ambient flash. Capped well below pure white so it never washes
       // the scene out into "atomic explosion" territory.
-      lightning.intensity = flash * (1.4 + intensity * 0.9);
+      // Hard ceiling so no single frame approaches full white even without the
+      // flag set (belt-and-suspenders safety floor); much tighter when seizureSafe.
+      lightning.intensity = Math.min(seizureSafe ? 0.6 : 2.3, flash * (1.4 + intensity * 0.9));
       // Concussion shake from a close strike's thunder — sharp, decays fast.
       // Applied after the controls write the camera each frame, so it reads as
       // a jolt and resets cleanly (no drift).
