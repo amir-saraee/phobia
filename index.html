@@ -12160,12 +12160,14 @@ class Body {
         fadeTarget = Math.max(0, Math.min(1, (dCam - 0.35) / 0.35));   // 0 at 0.35 m … 1 at 0.7 m
       } else {
         // FP: the body stays visible for look-down embodiment, but when the
-        // eye-drop crouch sinks the camera below the shoulder line INTO the
-        // torso column (petting a small dog), the inside of your own shirt
-        // fills the frame as a white blob — ghost the body out instead.
+        // eye-drop crouch sinks the camera toward the torso (petting a small
+        // dog), your own shirt/shoulders/arms fill the frame — ghost the body
+        // out as soon as the eye passes CHIN height, fully gone by the
+        // shoulders. (The first cut used the shoulder line as the START of
+        // the fade, so at chest height the body still blocked half the view.)
         const horiz = Math.hypot(fdx, fdz);
-        const sink = (ay + this.opts.headY * 0.86) - cam.position.y;
-        fadeTarget = horiz < 0.4 ? 1 - Math.max(0, Math.min(1, sink / 0.22)) : 1;
+        const sink = (ay + this.opts.headY * 0.97) - cam.position.y;
+        fadeTarget = horiz < 0.4 ? 1 - Math.max(0, Math.min(1, sink / 0.18)) : 1;
       }
       if (this._fadeK == null) this._fadeK = 1;
       // dt-based (this._lastBodyT is still last frame's t here; it's updated
@@ -12380,7 +12382,10 @@ class Body {
     // don't have a true upper-body skeleton to keep them rigid). Head tilts
     // along with the chest so the silhouette reads as a real lean.
     const walkLean = walkAmt * 0.05;
-    const postureLean = ps.lean * 0.30;            // capped — was 0.55
+    // Posture lean is THIRD-PERSON body language: in FP, tipping the torso
+    // forward swings your own chest and hanging arm up into the middle of
+    // the view (the eye-drop crouch already conveys leaning in first person).
+    const postureLean = (this.cameraMode === "tp" ? ps.lean : 0) * 0.30;   // capped — was 0.55
     const totalLean = walkLean + postureLean;
     if (this.chest) {
       this.chest.rotation.x = totalLean;
@@ -12519,7 +12524,9 @@ class Body {
       // crouch + reach). We pick whichever is stronger per axis.
       // - reach: both hands forward at chest height — railing grip / wading
       // - armSpread: arms held lateral, like a tightrope walker for balance
-      const reachStrength = ps.reach;
+      // Posture reach is a THIRD-PERSON pose: in FP the hand meshes already
+      // reach, and the body's chest-height arms swung up into the camera.
+      const reachStrength = this.cameraMode === "tp" ? ps.reach : 0;
       const spreadStrength = ps.armSpread;
       // reach: shoulder pitched forward (-rad), elbow slightly bent
       const reachShoulder = -1.2 + (1 - ps.reachHeight) * 0.35;   // chest height = -1.2
@@ -12534,7 +12541,10 @@ class Body {
       // the thing, not vaguely forward. Reuses the Hands reach state so every
       // scene gets this for free.
       let aim = null;
-      if (hands && hands._reach && hands._reachStrength > 0.02 && hands._reachWorld) {
+      // TP only: in first person the FP hand meshes already perform the reach —
+      // the body's arm doing it too swung a phantom third arm up through the
+      // middle of the view whenever the player petted the dog.
+      if (this.cameraMode === "tp" && hands && hands._reach && hands._reachStrength > 0.02 && hands._reachWorld) {
         const yaw = this.group.rotation.y;
         const wx = hands._reachWorld.x - this.group.position.x;
         const wy = hands._reachWorld.y;
@@ -12576,8 +12586,10 @@ class Body {
         const swing = Math.sin(armPhase) * 0.65 * walkAmt;
         const shoulderTarget = side > 0 ? rightShoulder : leftShoulder;
         const elbowTarget    = side > 0 ? rightElbow    : leftElbow;
-        // Layered priority: gesture > reach > walk swing.
-        const gestureWeight = gestureStrength;
+        // Layered priority: gesture > reach > walk swing. Gesture arms are
+        // THIRD-PERSON only, like reach: in FP the hand meshes act out the
+        // gesture and the body's raised arm floats into the middle of view.
+        const gestureWeight = this.cameraMode === "tp" ? gestureStrength : 0;
         const reachWeight   = (1 - gestureWeight) * reachStrength;
         const swingWeight   = (1 - gestureWeight) * (1 - reachStrength);
         // Idle life: even at rest the arms breathe + drift a touch and hang
@@ -19023,6 +19035,12 @@ class DogController {
   update(t, dt) {
     const p = this.parts;
     if (!p.mixer) return;        // model still streaming in
+    // Zero-dt frames (rAF bursts after a tab switch, double-fired ticks)
+    // must be skipped entirely: the mixer may not re-write the clip pose for
+    // them, but the additive _bodyLife layer would still stack its deltas —
+    // the sitting dog's chest visibly ratcheted by one sit-lift per burst
+    // frame. A frame that advances no time has nothing to update anyway.
+    if (dt != null && dt < 0.0015) return;
     const d = dt || 0.016;
     // One-shot calibration once the model has been measured: the real body
     // radius replaces the scene's height-derived guess so player↔dog contact
@@ -19275,6 +19293,31 @@ class DogController {
       };
     }
     const rig = this._rig;
+    // ---- Additive-layer safety net ----
+    // three.js PropertyMixer SKIPS re-writing a bone when the clip track's
+    // value is unchanged since last frame (flat keyframe spans) — so "read
+    // the mixer pose, ADD a delta" silently COMPOUNDS on those frames: the
+    // sitting dog's chest ratcheted up by one sit-lift per skipped frame and
+    // sawtooth-reset at the next keyframe (~6 Hz head shake, the single
+    // biggest vibration source). Track each rig bone: if its rotation still
+    // equals what WE left there last frame, the mixer skipped it → restore
+    // the clean pre-delta base before this frame's layers run.
+    if (!this._lifeBones) {
+      const set = new Set();
+      [...rig.tail, ...rig.chest, rig.neck, ...rig.neckChain, rig.head,
+       ...rig.earsL, ...rig.earsR, rig.pelvis,
+       ...rig.hindUpper, ...rig.hindLower, ...rig.foreUpper, ...rig.foreLower]
+        .forEach(b => { if (b) set.add(b); });
+      this._lifeBones = [...set].map(b => ({ b, base: { x: b.rotation.x, y: b.rotation.y, z: b.rotation.z }, fin: { x: NaN, y: NaN, z: NaN } }));
+    }
+    for (const r of this._lifeBones) {
+      const rot = r.b.rotation;
+      if (rot.x === r.fin.x && rot.y === r.fin.y && rot.z === r.fin.z) {
+        rot.set(r.base.x, r.base.y, r.base.z);      // mixer skipped → clean base
+      } else {
+        r.base.x = rot.x; r.base.y = rot.y; r.base.z = rot.z;   // fresh clip pose
+      }
+    }
     const resting = this.state === "idle" || this.state === "sit" || this.state === "lay";
     // Vertical pose offset accumulator (sit drop, coil crouch, aggression
     // lift). Applied through the body-bob section's ABSOLUTE y write — pose
@@ -19406,28 +19449,43 @@ class DogController {
       if (cal.adj != null) this._groundAdj = cal.adj;
       this._groundProbeT = 0.20;   // fresh rest-probe shortly after stopping
     } else {
-      this._groundProbeT = (this._groundProbeT || 0) - d;
-      if (this._groundProbeT <= 0 && this.parts.model) {
-        this._groundProbeT = 0.12;
-        if (this._groundMesh === undefined) {
-          this._groundMesh = null;
-          this.parts.model.traverse(o => { if (!this._groundMesh && o.isSkinnedMesh && o.getVertexPosition) this._groundMesh = o; });
-          this._groundV = new THREE.Vector3();
-        }
-        const gm = this._groundMesh;
+      // Latch ONE offset per settled pose, exactly like the gait calibration:
+      // the idle clip itself shifts weight by a couple of centimetres over
+      // seconds, so ANY continuous probe (raw, window-min, median) makes the
+      // whole body wander or drift. Once the pose settles (clip faded in,
+      // sit/lie fold eased to its target), sample the group-local lowest
+      // vertex across ~1.1 s — one full idle cycle — latch the offset, and
+      // stop probing until the pose key changes. Coil / aggression bands are
+      // part of the key so the barking crouch re-grounds too.
+      const poseKey = this.state
+        + (this._coilSm > 0.4 ? "+coil" : "")
+        + (this._aggSm > 0.4 ? "+agg" : "");
+      if (this._restKey !== poseKey) {
+        this._restKey = poseKey;
+        this._restCal = { t: 0, minLocal: Infinity, done: false };
+      }
+      const rc = this._restCal;
+      if (rc && !rc.done) {
+        const settled = this._walkAmtSm < 0.15
+          && (!this._action || this._action.getEffectiveWeight() > 0.95)
+          && (this.state !== "sit" || this._sitAmt > 0.9)
+          && (this.state !== "lay" || this._layAmt > 0.9);
+        const gm = settled && _ensureGroundMesh();
         if (gm) {
-          const pa = gm.geometry.attributes.position;
           let minY = Infinity;
           gm.updateWorldMatrix(true, false);
-          for (let i = 0; i < pa.count; i += 4) {
+          const pa = gm.geometry.attributes.position;
+          for (let i = 0; i < pa.count; i += 6) {
             gm.getVertexPosition(i, this._groundV);
             gm.localToWorld(this._groundV);
             if (this._groundV.y < minY) minY = this._groundV.y;
           }
-          if (minY < Infinity) {
+          if (minY < Infinity) rc.minLocal = Math.min(rc.minLocal, minY - this.dog.position.y);
+          rc.t += d;
+          if (rc.t > 1.1 && isFinite(rc.minLocal)) {
+            rc.done = true;
             const H = this.parts.height || 0.6;
-            const want = (this._groundAdj || 0) + (this.baseY - minY);
-            this._groundAdj = Math.max(-0.35 * H, Math.min(0.6 * H, want));
+            this._groundAdj = Math.max(-0.35 * H, Math.min(0.6 * H, -rc.minLocal));
           }
         }
       }
@@ -19446,7 +19504,14 @@ class DogController {
     let bobP = 0;
     if (this._walkAmtSm > 0.01) {
       bobP = (this._action ? this._action.time : t) * Math.PI * 4.4;   // ~2 bobs/stride
-      this.dog.position.y = this.baseY + poseYPrev + this._groundAdjSm + Math.abs(Math.sin(bobP)) * 0.022 * this._walkAmtSm;
+      // sin² instead of |sin|: same two-beats-per-stride rise, but smooth at
+      // the bottom of each bob — the |sin| kink put a sharp V-bounce into
+      // every footfall that read as vibration. Amplitude scales with dog
+      // height (~2.5% of it): the old fixed 0.022 was tuned on the 2.5×
+      // over-scaled model and shook the true-size shiba like a paint mixer.
+      const bobK = Math.sin(bobP);
+      const bobAmp = 0.025 * (this.parts.height || 0.6);
+      this.dog.position.y = this.baseY + poseYPrev + this._groundAdjSm + bobK * bobK * bobAmp * this._walkAmtSm;
       if (rig.chest[0]) rig.chest[0].rotation.z += Math.sin(bobP * 0.5) * 0.05 * Math.min(1, this._walkAmtSm);
     } else {
       this.dog.position.y += (this.baseY + poseYPrev + this._groundAdjSm - this.dog.position.y) * Math.min(1, d * 6);
@@ -19510,14 +19575,22 @@ class DogController {
       this._poseYOff -= (0.16 * s + 0.05 * l) * H;
       for (const b of rig.hindUpper) b.rotation.x += 0.95 * s + 0.35 * l;
       for (const b of rig.hindLower) b.rotation.x -= (1.25 * s + 0.30 * l);
-      if (rig.pelvis) rig.pelvis.rotation.x += 0.42 * s;
-      // Spine compensates so the chest stays up in a sit…
-      if (rig.chest[1]) rig.chest[1].rotation.x -= 0.30 * s * (1 - l);
-      if (rig.chest[0]) rig.chest[0].rotation.x -= 0.18 * s * (1 - l);
-      // …and folds down in a lie, forelegs tucking.
+      // Spine signs MEASURED on the live rig (probe: rotate, read world y):
+      // pelvis/chest +x pitches the FRONT DOWN on these Quaternius dogs — the
+      // old +pelvis/−chest combination produced a play-bow (head at floor,
+      // rear in the air) whenever a sit was commanded. The forelegs are NOT
+      // an FK chain on this rig (leg-bone rotations barely move the paw), so
+      // a big pelvis pivot floats the front paws in the air: keep the pivot
+      // SMALL and get the head-up posture from the chest/neck bones, which
+      // raise the head without touching the legs.
+      if (rig.pelvis) rig.pelvis.rotation.x -= 0.12 * s * (1 - l);
+      if (rig.chest[1]) rig.chest[1].rotation.x += 0.34 * s * (1 - l);
+      if (rig.chest[0]) rig.chest[0].rotation.x += 0.20 * s * (1 - l);
+      if (rig.neck) rig.neck.rotation.x += 0.22 * s * (1 - l);
+      // …and folds down flat in a lie, forelegs tucking, chest to the floor.
       for (const b of rig.foreUpper) b.rotation.x -= 0.85 * l;
       for (const b of rig.foreLower) b.rotation.x += 1.15 * l;
-      if (rig.chest[0]) rig.chest[0].rotation.x += 0.25 * l;
+      if (rig.chest[0]) rig.chest[0].rotation.x -= 0.22 * l;
       if (rig.neck) rig.neck.rotation.x += 0.10 * l;
     }
 
@@ -19584,6 +19657,13 @@ class DogController {
       this._idleShift += (target - this._idleShift) * Math.min(1, d * 1.5);
       if (rig.chest[0]) rig.chest[0].rotation.z += this._idleShift;
       if (rig.head) rig.head.rotation.z += this._idleShift * 0.6;
+    }
+
+    // ---- Additive-layer safety net (bookend) ----
+    // Record what we left each bone at, so next frame can tell "mixer skipped
+    // this bone" (rotation still equals fin) from "mixer wrote a fresh pose".
+    for (const r of this._lifeBones) {
+      r.fin.x = r.b.rotation.x; r.fin.y = r.b.rotation.y; r.fin.z = r.b.rotation.z;
     }
   }
 }
@@ -21494,9 +21574,11 @@ function setupDogs(scene, camera, level, levelIdx) {
           if (!dogPlayerState.sniffGreeted && intensity !== "barking") {
             dogPlayerState.sniffGreeted = true;
             sniffGreetT = 2.8;
-            // Soft approach to sniff range if still a step away
+            // Soft approach to sniff range if still a step away — but never
+            // break a commanded sit/lie (commands must stay reliable).
             const surf = playerDogSurfaceDist(controls.position);
-            if (surf > PET_CONTACT_SURFACE && dogCtrl.mood !== "aggressive") {
+            if (surf > PET_CONTACT_SURFACE && dogCtrl.mood !== "aggressive"
+                && dogCtrl.state !== "sit" && dogCtrl.state !== "lay") {
               const pr = dogCtrl.playerRadius || 0.30;
               const stopAt = PET_CONTACT_SURFACE * 0.9 + pr + (dogCtrl.radius || 0.35);
               const k = Math.max(0, (playerDist - stopAt) / (playerDist || 1));
