@@ -18637,9 +18637,9 @@ function buildDog(opts = {}) {
       }
     });
     if (box.isEmpty()) box.setFromObject(model);   // non-skinned fallback
-    if (parts.actions.Idle) parts.actions.Idle.stop();
     const rawH = Math.max(0.001, box.max.y - box.min.y);
     const S = targetHeight / rawH;
+    if (parts.actions.Idle) parts.actions.Idle.stop();
     // The model's native forward is already +Z (snout at +Z), which matches the
     // Group's forward convention — no rotation needed.
     model.scale.setScalar(S);
@@ -18942,11 +18942,16 @@ class DogController {
     if (this.state !== "galloping") this.setState("galloping");
   }
 
-  _easeYaw(cur, target, k) {
+  // Ease toward a heading. maxStep (radians, optional) caps the per-frame
+  // turn so a target BEHIND the dog produces a visible body arc instead of a
+  // whip-spin — the proportional ease alone covered 170° in ~0.3 s.
+  _easeYaw(cur, target, k, maxStep) {
     let dy = target - cur;
     while (dy >  Math.PI) dy -= Math.PI * 2;
     while (dy < -Math.PI) dy += Math.PI * 2;
-    return cur + dy * Math.min(1, k);
+    let step = dy * Math.min(1, k);
+    if (maxStep != null) step = Math.max(-maxStep, Math.min(maxStep, step));
+    return cur + step;
   }
   // Push a desired (x,z) out of static obstacles + the player body, then clamp
   // to room bounds. Dog navigation uses curated CIRCLE obstacles (predictable);
@@ -19025,10 +19030,11 @@ class DogController {
     if (p.bodyRadius && !this._radiusCalibrated) {
       this._radiusCalibrated = true;
       this.radius = p.bodyRadius;
-      // Cap the commanded walk speed to what the Walk clip can actually
-      // ground (timeScale tops out at 2.2) — past that the paws skate. A
-      // small dog therefore trots briskly rather than gliding.
-      if (p.strideSpeed) this.walkSpeed = Math.min(this.walkSpeed, p.strideSpeed * 2.2);
+      // Cap the commanded walk speed below what the Walk clip can ground
+      // (timeScale clamp is 2.2) — past that the paws skate, and pinning the
+      // cadence AT the clamp reads as frantic churning. 1.9 leaves headroom
+      // so the gait sits in a relaxed trot.
+      if (p.strideSpeed) this.walkSpeed = Math.min(this.walkSpeed, p.strideSpeed * 1.9);
       // Gallop speed from the measured Gallop stride (ts ≤ 2 keeps it grounded).
       if (p.gallopStride) {
         const gclip = this._has("Gallop") && p.actions["Gallop"].getClip();
@@ -19063,7 +19069,8 @@ class DogController {
     }
     // While walking a FOLLOW leg, keep the target pinned to the player's live
     // position. Refresh quietly — do not reset stuck on retarget alone.
-    if (this.followPlayer && this._followWalk && this.state === "walking" && this.followTarget
+    if (this.followPlayer && this._followWalk
+        && (this.state === "walking" || this.state === "galloping") && this.followTarget
         && !(this._moveLockT > 0)) {
       const pp = this.playerPos || this.camera.position;
       const dx = pp.x - this.dog.position.x;
@@ -19073,6 +19080,14 @@ class DogController {
         const k = (dist - this.followRadius) / dist;
         const r = this._resolve(this.dog.position.x + dx * k, this.dog.position.z + dz * k);
         this.followTarget.x = r.x; this.followTarget.z = r.z;
+        // Gait shifting: a walking human outpaces a small dog's trot, so a
+        // trailing follower breaks into a run to close the gap, then drops
+        // back to a walk once it's caught up. Hysteresis kills flip-flopping.
+        if (dist > this.followRadius + 2.2 && this.state !== "galloping" && this.mood !== "aggressive") {
+          this.setState("galloping");
+        } else if (dist < this.followRadius + 1.1 && this.state === "galloping") {
+          this.setState("walking");
+        }
       } else {
         // Close enough — stop instead of orbiting the follow ring.
         this.stopMove();
@@ -19089,11 +19104,16 @@ class DogController {
       const dx = this.followTarget.x - this.dog.position.x;
       const dz = this.followTarget.z - this.dog.position.z;
       const dist = Math.hypot(dx, dz);
-      const arriveR = galloping ? 0.28 : 0.18;
+      // Small arrive radius: the old 0.18/0.28 m arrival SNAPPED the remaining
+      // gap instantly — half a shiba body length teleporting on every stop.
+      const arriveR = galloping ? 0.10 : 0.05;
       if (dist > arriveR) {
         this.targetYaw = Math.atan2(dx, dz);
-        // Turn fast enough that the body mostly faces the path; still not instant.
-        this.dog.rotation.y = this._easeYaw(this.dog.rotation.y, this.targetYaw, d * (galloping ? 10 : 7));
+        // Turn fast enough that the body mostly faces the path; still not
+        // instant, and rate-capped (≈4.5 rad/s walk, 6.5 gallop) so a
+        // behind-the-back retarget reads as a turn, not a spin.
+        this.dog.rotation.y = this._easeYaw(this.dog.rotation.y, this.targetYaw,
+          d * (galloping ? 10 : 7), (galloping ? 6.5 : 4.5) * d);
         const ease = Math.min(1, dist / (galloping ? 0.35 : 0.55));
         // Gallop is a genuinely faster gait — the state used to swap only the
         // clip while the body still moved at walk speed, so a "sprinting" dog
@@ -19178,7 +19198,7 @@ class DogController {
           if (Math.abs(off) > 0.55) this._watchTurn = true;
           else if (Math.abs(off) < 0.10) this._watchTurn = false;
           if (this._watchTurn) {
-            this.dog.rotation.y = this._easeYaw(this.dog.rotation.y, wantYaw, d * 2.4);
+            this.dog.rotation.y = this._easeYaw(this.dog.rotation.y, wantYaw, d * 2.4, 2.6 * d);
           }
         }
       }
@@ -19339,35 +19359,76 @@ class DogController {
     for (const b of rig.chest) b.rotation.x += br * 0.012 * breatheK;
     if (rig.neck) rig.neck.rotation.x -= br * 0.007 * breatheK;   // keep head level
 
-    // ---- Self-calibrating ground clamp ----
-    // The procedural poses (sit / lie / coil / aggression) rotate bones by
-    // fixed angles, so no hand-tuned _poseYOff constant lands the body on the
-    // floor for every pose × breed — the sitting husky hovered 18 cm while
-    // the lying one sank 22 cm through the boards. Probe the skinned mesh's
-    // actual lowest vertex a few times a second and ease a correction in, so
-    // whatever the pose, the lowest paw/haunch rests ON the floor.
-    this._groundProbeT = (this._groundProbeT || 0) - d;
-    if (this._groundProbeT <= 0 && this.parts.model) {
-      this._groundProbeT = 0.12;
+    // ---- Ground correction ----
+    // Two regimes. MOVING: each gait rides at its own height (the live Walk
+    // cycle floats ~7 cm above the Idle stance it was grounded on), and a
+    // continuous probe would read a different gait phase every sample and
+    // pump the body ±2 cm — so on the FIRST full cycle of each gait, record
+    // the lowest group-local vertex across the whole cycle, then LATCH that
+    // offset for the rest of the session (group-local, so it's independent
+    // of whatever correction is currently applied). AT REST: self-calibrating
+    // probe of the skinned mesh's lowest vertex — the procedural poses
+    // (sit / lie / coil / aggression) rotate bones by fixed angles, so no
+    // hand-tuned constant lands every pose × breed on the floor (the sitting
+    // husky hovered 18 cm while the lying one sank 22 cm).
+    const _ensureGroundMesh = () => {
       if (this._groundMesh === undefined) {
         this._groundMesh = null;
-        this.parts.model.traverse(o => { if (!this._groundMesh && o.isSkinnedMesh && o.getVertexPosition) this._groundMesh = o; });
+        this.parts.model && this.parts.model.traverse(o => { if (!this._groundMesh && o.isSkinnedMesh && o.getVertexPosition) this._groundMesh = o; });
         this._groundV = new THREE.Vector3();
       }
-      const gm = this._groundMesh;
+      return this._groundMesh;
+    };
+    const movingNow = this.state === "walking" || this.state === "galloping";
+    if (movingNow) {
+      const key = this.state === "galloping" ? "Gallop" : "Walk";
+      this._gaitCal = this._gaitCal || {};
+      let cal = this._gaitCal[key];
+      if (!cal) cal = this._gaitCal[key] = { t: 0, minLocal: Infinity, done: false, adj: null };
+      // Only sample once the gait is STEADY — during the idle→walk cross-fade
+      // the blended pose still has the (lower) idle stance in it, which
+      // latched an offset ~5 cm too shallow.
+      const steady = this._walkAmtSm > 0.5 && this._action && this._action.getEffectiveWeight() > 0.95;
+      const gm = !cal.done && steady && _ensureGroundMesh();
       if (gm) {
-        const pa = gm.geometry.attributes.position;
         let minY = Infinity;
         gm.updateWorldMatrix(true, false);
-        for (let i = 0; i < pa.count; i += 4) {
+        const pa = gm.geometry.attributes.position;
+        for (let i = 0; i < pa.count; i += 6) {
           gm.getVertexPosition(i, this._groundV);
           gm.localToWorld(this._groundV);
           if (this._groundV.y < minY) minY = this._groundV.y;
         }
-        if (minY < Infinity) {
-          const H = this.parts.height || 0.6;
-          const want = (this._groundAdj || 0) + (this.baseY - minY);
-          this._groundAdj = Math.max(-0.35 * H, Math.min(0.6 * H, want));
+        if (minY < Infinity) cal.minLocal = Math.min(cal.minLocal, minY - this.dog.position.y);
+        cal.t += d;
+        if (cal.t > 1.1 && isFinite(cal.minLocal)) { cal.done = true; cal.adj = -cal.minLocal; }
+      }
+      if (cal.adj != null) this._groundAdj = cal.adj;
+      this._groundProbeT = 0.20;   // fresh rest-probe shortly after stopping
+    } else {
+      this._groundProbeT = (this._groundProbeT || 0) - d;
+      if (this._groundProbeT <= 0 && this.parts.model) {
+        this._groundProbeT = 0.12;
+        if (this._groundMesh === undefined) {
+          this._groundMesh = null;
+          this.parts.model.traverse(o => { if (!this._groundMesh && o.isSkinnedMesh && o.getVertexPosition) this._groundMesh = o; });
+          this._groundV = new THREE.Vector3();
+        }
+        const gm = this._groundMesh;
+        if (gm) {
+          const pa = gm.geometry.attributes.position;
+          let minY = Infinity;
+          gm.updateWorldMatrix(true, false);
+          for (let i = 0; i < pa.count; i += 4) {
+            gm.getVertexPosition(i, this._groundV);
+            gm.localToWorld(this._groundV);
+            if (this._groundV.y < minY) minY = this._groundV.y;
+          }
+          if (minY < Infinity) {
+            const H = this.parts.height || 0.6;
+            const want = (this._groundAdj || 0) + (this.baseY - minY);
+            this._groundAdj = Math.max(-0.35 * H, Math.min(0.6 * H, want));
+          }
         }
       }
     }
@@ -21616,9 +21677,16 @@ function setupDogs(scene, camera, level, levelIdx) {
       // "drinks" (jaw bobs). Then returns to its previous spot. The
       // user sees the dog living its own life — not just orbiting them.
       if (!dogCtrl._nextDrinkAt) dogCtrl._nextDrinkAt = t + 30 + Math.random() * 30;
+      // A dog that OWES a follow (follow rung, player beyond the follow ring)
+      // must not wander off on a 14-second drink errand instead — the lock
+      // made it ignore a walking player completely, which read as broken AI.
+      const followOwed = dogCtrl.followPlayer && controls
+        && Math.hypot(controls.position.x - dog.position.x, controls.position.z - dog.position.z)
+           > dogCtrl.followRadius + 0.6;
       if (t > dogCtrl._nextDrinkAt && dogCtrl.state === "idle"
           && intensity !== "barking" && fetchPhase === "idle"
           && !dogCtrl._drinkingState
+          && !followOwed
           && !(dogCtrl._moveLockT > 0)) {
         dogCtrl._drinkingState = "approach";
         dogCtrl._drinkPrevState = dogCtrl.state;
@@ -21746,6 +21814,7 @@ function setupDogs(scene, camera, level, levelIdx) {
           && fetchPhase === "idle"
           && t > nextWander
           && t > wanderSuppressUntil
+          && !followOwed
           && !(dogCtrl._moveLockT > 0)
           && !dogCtrl._drinkingState) {
         // Home-zone rungs putter near their spawn spot — "busy with its own
