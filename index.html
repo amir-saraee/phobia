@@ -5230,12 +5230,12 @@ const PhobiaNarrator = (() => {
         "Step back any time. Space is allowed. Come back when you're ready.",
       ],
       // Used INSTEAD of panic whenever the scene reports an actively
-      // threatening dog (the barking rung's stalk/coil/charge/snap) — the
-      // guide must never say "the dog is calm" over a mid-air lunge.
+      // threatening dog (barking rung warning posture) — the guide must
+      // never say "the dog is calm" over a loud bark.
       threatened: [
-        "It is loud. You are still standing. That is the whole skill.",
-        "The bark is big. The danger is not. Long breath out.",
-        "Feet planted. Let the sound wash past you.",
+        "It is loud. You are still standing. Soften your gaze and breathe.",
+        "The bark is big. Step back slowly if you need space — you are in control.",
+        "Feet planted. Soften your eyes. Let the sound wash past you.",
       ],
       avoidance: [
         "You stepped back. Good. Try a few steps closer when you're ready.",
@@ -5336,12 +5336,12 @@ const PhobiaNarrator = (() => {
     // Priority order: panic > habituation > close > looking down > walking > arrival.
     // At panic-level fear, an actively threatening stimulus (opts.threat,
     // supplied by the scene) swaps panic for the honest "threatened" bucket —
-    // the guide must never say "the dog is calm" over a lunge. At lower fear
+    // the guide must never say "the dog is calm" over a loud bark. At lower fear
     // the normal ladder applies (arrival/walking/avoidance still fire).
     if (fear > 70) {
       bucket = (opts.threat && sceneLines.threatened) ? sceneLines.threatened : sceneLines.panic;
     }
-    // An ACTIVE threat (dog lunging/coiling, snake striking) must never get a
+    // An ACTIVE threat (dog warning/barking, snake striking) must never get a
     // calm "it's calm, you can pet it" line just because fear briefly dipped
     // below 70 between beats. Route to the honest threatened bank from fear 40.
     else if (opts.threat && sceneLines.threatened && fear > 20) bucket = sceneLines.threatened;
@@ -5687,14 +5687,14 @@ const VOICE_LINES = {
   ],
   // Lines must describe what the SCENE actually shows: rung 1 is a live,
   // pettable shiba across a real room (not "a drawing"); the rung-5 husky
-  // genuinely charges to a couple of metres (never claim "it cannot reach
-  // you"). Wrong narration at peak fear costs the guide its credibility.
+  // barks from a safe distance and settles when you give space — never claim
+  // it charges or that "it cannot reach you".
   dogs: [
     ["A small dog, far across the room. Busy with its own thing.", "Just watch from here. Notice your feet on the floor."],
     ["The same small dog, a little closer now.", "Notice your shoulders. Let them drop."],
     ["Medium dog. Watching you. You are watching it.", "You are not in danger. You are observing."],
     ["A large dog, close. You can hear it breathe.", "Stay. Breathe through your nose. Soft jaw."],
-    ["Right in front of you. Big sound.", "Loud is not the same as dangerous. Notice the urge to flee. You can stay."],
+    ["Barking across the room. Big sound, safe distance.", "Soften your gaze. Step back slowly if you need to. Loud is not the same as dangerous."],
   ],
   // Lines describe the real cellar + skitter + jar + on-wall arc — never claim
   // the spider is motionless (it skitters and pounces).
@@ -5813,17 +5813,18 @@ const PHOBIAS = {
     //   firstBarkAt/barkDist/barkEvery — spontaneous-bark schedule
     //   settleAfter  — rung-4 within-hold habituation beat
     //   inZoneDist   — engagement radius that feeds the fear 'duration' credit
+    //   personalSpace / homeRadius — rung-5 stays behind a safety line (no charge)
     levels: [
       { title: "Small dog, far away", desc: "A small dog across the room, busy with its own thing.", breed: "shiba", dogHeight: 0.48, size: 0.20, intensity: "calm",
         behavior: { follow: false, homeRadius: 1.3, autoApproachTrust: 0.65, inZoneDist: 2.6 } },
       { title: "Small dog, near",     desc: "The same small dog, closer now, looking at you.",       breed: "shiba", dogHeight: 0.56, size: 0.40, intensity: "calm",
         behavior: { follow: true, followRadius: 2.5, followDelay: 8, autoApproachTrust: 0.5, inZoneDist: 2.6 } },
       { title: "Bigger dog, alert",   desc: "A larger dog a few metres away. Ears up, watching.",     breed: "husky", dogHeight: 0.82, size: 0.62, intensity: "alert",
-        behavior: { follow: false, homeRadius: 0.7, startPose: "lay", standAt: 20, standDist: 3.0, firstBarkAt: 40, barkDist: 2.2, barkEvery: [14, 24], inZoneDist: 3.0 } },
+        behavior: { follow: false, homeRadius: 0.7, startPose: "lay", standAt: 20, standDist: 3.0, firstBarkAt: 16, barkDist: 2.2, barkEvery: [14, 24], inZoneDist: 3.0 } },
       { title: "Large dog, close",    desc: "A large dog about a metre away. Alert, tongue out.",     breed: "husky", dogHeight: 1.00, size: 0.82, intensity: "alert",
         behavior: { follow: true, followRadius: 1.2, followDelay: 3, firstBarkAt: 12, barkEvery: [8, 14], settleAfter: 35, inZoneDist: 3.0 } },
-      { title: "Large dog, barking",  desc: "A large dog right in front of you, barking head-on.",    breed: "husky", dogHeight: 1.18, size: 1.00, intensity: "barking",
-        behavior: { lunge: true, inZoneDist: 4.5 } }
+      { title: "Large dog, barking",  desc: "A large dog barking across the room. You control the distance.", breed: "husky", dogHeight: 1.18, size: 1.00, intensity: "barking",
+        behavior: { homeRadius: 1.1, personalSpace: 3.0, inZoneDist: 4.5 } }
     ],
     sceneClass: "scene-approach",
     render: renderDog
@@ -7882,6 +7883,14 @@ function viewExposure(phobiaKey, levelIdx) {
         <button class="cmd-btn" data-cmd="ball" title="Keyboard: B"><span class="cmd-icon">⚪</span><span>Throw ball (B)</span></button>
         <button class="cmd-btn" data-cmd="treat" title="Keyboard: T"><span class="cmd-icon">🦴</span><span>Give treat (T)</span></button>
         <button class="cmd-btn" data-cmd="call" title="Keyboard: C"><span class="cmd-icon">👋</span><span>Call (C)</span></button>
+      </div>
+    `;
+  } else if (phobiaKey === "dogs" && intensity === "barking") {
+    // Barking rung: no bonding actions — teach the coping loop instead.
+    cmdBar = `
+      <div class="scene-cmd-bar collapsed" data-scene="dogs" data-barking="1">
+        <button class="cmd-btn" type="button" disabled title="Soften your gaze — looking away helps it settle"><span class="cmd-icon">👁</span><span>Soften gaze</span></button>
+        <button class="cmd-btn" type="button" disabled title="Step back to increase distance — your main lever"><span class="cmd-icon">↩</span><span>Step back (S)</span></button>
       </div>
     `;
   } else if (phobiaKey === "heights") {
@@ -11080,6 +11089,15 @@ class FPControls {
         if (d < min && d > 1e-4) {
           this.position.x = o.x + (dx / d) * min;
           this.position.z = o.z + (dz / d) * min;
+        } else if (d <= 1e-4) {
+          // Exact overlap has no contact normal. Dynamic actors can provide
+          // their facing as an escape direction; other obstacles fall back to
+          // the player's facing, so neither body remains clipped in the other.
+          const fx = Number.isFinite(o.pushX) ? o.pushX : -Math.sin(this.yaw);
+          const fz = Number.isFinite(o.pushZ) ? o.pushZ : -Math.cos(this.yaw);
+          const fl = Math.hypot(fx, fz) || 1;
+          this.position.x = o.x + (fx / fl) * min;
+          this.position.z = o.z + (fz / fl) * min;
         }
       }
     }
@@ -12132,14 +12150,23 @@ class Body {
     // Fade the body out when the TP camera is pulled right up against it
     // (cornered against a wall): a chest filling the frame and clipping the
     // near plane reads as a glitch — ghosting out is the genre-standard fix.
-    if (this.cameraMode === "tp" || this._fadeApplied) {
+    {
       const fdx = cam.position.x - ax;
       const fdy = cam.position.y - (ay + this.opts.headY * 0.8);
       const fdz = cam.position.z - az;
       const dCam = Math.hypot(fdx, fdy, fdz);
-      const fadeTarget = this.cameraMode === "tp"
-        ? Math.max(0, Math.min(1, (dCam - 0.35) / 0.35))   // 0 at 0.35 m … 1 at 0.7 m
-        : 1;
+      let fadeTarget;
+      if (this.cameraMode === "tp") {
+        fadeTarget = Math.max(0, Math.min(1, (dCam - 0.35) / 0.35));   // 0 at 0.35 m … 1 at 0.7 m
+      } else {
+        // FP: the body stays visible for look-down embodiment, but when the
+        // eye-drop crouch sinks the camera below the shoulder line INTO the
+        // torso column (petting a small dog), the inside of your own shirt
+        // fills the frame as a white blob — ghost the body out instead.
+        const horiz = Math.hypot(fdx, fdz);
+        const sink = (ay + this.opts.headY * 0.86) - cam.position.y;
+        fadeTarget = horiz < 0.4 ? 1 - Math.max(0, Math.min(1, sink / 0.22)) : 1;
+      }
       if (this._fadeK == null) this._fadeK = 1;
       // dt-based (this._lastBodyT is still last frame's t here; it's updated
       // later where dtB is computed) so the near-camera ghost fade doesn't
@@ -14002,7 +14029,14 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
             minZ: _bb.min.z, maxZ: _bb.max.z,
           });
         });
-        if (boxes.length) controls.setStaticColliders(boxes);
+        if (boxes.length) {
+          controls.setStaticColliders(boxes);
+          // Let the scene share the same furniture solids with creature AI
+          // (dog walk/fetch) so player and dog inhabit one physical room.
+          if (typeof result.onStaticColliders === "function") {
+            try { result.onStaticColliders(boxes); } catch {}
+          }
+        }
       }
       // Per-scene third-person framing overrides (e.g. the dog scene biases the
       // camera over the shoulder so the dog isn't hidden behind the avatar).
@@ -14045,7 +14079,19 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       const moveVerb = IS_COARSE_POINTER ? "<b>Use the joystick</b>" : "<b>W or ↑</b>";
       const sceneIntros = {
         heights: `Walk toward the railing with ${moveVerb} when you're ready — at your own pace.` + escNote,
-        dogs:    `The dog is calm, across the room. Walk closer with ${moveVerb} whenever you're ready.` + escNote,
+        dogs: (() => {
+          // Rung-aware: never claim "the dog is calm" on the barking climax.
+          const lv = (typeof levelIdx === "number" && PHOBIAS.dogs && PHOBIAS.dogs.levels[levelIdx])
+            || null;
+          const inten = (lv && lv.intensity) || "";
+          if (inten === "barking") {
+            return `The dog is barking across the room. Soften your gaze, and step back any time — you control the distance.` + escNote;
+          }
+          if (inten === "alert") {
+            return `An alert dog is watching. Walk closer with ${moveVerb} when you're ready — at your own pace.` + escNote;
+          }
+          return `The dog is calm, across the room. Walk closer with ${moveVerb} whenever you're ready.` + escNote;
+        })(),
         spiders: `Walk forward with ${moveVerb} when you're ready to face it — no rush.` + escNote,
         snakes:  `Walk toward the snake with ${moveVerb} at your own pace.` + escNote,
         water:   `Wade in with ${moveVerb} when you're ready — at your own pace.` + escNote,
@@ -18562,34 +18608,66 @@ function buildDog(opts = {}) {
       });
     } catch (e) { console.warn("[dogs] fur maps:", e); }
 
-    // Measure the (untransformed) bind pose, then scale to the requested world
-    // height and drop the feet onto the Group origin (local y = 0). setupDogs
-    // puts the Group at floor height, so the feet sit on the floor at any size.
-    const box = new THREE.Box3().setFromObject(model);
+    // Animation: a named action map over the 12 clips the pack ships. Created
+    // BEFORE measuring so the rig can be posed for measurement.
+    const mixer = new THREE.AnimationMixer(model);
+    parts.mixer = mixer;
+    parts.actions = {};
+    gltf.animations.forEach((clip) => { parts.actions[clip.name] = mixer.clipAction(clip); });
+
+    // Measure the ANIMATED standing pose, not the bind-pose bbox: on the
+    // Quaternius rigs the armature's rest/Idle stance stands ~2.5× taller
+    // than the authored geometry box, so scaling by Box3.setFromObject made
+    // every dog render ~2.5× its configured height (the "small" shiba was
+    // pony-sized) and left bone anchors (pet point, gaze origin) floating
+    // half a metre above where the scene math believed the coat was.
+    // Pose the skeleton with Idle frame 0, then take skinned-vertex bounds.
+    if (parts.actions.Idle) { parts.actions.Idle.play(); mixer.update(0); }
+    model.updateWorldMatrix(true, true);   // no parent yet → world == model-local
+    const box = new THREE.Box3();
+    const _sv = new THREE.Vector3();
+    model.traverse((o) => {
+      if (o.isSkinnedMesh && o.getVertexPosition) {
+        const pa = o.geometry.attributes.position;
+        for (let i = 0; i < pa.count; i++) {
+          o.getVertexPosition(i, _sv);   // skinning applied, mesh-local
+          o.localToWorld(_sv);
+          box.expandByPoint(_sv);
+        }
+      }
+    });
+    if (box.isEmpty()) box.setFromObject(model);   // non-skinned fallback
+    if (parts.actions.Idle) parts.actions.Idle.stop();
     const rawH = Math.max(0.001, box.max.y - box.min.y);
     const S = targetHeight / rawH;
     // The model's native forward is already +Z (snout at +Z), which matches the
     // Group's forward convention — no rotation needed.
     model.scale.setScalar(S);
-    // Feet on the Group origin, minus a small grounding calibration: the
-    // bind-pose bbox reaches slightly lower than the paws in the ANIMATED
-    // stance (Quaternius rigs), which left the standing dog hovering a few
-    // centimetres — most visible on the big husky at close range.
-    model.position.y = -box.min.y * S - targetHeight * 0.03;
-    parts.height = rawH * S;
+    // Feet on the Group origin exactly — the posed bounds include the paws,
+    // so no fudge calibration is needed any more.
+    model.position.y = -box.min.y * S;
+    parts.height = targetHeight;
     parts.modelScale = S;
+    // Grounded-locomotion constants in WORLD units at this scale. The Walk
+    // clip covers ~1.9 m/s per unit of BIND height at timeScale 1 (measured);
+    // expressing it through the raw pose keeps the paws planted now that the
+    // render scale is pose-true. DogController prefers these over the scene's
+    // height-based guesses once the model is ready.
+    const bindBox = new THREE.Box3().setFromObject(model);   // scaled bind pose
+    const bindH = Math.max(0.001, (bindBox.max.y - bindBox.min.y));
+    parts.strideSpeed = 1.9 * bindH;
+    parts.gallopStride = 2.4 * bindH;
+    // Collision circle from the measured body (half the nose→tail length,
+    // slightly tight since the tail overhangs) — the old height-derived guess
+    // was tuned against the over-scaled render and left a ring of "touching
+    // air" around the real coat.
+    parts.bodyRadius = Math.max(0.16, (box.max.z - box.min.z) * S * 0.45);
     // Muzzle anchor: forward (+Z) at ~mouth height. The snout sits at the +Z
     // extent of the bounds.
     parts.mouth.position.set(0, parts.height * 0.66, box.max.z * S + 0.04);
 
     dog.add(model);
     parts.model = model;
-
-    // Animation: a named action map over the 12 clips the pack ships.
-    const mixer = new THREE.AnimationMixer(model);
-    parts.mixer = mixer;
-    parts.actions = {};
-    gltf.animations.forEach((clip) => { parts.actions[clip.name] = mixer.clipAction(clip); });
 
     dog.userData.ready = true;
     if (typeof dog.userData.onReady === "function") dog.userData.onReady();
@@ -18619,14 +18697,13 @@ function buildDog(opts = {}) {
 }
 
 // Drives the rigged GLTF dog: a small state machine maps to animation clips,
-// plus locomotion, gentle player-facing, and the behavioural hooks the scene
-// pokes at (petAmount, headPitch for sniff/drink, tailWag for trust). There is
-// deliberately NO per-bone math — "looking at you" is a soft whole-body turn,
-// which reads naturally for a dog and stays robust across both breeds.
+// plus grounded locomotion, gaze, and a procedural "alive" bone layer
+// (tail/ears/sit/coil/aggression). Scene hooks: petAmount, headPitch,
+// tailWag, mood, aggression, coil, playerPos.
 //
-// Clip map:  idle→Idle · walking→Walk · bark→Attack(one-shot) · eat→Eating
-//            (one-shot) · sit/lay→Idle_2_HeadLow (a calm "settle"; the pack has
-//            no true sit clip, and a faked one looks worse than settling).
+// Clip map:  idle→Idle · walking→Walk · galloping→Gallop · bark→Attack(one-shot)
+//            · eat→Eating(one-shot) · sit/lay→Idle + procedural haunch drop
+//            (the pack ships no true Sit/Lie clips).
 class DogController {
   constructor(dog, scene, camera) {
     this.dog = dog; this.scene = scene; this.camera = camera;
@@ -18643,10 +18720,19 @@ class DogController {
     // ---- Locomotion (grounded: clip playback is matched to ground speed so
     // the paws plant instead of sliding). Scene sets these from the dog size.
     this.walkSpeed = 1.0;       // m/s — overwritten by the scene from dog height
+    this.gallopSpeed = 1.8;     // m/s while galloping — calibrated from the model
     this.strideSpeed = 0.95;    // ground speed the Walk clip implies at timeScale 1
     this.radius = 0.35;         // collision radius (overwritten from dog size)
     this.obstacles = null;      // [{x,z,r}] static props the dog walks around
     this.bounds = null;         // {minX,maxX,minZ,maxZ} room limits
+    // Player body the dog must not walk through. Scene writes playerPos each
+    // frame; radius MUST match FPControls.bodyRadius (0.30) so the two bodies
+    // agree — a mismatch left a ~4 cm interpenetration window.
+    this.playerPos = null;
+    this.playerRadius = 0.30;
+    // XZ box colliders {minX,maxX,minZ,maxZ} shared with the player (furniture
+    // auto-collected at mount). Circles alone let the dog walk through tables.
+    this.boxObstacles = null;
     // External hooks the scene writes — kept for interface compatibility.
     this.petAmount = 0; this._petAmountSm = 0;
     this.tailWag = 0;           // scene increments this; folded into clip speed
@@ -18676,6 +18762,9 @@ class DogController {
     // off the follow urge for a beat — otherwise it re-issues walkTo the very
     // next frame (resetting _stuckT) and the dog treadmills in place forever.
     this._followSuppressT = 0;
+    // Scene systems (drink, fetch, bark yield) set this to own locomotion so
+    // follow/wander don't yank the dog mid-action.
+    this._moveLockT = 0;
     // ---- Procedural "alive" layer (added on top of the clip pose each frame):
     // tail wag, resting breath, walk body-bob, ear sway. Bone refs bind lazily
     // once the model has streamed in.
@@ -18784,11 +18873,40 @@ class DogController {
     if (s === "sit") this._sitTimer = 0;
     if (s !== "bark" && s !== "eat") this._play(this._clipForState(s));
   }
-  // Resolve a requested destination out of static obstacles and room bounds
-  // so the dog is never sent to a point it physically can't stand on (the
-  // old wander/fetch/lunge callers could pick a spot inside a prop, which the
-  // per-frame resolver then cancelled — the dog walked in place forever).
-  walkTo(x, z) { const r = this._resolve(x, z); this._stuckT = 0; this._followWalk = false; this.followTarget = { x: r.x, z: r.z }; this.setState("walking"); }
+  // Resolve a requested destination out of static obstacles, the player body,
+  // and room bounds so the dog is never sent to a point it physically can't
+  // stand on (the old wander/fetch/lunge callers could pick a spot inside a
+  // prop, which the per-frame resolver then cancelled — the dog walked in
+  // place forever).
+  // opts.follow — mark this as a live follow leg (retargeted each frame).
+  // opts.force  — retarget even if the new goal is close to the current one.
+  walkTo(x, z, opts) {
+    const r = this._resolve(x, z);
+    const follow = !!(opts && opts.follow);
+    const force = !!(opts && opts.force);
+    // Idempotent: if already walking to nearly the same point, just update
+    // the follow flag. Re-issuing used to reset _stuckT and fight other
+    // systems (yield/wander/drink) into a start/stop flicker.
+    if (!force && this.followTarget && (this.state === "walking" || this.state === "galloping")) {
+      const dd = Math.hypot(r.x - this.followTarget.x, r.z - this.followTarget.z);
+      if (dd < 0.20) {
+        this.followTarget.x = r.x;
+        this.followTarget.z = r.z;
+        if (follow) this._followWalk = true;
+        return;
+      }
+    }
+    this._stuckT = 0;
+    this._followWalk = follow;
+    this.followTarget = { x: r.x, z: r.z };
+    if (this.state !== "walking") this.setState("walking");
+  }
+  stopMove() {
+    this.followTarget = null;
+    this._followWalk = false;
+    this._stuckT = 0;
+    if (this.state === "walking" || this.state === "galloping") this.setState("idle");
+  }
   bark() {
     // Hold the bark for the full Attack clip so the lunge plays out and
     // resolves back toward neutral, instead of snapping mid-rear.
@@ -18799,9 +18917,9 @@ class DogController {
     this.state = "bark";
     this._playOnce("Attack");
   }
-  sit() { this.setState("sit"); }
+  sit() { this.stopMove(); this.setState("sit"); }
   stand() { this.setState("idle"); }
-  lay() { this.setState("lay"); }
+  lay() { this.stopMove(); this.setState("lay"); }
   rear(a = 1.0) { this._rearImpulse = Math.max(this._rearImpulse, a); }
   eat() { this.eatPhase = 1.0; this.prevState = "sit"; this.state = "eat"; this._playOnce("Eating"); }
   setFollow(on) { this.followPlayer = on; }
@@ -18816,7 +18934,13 @@ class DogController {
   // Full-speed charge toward (x,z) using the Gallop clip. Same grounded
   // locomotion as walkTo — timeScale follows actual ground speed so the
   // bounds plant instead of sliding.
-  gallopTo(x, z) { const r = this._resolve(x, z); this._stuckT = 0; this._followWalk = false; this.followTarget = { x: r.x, z: r.z }; this.setState("galloping"); }
+  gallopTo(x, z) {
+    const r = this._resolve(x, z);
+    this._stuckT = 0;
+    this._followWalk = false;
+    this.followTarget = { x: r.x, z: r.z };
+    if (this.state !== "galloping") this.setState("galloping");
+  }
 
   _easeYaw(cur, target, k) {
     let dy = target - cur;
@@ -18824,22 +18948,69 @@ class DogController {
     while (dy < -Math.PI) dy += Math.PI * 2;
     return cur + dy * Math.min(1, k);
   }
-  // Push a desired (x,z) out of static obstacles and clamp to room bounds so
-  // the dog never walks through props or walls.
-  _resolve(x, z) {
+  // Push a desired (x,z) out of static obstacles + the player body, then clamp
+  // to room bounds. Dog navigation uses curated CIRCLE obstacles (predictable);
+  // optional boxObstacles are a secondary layer. Multi-pass for overlaps.
+  // opts.ignorePlayer — resolve against furniture/bounds only (ball nudges).
+  _resolve(x, z, opts) {
     const obs = this.obstacles;
-    if (obs) {
-      for (const o of obs) {
-        const dx = x - o.x, dz = z - o.z;
+    const boxes = this.boxObstacles;
+    const ignorePlayer = !!(opts && opts.ignorePlayer);
+    const pr = ignorePlayer ? 0 : (this.playerRadius || 0);
+    const pp = ignorePlayer ? null : this.playerPos;
+    const r = this.radius;
+    for (let pass = 0; pass < 3; pass++) {
+      if (obs) {
+        for (const o of obs) {
+          const dx = x - o.x, dz = z - o.z;
+          const d = Math.hypot(dx, dz);
+          const min = o.r + r;
+          if (d < min && d > 1e-4) { x = o.x + (dx / d) * min; z = o.z + (dz / d) * min; }
+          else if (d <= 1e-4) {
+            x = o.x - Math.sin(this.dog.rotation.y) * min;
+            z = o.z - Math.cos(this.dog.rotation.y) * min;
+          }
+        }
+      }
+      if (boxes) {
+        for (const c of boxes) {
+          const nx = Math.max(c.minX, Math.min(c.maxX, x));
+          const nz = Math.max(c.minZ, Math.min(c.maxZ, z));
+          const dx = x - nx, dz = z - nz;
+          const d2 = dx * dx + dz * dz;
+          if (d2 >= r * r) continue;
+          if (d2 > 1e-8) {
+            const d = Math.sqrt(d2);
+            x = nx + (dx / d) * r;
+            z = nz + (dz / d) * r;
+          } else {
+            const exL = x - (c.minX - r);
+            const exR = (c.maxX + r) - x;
+            const ezB = z - (c.minZ - r);
+            const ezF = (c.maxZ + r) - z;
+            const m = Math.min(exL, exR, ezB, ezF);
+            if (m === exL) x = c.minX - r;
+            else if (m === exR) x = c.maxX + r;
+            else if (m === ezB) z = c.minZ - r;
+            else z = c.maxZ + r;
+          }
+        }
+      }
+      if (pp && pr > 0) {
+        const dx = x - pp.x, dz = z - pp.z;
         const d = Math.hypot(dx, dz);
-        const min = o.r + this.radius;
-        if (d < min && d > 1e-4) { x = o.x + (dx / d) * min; z = o.z + (dz / d) * min; }
+        const min = pr + r;
+        if (d < min && d > 1e-4) { x = pp.x + (dx / d) * min; z = pp.z + (dz / d) * min; }
+        else if (d <= 1e-4) {
+          x = pp.x - Math.sin(this.dog.rotation.y) * min;
+          z = pp.z - Math.cos(this.dog.rotation.y) * min;
+        }
       }
     }
     const b = this.bounds;
     if (b) {
-      x = Math.max(b.minX + this.radius, Math.min(b.maxX - this.radius, x));
-      z = Math.max(b.minZ + this.radius, Math.min(b.maxZ - this.radius, z));
+      x = Math.max(b.minX + r, Math.min(b.maxX - r, x));
+      z = Math.max(b.minZ + r, Math.min(b.maxZ - r, z));
     }
     return { x, z };
   }
@@ -18848,7 +19019,25 @@ class DogController {
     const p = this.parts;
     if (!p.mixer) return;        // model still streaming in
     const d = dt || 0.016;
+    // One-shot calibration once the model has been measured: the real body
+    // radius replaces the scene's height-derived guess so player↔dog contact
+    // distances match the visible coat.
+    if (p.bodyRadius && !this._radiusCalibrated) {
+      this._radiusCalibrated = true;
+      this.radius = p.bodyRadius;
+      // Cap the commanded walk speed to what the Walk clip can actually
+      // ground (timeScale tops out at 2.2) — past that the paws skate. A
+      // small dog therefore trots briskly rather than gliding.
+      if (p.strideSpeed) this.walkSpeed = Math.min(this.walkSpeed, p.strideSpeed * 2.2);
+      // Gallop speed from the measured Gallop stride (ts ≤ 2 keeps it grounded).
+      if (p.gallopStride) {
+        const gclip = this._has("Gallop") && p.actions["Gallop"].getClip();
+        const gImplied = p.gallopStride / Math.max(0.2, gclip ? gclip.duration : 0.567);
+        this.gallopSpeed = Math.min(this.gallopSpeed, gImplied * 2.0);
+      }
+    }
     if (this._followSuppressT > 0) this._followSuppressT = Math.max(0, this._followSuppressT - d);
+    if (this._moveLockT > 0) this._moveLockT = Math.max(0, this._moveLockT - d);
 
     // Smooth the pet amount the scene pokes in (drives a small clip-speed
     // perk-up so a petted dog visibly livens).
@@ -18857,26 +19046,25 @@ class DogController {
     // ---- Decide whether to follow the player (follow rungs only) ----
     // Sitting/lying dogs stay put: a commanded sit must not be silently
     // overridden by the follow urge, or commands read as broken.
+    // Movement lock (drink/fetch/scene yield) also suppresses follow.
     if (this.followPlayer && this.state !== "walking" && this.state !== "galloping"
         && this.state !== "eat" && this.state !== "bark"
         && this.state !== "sit" && this.state !== "lay"
-        && !(this._followSuppressT > 0)) {
+        && !(this._followSuppressT > 0)
+        && !(this._moveLockT > 0)) {
       const pp = this.playerPos || this.camera.position;
       const dx = pp.x - this.dog.position.x;
       const dz = pp.z - this.dog.position.z;
       const dist = Math.hypot(dx, dz);
-      if (dist > this.followRadius + 0.6) {
+      if (dist > this.followRadius + 0.55) {
         const k = (dist - this.followRadius) / dist;
-        this.walkTo(this.dog.position.x + dx * k, this.dog.position.z + dz * k);
-        this._followWalk = true;
+        this.walkTo(this.dog.position.x + dx * k, this.dog.position.z + dz * k, { follow: true });
       }
     }
     // While walking a FOLLOW leg, keep the target pinned to the player's live
-    // position. The old snapshot target made following stop-start: the dog
-    // walked to where you WERE, idled, then re-noticed you — a robotic
-    // stutter-follow. Refresh (through the same obstacle resolver) instead of
-    // re-issuing walkTo so the stuck detector still sees real progress.
-    if (this.followPlayer && this._followWalk && this.state === "walking" && this.followTarget) {
+    // position. Refresh quietly — do not reset stuck on retarget alone.
+    if (this.followPlayer && this._followWalk && this.state === "walking" && this.followTarget
+        && !(this._moveLockT > 0)) {
       const pp = this.playerPos || this.camera.position;
       const dx = pp.x - this.dog.position.x;
       const dz = pp.z - this.dog.position.z;
@@ -18884,81 +19072,76 @@ class DogController {
       if (dist > this.followRadius) {
         const k = (dist - this.followRadius) / dist;
         const r = this._resolve(this.dog.position.x + dx * k, this.dog.position.z + dz * k);
-        // A genuinely moved target is fresh information for the stuck detector.
-        if (Math.hypot(r.x - this.followTarget.x, r.z - this.followTarget.z) > 0.35) this._stuckT = 0;
         this.followTarget.x = r.x; this.followTarget.z = r.z;
+      } else {
+        // Close enough — stop instead of orbiting the follow ring.
+        this.stopMove();
       }
     }
 
-    // ---- Locomotion ----
+    // ---- Locomotion (direct pursuit) ----
+    // Move toward the goal along the dog→target vector, and turn the body to
+    // face that direction. The old "move along facing + dock blend" caused
+    // orbiting, skating during turns, and start/stop flicker against props.
     const moving = (this.state === "walking" || this.state === "galloping") && this.followTarget;
     if (moving) {
       const galloping = this.state === "galloping";
       const dx = this.followTarget.x - this.dog.position.x;
       const dz = this.followTarget.z - this.dog.position.z;
       const dist = Math.hypot(dx, dz);
-      if (dist > 0.22) {
-        // Don't overshoot the target this frame; ease down as we arrive so the
-        // feet slow with the body instead of stopping dead. A gallop keeps its
-        // speed almost to the end — a charging dog doesn't politely decelerate.
-        const ease = galloping ? Math.min(1, dist / 0.25) : Math.min(1, dist / 0.6);
-        const step = Math.min(dist, this.walkSpeed * ease * d);
-        // Steer like an animal, not a puck: turn the body toward the target
-        // and move along the FACING. The old straight-line step translated
-        // the dog sideways while it was still rotating — a visible skate at
-        // every walk start and direction change. Alignment scales speed, so
-        // a dog asked to go somewhere behind it turns first, then walks —
-        // tracing a natural arc instead of sliding into the new heading.
+      const arriveR = galloping ? 0.28 : 0.18;
+      if (dist > arriveR) {
         this.targetYaw = Math.atan2(dx, dz);
-        this.dog.rotation.y = this._easeYaw(this.dog.rotation.y, this.targetYaw, d * (galloping ? 9 : 6));
-        const fy = this.dog.rotation.y;
-        let dyaw = this.targetYaw - fy;
-        while (dyaw > Math.PI) dyaw -= Math.PI * 2;
-        while (dyaw < -Math.PI) dyaw += Math.PI * 2;
-        // Docking: inside ~0.6 m head straight for the point so the arc
-        // can't orbit the target forever.
-        const dock = Math.max(0, Math.min(1, (0.6 - dist) / 0.45));
-        const align = Math.max(galloping ? 0.35 : 0.15,
-          Math.cos(Math.min(Math.PI / 2, Math.abs(dyaw)))) * (1 - dock) + dock;
-        const mvx = (Math.sin(fy) * (1 - dock) + (dx / dist) * dock);
-        const mvz = (Math.cos(fy) * (1 - dock) + (dz / dist) * dock);
-        const mvl = Math.hypot(mvx, mvz) || 1;
-        let nx = this.dog.position.x + (mvx / mvl) * step * align;
-        let nz = this.dog.position.z + (mvz / mvl) * step * align;
-        const r = this._resolve(nx, nz);
-        nx = r.x; nz = r.z;
-        const moved = Math.hypot(nx - this.dog.position.x, nz - this.dog.position.z);
-        this.dog.position.x = nx;
-        this.dog.position.z = nz;
-        // Give up on wedged targets so the dog settles instead of treadmilling
-        // the Walk clip in place (see _stuckT). Walk only — a gallop charge is
-        // owned by the scene's lunge machine, which has its own hard stop.
-        if (!galloping) {
-          if (moved < step * 0.3) this._stuckT += d; else this._stuckT = 0;
-          if (this._stuckT > 0.4) {
-            this._stuckT = 0; this.followTarget = null; this.setState("idle");
-            this._followSuppressT = 1.2;   // let the dog actually settle before the follow urge retries
+        // Turn fast enough that the body mostly faces the path; still not instant.
+        this.dog.rotation.y = this._easeYaw(this.dog.rotation.y, this.targetYaw, d * (galloping ? 10 : 7));
+        const ease = Math.min(1, dist / (galloping ? 0.35 : 0.55));
+        // Gallop is a genuinely faster gait — the state used to swap only the
+        // clip while the body still moved at walk speed, so a "sprinting" dog
+        // crawled across the room with churning legs.
+        const gait = galloping ? this.gallopSpeed : this.walkSpeed;
+        const step = Math.min(dist, gait * ease * d);
+        const ux = dx / dist, uz = dz / dist;
+        let nx = this.dog.position.x + ux * step;
+        let nz = this.dog.position.z + uz * step;
+        // Slide: if the full step is blocked, try axis-separated slides so the
+        // dog follows walls/furniture instead of freezing and treadmilling.
+        let r = this._resolve(nx, nz);
+        let moved = Math.hypot(r.x - this.dog.position.x, r.z - this.dog.position.z);
+        if (moved < step * 0.35) {
+          const rx = this._resolve(this.dog.position.x + ux * step, this.dog.position.z);
+          const rz = this._resolve(this.dog.position.x, this.dog.position.z + uz * step);
+          const mx = Math.hypot(rx.x - this.dog.position.x, rx.z - this.dog.position.z);
+          const mz = Math.hypot(rz.x - this.dog.position.x, rz.z - this.dog.position.z);
+          if (mx >= mz && mx > moved) { r = rx; moved = mx; }
+          else if (mz > moved) { r = rz; moved = mz; }
+        }
+        this.dog.position.x = r.x;
+        this.dog.position.z = r.z;
+        // Stuck: no real progress → abandon target and idle.
+        {
+          const stuckLimit = galloping ? 0.45 : 0.55;
+          if (moved < 0.002) this._stuckT += d; else this._stuckT = 0;
+          if (this._stuckT > stuckLimit) {
+            this.stopMove();
+            this._followSuppressT = 1.4;
           }
         }
-        // GROUND THE FEET: play the clip at the speed implied by how fast the
-        // dog actually moves, so the paws plant on the floor instead of
-        // skating. Walk and Gallop imply different ground speeds per cycle.
+        // Ground the feet to actual speed. Blocked → timeScale 0 (no treadmill).
         if (this._action) {
           const actualSpeed = moved / Math.max(0.0001, d);
-          let implied = this.strideSpeed;
+          // Prefer the model-measured stride constants (world units at the
+          // true render scale) over the scene's height-based guesses.
+          let implied = this.parts.strideSpeed || this.strideSpeed;
           if (galloping) {
             const gclip = this._has("Gallop") && this.parts.actions["Gallop"].getClip();
-            implied = this.gallopStride / Math.max(0.2, gclip ? gclip.duration : 0.567);
+            implied = (this.parts.gallopStride || this.gallopStride) / Math.max(0.2, gclip ? gclip.duration : 0.567);
           }
-          const ts = Math.max(0.45, Math.min(2.4, actualSpeed / Math.max(0.05, implied)));
-          this._action.timeScale += (ts - this._action.timeScale) * Math.min(1, d * 12);
+          const rawTs = actualSpeed / Math.max(0.05, implied);
+          const ts = actualSpeed < 0.05 ? 0 : Math.max(0.4, Math.min(2.2, rawTs));
+          this._action.timeScale += (ts - this._action.timeScale) * Math.min(1, d * 14);
         }
-        // Footfalls at the actual paw-strike phases of the playing clip.
-        // Because timeScale already tracks ground speed, footfall RATE
-        // scales with velocity automatically (walk ≈ 3.7 strikes/s, full
-        // charge ≈ 9/s), and strength maps speed → 0.2..1.
         this.groundSpeed = moved / Math.max(0.0001, d);
-        if (this._action && this.onFootfall) {
+        if (this._action && this.onFootfall && this.groundSpeed > 0.08) {
           const gclip = this._action.getClip ? this._action.getClip() : null;
           const clipDur = (gclip && gclip.duration) || 1;
           const ph = (this._action.time / clipDur) % 1;
@@ -18973,8 +19156,10 @@ class DogController {
           this._ffPrevPhase = ph;
         }
       } else {
-        this.followTarget = null;
-        this.setState("idle");
+        // Snap onto the goal and idle — avoids a leftover 0.2 m shuffle.
+        this.dog.position.x = this.followTarget.x;
+        this.dog.position.z = this.followTarget.z;
+        this.stopMove();
       }
     } else if (this.state === "idle" || this.state === "sit" || this.state === "lay") {
       this.groundSpeed *= Math.max(0, 1 - d * 8);
@@ -18986,11 +19171,6 @@ class DogController {
         const dz = pp.z - this.dog.position.z;
         const dist = Math.hypot(dx, dz);
         if (dist > 0.001 && dist < 5.0) {
-          // Angular dead-zone with hysteresis: a standing dog tracks you with
-          // its HEAD (gaze layer); the body only re-orients once you've moved
-          // well off its nose (>0.55 rad), then turns until squared up again
-          // (<0.1). The old constant slow rotation read as the dog skating
-          // on a turntable whenever the player circled it.
           const wantYaw = Math.atan2(dx, dz);
           let off = wantYaw - this.dog.rotation.y;
           while (off > Math.PI) off -= Math.PI * 2;
@@ -19051,23 +19231,27 @@ class DogController {
     const model = this.parts.model;
     if (!model) return;
     if (!this._rig) {
+      // Quaternius dogs use dotted side suffixes (Ear1.L); older lookups used
+      // Ear1L. Accept both so ear language + sit/lie leg folds actually bind.
       const find = (n) => { let r = null; model.traverse(o => { if (!r && o.isBone && o.name === n) r = o; }); return r; };
+      const findAny = (...names) => { for (const n of names) { const r = find(n); if (r) return r; } return null; };
+      const side = (base, s) => findAny(base + "." + s, base + s);
       this._rig = {
         tail:  [find("Tail1"), find("Tail2"), find("Tail3")].filter(Boolean),
         chest: [find("Torso"), find("Torso2"), find("Torso3"), find("Back")].filter(Boolean),
-        neck:  find("Neck") || find("Neck2"),
+        neck:  findAny("Neck", "Neck2", "Neck1"),
         // Full neck chain for the gaze layer — yaw/pitch distribute along it
         // so the head turn reads as flesh, not a swivel joint.
         neckChain: [find("Neck1"), find("Neck2"), find("Neck3")].filter(Boolean),
-        head:  find("Head") || find("Head1") || find("Neck2"),
-        earsL: [find("Ear1L"), find("Ear2L")].filter(Boolean),
-        earsR: [find("Ear1R"), find("Ear2R")].filter(Boolean),
+        head:  findAny("Head", "Head1", "Neck2"),
+        earsL: [side("Ear1", "L"), side("Ear2", "L")].filter(Boolean),
+        earsR: [side("Ear1", "R"), side("Ear2", "R")].filter(Boolean),
         // Pelvis + hind/fore legs for the procedural sit/lie poses.
         pelvis: find("Back"),
-        hindUpper: [find("BackUpperLegL"), find("BackUpperLegR")].filter(Boolean),
-        hindLower: [find("BackLowerLegL"), find("BackLowerLegR")].filter(Boolean),
-        foreUpper: [find("FrontUpperLegL"), find("FrontUpperLegR")].filter(Boolean),
-        foreLower: [find("FrontLowerLegL"), find("FrontLowerLegR")].filter(Boolean),
+        hindUpper: [side("BackUpperLeg", "L"), side("BackUpperLeg", "R")].filter(Boolean),
+        hindLower: [side("BackLowerLeg", "L"), side("BackLowerLeg", "R")].filter(Boolean),
+        foreUpper: [side("FrontUpperLeg", "L"), side("FrontUpperLeg", "R")].filter(Boolean),
+        foreLower: [side("FrontLowerLeg", "L"), side("FrontLowerLeg", "R")].filter(Boolean),
       };
     }
     const rig = this._rig;
@@ -19155,16 +19339,56 @@ class DogController {
     for (const b of rig.chest) b.rotation.x += br * 0.012 * breatheK;
     if (rig.neck) rig.neck.rotation.x -= br * 0.007 * breatheK;   // keep head level
 
+    // ---- Self-calibrating ground clamp ----
+    // The procedural poses (sit / lie / coil / aggression) rotate bones by
+    // fixed angles, so no hand-tuned _poseYOff constant lands the body on the
+    // floor for every pose × breed — the sitting husky hovered 18 cm while
+    // the lying one sank 22 cm through the boards. Probe the skinned mesh's
+    // actual lowest vertex a few times a second and ease a correction in, so
+    // whatever the pose, the lowest paw/haunch rests ON the floor.
+    this._groundProbeT = (this._groundProbeT || 0) - d;
+    if (this._groundProbeT <= 0 && this.parts.model) {
+      this._groundProbeT = 0.12;
+      if (this._groundMesh === undefined) {
+        this._groundMesh = null;
+        this.parts.model.traverse(o => { if (!this._groundMesh && o.isSkinnedMesh && o.getVertexPosition) this._groundMesh = o; });
+        this._groundV = new THREE.Vector3();
+      }
+      const gm = this._groundMesh;
+      if (gm) {
+        const pa = gm.geometry.attributes.position;
+        let minY = Infinity;
+        gm.updateWorldMatrix(true, false);
+        for (let i = 0; i < pa.count; i += 4) {
+          gm.getVertexPosition(i, this._groundV);
+          gm.localToWorld(this._groundV);
+          if (this._groundV.y < minY) minY = this._groundV.y;
+        }
+        if (minY < Infinity) {
+          const H = this.parts.height || 0.6;
+          const want = (this._groundAdj || 0) + (this.baseY - minY);
+          this._groundAdj = Math.max(-0.35 * H, Math.min(0.6 * H, want));
+        }
+      }
+    }
+    this._groundAdjSm = (this._groundAdjSm || 0)
+      + ((this._groundAdj || 0) - (this._groundAdjSm || 0)) * Math.min(1, d * 5);
+
     // ---- Walk/gallop body-bob + shoulder roll ----
-    const locoAmt = this.state === "walking" ? 1 : this.state === "galloping" ? 1.8 : 0;
+    // Drive bob from actual ground speed, not just state — a blocked "walking"
+    // dog with timeScale 0 must not keep bouncing in place.
+    const speedNorm = Math.min(1, (this.groundSpeed || 0) / Math.max(0.15, this.walkSpeed * 0.55));
+    const locoAmt = (this.state === "walking" || this.state === "galloping")
+      ? speedNorm * (this.state === "galloping" ? 1.8 : 1)
+      : 0;
     this._walkAmtSm += (locoAmt - this._walkAmtSm) * Math.min(1, d * 8);
     let bobP = 0;
     if (this._walkAmtSm > 0.01) {
       bobP = (this._action ? this._action.time : t) * Math.PI * 4.4;   // ~2 bobs/stride
-      this.dog.position.y = this.baseY + poseYPrev + Math.abs(Math.sin(bobP)) * 0.022 * this._walkAmtSm;
+      this.dog.position.y = this.baseY + poseYPrev + this._groundAdjSm + Math.abs(Math.sin(bobP)) * 0.022 * this._walkAmtSm;
       if (rig.chest[0]) rig.chest[0].rotation.z += Math.sin(bobP * 0.5) * 0.05 * Math.min(1, this._walkAmtSm);
     } else {
-      this.dog.position.y += (this.baseY + poseYPrev - this.dog.position.y) * Math.min(1, d * 6);
+      this.dog.position.y += (this.baseY + poseYPrev + this._groundAdjSm - this.dog.position.y) * Math.min(1, d * 6);
     }
 
     // ---- Ears ---- (gentle sway + a bounce while trotting; perked hard
@@ -19219,8 +19443,10 @@ class DogController {
     if (this._sitAmt > 0.01) {
       const s = this._sitAmt, l = this._layAmt;
       const H = this.parts.height || 0.8;
-      // Haunch drop: rear sinks, hind legs fold under the body.
-      this._poseYOff -= (0.16 * s + 0.14 * l) * H;
+      // Haunch drop: rear sinks, hind legs fold under the body. Kept shallow —
+      // the self-calibrating ground clamp owns the exact floor contact; this
+      // only shapes the transient so the settle starts moving immediately.
+      this._poseYOff -= (0.16 * s + 0.05 * l) * H;
       for (const b of rig.hindUpper) b.rotation.x += 0.95 * s + 0.35 * l;
       for (const b of rig.hindLower) b.rotation.x -= (1.25 * s + 0.30 * l);
       if (rig.pelvis) rig.pelvis.rotation.x += 0.42 * s;
@@ -19260,6 +19486,32 @@ class DogController {
       // Ears pinned back/down (folds them against the head) — the universal "back off" signal.
       for (let i = 0; i < rig.earsL.length; i++) rig.earsL[i].rotation.x -= (0.5 + i * 0.3) * agg * 0.6;
       for (let i = 0; i < rig.earsR.length; i++) rig.earsR[i].rotation.x -= (0.5 + i * 0.3) * agg * 0.6;
+    }
+
+    // ---- Lean-into-pet ----
+    // When the player is actively petting, the dog leans its chest/neck INTO
+    // the hand and softens the ears — the reciprocal half of contact. Without
+    // this the hand lands on a statue and the bond reads one-way.
+    if (this._petAmountSm > 0.02 && this.playerPos && resting) {
+      const lean = Math.min(1, this._petAmountSm);
+      const pp = this.playerPos;
+      const dx = pp.x - this.dog.position.x;
+      const dz = pp.z - this.dog.position.z;
+      const dist = Math.hypot(dx, dz) || 1;
+      // Soft body yaw toward the hand (don't fight a commanded sit turn).
+      const wantYaw = Math.atan2(dx, dz);
+      this.dog.rotation.y = this._easeYaw(this.dog.rotation.y, wantYaw, d * 3.2 * lean);
+      if (rig.chest[0]) rig.chest[0].rotation.x += 0.12 * lean;   // press into the hand
+      if (rig.neck) rig.neck.rotation.x += 0.08 * lean;
+      if (rig.head) {
+        rig.head.rotation.x += 0.10 * lean;
+        // Soft eyes: slight head tilt toward the petting side
+        rig.head.rotation.z += 0.06 * lean * Math.sin(this._wagPhase * 0.4);
+      }
+      // Ears relax outward (opposite of pinned aggression)
+      for (const e of rig.earsL) e.rotation.x += 0.08 * lean;
+      for (const e of rig.earsR) e.rotation.x += 0.08 * lean;
+      this._poseYOff += 0.01 * lean;   // tiny lift into the stroke
     }
 
     // ---- Idle micro-motion ---- (only when genuinely at rest + not aggressive)
@@ -19829,14 +20081,12 @@ function setupDogs(scene, camera, level, levelIdx) {
   // World height (feet→ears): genuinely small early, genuinely big late, so the
   // jump in size between rungs is unmistakable.
   const dogHeight = level.dogHeight || (0.5 + size * 0.7);   // ~0.55 → ~1.2 m
-  // The dog rears + snaps at this range (also used by the lunge machine).
-  // Scaled to the dog so the reared head stays legible in the FP frame.
-  const SNAP_DIST = Math.max(2.4, dogHeight * 2.3);
-  // Spawn distance. On the barking rung the OLD formula put the 1.18 m husky
-  // 1.5 m from the camera — inside the lens before anything happened. The
-  // climax must OPEN with the dog visibly across the room and come to you.
+  // Personal-space line for the barking rung — the dog never closes past this.
+  const PERSONAL_SPACE = B.personalSpace || Math.max(2.8, dogHeight * 2.4);
+  // Spawn distance. Barking opens with the dog visibly across the room so the
+  // user chooses how close to stand; calmer rungs scale with size.
   const distance = intensity === "barking"
-    ? Math.max(1.5 + (1 - size) * 2.5, SNAP_DIST + 1.6)
+    ? Math.max(4.2, PERSONAL_SPACE + 1.4)
     : 1.5 + (1 - size) * 2.5;               // 1.5 (head-on) → 3.4 (far)
   const dog = buildDog({ breed, targetHeight: dogHeight });
   // The model drops its own feet onto the Group origin, so we just stand the
@@ -19971,23 +20221,38 @@ function setupDogs(scene, camera, level, levelIdx) {
   // Declared early so async click / key handlers below can safely close over
   // them even though they're updated by the update loop later.
   let petPulse = 0;
+  // A click just outside arm's reach is an invitation, not a magical pet.
+  // Keeping it as a short-lived request lets the dog close the gap first, then
+  // starts the hand/contact feedback only when the two bodies can actually
+  // meet. Distances are SURFACE gaps (center-to-center minus both body radii)
+  // so a large husky and a small shiba feel the same arm's reach.
+  const PET_CONTACT_SURFACE = 0.55;   // ~arm reach past body surfaces
+  const PET_INVITE_SURFACE = 1.35;
+  function bodySurfaceDist(ax, az, bx, bz, ar, br) {
+    return Math.max(0, Math.hypot(ax - bx, az - bz) - (ar || 0) - (br || 0));
+  }
+  function playerDogSurfaceDist(pp) {
+    if (!pp) return Infinity;
+    const pr = (dogsControls && dogsControls.bodyRadius) || dogCtrl.playerRadius || 0.30;
+    return bodySurfaceDist(pp.x, pp.z, dog.position.x, dog.position.z, pr, dogCtrl.radius || 0.35);
+  }
+  let petRequestT = 0;
   // Spontaneous barks are scheduled by the per-rung escalation arc (below);
-  // Infinity = not yet armed. (The old barking-rung 1.5 s value was dead —
-  // the lunge machine owns that rung's audio.)
+  // Infinity = not yet armed. (The barking rung owns its own warning cadence.)
   let nextSpontaneousBark = Infinity;
   let dogsControls = null;
   // Per-rung escalation arc state (rung 3 lying→stand→bark, rung 4 settle)
   const esc = { t0: 0, stood: false, settled: false };
   let startPoseApplied = false;
   let barkAt = 0, barkDistSnap = 0;      // "bark weathered" achievement
-  let arousalFloor = 0;                  // post-snap fear floor (credit honesty)
+  let arousalFloor = 0;                  // post-warning fear floor (credit honesty)
   let completionBeatDone = false;        // diegetic completion beat one-shot
   let _completedCalm = false;            // warms the light after the hold
   // Scratch vectors for driving the FP hand onto the real dog (no per-frame GC).
   const _petPt = new THREE.Vector3();
   const _petN  = new THREE.Vector3();
   // Ambient breathing/panting so the dog reads as alive between cues, plus an
-  // "exertion" level that rises with barking/charging and speeds the breath.
+  // "exertion" level that rises with barking/warning and speeds the breath.
   let dogPantTimer = 1.2;
   let dogExertion = 0;
   let storedActiveControls = null;
@@ -19995,15 +20260,22 @@ function setupDogs(scene, camera, level, levelIdx) {
   // known, then reset to a future time after each approach attempt.
   let autoApproachEnabled = false;
   let nextAutoApproach = 0;
+  let wanderSuppressUntil = 0;   // after auto-approach, don't yank the dog home yet
   // Character-driven event flags — fire context prompts as the player
   // crosses proximity thresholds toward the dog. Once-per-rung so the user
   // isn't nagged after they've already seen the cue.
   const dogPlayerState = {
     dogNoticedYou: false,
     closeApproach: false,
+    sniffGreeted: false,   // closed-fist sniff beat before first pet
     petted: false,
     walkedAway: false,
   };
+  // First-contact sniff greeting: when the player first enters pet range the
+  // dog investigates the offered hand (therapy tip: closed fist, let it sniff)
+  // before full petting. Timer drives head-low + audio; ends on its own or
+  // when the user pets.
+  let sniffGreetT = 0;
   // Autonomous wandering — dog moves to a random spot in the room every
   // 12-25 s when calm and trust is at least 0.2. Different from auto-approach
   // (which targets the player) — wandering targets random nearby positions
@@ -20033,6 +20305,50 @@ function setupDogs(scene, camera, level, levelIdx) {
     item.mesh.geometry.dispose();
     item.mesh.material.dispose();
     item = null;
+  }
+  // Walk to a point `standOff` metres (surface gap) from the player along the
+  // dog→player vector. The old fixed (x, z+0.6) offset only worked when the
+  // player stood south of the dog — from any other angle the dog walked past
+  // / through them. Convert surface standOff → center distance so call/return
+  // / fetch drop all agree on the same stop distance.
+  function playerStandOffCenter(standOff = 0.55) {
+    const pr = dogCtrl.playerRadius || 0.30;
+    return standOff + pr + (dogCtrl.radius || 0.35);
+  }
+  function walkToPlayer(standOff = 0.55) {
+    const pp = (storedActiveControls && storedActiveControls.position)
+      || (dogsControls && dogsControls.position) || camera.position;
+    const dx = pp.x - dog.position.x, dz = pp.z - dog.position.z;
+    const dist = Math.hypot(dx, dz) || 1;
+    const centerOff = playerStandOffCenter(standOff);
+    const k = Math.max(0, (dist - centerOff) / dist);
+    dogCtrl._moveLockT = Math.max(dogCtrl._moveLockT || 0, 6);
+    const tx = dog.position.x + dx * k, tz = dog.position.z + dz * k;
+    // A dog called from across the room comes at a happy run, not a march —
+    // gallop the long legs, walk the short ones. Never run at the player
+    // while the rung wants menace kept at bay.
+    if (dist - centerOff > 3.0 && dogCtrl.mood !== "aggressive") dogCtrl.gallopTo(tx, tz);
+    else dogCtrl.walkTo(tx, tz, { force: true });
+  }
+  function completePet() {
+    petRequestT = 0;
+    petPulse = 1.0;
+    dogCtrl.tailWag += 8;
+    // Trust grants are cooldown-gated (1.2 s): click-spam still pets the dog
+    // (pulse + wag + hearts) but doesn't farm the bond.
+    const nowSec = performance.now() / 1000;
+    if (nowSec - lastPetGrantT > 1.2) {
+      lastPetGrantT = nowSec;
+      bumpTrust("pet");
+      // Close the sensory loop: a soft contented pant + a gentle reward tap
+      // so the bond feels reciprocal, not like the avatar touched a prop.
+      if (dogCtrl.mood !== "aggressive" && window.PhobiaAudio && window.PhobiaAudio.dogPant) {
+        try { window.PhobiaAudio.dogPant(0.32, { x: dog.position.x, y: dog.position.y + dogHeight * 0.35, z: dog.position.z }); } catch {}
+      }
+      if (window.PhobiaFX && window.PhobiaFX.haptic) window.PhobiaFX.haptic([20]);
+    } else {
+      popHeart();
+    }
   }
   function buildBall() {
     // Classic fetch ball: red with a white equator band. A solid-colour
@@ -20070,6 +20386,12 @@ function setupDogs(scene, camera, level, levelIdx) {
   //      then takes over.
   function throwItem(kind, tx, tz) {
     clearItem();
+    // Throw targets must be places the dog can physically reach. A raycast can
+    // land on the bed, side table, or just beyond the room boundary; letting
+    // the ball settle there made the fetch controller pace against a prop
+    // before its emergency stall guard teleported the item. Project the target
+    // through the same navigation resolver used by the dog before the throw.
+    const target = dogCtrl && dogCtrl._resolve ? dogCtrl._resolve(tx, tz) : { x: tx, z: tz };
     const mesh = kind === "ball" ? buildBall() : buildTreatMesh();
     // Never a raycast answer: during the windup it sits 0.3 m in front of
     // the camera, where it swallowed any quick second click and turned it
@@ -20098,7 +20420,7 @@ function setupDogs(scene, camera, level, levelIdx) {
       windupT: 0,
       windupDuration: 0.4,
       // Capture target so we can compute the throw velocity at release time
-      target: { x: tx, z: tz },
+      target: { x: target.x, z: target.z },
       vel: new THREE.Vector3(0, 0, 0),
       bounces: 0,
     };
@@ -20165,13 +20487,14 @@ function setupDogs(scene, camera, level, levelIdx) {
 
   const dogCtrl = new DogController(dog, scene, camera);
   dog.userData.ctrl = dogCtrl;   // observability for the scene-verification hooks
-  // ---- Solid props the dog + player walk around (circle colliders) ----
-  // The water bowl is intentionally NOT a collider (it's flat, and the dog
-  // needs to reach it to drink).
+  // ---- Solid props the dog walks around (curated circle colliders) ----
+  // Dense auto-collected furniture boxes made a maze the dog got stuck in.
+  // Circles are predictable for AI navigation; the PLAYER still uses mount
+  // boxes for sliding against real mesh AABBs. Bowl stays traversable.
   const dogObstacles = [
-    { x: -3.6, z: -2.0, r: 0.45 },   // houseplant + pot
-    { x: -2.6, z: -2.5, r: 0.60 },   // treat side table
-    { x:  2.6, z: -2.5, r: 0.85 },   // dog bed
+    { x: -3.6, z: -2.0, r: 0.42 },   // houseplant + pot
+    { x: -2.6, z: -2.5, r: 0.55 },   // treat side table
+    { x:  2.6, z: -2.5, r: 0.72 },   // dog bed
   ];
   // Grounded locomotion + collision, scaled to the dog's size. strideSpeed is
   // the ground speed the Walk clip implies at timeScale 1 — the controller
@@ -20188,7 +20511,11 @@ function setupDogs(scene, camera, level, levelIdx) {
   dogCtrl.gallopStride = 2.4 * dogHeight;
   dogCtrl.radius      = 0.26 + dogHeight * 0.22;
   dogCtrl.obstacles   = dogObstacles;
+  dogCtrl.boxObstacles = null;   // dog AI uses circles only — see onStaticColliders
   dogCtrl.bounds      = { minX: -4.0, maxX: 4.0, minZ: -5.0, maxZ: 3.5 };
+  // Match FPControls.bodyRadius so dog↔player separation agrees with the
+  // player's own collider (otherwise one body can still clip the other).
+  dogCtrl.playerRadius = 0.30;
   // Emotional body language baseline per rung: tail carriage, ear pose and
   // wag pattern all key off this (see DogController._bodyLife).
   dogCtrl.setMood(intensity === "barking" ? "aggressive"
@@ -20207,31 +20534,21 @@ function setupDogs(scene, camera, level, levelIdx) {
     } catch {}
   };
   // ---------------------------------------------------------------------------
-  // FEAR-CURVE (barking rung): stalk → CHARGE → SNAP → recoil.
-  // Instead of barking on the spot, the dog stalks tensely, then commits to a
-  // run straight AT you, rears up and snaps at ~1.1 m with a sharp spatial bark
-  // and a fear spike, then backs off to its spot. The player's agency is the
-  // safety valve: you can always retreat (walkable scene) — backing away makes
-  // the charge fall short and keeps the fear peak lower; holding your ground
-  // spikes the fear, which is exactly what earns real exposure credit (the
-  // hold-timer weights time by fear). Holding through a snap and watching the
-  // dog back down is the disconfirming evidence exposure therapy is built on.
+  // CONTROLLED BARKING (rung 5): watching → warning → settling.
+  // The dog stays in its home zone, never closes past PERSONAL_SPACE, and
+  // escalates bark/posture from proximity + hard stare. Softening gaze or
+  // stepping back visibly de-escalates — the coping loop exposure teaches.
+  // No charge, rear, snap, camera jolt, or attack clip on this rung.
   const baseWalkSpeed = dogCtrl.walkSpeed;
-  const lungeAnchor = { x: dog.position.x, z: dog.position.z };
-  let lungeState = "stalking";   // stalking | coiling | charging | snapping | recoiling
-  let lungeT = 0;                // seconds spent in the current sub-state
-  let nextCharge = 3.5;          // scene-time at which the next coil begins
-  let snapFired = false;         // one-shot guard for the snap bark/spike
-  let stalkTargetT = 0;          // re-pick a pacing spot occasionally
-  let heldGroundDist = 99;       // closest the dog got this charge (player agency)
-  let stalkWoofT = 0;
-  let coilStartDist = 0;         // player distance when the coil began (cancel baseline)
-  let coilDur = 1.1;             // this coil's telegraph window
-  let anchorAdvances = 0;        // times the dog moved its ground toward a door-camper
-  let heldCycles = 0;            // charges the player HELD through (within-rung habituation)
-  let chargeCanceled = false;    // the player has broken off at least one charge
-  let holdPraised = false;       // one-shot voice praise guards
+  const barkAnchor = { x: dog.position.x, z: dog.position.z };
+  let barkState = "watching";    // watching | warning | settling
+  let barkStateT = 0;            // seconds in the current sub-state
+  let nextBarkAt = 2.8;          // scene-time of next bark burst
+  let paceTargetT = 0;           // re-pick a pacing spot occasionally
+  let warningBarkCount = 0;      // barks weathered this session (habituation)
+  let softGazePraised = false;
   let retreatPraised = false;
+  let lastGazeAlign = 0;         // written each frame from fear/gaze block
   // The "barking" intensity keeps the dog at distance — it doesn't follow.
   // For calm/alert rungs we DELAY the follow-the-player behaviour by ~6 s.
   // In those first seconds the dog is happily doing its own thing (sniffing,
@@ -20242,6 +20559,11 @@ function setupDogs(scene, camera, level, levelIdx) {
   // this, if the user leaves the scene in the first 6 s the timer fires
   // against a disposed dogCtrl (silent error, but a real leak).
   const dogTimers = [];
+  if (intensity === "barking") {
+    // Barking rung starts already "noticed" — the dog is facing you and
+    // barking, so avoidance coaching and distance tips should fire.
+    dogPlayerState.dogNoticedYou = true;
+  }
   // Follow is a PER-RUNG behavior now, not a blanket 6-second timer. The old
   // setFollow(true)-for-everyone erased each rung's distance premise: "small
   // dog, far away" was glued to your knees within seconds. Rung 1 and 3 never
@@ -20253,16 +20575,17 @@ function setupDogs(scene, camera, level, levelIdx) {
   }
   if (intensity !== "barking" && B.startPose !== "lay") {
     // Kick off an immediate sniff so the dog reads as "busy with its own
-    // thing" the moment the scene loads. Choose a target near the dog bed.
+    // thing" the moment the scene loads. Choose a target near the dog bed,
+    // then resolve it out of furniture so homeAnchor is never planted inside
+    // the bed collider (which made wander sample unreachable points).
     dogTimers.push(setTimeout(() => {
       try {
-        const targetX = 2.0 + (Math.random() - 0.5) * 0.8;
-        const targetZ = -2.5 + (Math.random() - 0.5) * 0.8;
-        dogCtrl.walkTo(targetX, targetZ);
+        const rawX = 2.0 + (Math.random() - 0.5) * 0.8;
+        const rawZ = -2.5 + (Math.random() - 0.5) * 0.8;
+        const settled = dogCtrl._resolve(rawX, rawZ);
+        dogCtrl.walkTo(settled.x, settled.z, { force: true });
         dogCtrl._initialSniff = true;
-        // The home zone follows the dog to where it settles (the bed area) —
-        // otherwise home-zone rungs yo-yo between spawn and bed forever.
-        homeAnchor.x = targetX; homeAnchor.z = targetZ;
+        homeAnchor.x = settled.x; homeAnchor.z = settled.z;
       } catch {}
     }, 400));
   }
@@ -20353,7 +20676,7 @@ function setupDogs(scene, camera, level, levelIdx) {
           <div class="trust-row">
             <div class="trust-name">${dogName}</div>
           </div>
-          <div class="trust-hint">${dogName} is keyed up · stepping back is allowed</div>
+          <div class="trust-hint">Soften your gaze · step back for space</div>
         `;
       } else {
         hud.innerHTML = `
@@ -20387,10 +20710,10 @@ function setupDogs(scene, camera, level, levelIdx) {
       // barking keeps the 30/10 defaults
     }
   }
-  // The hold-completion fanfare waits for a safe beat: never mid-coil,
-  // mid-charge or mid-snap on the barking rung.
+  // The hold-completion fanfare waits for a safe beat: never mid-warning
+  // bark burst on the barking rung (settling / watching are fine).
   window.__holdCelebrationGate = () =>
-    intensity !== "barking" || lungeState === "stalking" || lungeState === "recoiling";
+    intensity !== "barking" || barkState === "watching" || barkState === "settling";
 
   // ----- Click-on-floor / click-on-dog mouse interaction -----
   // The whole point: prefer the world over buttons. The renderer hands clicks
@@ -20501,46 +20824,34 @@ function setupDogs(scene, camera, level, levelIdx) {
       // Grip feedback only for clicks that DO something — a pulse on a dead
       // click promised an action that never happened.
       if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
-      // Pet ↔ requires being close enough. If far, the dog comes to you.
-      // The boundary is soft: just past arm's reach (1.5–2.2 m) still counts
-      // as a pet and the dog closes the last step itself — a dog standing
-      // "right there" refusing to be petted read as rejection at the exact
-      // moment the user was being brave.
+      // Petting is physical: an invite just outside arm's reach asks the dog
+      // to close the gap, while a real pet starts only after its body is in
+      // contact range. This keeps the user, hand animation and trust reward
+      // in one coherent spatial relationship.
       // Measure from the PLAYER, not the camera — in third-person the camera
       // orbits ~4 m behind the avatar, which inflated dogDist so the pet branch
       // never fired (the dog got "Come here"-called instead of petted).
       const pp = (storedActiveControls && storedActiveControls.position) || camera.position;
-      const cx = pp.x, cz = pp.z;
-      const dx = cx - dog.position.x, dz = cz - dog.position.z;
-      const dogDist = Math.hypot(dx, dz);
-      if (dogDist < 2.2) {
-        if (dogDist > 1.5 && dogCtrl.mood !== "aggressive") {
-          const k = (dogDist - 1.1) / dogDist;   // point 1.1 m from the player
+      const surf = playerDogSurfaceDist(pp);
+      const dx = pp.x - dog.position.x, dz = pp.z - dog.position.z;
+      const dogDist = Math.hypot(dx, dz) || 1;
+      if (surf <= PET_CONTACT_SURFACE) {
+        completePet();
+      } else if (surf <= PET_INVITE_SURFACE) {
+        petRequestT = 4.5;
+        if (dogCtrl.mood !== "aggressive") {
+          const pr = dogCtrl.playerRadius || 0.30;
+          const stopAt = PET_CONTACT_SURFACE * 0.85 + pr + (dogCtrl.radius || 0.35);
+          const k = Math.max(0, (dogDist - stopAt) / dogDist);
           dogCtrl.walkTo(dog.position.x + dx * k, dog.position.z + dz * k);
         }
-        petPulse = 1.0;
-        dogCtrl.tailWag += 8;
-        // Trust grants are cooldown-gated (1.2 s): click-spam still pets the
-        // dog (pulse + wag + hearts) but doesn't farm the bond.
-        const nowSec = performance.now() / 1000;
-        if (nowSec - lastPetGrantT > 1.2) {
-          lastPetGrantT = nowSec;
-          bumpTrust("pet");
-          // Close the sensory loop: a soft contented pant + a gentle reward
-          // tap so the bond feels reciprocated ("it liked that"), not one-way.
-          // Only when the dog isn't coiled/aggressive (a happy sound mid-lunge
-          // would cross wires). Gated on the trust cooldown so spam can't stack it.
-          if (dogCtrl.mood !== "aggressive" && window.PhobiaAudio && window.PhobiaAudio.dogPant) {
-            try { window.PhobiaAudio.dogPant(0.32, { x: dog.position.x, y: dog.position.y + 0.35, z: dog.position.z }); } catch {}
-          }
-          if (window.PhobiaFX && window.PhobiaFX.haptic) window.PhobiaFX.haptic([20]);
-        } else {
-          popHeart();
+        if (window.PhobiaFX && window.PhobiaFX.contextPrompt) {
+          window.PhobiaFX.contextPrompt(`${dogName} is stepping close. Keep your hand low.`, 2200);
         }
       } else {
         // Call the dog over — and CONFIRM it visibly, since the voice may be
         // muted and a far click otherwise feels like it did nothing.
-        dogCtrl.walkTo(cx, cz + 0.6);
+        walkToPlayer(0.55);
         if (window.PhobiaVoice) window.PhobiaVoice.speak("Come here.");
         if (window.PhobiaFX && window.PhobiaFX.contextPrompt) {
           window.PhobiaFX.contextPrompt(`${dogName} is coming to you…`, 2500);
@@ -20572,12 +20883,12 @@ function setupDogs(scene, camera, level, levelIdx) {
     const bar = document.querySelector('.scene-cmd-bar[data-scene="dogs"]');
     if (!bar) return;
     bar.querySelectorAll("[data-cmd]").forEach(btn => {
-      // The barking rung disables all commands (commandDog no-ops them) —
-      // show that honestly instead of leaving live-looking buttons dead at
-      // the scariest moment.
+      // The barking rung disables bonding commands (pet/throw/call) —
+      // show that honestly and leave distance as the primary lever.
+      // A collapsed tips bar still teaches the coping loop.
       if (intensity === "barking") {
         btn.disabled = true;
-        btn.title = "Not now — the dog is too worked up. Distance is your lever.";
+        btn.title = "Not now — the dog is barking. Soften your gaze and step back for space.";
         return;
       }
       btn.disabled = false;
@@ -20649,9 +20960,9 @@ function setupDogs(scene, camera, level, levelIdx) {
         break;
       }
       case "call": {
-        // Calls the dog to you by name — to the PLAYER, not the TP camera.
-        const pp = (storedActiveControls && storedActiveControls.position) || camera.position;
-        dogCtrl.walkTo(pp.x, pp.z + 0.6);
+        // Calls the dog to you by name — approach along the dog→player vector
+        // so the dog stops in front of you from any angle (not a fixed +Z offset).
+        walkToPlayer(0.65);
         if (window.PhobiaVoice) window.PhobiaVoice.speak("Come here.");
         break;
       }
@@ -20686,8 +20997,7 @@ function setupDogs(scene, camera, level, levelIdx) {
       initialYaw: 0,
       initialPitch: dogPitch * 0.5,    // gentler tilt — looking ahead, not down
       // The barking rung opens the back corridor: retreat must be a real,
-      // physical option for the coil-cancel to be learnable (the front wall
-      // sits at z=5.2, so 4.9 leaves headroom for the camera).
+      // physical option so the user can always increase distance.
       bounds: { minX: -3.4, maxX: 3.4, minZ: minZ, maxZ: intensity === "barking" ? 4.9 : 4.5 },
       speed: 1.45,
       lookSpeed: 0.0035,
@@ -20712,6 +21022,12 @@ function setupDogs(scene, camera, level, levelIdx) {
     // FRONT wall is deliberately absent: it's single-sided so the TP intro
     // dolly can see into the room from outside.
     collisionObjects: [backWallGroup, leftWall, rightWall, ceiling],
+    // Player keeps mount-time furniture boxes. Dog AI deliberately does NOT
+    // use them — dense mesh AABBs made an unnavigable maze. Circles above
+    // are the dog's navigation map.
+    onStaticColliders(boxes) {
+      /* player-only; dogCtrl.boxObstacles stays null */
+    },
     // (No NPC — the user's own character is the only character in the scene.)
     // Gentle bloom + a high threshold so only the window/sunbeam glow, not the
     // whole sunlit wall.
@@ -20725,39 +21041,67 @@ function setupDogs(scene, camera, level, levelIdx) {
     groundY: -1,       // room floor — feet + eye line anchored to it
     interact(controls, hands, t) {
       if (!controls) return null;
-      const dx = controls.position.x - dog.position.x;
-      const dz = controls.position.z - dog.position.z;
-      const dist = Math.hypot(dx, dz);
+      const surf = playerDogSurfaceDist(controls.position);
+      const dist = Math.hypot(controls.position.x - dog.position.x, controls.position.z - dog.position.z);
       if (intensity === "barking") {
-        // At "barking" the dog is keyed up; teach the one lever the player
-        // has — distance. The coil (crouch) telegraphs every charge, and
-        // stepping back during it makes the dog break off.
+        // Controlled barking exposure: distance + soft gaze are the levers.
+        // No charge — stepping back and looking away visibly settle the dog.
         if (hands) hands.clearReachTarget();
-        return { gesture: "rest", hint: dist < 3.5
-          ? `${dogName} is worked up. When it crouches low — that's the warning. Stepping back makes it break off.`
-          : "" };
+        return { gesture: "rest", hint: dist < 4.0
+          ? `${dogName} is barking. Soften your gaze and step back slowly — it settles when you give space.`
+          : `Watch from here. Soften your gaze. Step closer only when you're ready.` };
       }
-      // Within reach, drive the ACTUAL right hand onto the dog's upper back /
-      // head so petting is a real touch that tracks the dog as it moves — and
-      // strokes slowly along the spine while you're actively petting. Replaces
-      // the old fixed mid-air "pet" wave.
-      if (hands && dist < 2.2 && dog.userData.ready) {
+      // Within reach, drive the ACTUAL right hand onto a live bone on the dog
+      // (Back / Torso / Head) so petting tracks the posed body — not a fixed
+      // height guess that drifts off the coat when the dog sits, coils, or
+      // leans into the stroke.
+      if (hands && surf <= PET_CONTACT_SURFACE && dog.userData.ready) {
         const parts = dog.userData.parts;
         const dogH = (parts && parts.height) || 0.6;
+        const dx = controls.position.x - dog.position.x;
+        const dz = controls.position.z - dog.position.z;
         const inv = 1 / (dist || 1);
         const tpx = dx * inv, tpz = dz * inv;          // unit vector dog → player
-        // Land on the near-side neck/head — the closest part, which the dog
-        // raises toward you when you're close — then stroke back over the
-        // withers while you're actively petting.
-        const stroke = petPulse > 0.05 ? Math.sin((t || 0) * 3) * dogH * 0.12 * petPulse : 0;
-        const nearNudge = dogH * 0.42 - stroke;       // +stroke pulls back over the back
-        _petPt.set(
-          dog.position.x + tpx * nearNudge,
-          dog.position.y + dogH * (0.74 - petPulse * 0.05),
-          dog.position.z + tpz * nearNudge
-        );
+        // Resolve a contact bone once (Back = withers; fall back along the spine).
+        if (parts._petBone === undefined && parts.model) {
+          parts._petBone = null;
+          const prefer = ["Back", "Torso2", "Torso", "Head"];
+          const found = {};
+          parts.model.traverse(o => {
+            if (o.isBone && prefer.includes(o.name)) found[o.name] = o;
+          });
+          for (const n of prefer) { if (found[n]) { parts._petBone = found[n]; break; } }
+        }
+        const bone = parts._petBone;
+        if (bone) {
+          bone.getWorldPosition(_petPt);
+          // Stroke along the spine while actively petting: nudge toward the
+          // player (neck) then back over the withers.
+          const stroke = petPulse > 0.05 ? Math.sin((t || 0) * 3) * dogH * 0.10 * petPulse : 0;
+          _petPt.x += tpx * (dogH * 0.08 - stroke);
+          _petPt.y += dogH * 0.04;   // land on the coat, not inside the mesh
+          _petPt.z += tpz * (dogH * 0.08 - stroke);
+        } else {
+          const stroke = petPulse > 0.05 ? Math.sin((t || 0) * 3) * dogH * 0.12 * petPulse : 0;
+          const nearNudge = dogH * 0.42 - stroke;
+          _petPt.set(
+            dog.position.x + tpx * nearNudge,
+            dog.position.y + dogH * (0.74 - petPulse * 0.05),
+            dog.position.z + tpz * nearNudge
+          );
+        }
         _petN.set(tpx * 0.4, 1, tpz * 0.4).normalize();
-        hands.setReachTarget(_petPt, { hand: "right", grip: "flat", normal: _petN, maxReach: 0.92 });
+        // During the first-contact sniff, aim the hand as a closed fist at
+        // muzzle height so the dog can investigate before a full pet.
+        if (sniffGreetT > 0 && !dogPlayerState.petted) {
+          const muzzleY = dog.position.y + dogH * 0.62;
+          _petPt.y = muzzleY;
+          _petPt.x = dog.position.x + tpx * dogH * 0.55;
+          _petPt.z = dog.position.z + tpz * dogH * 0.55;
+          hands.setReachTarget(_petPt, { hand: "right", grip: "wrap", curl: 1.1, normal: _petN, maxReach: 0.92 });
+        } else {
+          hands.setReachTarget(_petPt, { hand: "right", grip: "flat", normal: _petN, maxReach: 0.92 });
+        }
       } else if (hands) {
         hands.clearReachTarget();
       }
@@ -20767,10 +21111,13 @@ function setupDogs(scene, camera, level, levelIdx) {
       // makes sense.
       // (No `target` here: this scene has its own goal ring around the dog —
       // a second mount-level reach ring on top read as visual noise.)
-      if (dist < 1.4) {
+      if (sniffGreetT > 0 && !dogPlayerState.petted) {
+        return { gesture: "touch", hint: `Offer a closed fist — let ${dogName} sniff first` };
+      }
+      if (surf < PET_CONTACT_SURFACE) {
         return { gesture: "pet", hint: `${dogName} is right with you · click to pet` };
       }
-      if (dist < 2.5) {
+      if (surf < PET_INVITE_SURFACE) {
         return { gesture: "pet", hint: `walk a little closer to pet ${dogName}` };
       }
       if (dist < 4.0) {
@@ -20795,6 +21142,20 @@ function setupDogs(scene, camera, level, levelIdx) {
       // computed against it were visibly wrong (dog staring past you).
       dogCtrl.playerPos = controls ? controls.position : null;
       dogCtrl.update(t, d);
+
+      // Complete an invited pet only after the dog has actually reached the
+      // avatar. If either participant moves away, the request expires instead
+      // of producing a delayed, disembodied reward.
+      if (petRequestT > 0) {
+        petRequestT = Math.max(0, petRequestT - d);
+        const pp = controls && controls.position;
+        const inviteSurf = playerDogSurfaceDist(pp);
+        if (inviteSurf <= PET_CONTACT_SURFACE && dogCtrl.mood !== "aggressive") {
+          completePet();
+        } else if (inviteSurf > PET_INVITE_SURFACE + 0.8) {
+          petRequestT = 0;
+        }
+      }
 
       // ---- Carried item rides the real mouth ----
       // The mouth anchor is a static Group child placed once from the bind
@@ -20824,15 +21185,20 @@ function setupDogs(scene, camera, level, levelIdx) {
 
       // ---- Attention (gaze) priorities ----
       // The head tracks what a real dog would watch, fast, while the body
-      // turns slowly underneath. Priority: thrown ball > perched bird (brief
-      // glances) > the player when close. The lunge machine overrides all of
-      // these with a hard stare (it calls lookAt3 later in this frame).
+      // turns slowly underneath. Priority: thrown ball > first-contact sniff
+      // (hand) > perched bird (brief glances) > the player when close. The
+      // lunge machine overrides all of these with a hard stare (it calls
+      // lookAt3 later in this frame).
       {
         const cpos = (controls && controls.position) || camera.position;
         const pdx = cpos.x - dog.position.x, pdz = cpos.z - dog.position.z;
         const pdist = Math.hypot(pdx, pdz);
-        if (item && item.mesh && (item.state === "flying" || fetchPhase === "seeking")) {
+        if (item && item.mesh && (item.state === "flying" || fetchPhase === "toItem" || fetchPhase === "carrying")) {
           dogCtrl.lookAt3(item.mesh.position, 1);
+        } else if (sniffGreetT > 0 && !dogPlayerState.petted) {
+          // Investigate the offered fist (therapy tip) before full petting.
+          const handY = cpos.y - 0.55;
+          dogCtrl.lookAt3({ x: cpos.x, y: handY, z: cpos.z }, 0.95);
         } else if (dogCtrl._birdGaze && dogCtrl._birdGaze > 0 && bird.visible) {
           dogCtrl.lookAt3(bird.position, 0.9);
         } else if (pdist < 5.5 && dogCtrl.state !== "eat" && dogCtrl.headPitch < 0.3) {
@@ -20910,14 +21276,19 @@ function setupDogs(scene, camera, level, levelIdx) {
         dogPantTimer = (calm ? 1.1 + Math.random() * 0.9 : 0.5 + Math.random() * 0.4) / (1 + dogExertion * 1.5);
       }
 
-      // Keep the player from walking through the props or the dog. Rebuilt each
-      // frame so the dog (a moving obstacle) is always current.
+      // Keep the player from walking through the dog + key props. Furniture
+      // boxes from mount handle mesh AABBs; these circles cover the same
+      // props the dog navigates so player/dog agree on bed/table footprints.
       if (controls && controls.setObstacles) {
         controls.setObstacles([
           ...dogObstacles,
-          // A touch wider than the collision radius so the elongated body /
-          // snout never visually clips the player when the dog turns broadside.
-          { x: dog.position.x, z: dog.position.z, r: dogCtrl.radius + 0.12 },
+          {
+            x: dog.position.x,
+            z: dog.position.z,
+            r: dogCtrl.radius + 0.12,
+            pushX: Math.sin(dog.rotation.y),
+            pushZ: Math.cos(dog.rotation.y),
+          },
         ]);
       }
 
@@ -20951,9 +21322,8 @@ function setupDogs(scene, camera, level, levelIdx) {
           || (intensity === "barking" && gazeAlign > 0.35);
         window.PhobiaFear._duration = Math.max(0, Math.min(24,
           (window.PhobiaFear._duration || 0) + (engaged ? d : -d * 0.35)));
-        // The arousal floor keeps credit honest BETWEEN charges: after a
-        // snap your body doesn't return to baseline while the dog trots
-        // back — ~12 s tail, refreshed by the lunge machine.
+        // The arousal floor keeps credit honest BETWEEN warning bursts: after a
+        // bark your body doesn't return to baseline instantly — ~12 s tail.
         arousalFloor = Math.max(0, arousalFloor - d / 12);
         window.PhobiaFear.setInput("duration", Math.max(window.PhobiaFear._duration / 24, arousalFloor));
         // Avoidance: stepping back after engaging
@@ -20961,8 +21331,8 @@ function setupDogs(scene, camera, level, levelIdx) {
         window.PhobiaFear.bumpAvoidance(d, isAway && dogPlayerState.dogNoticedYou);
         // Adaptive narration tick — the threat flag routes high-fear support
         // to the honest "threatened" bucket whenever the dog is actively
-        // menacing (whole barking rung + any aggressive posture), so the
-        // guide can never say "the dog is calm" over a lunge.
+        // barking/warning, so the guide can never say "the dog is calm"
+        // over a loud bark.
         if (window.PhobiaNarrator) {
           window.PhobiaNarrator.tick("dogs", {
             minGap: 32,
@@ -21038,8 +21408,7 @@ function setupDogs(scene, camera, level, levelIdx) {
           // turns to face the player — EXCEPT on the lying-start rung, where
           // the escalation arc owns posture (this would pop it to standing).
           if (B.startPose !== "lay") {
-            if (dogCtrl.followTarget) dogCtrl.followTarget = null;
-            dogCtrl.setState("idle");
+            dogCtrl.stopMove();
             // Noticing the player outranks the load-in sniff trip.
             dogCtrl._initialSniff = false;
           }
@@ -21052,19 +21421,65 @@ function setupDogs(scene, camera, level, levelIdx) {
             );
           }
         }
-        // 2. Close approach (within 1.6 m for the first time)
-        if (playerDist < 1.6 && !dogPlayerState.closeApproach) {
+        // 2. Close approach — surface reach for sniff-first greeting. Matches
+        // the cynophobia tip: let the dog investigate your hand first.
+        if (playerDogSurfaceDist(controls.position) < PET_INVITE_SURFACE && !dogPlayerState.closeApproach) {
           dogPlayerState.closeApproach = true;
-          if (window.PhobiaFX && window.PhobiaFX.contextPrompt) {
+          if (!dogPlayerState.sniffGreeted && intensity !== "barking") {
+            dogPlayerState.sniffGreeted = true;
+            sniffGreetT = 2.8;
+            // Soft approach to sniff range if still a step away
+            const surf = playerDogSurfaceDist(controls.position);
+            if (surf > PET_CONTACT_SURFACE && dogCtrl.mood !== "aggressive") {
+              const pr = dogCtrl.playerRadius || 0.30;
+              const stopAt = PET_CONTACT_SURFACE * 0.9 + pr + (dogCtrl.radius || 0.35);
+              const k = Math.max(0, (playerDist - stopAt) / (playerDist || 1));
+              dogCtrl.walkTo(dog.position.x + dx * k, dog.position.z + dz * k);
+            }
+            if (window.PhobiaFX && window.PhobiaFX.contextPrompt) {
+              window.PhobiaFX.contextPrompt(
+                `Offer a closed fist. Let ${dogName} sniff before you pet.`,
+                4500
+              );
+            }
+            if (window.PhobiaVoice) {
+              window.PhobiaVoice.speak("Offer a closed fist. Let the dog sniff first.");
+            }
+          } else if (window.PhobiaFX && window.PhobiaFX.contextPrompt) {
             window.PhobiaFX.contextPrompt(
               `Click ${dogName} to pet.`,
               4000
             );
           }
         }
+        // Drive the sniff-greeting: head-low + soft sniffs (gaze is owned by
+        // the attention block above so it isn't overwritten by player-face).
+        if (sniffGreetT > 0 && !dogPlayerState.petted) {
+          sniffGreetT = Math.max(0, sniffGreetT - d);
+          dogCtrl.headPitch = 0.45 + Math.sin(t * 6) * 0.06;
+          if (!dogCtrl._lastSniffAt || t - dogCtrl._lastSniffAt > 0.7) {
+            if (window.PhobiaAudio && window.PhobiaAudio.dogSniff) {
+              try {
+                window.PhobiaAudio.dogSniff(0.5, {
+                  x: dog.position.x,
+                  y: dog.position.y + dogHeight * 0.55,
+                  z: dog.position.z,
+                });
+              } catch {}
+            }
+            dogCtrl._lastSniffAt = t;
+          }
+          if (sniffGreetT <= 0 && window.PhobiaFX && window.PhobiaFX.contextPrompt) {
+            window.PhobiaFX.contextPrompt(
+              `Good. Now click ${dogName} to pet.`,
+              3500
+            );
+          }
+        }
         // 3. After petting (any pet pulse fired)
         if (petPulse > 0.5 && !dogPlayerState.petted) {
           dogPlayerState.petted = true;
+          sniffGreetT = 0;   // pet ends the greeting early — contact made
           if (window.PhobiaFX && window.PhobiaFX.contextPrompt) {
             window.PhobiaFX.contextPrompt(
               `Good. Notice the warmth in your hand.`,
@@ -21198,13 +21613,15 @@ function setupDogs(scene, camera, level, levelIdx) {
       if (!dogCtrl._nextDrinkAt) dogCtrl._nextDrinkAt = t + 30 + Math.random() * 30;
       if (t > dogCtrl._nextDrinkAt && dogCtrl.state === "idle"
           && intensity !== "barking" && fetchPhase === "idle"
-          && !dogCtrl._drinkingState) {
+          && !dogCtrl._drinkingState
+          && !(dogCtrl._moveLockT > 0)) {
         dogCtrl._drinkingState = "approach";
         dogCtrl._drinkPrevState = dogCtrl.state;
         dogCtrl._drinkApproachUntil = t + 12;             // abort if it never arrives
         dogCtrl._drinkFollowSaved = dogCtrl.followPlayer;  // don't let follow drag it off
         dogCtrl.followPlayer = false;
-        dogCtrl.walkTo(2.0, -1.3);    // bowl position
+        dogCtrl._moveLockT = 14;
+        dogCtrl.walkTo(2.0, -1.3, { force: true });    // bowl position
       }
       // Abort the drink cleanly if the approach was interrupted (a pet/call
       // re-routed the dog, or it stalled) — otherwise _drinkingState sticks on
@@ -21214,6 +21631,7 @@ function setupDogs(scene, camera, level, levelIdx) {
               || t > (dogCtrl._drinkApproachUntil || 0))) {
         dogCtrl._drinkingState = null;
         dogCtrl._nextDrinkAt = t + 30 + Math.random() * 30;
+        dogCtrl._moveLockT = 0;
         if (dogCtrl._drinkFollowSaved != null) { dogCtrl.followPlayer = dogCtrl._drinkFollowSaved; dogCtrl._drinkFollowSaved = null; }
       }
       if (dogCtrl._drinkingState === "approach"
@@ -21242,6 +21660,7 @@ function setupDogs(scene, camera, level, levelIdx) {
         if (t > dogCtrl._drinkUntil) {
           dogCtrl._drinkingState = null;
           dogCtrl._nextDrinkAt = t + 60 + Math.random() * 60;
+          dogCtrl._moveLockT = 0;
           if (dogCtrl._drinkFollowSaved != null) { dogCtrl.followPlayer = dogCtrl._drinkFollowSaved; dogCtrl._drinkFollowSaved = null; }
           if (dogCtrl._lapHandle) {
             try { dogCtrl._lapHandle.stop(); } catch {}
@@ -21288,11 +21707,13 @@ function setupDogs(scene, camera, level, levelIdx) {
         const dist = Math.hypot(dx, dz);
         // Only approach if the dog is actually meaningfully far away
         if (dist > 1.6) {
-          // Walk to a comfortable conversation distance, scaled by trust:
-          // higher trust = the dog comes closer (down to 0.6 m at trust=1.0)
-          const targetDist = 1.4 - trust * 0.8;
-          const k = (dist - targetDist) / dist;
-          dogCtrl.walkTo(dog.position.x + dx * k, dog.position.z + dz * k);
+          // Comfortable conversation distance, scaled by trust — but never
+          // inside the body shells (old 0.6 m at trust=1 shoved into the player).
+          const targetDist = Math.max(playerStandOffCenter(0.45), 1.4 - trust * 0.5);
+          const k = Math.max(0, (dist - targetDist) / dist);
+          dogCtrl._moveLockT = 8;
+          dogCtrl.walkTo(dog.position.x + dx * k, dog.position.z + dz * k, { force: true });
+          wanderSuppressUntil = t + 10;   // don't home-zone yank mid-greeting
           if (window.PhobiaVoice && Math.random() < 0.3) {
             window.PhobiaVoice.speak("The dog is coming over to you.");
           }
@@ -21318,25 +21739,31 @@ function setupDogs(scene, camera, level, levelIdx) {
       if (trust > 0.2 && intensity !== "barking"
           && dogCtrl.state === "idle"
           && fetchPhase === "idle"
-          && t > nextWander) {
+          && t > nextWander
+          && t > wanderSuppressUntil
+          && !(dogCtrl._moveLockT > 0)
+          && !dogCtrl._drinkingState) {
         // Home-zone rungs putter near their spawn spot — "busy with its own
         // thing" stays true for the whole hold instead of the dog roaming
         // toward the player. Free rungs pick anywhere across the room.
-        let targetX, targetZ;
+        // Always resolve through colliders so wander never aims inside the bed.
+        let rawX, rawZ;
         if (B.homeRadius) {
           const wa = Math.random() * Math.PI * 2, wr = Math.random() * B.homeRadius;
-          targetX = homeAnchor.x + Math.cos(wa) * wr;
-          targetZ = homeAnchor.z + Math.sin(wa) * wr;
+          rawX = homeAnchor.x + Math.cos(wa) * wr;
+          rawZ = homeAnchor.z + Math.sin(wa) * wr;
         } else {
-          targetX = (Math.random() - 0.5) * 4.0;
-          targetZ = -2 - Math.random() * 4;
+          rawX = (Math.random() - 0.5) * 4.0;
+          rawZ = -2 - Math.random() * 4;
         }
+        const settled = dogCtrl._resolve(rawX, rawZ);
         // 40% chance the dog sniffs at the target instead of just standing
         if (Math.random() < 0.4) {
           sniffActive = true;
           sniffEndsAt = t + 2.5 + Math.random() * 2.0;
         }
-        dogCtrl.walkTo(targetX, targetZ);
+        dogCtrl._moveLockT = 4;
+        dogCtrl.walkTo(settled.x, settled.z, { force: true });
         nextWander = t + 12 + Math.random() * 13;
       }
       // Drive sniff: while active, force the head pitch DOWN as if sniffing
@@ -21432,20 +21859,35 @@ function setupDogs(scene, camera, level, levelIdx) {
             item.vel.set(0, 0, 0);
             fetchPhase = "toItem";
             fetchToItemT = 0;
-            dogCtrl.walkTo(m.position.x, m.position.z);
+            dogCtrl._moveLockT = 20;
+            // The chase is the joy of fetch — sprint to the ball when it's a
+            // real run, trot when it landed nearby.
+            const chaseDist = Math.hypot(m.position.x - dog.position.x, m.position.z - dog.position.z);
+            if (chaseDist > 2.2) dogCtrl.gallopTo(m.position.x, m.position.z);
+            else dogCtrl.walkTo(m.position.x, m.position.z, { force: true });
           }
         }
       }
       if (fetchPhase === "toItem" && item && item.mesh.parent === scene) {
-        // Stall guard: a ball that settles on a prop (dog bed / table) is pushed
-        // out of the dog's reach by the walk resolver, so the dog arrives ~1.4 m
-        // short and idles forever. If it can't close within a few seconds, nose
-        // the ball to the dog's feet so the pickup completes instead of jamming.
+        // Stall guard: if the ball settled on/near a prop the dog can't reach,
+        // nudge it along the floor toward the dog instead of teleporting —
+        // keeps fetch believable while still unblocking soft-locks.
         fetchToItemT += d;
-        if ((fetchToItemT > 3.0 || (dogCtrl.state === "idle" && fetchToItemT > 1.2))
-            && Math.hypot(dog.position.x - item.mesh.position.x, dog.position.z - item.mesh.position.z) >= 0.5) {
-          item.mesh.position.x = dog.position.x;
-          item.mesh.position.z = dog.position.z;
+        const itemDx = dog.position.x - item.mesh.position.x;
+        const itemDz = dog.position.z - item.mesh.position.z;
+        const itemDist = Math.hypot(itemDx, itemDz);
+        if ((fetchToItemT > 2.4 || (dogCtrl.state === "idle" && fetchToItemT > 1.0))
+            && itemDist >= 0.5) {
+          const nudge = Math.min(0.55, itemDist * 0.35);
+          const nx = item.mesh.position.x + (itemDx / (itemDist || 1)) * nudge;
+          const nz = item.mesh.position.z + (itemDz / (itemDist || 1)) * nudge;
+          // Furniture/bounds only — including the player capsule made the ball
+          // jump around the avatar when the dog was blocked nearby.
+          const resolved = dogCtrl._resolve(nx, nz, { ignorePlayer: true });
+          item.mesh.position.x = resolved.x;
+          item.mesh.position.z = resolved.z;
+          dogCtrl.walkTo(resolved.x, resolved.z, { force: true });
+          fetchToItemT = 0.4;   // allow another nudge cycle if still blocked
         }
         const dx = dog.position.x - item.mesh.position.x;
         const dz = dog.position.z - item.mesh.position.z;
@@ -21461,12 +21903,14 @@ function setupDogs(scene, camera, level, levelIdx) {
           item.mesh.rotation.set(0, 0, 0);   // settle level in the mouth — no frozen mid-tumble pose
           item.mesh.scale.setScalar(k);
           fetchPhase = "carrying";
+          dogCtrl._moveLockT = 20;
           dogTimers.push(setTimeout(() => {
             if (fetchPhase !== "carrying" || dog.userData.disposed) return;
             const pp = (storedActiveControls && storedActiveControls.position) || camera.position;
             returnTgt.x = pp.x; returnTgt.z = pp.z;
             returnT = 0;
-            dogCtrl.walkTo(pp.x, pp.z + 0.6);
+            walkToPlayer(0.55);
+            dogCtrl._moveLockT = 20;
             fetchPhase = "returning";
             // A large animal running straight at you is fear-relevant even
             // when it's a game — fetch stops pausing progression.
@@ -21480,13 +21924,12 @@ function setupDogs(scene, camera, level, levelIdx) {
         const dz = dog.position.z - pp.z;
         const distToPlayer = Math.hypot(dx, dz);
         returnT += d;
-        // Deliver = drop at the player's feet. Give-up = the player is
-        // unreachable (walked off / wedged behind furniture for >8 s): drop
-        // where the dog stands so the session never jams with the ball in
-        // its mouth (drinking / wandering / honest credit are all gated on
-        // fetchPhase returning to "idle").
+        // Deliver threshold MUST match walkToPlayer's center stand-off —
+        // the old raw 1.4 m check was inside the ~1.7 m stop distance, so
+        // the dog arrived, idled, re-issued walk forever, then gave up at 8 s.
+        const deliverDist = playerStandOffCenter(0.55) + 0.20;
         const giveUp = returnT > 8;
-        if (distToPlayer < 1.4 || giveUp) {
+        if (distToPlayer < deliverDist || giveUp) {
           const world = new THREE.Vector3();
           dog.userData.parts.jaw.getWorldPosition(world);
           dog.userData.parts.jaw.remove(item.mesh);
@@ -21494,6 +21937,7 @@ function setupDogs(scene, camera, level, levelIdx) {
           item.mesh.scale.setScalar(1);
           item.mesh.position.set(world.x, item.kind === "ball" ? -0.90 : -0.94, world.z + 0.2);
           fetchPhase = "dropped";
+          dogCtrl._moveLockT = 0;
           dogCtrl.sit();
           // If it was a treat, the dog "eats" it (mesh disappears)
           if (item.kind === "treat") {
@@ -21520,13 +21964,13 @@ function setupDogs(scene, camera, level, levelIdx) {
             }, 4000));
           }
         } else if (Math.hypot(pp.x - returnTgt.x, pp.z - returnTgt.z) > 0.6
-            || (dogCtrl.state === "idle" && distToPlayer > 1.4)) {
+            || (dogCtrl.state === "idle" && distToPlayer > deliverDist)) {
           // The return leg tracks the player LIVE: re-aim whenever they've
           // moved off the captured target (or the dog arrived at a stale spot
           // and idled). The old one-shot target left the dog frozen mid-room
           // holding the ball whenever the player kept walking.
           returnTgt.x = pp.x; returnTgt.z = pp.z;
-          dogCtrl.walkTo(pp.x, pp.z + 0.6);
+          walkToPlayer(0.55);
         }
       }
 
@@ -21543,7 +21987,6 @@ function setupDogs(scene, camera, level, levelIdx) {
       // the fear ramp inverted with playtime. Kept only for calm/alert
       // ambience, capped, with a separate hard-capped patience stretch.
       const trustQuiet  = 1 - Math.min(0.25, trust * 0.25);   // ≥0.75, ambient only
-      const trustPatience = 1 + Math.min(0.30, trust * 0.30); // charge-gap stretch, cap +30%
       // Bark from the dog's actual world position (HRTF panning) with a
       // directional cone matching the dog's facing direction — so a bark
       // from a dog turned away from you sounds muffled, and a bark with
@@ -21556,260 +21999,247 @@ function setupDogs(scene, camera, level, levelIdx) {
       // ---- Diegetic completion beat ----
       // When the hold completes, the WORLD acknowledges it before the UI
       // does: the calm dog settles into a sit beside you; the barking dog
-      // breaks off, returns to its corner, and doesn't charge again. This is
-      // the disconfirming evidence, staged.
+      // softens, returns to its corner, and stops warning. This is the
+      // disconfirming evidence, staged.
       if (window.__rungHoldComplete && !completionBeatDone) {
         if (intensity !== "barking") {
           completionBeatDone = true; _completedCalm = true;
           dogTimers.push(setTimeout(() => {
             try { if (dogCtrl.state !== "walking") dogCtrl.sit(); } catch {}
           }, 500));
-        } else if (lungeState === "stalking" || lungeState === "recoiling") {
+        } else if (barkState === "watching" || barkState === "settling") {
           completionBeatDone = true; _completedCalm = true;
-          nextCharge = Infinity; stalkWoofT = Infinity;
-          dogCtrl.walkTo(lungeAnchor.x, lungeAnchor.z);
-          if (window.PhobiaFX?.contextPrompt) window.PhobiaFX.contextPrompt("It backed off. You outlasted it.", 4500);
+          barkState = "settling"; barkStateT = 0;
+          nextBarkAt = Infinity;
+          dogCtrl.aggression = 0.15;
+          dogCtrl.coil = 0;
+          dogCtrl.walkTo(barkAnchor.x, barkAnchor.z, { force: true });
+          dogCtrl._moveLockT = 4;
+          dogTimers.push(setTimeout(() => {
+            try { if (dogCtrl.state !== "walking") dogCtrl.sit(); } catch {}
+          }, 900));
+          if (window.PhobiaFX?.contextPrompt) {
+            window.PhobiaFX.contextPrompt("It settled. You chose the distance — and stayed with it.", 4500);
+          }
         }
       }
 
-      // ---- Fear-curve: stalk → CHARGE → SNAP → recoil (barking rung) ----
+      // ---- Controlled barking: watching → warning → settling (rung 5) ----
       if (intensity === "barking" && dog.userData.ready) {
-        lungeT += d;
-        // Body-language intensity, read by DogController._bodyLife to pin the
-        // ears back, lower + thrust the neck, raise the hackles and tense up —
-        // so a "barking" dog finally LOOKS threatening, not neutral.
-        dogCtrl.aggression = completionBeatDone ? 0.25
-          : lungeState === "snapping" ? 1.0
-          : lungeState === "coiling"  ? 0.9
-          : lungeState === "charging" ? 0.85
-          : lungeState === "stalking" ? 0.55
-          : 0.3 * (1 - 0.5 * trust);
-        // The dog charges the PLAYER'S body. In third person the camera
-        // floats ~4 m behind the avatar — measuring from it made every charge
-        // aim past the player and the coil-cancel band read the wrong
-        // distance. (camera.position === controls.position in first person.)
+        barkStateT += d;
         const ppl = (controls && controls.position) || camera.position;
         const dxp = ppl.x - dog.position.x;
         const dzp = ppl.z - dog.position.z;
         const distP = Math.hypot(dxp, dzp) || 0.0001;
-        // Threat gaze: from coiling on, the dog holds an unblinking stare at
-        // the player's face (this overrides the softer gaze set earlier in
-        // the frame — last lookAt3 call wins).
-        if (lungeState !== "stalking") {
-          dogCtrl.lookAt3({ x: ppl.x, y: ppl.y, z: ppl.z }, 1);
+        // Hard stare intensifies warning; soft gaze / looking away settles it.
+        const dirToDog = Math.atan2(dxp, dzp);
+        const yawDelta = controls
+          ? Math.abs((controls.yaw - dirToDog + Math.PI * 3) % (Math.PI * 2) - Math.PI)
+          : Math.PI;
+        const gazeAlign = Math.max(0, 1 - yawDelta / 1.0);
+        lastGazeAlign = gazeAlign;
+        const closePressure = Math.max(0, Math.min(1, (PERSONAL_SPACE + 1.6 - distP) / 2.4));
+        // A hard stare only pressures the dog when you're actually NEAR it —
+        // staring from across the room is just watching, which the rung's own
+        // intro invites ("watch from here"). Without this range falloff the
+        // spawn-point gaze alone tripped the warning state at 8 m.
+        const gazeRange = Math.max(0, Math.min(1, (PERSONAL_SPACE + 3.0 - distP) / 3.0));
+        const starePressure = gazeAlign * 0.55 * gazeRange + closePressure * 0.45;
+        const homeR = B.homeRadius || 1.1;
+        // Hysteresis: yield below PERSONAL_SPACE, resume pacing only above
+        // PERSONAL_SPACE + 0.45 — kills boundary flicker at ~3.0 m.
+        const YIELD_IN = PERSONAL_SPACE;
+        const YIELD_OUT = PERSONAL_SPACE + 0.45;
+        const needYield = distP < YIELD_IN && barkState !== "settling";
+        const canPace = distP >= YIELD_OUT;
+
+        // Ideal yield point: PERSONAL_SPACE away from the player, on the dog's
+        // side of the line. Prefer the home disc, but leave it if every point
+        // inside is still too close (player standing on the anchor).
+        if (needYield) {
+          dogCtrl._moveLockT = Math.max(dogCtrl._moveLockT || 0, 0.5);
+          const push = PERSONAL_SPACE + 0.20;
+          // Straight back first; when the room bounds corner the dog (the
+          // resolved point barely moves and gains no distance), escape at an
+          // ANGLE around the player instead — a real cornered dog slips
+          // sideways, it doesn't freeze against the wall.
+          const awayAng = Math.atan2(-dxp, -dzp);   // direction player → dog
+          let best = null, bestGain = 0.12;
+          for (const off of [0, 0.7, -0.7, 1.3, -1.3]) {
+            const r = dogCtrl._resolve(
+              ppl.x + Math.sin(awayAng + off) * push,
+              ppl.z + Math.cos(awayAng + off) * push
+            );
+            const gain = Math.hypot(r.x - ppl.x, r.z - ppl.z) - distP;
+            const moveDist = Math.hypot(r.x - dog.position.x, r.z - dog.position.z);
+            if (moveDist > 0.28 && gain > bestGain) { best = r; bestGain = gain; break; }
+          }
+          if (best) {
+            dogCtrl.walkTo(best.x, best.z); // idempotent if same target
+          } else if (dogCtrl.state === "walking" || dogCtrl.state === "galloping") {
+            // Fully cornered — hold ground (the warning posture covers it).
+            dogCtrl.stopMove();
+          }
         }
 
-        if (lungeState === "stalking") {
+        dogCtrl.lookAt3({ x: ppl.x, y: ppl.y, z: ppl.z },
+          barkState === "settling" ? 0.35 : 0.75 + 0.25 * starePressure);
+        dogCtrl.walkSpeed = baseWalkSpeed;
+        dogCtrl.coil = barkState === "warning" ? 0.35 + 0.25 * starePressure : 0;
+
+        if (completionBeatDone) {
+          barkState = "settling";
+          dogCtrl.aggression = 0.12;
           dogCtrl.coil = 0;
-          dogCtrl.walkSpeed = baseWalkSpeed;
-          // Pace tensely a step either side of its spot, locked onto you.
-          if (t > stalkTargetT && dogCtrl.state !== "walking") {
-            stalkTargetT = t + 1.4 + Math.random() * 1.6;
-            const side = (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.5);
-            dogCtrl.walkTo(lungeAnchor.x + side, lungeAnchor.z);
-          }
-          // Occasional low warning woof (a low-intensity bark is a throaty
-          // growl). Softens slightly as the player weathers charges — the
-          // within-rung habituation you can HEAR.
-          if (t > stalkWoofT) {
-            stalkWoofT = t + 1.6 + Math.random() * 2.0;
-            const wI = 0.3 * trustQuiet * (1 - Math.min(0.3, heldCycles * 0.1));
-            const A = window.PhobiaAudio;
-            if (A && A.dogVocal) A.dogVocal("woof", wI, dogPos, Object.assign({ f0: dogF0, air: true, reverb: 0.22 }, barkOpts));
-            else if (A) A.bark(wI, dogPos, barkOpts);
-            dogExertion = Math.min(1, dogExertion + 0.25);
-          }
-          // If the player avoids the whole encounter by staying at the door,
-          // the dog advances its ground twice — the confrontation comes to
-          // you, slowly, with the telegraphed coil still giving you agency.
-          if (t > nextCharge + 12 && anchorAdvances < 2 && distP > 6.2) {
-            anchorAdvances++;
-            lungeAnchor.z = Math.min(lungeAnchor.z + 1.4, 0);
-            dogCtrl.walkTo(lungeAnchor.x, lungeAnchor.z);
-          }
-          // COIL instead of instantly charging: the pre-pounce telegraph is
-          // the player's decision window, and the fear ramp's best moment.
-          if (t > nextCharge && distP < 6.2 && distP > SNAP_DIST * 0.9) {
-            lungeState = "coiling"; lungeT = 0;
-            coilStartDist = distP;
-            coilDur = 0.9 + Math.random() * 0.5;
-            dogCtrl.coil = 1;
-            dogCtrl.followTarget = null;               // freeze mid-pace
-            if (dogCtrl.state === "walking") dogCtrl.setState("idle");
-            // Rising growl through the coil — the charge no longer arrives
-            // out of silence, it announces itself. (dogVocal prefers the
-            // recorded snarl, falling back to the rebuilt formant growl.)
-            if (window.PhobiaAudio && window.PhobiaAudio.dogVocal) {
-              window.PhobiaAudio.dogVocal("growl", 0.85, dogPos, { dur: coilDur + 0.3, reverb: 0.2 });
-            } else if (window.PhobiaAudio && window.PhobiaAudio.growl) {
-              window.PhobiaAudio.growl(0.85, dogPos, coilDur + 0.3);
-            }
-          } else if (t > nextCharge && distP <= SNAP_DIST * 0.9) {
-            // Player is already inside snap range — no run-up needed.
-            lungeState = "snapping"; lungeT = 0; snapFired = false;
-            heldGroundDist = distP;
-          }
-        }
-
-        else if (lungeState === "coiling") {
-          dogCtrl.coil = 1;
-          // RETREAT CANCELS THE CHARGE. Backing away (any direction that
-          // opens distance) during the telegraph makes the dog break off —
-          // real, learnable agency: you control the encounter with your feet.
-          if (distP > coilStartDist + 0.55 || distP > 7.0) {
-            lungeState = "stalking"; lungeT = 0;
-            dogCtrl.coil = 0;
+        } else if (barkState === "watching") {
+          dogCtrl.aggression = 0.40 + 0.25 * starePressure;
+          // Ambient warning barks: the rung's premise IS "a large dog barking
+          // across the room", so the watching dog barks on its own habituating
+          // schedule even with zero stare pressure — that sound at a SAFE
+          // distance is the exposure stimulus. Pressure still escalates to the
+          // warning state below; these ambient bursts are quieter and sparser,
+          // and space out as the user weathers more of them.
+          if (t > nextBarkAt) {
             dogCtrl.barkSmall();
-            if (window.PhobiaAudio && window.PhobiaAudio.dogVocal) {
-              window.PhobiaAudio.dogVocal("woof", 0.5, dogPos, Object.assign({ f0: dogF0, air: true, reverb: 0.22 }, barkOpts));
-            } else if (window.PhobiaAudio) {
-              window.PhobiaAudio.bark(0.5, dogPos, barkOpts);
-            }
-            nextCharge = t + 4 + Math.random() * 3;
-            stalkTargetT = t + 1.2;
-            chargeCanceled = true;
-            if (!retreatPraised && window.PhobiaVoice) {
-              retreatPraised = true;
-              window.PhobiaVoice.speak("You stepped back, and it broke off. You are in control of this distance.");
-            }
-          } else if (lungeT > coilDur) {
-            // Commit: spring out of the coil into a real gallop.
-            lungeState = "charging"; lungeT = 0; snapFired = false;
-            heldGroundDist = distP;
-            dogCtrl.coil = 0;
-            dogCtrl.walkSpeed = baseWalkSpeed * 3.1;       // gallop, not fast-walk
-            dogExertion = Math.min(1, dogExertion + 0.5);
-            arousalFloor = Math.max(arousalFloor, 0.5);    // body stays keyed up
-          }
-        }
-
-        else if (lungeState === "charging") {
-          dogCtrl.walkSpeed = baseWalkSpeed * 3.1;
-          // Sustained sprint drives the pant scheduler up — audible galloping
-          // breath during the approach, hard panting after.
-          dogExertion = Math.min(1, dogExertion + d * 0.8);
-          heldGroundDist = Math.min(heldGroundDist, distP);
-          // Snap once the dog is within rear-up range. The trigger band is wide
-          // enough (SNAP_DIST + 0.35) that the controller's arrival-ease — which
-          // stops ~0.2 m short of its goal — still crosses it, so the snap
-          // reliably fires instead of the dog idling just out of range.
-          if (distP > SNAP_DIST + 0.35) {
-            // Home on you, pressing a touch past SNAP_DIST so it ends up at a
-            // believable rear-up distance rather than stalling short. Hard
-            // floor at 1.0 m: whatever the geometry, the nose never reaches
-            // the lens.
-            const aim = Math.max(1.0, SNAP_DIST - 0.2);
-            const tx = ppl.x - (dxp / distP) * aim;
-            const tz = ppl.z - (dzp / distP) * aim;
-            dogCtrl.gallopTo(tx, tz);
-          } else {
-            lungeState = "snapping"; lungeT = 0;
-          }
-          if (lungeT > 2.2) { lungeState = "recoiling"; lungeT = 0; }
-        }
-
-        else if (lungeState === "snapping") {
-          if (!snapFired) {
-            snapFired = true;
-            dogCtrl.bark();                                 // rear-up Attack clip — reserved for THIS moment
-            dogCtrl.rear(1.0);                              // additive head/forequarter rear so the face comes UP at you
-            // The snap is the therapeutic payload — trust never mutes it.
-            // A 2-3 bark burst with micro-timing jitter: real dogs don't
-            // bark exactly once at the apex.
-            if (window.PhobiaAudio && window.PhobiaAudio.dogVocal) {
-              window.PhobiaAudio.dogVocal("bark", 1.0, dogPos, Object.assign({
-                f0: dogF0, count: 2 + (Math.random() < 0.5 ? 1 : 0), gap: 0.14, air: true, reverb: 0.25,
+            if (window.PhobiaAudio?.dogVocal) {
+              window.PhobiaAudio.dogVocal("bark", 0.6, dogPos, Object.assign({
+                f0: dogF0, count: 1 + Math.floor(Math.random() * 2), gap: 0.18, air: true, reverb: 0.25,
               }, barkOpts));
             } else if (window.PhobiaAudio) {
-              window.PhobiaAudio.bark(1.0, dogPos, barkOpts);
+              window.PhobiaAudio.bark(0.6, dogPos, barkOpts);
             }
-            arousalFloor = 1.0;   // ~12 s decay tail keeps credit honest between charges
-            // Apex of the fear curve — a sharp spike, bigger the closer you let
-            // it get (scaled to the new snap distance).
-            const closeness = Math.max(0, Math.min(1, (SNAP_DIST + 0.7 - heldGroundDist) / SNAP_DIST));
-            if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.8 + 0.2 * closeness);
-            // Physical startle: jolt the FP camera and flick the gaze up toward
-            // the snarling head — the involuntary flinch that sells the lunge.
-            if (controls && controls.kickShake) controls.kickShake(0.05 + 0.04 * closeness);
-            if (controls && controls.snapLookAt) {
-              // Aim at the dog's ACTUAL head bone (read live, +0.3 to reach the
-              // top of the skull/jaws) so the gaze flicks straight to the face
-              // instead of a guessed height that lands on the chest.
-              let headWY = dog.position.y + dogHeight * 1.6;
-              try {
-                const parts = dog.userData.parts;
-                if (parts && parts.model) {
-                  parts.model.traverse((o) => {
-                    if (o.isBone && o.name === "Head") { o.getWorldPosition(_petPt); headWY = _petPt.y + 0.30; }
-                  });
-                }
-              } catch {}
-              controls.snapLookAt(dog.position.x, headWY, dog.position.z, 0.85);
+            if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.25);
+            arousalFloor = Math.max(arousalFloor, 0.30);
+            dogExertion = Math.min(1, dogExertion + 0.25);
+            warningBarkCount++;
+            nextBarkAt = t + (3.5 + Math.random() * 3.0) * (1 + Math.min(0.8, warningBarkCount * 0.06));
+          }
+          // Pace tensely inside the home zone — never while yielding, and
+          // only outside the hysteresis band so we don't walk into the player.
+          if (!needYield && canPace && t > paceTargetT && dogCtrl.state !== "walking") {
+            paceTargetT = t + 2.2 + Math.random() * 2.0;
+            // Pace sideways relative to the player, not toward them.
+            const side = (Math.random() < 0.5 ? -1 : 1) * (0.35 + Math.random() * homeR * 0.7);
+            const px = -dzp / distP, pz = dxp / distP;   // perpendicular
+            const rawX = barkAnchor.x + px * side;
+            const rawZ = barkAnchor.z + pz * side;
+            const settled = dogCtrl._resolve(rawX, rawZ);
+            // Reject pace targets that would breach personal space.
+            if (Math.hypot(settled.x - ppl.x, settled.z - ppl.z) >= YIELD_OUT) {
+              dogCtrl._moveLockT = 2.5;
+              dogCtrl.walkTo(settled.x, settled.z, { force: true });
             }
           }
-          // Trust buys RECOVERY, not a quieter dog: a trusted dog disengages
-          // from the snap sooner.
-          if (lungeT > 0.7 - 0.25 * trust) {
-            lungeState = "recoiling"; lungeT = 0;
-            // Sometimes the dog whines as it breaks off — the audible
-            // "it backed down" disconfirming-evidence beat.
-            if (Math.random() < 0.4) {
-              dogTimers.push(setTimeout(() => {
-                try {
-                  window.PhobiaAudio?.dogVocal?.("whine", 0.4,
-                    { x: dog.position.x, y: dog.position.y + 0.5, z: dog.position.z }, { reverb: 0.2 });
-                } catch {}
-              }, 600));
+          // Escalate to warning when close or staring hard.
+          if (starePressure > 0.42 || distP < PERSONAL_SPACE + 0.8) {
+            barkState = "warning"; barkStateT = 0;
+            nextBarkAt = Math.min(nextBarkAt, t + 0.9);   // don't inherit a long ambient gap
+            if (window.PhobiaAudio?.dogVocal) {
+              window.PhobiaAudio.dogVocal("growl", 0.55 + 0.3 * starePressure, dogPos, { dur: 0.9, reverb: 0.18 });
+            } else if (window.PhobiaAudio?.growl) {
+              window.PhobiaAudio.growl(0.55 + 0.3 * starePressure, dogPos, 0.9);
             }
-            // Honest praise: "you stayed" only means something because the
-            // coil gave you a real, achievable exit (retreat cancels). Said
-            // once — repetition would cheapen it.
-            if (!holdPraised && window.PhobiaVoice) {
-              holdPraised = true;
-              // Let the snap/recoil finish and the bark tail off before the
-              // calm voice comes in — praise landing mid-snarl read as chaos.
-              dogTimers.push(setTimeout(() => {
-                try { window.PhobiaVoice.speak("It lunged, and you stayed. Nothing bad happened. That is the fear losing its grip."); } catch {}
-              }, 900));
+            if (window.PhobiaFX?.contextPrompt && warningBarkCount === 0) {
+              window.PhobiaFX.contextPrompt(
+                "Ears pinned, body tense. Soften your gaze or step back — it settles when you give space.",
+                4200
+              );
+            }
+          }
+        } else if (barkState === "warning") {
+          dogCtrl.aggression = 0.70 + 0.25 * starePressure;
+          // Bark bursts react to pressure; never use the Attack/rear snap.
+          if (t > nextBarkAt) {
+            dogCtrl.barkSmall();
+            const count = 1 + Math.floor(starePressure * 2);
+            if (window.PhobiaAudio?.dogVocal) {
+              window.PhobiaAudio.dogVocal("bark", 0.75 + 0.2 * starePressure, dogPos, Object.assign({
+                f0: dogF0, count, gap: 0.16, air: true, reverb: 0.24,
+              }, barkOpts));
+            } else if (window.PhobiaAudio) {
+              window.PhobiaAudio.bark(0.75 + 0.2 * starePressure, dogPos, barkOpts);
+            }
+            if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.35 + 0.25 * starePressure);
+            arousalFloor = Math.max(arousalFloor, 0.45 + 0.35 * starePressure);
+            dogExertion = Math.min(1, dogExertion + 0.35);
+            warningBarkCount++;
+            const gap = (2.2 + Math.random() * 1.8) * (1 + Math.min(0.5, warningBarkCount * 0.08));
+            nextBarkAt = t + gap / Math.max(0.55, starePressure + 0.35);
+          }
+          // Coping loop: open distance OR soften gaze → settle.
+          const retreated = distP > PERSONAL_SPACE + 1.1;
+          const softGaze = gazeAlign < 0.35;
+          if ((retreated || softGaze) && barkStateT > 0.8) {
+            barkState = "settling"; barkStateT = 0;
+            dogCtrl.coil = 0;
+            dogCtrl.aggression = 0.28;
+            nextBarkAt = t + 3.5;
+            if (retreated && !retreatPraised && window.PhobiaVoice) {
+              retreatPraised = true;
+              window.PhobiaVoice.speak("You stepped back, and it quieted. You are in control of this distance.");
+            } else if (softGaze && !softGazePraised && window.PhobiaVoice) {
+              softGazePraised = true;
+              window.PhobiaVoice.speak("You softened your gaze. Notice how it eases when you stop staring.");
+            }
+            if (window.PhobiaFX?.contextPrompt) {
+              window.PhobiaFX.contextPrompt(
+                retreated ? "Space works. It is settling." : "Softer eyes. It is settling.",
+                3200
+              );
+            }
+          }
+        } else if (barkState === "settling") {
+          dogCtrl.aggression = Math.max(0.12, dogCtrl.aggression - d * 0.35);
+          dogCtrl.coil = 0;
+          // Settle to a personal-space-safe point near the anchor — never walk
+          // into the player if they're standing on the bark spot.
+          let sx = barkAnchor.x, sz = barkAnchor.z;
+          const aDist = Math.hypot(sx - ppl.x, sz - ppl.z);
+          if (aDist < PERSONAL_SPACE) {
+            const adx = sx - ppl.x, adz = sz - ppl.z;
+            const ad = Math.hypot(adx, adz) || 1;
+            sx = ppl.x + (adx / ad) * (PERSONAL_SPACE + 0.15);
+            sz = ppl.z + (adz / ad) * (PERSONAL_SPACE + 0.15);
+          }
+          const settle = dogCtrl._resolve(sx, sz);
+          const dSettle = Math.hypot(dog.position.x - settle.x, dog.position.z - settle.z);
+          // Only trek home if the RESOLVED point (bounds can clamp it) really
+          // keeps personal space — otherwise stay put where it's already safe,
+          // or the walk home re-enters the pressure band and re-triggers the
+          // warning in a loop.
+          const settleDist = Math.hypot(settle.x - ppl.x, settle.z - ppl.z);
+          if (settleDist >= PERSONAL_SPACE * 0.98 && dSettle > 0.35
+              && dogCtrl.state !== "walking" && dogCtrl.state !== "sit") {
+            dogCtrl._moveLockT = 3;
+            dogCtrl.walkTo(settle.x, settle.z, { force: true });
+          }
+          // Re-arm watching unless the hold already retired the encounter.
+          if (!completionBeatDone && barkStateT > 2.4) {
+            if (starePressure > 0.55) {
+              barkState = "warning"; barkStateT = 0;
+            } else {
+              barkState = "watching"; barkStateT = 0;
+              paceTargetT = t + 1.0;
             }
           }
         }
 
-        else if (lungeState === "recoiling") {
-          // Trust buys faster disengagement — the dog trots off sooner.
-          dogCtrl.walkSpeed = baseWalkSpeed * (1.5 + 0.8 * trust);
-          const dAnchor = Math.hypot(dog.position.x - lungeAnchor.x, dog.position.z - lungeAnchor.z);
-          if (dAnchor > 0.3 && dogCtrl.state !== "bark") {
-            dogCtrl.walkTo(lungeAnchor.x, lungeAnchor.z);
-          } else if (dogCtrl.state !== "walking" && dogCtrl.state !== "bark") {
-            lungeState = "stalking"; lungeT = 0;
-            dogCtrl.walkSpeed = baseWalkSpeed;
-            // Within-rung habituation, EARNED THIS SESSION by holding through
-            // charges: each held cycle spaces the next one out (up to +60%),
-            // on top of the hard-capped trust patience. The dog visibly
-            // loses steam over the 22 s hold — the rise-then-fall arc the
-            // completion screen celebrates finally happens on this rung.
-            if (heldGroundDist < SNAP_DIST + 0.5) heldCycles++;
-            // Once the completion beat has retired the encounter ("It backed
-            // off. You outlasted it."), the machine must never re-arm — this
-            // transition used to overwrite the Infinity set by the beat.
-            nextCharge = completionBeatDone
-              ? Infinity
-              : t + (3.4 + Math.random() * 2.6) * trustPatience * (1 + Math.min(0.6, heldCycles * 0.2));
-            stalkTargetT = t + 0.8;
-          }
-        }
-        // Observability for the scene-verification hooks (__tickNow tests
-        // read this; nothing in-app consumes it).
-        dog.userData.lungeState = lungeState;
-        dog.userData.lungeDebug = { t: +t.toFixed(2), lungeT: +lungeT.toFixed(2), nextCharge: +nextCharge.toFixed(2), coilDur: +coilDur.toFixed(2), distP: +distP.toFixed(2) };
+        // Observability for scene-verification hooks.
+        dog.userData.barkState = barkState;
+        dog.userData.lungeState = barkState; // legacy alias for older hooks
+        dog.userData.barkDebug = {
+          t: +t.toFixed(2), barkStateT: +barkStateT.toFixed(2),
+          nextBarkAt: +nextBarkAt.toFixed(2), distP: +distP.toFixed(2),
+          starePressure: +starePressure.toFixed(2), personalSpace: PERSONAL_SPACE,
+          needYield: !!needYield,
+        };
       }
       // ---- Within-rung escalation arc + data-driven spontaneous barks ----
       // Rung 3: starts lying → stands at ~20 s (or when you close to 3 m) →
-      // first bark ~40 s (or at 2.2 m) → barks every 14-24 s. Rung 4: first
+      // first bark ~16 s (or at 2.2 m) → barks every 14-24 s. Rung 4: first
       // bark at 12 s, every 8-14 s, easing off ×1.6 after the 35 s settle
       // beat. Barks are procedural head-tosses (barkSmall) — the Attack clip
-      // is reserved for the rung-5 snap, so warning and attack stay distinct.
+      // is unused on the controlled barking rung.
       if (intensity !== "barking") {
         if (!esc.t0) esc.t0 = t;
         const elapsed = t - esc.t0;
@@ -21883,7 +22313,7 @@ function setupDogs(scene, camera, level, levelIdx) {
       try { dog.userData.disposed = true; } catch {}
       try { if (dog.userData.parts && dog.userData.parts.mixer) dog.userData.parts.mixer.stopAllAction(); } catch {}
       // Release the hold-celebration gate so the next scene's fanfare isn't
-      // hostage to this scene's lunge state.
+      // hostage to this scene's bark state.
       try { window.__holdCelebrationGate = null; window.__rungHoldComplete = false; } catch {}
       // Stop looped/long audio (room reverb send, lapping). One-shot vocals
       // ≤1.5 s may run out per the scene audio contract.

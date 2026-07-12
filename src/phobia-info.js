@@ -58,7 +58,8 @@ const PhobiaInfo = {
       "Read the dog's body language: relaxed mouth, soft eyes, tail in neutral all mean \"chill.\"",
       "Don't make sudden moves; slow down rather than freeze.",
       "Speak to it softly. Your calm voice settles the dog and your own breath.",
-      "If the dog approaches, let it sniff a closed fist before opening your hand."
+      "If the dog approaches, let it sniff a closed fist before opening your hand.",
+      "If a dog is barking, soften your gaze and step back slowly — you control the distance."
     ],
     warning: "If a real dog attack is in your past, work with a trauma therapist alongside any exposure practice."
   },
