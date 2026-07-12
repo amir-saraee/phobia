@@ -20014,10 +20014,15 @@ function setupDogs(scene, camera, level, levelIdx) {
     leg.position.set(tx, -0.59, tz);
     scene.add(leg);
   }
-  // Glass jar with biscuits inside
+  // Glass jar with biscuits inside. Real glass values: near-clear, dielectric,
+  // PMREM sheen — the old milky 0.55-opacity half-metal cylinder read as a
+  // glowing cyan slab whenever the player walked up to the side table.
   const jar = new THREE.Mesh(
     new THREE.CylinderGeometry(0.13, 0.13, 0.30, 16),
-    new THREE.MeshStandardMaterial({ color: 0xddeef0, roughness: 0.15, metalness: 0.5, transparent: true, opacity: 0.55 })
+    new THREE.MeshStandardMaterial({
+      color: 0xf2f8fa, roughness: 0.06, metalness: 0,
+      transparent: true, opacity: 0.18, envMapIntensity: 1.3, depthWrite: false,
+    })
   );
   jar.position.set(-2.6, -0.02, -2.5);
   scene.add(jar);
