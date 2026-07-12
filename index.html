@@ -23348,7 +23348,8 @@ function setupSpiders(scene, camera, level, levelIdx) {
         spiderCtrl.suspendY = onWall;
         spiderCtrl.update(t, d);
         // Observability for scene-verification hooks (nothing in-app reads this).
-        spider.userData.spiderDebug = { pounceState, skitterState, elapsed: +elapsed.toFixed(1), nextPounceAt: isFinite(nextPounceAt) ? +nextPounceAt.toFixed(1) : "Inf", distP: +distP.toFixed(2) };
+        spider.userData.spiderDebug = { pounceState, skitterState, elapsed: +elapsed.toFixed(1), nextPounceAt: isFinite(nextPounceAt) ? +nextPounceAt.toFixed(1) : "Inf", distP: +distP.toFixed(2),
+          skitterT: +skitterT.toFixed(2), nextSkitter: +nextSkitter.toFixed(2), microShuffleAt: +microShuffleAt.toFixed(2) };
       }
     },
     dispose() {
@@ -25789,6 +25790,12 @@ function setupSnakes(scene, camera, level, levelIdx) {
     snakeCtl.ctrl.setJaw(snakeCtl.jawTarget || 0);
     snakeCtl.ctrl._tongueFast = sniffing || st === "watch" || snakeCtl.striking;
     if (hasRig) snakeCtl.ctrl.update(t, dtN);
+    // Observability for scene-verification hooks (mirrors spiderDebug).
+    snake.userData.snakeDebug = {
+      state: snakeCtl.state, strikePhase: snakeCtl.strikePhase,
+      speed: +snakeCtl.speed.toFixed(2), playerDist: +(playerDist || 0).toFixed(2),
+      approachSpeed: +(approachSpeed || 0).toFixed(2),
+    };
 
     // --- Post-mixer head tracking while watching (composes on the rear pitch) ---
     const trackWeight = (snakeCtl.state === "watch" || snakeCtl.state === "defensive") ? 1 : 0;
