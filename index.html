@@ -5595,9 +5595,12 @@ const PhobiaVoice = (() => {
         detail: { text, durationMs: _capMs }
       }));
     } catch {}
-    // `force` lets deliberate, user-initiated samples (the settings "Hear it"
-    // button) play while guidance is muted — without touching the stored pref.
-    if ((muted && !opts.force) || !text) return;
+    // ---- Guidance is VISUAL now ----
+    // Every guidance line renders as the on-screen caption/tip dispatched
+    // above; spoken narration over the scene reads as nagging and is gone.
+    // The audio path survives ONLY for a deliberate, user-initiated sample
+    // (opts.force — the Settings "hear it" button).
+    if (!opts.force || !text) return;
     // Recorded clip when we have one for this exact line; live TTS otherwise.
     const norm = normalize(text);
     let items;
@@ -6731,7 +6734,6 @@ function openSettings() {
   const existing = document.querySelector(".settings-drawer");
   if (existing) { closeSettings(); return; }
   const audioMuted = PhobiaAudio.isMuted();
-  const voiceMuted = PhobiaVoice.isMuted();
   const drawer = document.createElement("div");
   drawer.className = "settings-drawer";
   // Read persisted preferences
@@ -6759,29 +6761,8 @@ function openSettings() {
     </div>
     <div class="row">
       <div>
-        <label>Voice guidance</label>
-        <div class="small">Calm spoken cues during exposure.</div>
-      </div>
-      <div class="toggle ${voiceMuted ? "" : "on"}" id="toggleVoice"></div>
-    </div>
-    <div class="row" style="display:${PhobiaVoice.hasVoice() ? "flex" : "none"};">
-      <div>
-        <label>Voice pace</label>
-        <div class="small">Slower for grounding.</div>
-      </div>
-      <input type="range" id="voiceRate" min="0.65" max="1.1" step="0.05" value="0.85" />
-    </div>
-    <div class="row" style="display:${PhobiaVoice.hasVoice() ? "flex" : "none"};">
-      <div>
-        <label>Guide's voice</label>
-        <div class="small">Installed voices differ a lot — pick the one that sounds most human. <button class="btn-ghost btn-mini" id="voiceSample" type="button">▶ Hear it</button></div>
-      </div>
-      <select id="voiceSelect" class="select-pill" aria-label="Guide's voice"></select>
-    </div>
-    <div class="row">
-      <div>
-        <label>Closed captions</label>
-        <div class="small">Show the spoken text on screen.</div>
+        <label>Guidance tips</label>
+        <div class="small">Calm written cues on screen during exposure.</div>
       </div>
       <div class="toggle ${captionsOn ? "on" : ""}" id="toggleCaptions"></div>
     </div>
@@ -6934,51 +6915,8 @@ function openSettings() {
     const ab = document.getElementById("audioBtn");
     if (ab) ab.textContent = next ? "🔇" : "🔊";
   };
-  drawer.querySelector("#toggleVoice").onclick = (e) => {
-    const next = !PhobiaVoice.isMuted();
-    PhobiaVoice.setMuted(next);
-    e.currentTarget.classList.toggle("on", !next);
-  };
-  const rate = drawer.querySelector("#voiceRate");
-  if (rate) rate.oninput = () => PhobiaVoice.setRate(parseFloat(rate.value));
-  // Guide's voice picker — top 8 scored voices, saved choice pinned on top.
-  // Populated lazily because some browsers deliver getVoices() async.
-  const voiceSel = drawer.querySelector("#voiceSelect");
-  if (voiceSel && PhobiaVoice.listVoices) {
-    const fill = () => {
-      const voices = PhobiaVoice.listVoices().slice(0, 8);
-      const hasRec = PhobiaVoice.hasRecorded && PhobiaVoice.hasRecorded();
-      if (!voices.length && !hasRec) return false;
-      let savedURI = "";
-      try { savedURI = localStorage.getItem("fobia.voiceURI") || ""; } catch {}
-      const vMode = PhobiaVoice.getMode ? PhobiaVoice.getMode() : "tts";
-      voiceSel.innerHTML =
-        (hasRec ? `<option value="__recorded__" ${vMode === "recorded" ? "selected" : ""}>Mira — recorded (recommended)</option>` : "") +
-        voices.map(v =>
-          `<option value="${v.uri.replace(/"/g, "&quot;")}" ${vMode !== "recorded" && v.uri === savedURI ? "selected" : ""}>${v.name}</option>`
-        ).join("");
-      return true;
-    };
-    if (!fill() && window.speechSynthesis) {
-      window.speechSynthesis.addEventListener("voiceschanged", fill, { once: true });
-    }
-    voiceSel.onchange = () => {
-      if (voiceSel.value === "__recorded__") {
-        PhobiaVoice.setMode("recorded");
-      } else {
-        PhobiaVoice.setVoice(voiceSel.value);
-        PhobiaVoice.setMode("tts");
-      }
-      // Immediate feedback in the chosen voice — a deliberate sample plays
-      // even while guidance is muted (force), without touching the pref.
-      PhobiaVoice.speak("I'll walk each step with you. Slow breath in — and out.", { urgent: true, force: true });
-    };
-  }
-  const voiceSample = drawer.querySelector("#voiceSample");
-  if (voiceSample) voiceSample.onclick = (e) => {
-    e.stopPropagation();
-    PhobiaVoice.speak("You're safe. We go at your pace — one small step, then the next.", { urgent: true, force: true });
-  };
+  // (Voice-guidance controls removed with spoken narration itself — guidance
+  // now renders as on-screen tips; the "Guidance tips" toggle below owns it.)
   drawer.querySelector("#resetAllBtn").onclick = () => {
     if (confirm("Reset this character's progress? Other characters are not affected.")) {
       resetActiveProgress();
@@ -8254,29 +8192,18 @@ function mountExposure(phobiaKey, levelIdx) {
            document.webkitFullscreenElement === stage;
   }
   function refreshQuickBar() {
-    const vMuted = window.PhobiaVoice && window.PhobiaVoice.isMuted();
     const aMuted = window.PhobiaAudio && window.PhobiaAudio.isMuted();
     const theater = isTheater();
     const full = isFullscreen();
-    // Only the two essential controls — voice mute + sound mute. Theater +
-    // fullscreen were visual clutter that crowded the canvas corner; users
-    // who want fullscreen can use the browser's native option (F11).
+    // One essential control — scene sound. (The voice-guidance mute is gone
+    // with spoken narration itself: guidance now shows as on-screen tips,
+    // and the Settings captions toggle controls those.)
     quickBar.innerHTML = `
-      <button class="stage-quick-btn ${vMuted ? "muted" : ""}" id="quickVoice"
-        title="${vMuted ? "Voice guidance muted — click to unmute" : "Mute voice guidance"}"
-        aria-label="${vMuted ? "Voice muted" : "Mute voice"}">${vMuted ? "🔇" : "🗣️"}</button>
       <button class="stage-quick-btn ${aMuted ? "muted" : ""}" id="quickAudio"
         title="${aMuted ? "Scene sound muted — click to unmute" : "Mute scene sound"}"
         aria-label="${aMuted ? "Sound muted" : "Mute sound"}">${aMuted ? "🔈" : "🔊"}</button>
     `;
-    const v = quickBar.querySelector("#quickVoice");
     const a = quickBar.querySelector("#quickAudio");
-    if (v) v.onclick = () => {
-      const next = !window.PhobiaVoice.isMuted();
-      window.PhobiaVoice.setMuted(next);
-      if (next) window.PhobiaVoice.stop();
-      refreshQuickBar();
-    };
     if (a) a.onclick = () => {
       window.PhobiaAudio.unlock();
       const next = !window.PhobiaAudio.isMuted();
@@ -11127,8 +11054,12 @@ class FPControls {
     if (this._moveFwd == null) { this._moveFwd = 1; this._moveSide = 0; }
     if (movingNow && _movedDist > 1e-4) {
       // Fear shortens the stride (0.62 → 0.465 m at fear ≥ 80): visibly
-      // quicker, smaller steps at the same ground speed.
-      const stride = this._fearGaitOn ? 0.62 * (1 - 0.25 * this._fearRampSm) : 0.62;
+      // quicker, smaller steps at the same ground speed. A slow analog creep
+      // shortens it too — creeping with full-length slow-motion strides read
+      // as floating; real cautious steps are SMALL steps (the gait engine
+      // scales the leg swing to match, so the feet still don't slide).
+      const creepK = 0.55 + 0.45 * (this._speedNorm == null ? 1 : this._speedNorm);
+      const stride = (this._fearGaitOn ? 0.62 * (1 - 0.25 * this._fearRampSm) : 0.62) * creepK;
       this._walkPhase += (_movedDist / stride) * Math.PI;   // distance-driven stride
       const inv = 1 / _movedDist;
       const wx = _mdx * inv, wz = _mdz * inv;
@@ -12315,11 +12246,15 @@ class Body {
     //   fwd  +1 → forward swing,  -1 → backpedal (reversed swing),
     //   side ±1 → sidestep (legs scissor from the hip, soles kept flat),
     //   diagonals blend both; turn-in-place shuffles with tiny steps.
-    let gaitFwd = 1, gaitSide = 0;
+    let gaitFwd = 1, gaitSide = 0, strideK = 1;
     if (controls && controls.getWalkState) {
       const ws = controls.getWalkState();
       gaitFwd = ws.fwd;
       gaitSide = ws.side;
+      // Match the visible step length to the (speed-shortened) stride the
+      // phase engine uses — slow creeps take small careful steps instead of
+      // full-length slow-motion swings.
+      strideK = 0.55 + 0.45 * (ws.speedNorm == null ? 1 : ws.speedNorm);
       // The body may be yawed toward the travel direction (TP travel facing
       // above) — express the stride in the TURNED body's frame, so a strafe
       // becomes a forward walk once the body has rotated into it.
@@ -12334,7 +12269,7 @@ class Body {
     const fwdShare = Math.abs(gaitFwd);
     this.legs.forEach((leg) => {
       const θ = walkPhase + (leg.side > 0 ? 0 : Math.PI);
-      const swing = Math.sin(θ) * 0.50 * walkAmt;
+      const swing = Math.sin(θ) * 0.50 * walkAmt * strideK;
       // Knee clears the ground at mid-swing for fore-aft strides; sidesteps
       // use a smaller constant lift (you don't fold a knee to shuffle).
       const kneeFlex = (Math.max(0, Math.cos(θ)) * (0.30 + 0.65 * fwdShare) + 0.04) * walkAmt;
@@ -12356,7 +12291,7 @@ class Body {
     //    height is unchanged)
     //  · weight shift: the torso rides laterally over whichever foot is
     //    planted (full stride = one left + one right shift)
-    const stepBob = (Math.abs(Math.sin(walkPhase)) - 0.64) * 0.034 * walkAmt;
+    const stepBob = (Math.abs(Math.sin(walkPhase)) - 0.64) * 0.034 * walkAmt * strideK;
     this.group.position.y += stepBob;
     const yawNow = this.group.rotation.y;
     const weightShift = Math.sin(walkPhase) * 0.022 * walkAmt
@@ -12571,10 +12506,23 @@ class Body {
           // Horizontal swing clamped to what a shoulder can do — past ~50°
           // the whole body would turn (and does, via the controls yaw);
           // letting the arm chase further folds it across the chest.
-          yawTo: Math.max(-0.9, Math.min(0.9, Math.atan2(lx, -lz) * 0.8)),
+          // NOTE the body mesh faces LOCAL +Z (not the camera's -Z): the
+          // angle is measured from +Z, or a dead-ahead target computes π and
+          // slams the clamp — the arm pointed 50° sideways on every
+          // squared-up pet.
+          yawTo: Math.max(-0.9, Math.min(0.9, Math.atan2(lx, lz) * 0.8)),
           pitch: -(Math.atan2(horiz, -ly) + corr * 0.6), // from hanging-down, toward target
           elbow: bend,
         };
+        // Whole-body engagement: the chest turns and tips a touch toward the
+        // reach target (more when it's LOW — petting a small dog bends the
+        // back, not just the shoulder). chest.rotation.x/y are absolutely
+        // re-set each frame above, so these adds never compound.
+        if (this.chest) {
+          const lowness = Math.max(0, Math.min(1, -ly / 0.8));
+          this.chest.rotation.x += (0.10 + lowness * 0.22) * aim.k;
+          this.chest.rotation.y += aim.yawTo * 0.3 * aim.k;
+        }
       }
 
       this.arms.forEach((arm) => {
@@ -12583,7 +12531,7 @@ class Body {
         // swings OPPOSITE to the same-side leg (which is how humans walk).
         // Wider amplitude than the legs since arms swing more freely.
         const armPhase = walkPhase + (side > 0 ? Math.PI : 0);
-        const swing = Math.sin(armPhase) * 0.65 * walkAmt;
+        const swing = Math.sin(armPhase) * 0.65 * walkAmt * strideK;
         const shoulderTarget = side > 0 ? rightShoulder : leftShoulder;
         const elbowTarget    = side > 0 ? rightElbow    : leftElbow;
         // Layered priority: gesture > reach > walk swing. Gesture arms are
@@ -13461,6 +13409,23 @@ class Hands {
     const w = controls && controls.getWalkState ? controls.getWalkState() : { phase: 0, amount: 0 };
     const fearK = (window.PhobiaFear ? window.PhobiaFear.get() : 0) / 100;
     const breathY = Math.sin(t * (1.2 + fearK * 1.6)) * (0.005 + fearK * 0.004);
+    // Camera-look inertia: the hand meshes ride the camera, so without lag
+    // they pan AS the camera — weightless. Track smoothed look velocity and
+    // let the hands trail the turn by a few centimetres (and roll slightly
+    // with the drag), the single cheapest "my hands have mass" cue.
+    {
+      const yawNow = controls && typeof controls.yaw === "number" ? controls.yaw : 0;
+      const pitchNow = controls && typeof controls.pitch === "number" ? controls.pitch : 0;
+      if (this._lastYaw == null) { this._lastYaw = yawNow; this._lastPitch = pitchNow; }
+      let dyaw = yawNow - this._lastYaw;
+      dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+      const dpitch = pitchNow - this._lastPitch;
+      this._lastYaw = yawNow; this._lastPitch = pitchNow;
+      const yawVel = Math.max(-3.5, Math.min(3.5, dyaw / Math.max(0.001, d)));
+      const pitchVel = Math.max(-3.5, Math.min(3.5, dpitch / Math.max(0.001, d)));
+      this._lagX = (this._lagX || 0) + (yawVel * 0.014 - (this._lagX || 0)) * Math.min(1, d * 6.5);
+      this._lagY = (this._lagY || 0) + (pitchVel * -0.011 - (this._lagY || 0)) * Math.min(1, d * 6.5);
+    }
 
     [this.left, this.right].forEach((hand) => {
       const side = hand.userData.side;
@@ -13483,9 +13448,13 @@ class Hands {
           break;
         }
         case "pet": {
-          // Right hand reaches forward, oscillates downward (petting)
+          // Right hand offers forward; the stroking wave only plays while a
+          // pet is actually HAPPENING (actionPulse from the click) — before,
+          // the hand pawed at empty air the whole time the dog was merely
+          // within invite range.
           if (side === 1) {
-            const wave = Math.sin(t * 4) * 0.04;
+            const strokeK = 0.15 + 0.85 * this.actionPulse;
+            const wave = Math.sin(t * 4) * 0.04 * strokeK;
             target.x = 0.06;
             target.y = -0.18 + wave * 0.5 - this.actionPulse * 0.05;
             target.z = -0.55 - this.actionPulse * 0.15;
@@ -13546,6 +13515,15 @@ class Hands {
       finalPos.z += Math.sin(armPhase) * 0.030 * w.amount * gaitFree;
       finalPos.y += (Math.abs(Math.sin(w.phase)) - 0.5) * 0.012 * w.amount * gaitFree;
       finalPos.x += Math.sin(w.phase * 0.5) * 0.008 * w.amount * side * gaitFree;
+      // Look inertia: hands trail a fast camera turn and roll slightly into
+      // the drag (position offset here; the matching wrist roll is folded
+      // into the rotation targets below).
+      finalPos.x += (this._lagX || 0) * gaitFree;
+      finalPos.y += (this._lagY || 0) * gaitFree;
+      // Organic wrist motion with the stride — pure translation read as
+      // gliding mannequin gloves.
+      const gaitRotX = Math.sin(armPhase) * 0.07 * w.amount * gaitFree;
+      const lagRotZ = (this._lagX || 0) * 1.3 * gaitFree;
       // Fear tremor — tiny, high-frequency, slightly different per hand so it
       // reads as nerves rather than screen shake. Builds above ~fear 45 and
       // stays ON during gestures: a trembling reach toward the snake is
@@ -13568,9 +13546,9 @@ class Hands {
       const gestureK = (reachThisHand && rk > 0.001) ? Math.max(0, 1 - rk) : 1;
       const posK = Math.min(1, d * 11) * gestureK;
       hand.position.lerp(finalPos, posK);
-      hand.rotation.x += (baseRot.x + (targetRotX - baseRot.x) * this.gestureStrength - hand.rotation.x) * posK;
+      hand.rotation.x += (baseRot.x + (targetRotX - baseRot.x) * this.gestureStrength + gaitRotX - hand.rotation.x) * posK;
       hand.rotation.y += (baseRot.y + (targetRotY - baseRot.y) * this.gestureStrength - hand.rotation.y) * posK;
-      hand.rotation.z += (baseRot.z + (targetRotZ - baseRot.z) * this.gestureStrength - hand.rotation.z) * posK;
+      hand.rotation.z += (baseRot.z + (targetRotZ - baseRot.z) * this.gestureStrength + lagRotZ - hand.rotation.z) * posK;
 
       // Curl fingers — base curl from the gesture, plus a brief universal
       // squeeze whenever actionPulse > 0 so EVERY click on an interactive
@@ -13627,7 +13605,12 @@ class Hands {
         yAxis.normalize();
         const xAxis = this._rcX.crossVectors(yAxis, zAxis).normalize();
         const q = this._rcQ.setFromRotationMatrix(this._rcMat.makeBasis(xAxis, yAxis, zAxis));
-        const k = Math.min(1, d * 10) * rk;
+        // Approach ARC + soft landing: the hand comes in slightly from above
+        // and decelerates onto the surface (fast while far, gentle at
+        // contact) — the straight full-speed beeline read as a robotic poke.
+        const distNow = hand.position.distanceTo(local);
+        local.y += Math.min(0.055, distNow * 0.35);
+        const k = Math.min(1, d * (4.5 + 6 * Math.min(1, distNow * 2.5))) * rk;
         hand.position.lerp(local, k);
         hand.quaternion.slerp(q, k);
         // Finger conform: relaxed flat for petting, full wrap for a grip,
