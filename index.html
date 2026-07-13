@@ -22510,6 +22510,10 @@ class SpiderController {
   update(t, d) {
     const p = this.parts;
     if (!p || !p.mixer) return;
+    // Zero-dt frames must skip entirely: the mixer may not re-write the clip
+    // pose, but the additive layer would still stack — same ratchet the dog
+    // scene shook from (see DogController.update).
+    if (d != null && d < 0.0015) return;
     p.mixer.update(d);
     if (this.suspend) return;
     this._bodyLife(t, d);
@@ -22532,6 +22536,24 @@ class SpiderController {
     }
     const rig = this._rig;
     const legs = rig.legs;
+    // ---- Additive-layer safety net (see DogController._bodyLife) ----
+    // three.js PropertyMixer skips re-writing bones on flat keyframe spans,
+    // so "read pose, ADD delta" compounds on those frames. Restore the clean
+    // pre-delta base when the mixer skipped a bone; re-capture when it wrote.
+    if (!this._lifeBones) {
+      const set = new Set();
+      if (rig.body) set.add(rig.body);
+      for (const L of legs) { if (L.up) set.add(L.up); if (L.mid) set.add(L.mid); if (L.tip) set.add(L.tip); }
+      this._lifeBones = [...set].map(b => ({ b, base: { x: b.rotation.x, y: b.rotation.y, z: b.rotation.z }, fin: { x: NaN, y: NaN, z: NaN } }));
+    }
+    for (const r of this._lifeBones) {
+      const rot = r.b.rotation;
+      if (rot.x === r.fin.x && rot.y === r.fin.y && rot.z === r.fin.z) {
+        rot.set(r.base.x, r.base.y, r.base.z);
+      } else {
+        r.base.x = rot.x; r.base.y = rot.y; r.base.z = rot.z;
+      }
+    }
     const poseYPrev = this._poseYOff || 0;
     this._poseYOff = 0;
 
@@ -22630,14 +22652,22 @@ class SpiderController {
 
     // ---- Body bob applied through the ABSOLUTE y write (poseY accumulator) ----
     // Skipped when the scene owns y (the wall-rung pounce parabola).
+    // sin² instead of |sin| — the |sin| kink put a sharp V into every gait
+    // beat (same vibration source the dog bob had).
     if (!this.suspendY) {
+      const bobK = Math.sin(bobP * 0.5);
       const bob = this._walkAmtSm > 0.01
-        ? Math.abs(Math.sin(bobP * 0.5)) * 0.010 * this.height * this._walkAmtSm : 0;
+        ? bobK * bobK * 0.010 * this.height * this._walkAmtSm : 0;
       if (this._walkAmtSm > 0.01) {
         this.spider.position.y = this.baseY + poseYPrev + bob;
       } else {
         this.spider.position.y += (this.baseY + poseYPrev - this.spider.position.y) * Math.min(1, d * 6);
       }
+    }
+
+    // ---- Additive-layer safety net (bookend) ----
+    for (const r of this._lifeBones) {
+      r.fin.x = r.b.rotation.x; r.fin.y = r.b.rotation.y; r.fin.z = r.b.rotation.z;
     }
   }
 }
@@ -25257,6 +25287,10 @@ class SnakeController {
     this.jawTarget = 0; this._jaw = 0;
     this._tongueT = -1; this._tongueNext = 1.5; this._tongueFast = false;
     this._poseYOff = 0; this._rig = null; this._needsGround = false;
+    // Post-mixer head tracking (scene computes/smooths the yaw and hands it
+    // over; applied HERE, inside the additive-layer safety net — the scene
+    // used to += the neck/head bones directly, outside any protection).
+    this.headYaw = 0;
     this.suspend = true;
   }
   setRear(r) { this.rearTarget = Math.max(0, Math.min(1, r)); }
@@ -25266,6 +25300,10 @@ class SnakeController {
   update(t, d) {
     const p = this.parts;
     if (!p || !p.mixer) return;
+    // Zero-dt frames must skip entirely: the mixer may not re-write the clip
+    // pose, but the additive layer would still stack — same ratchet the dog
+    // scene shook from (see DogController.update).
+    if (d != null && d < 0.0015) return;
     p.mixer.update(d);
     if (this.suspend) return;
     this._bodyLife(t, d);
@@ -25283,6 +25321,25 @@ class SnakeController {
       };
     }
     const rig = this._rig;
+    // ---- Additive-layer safety net (see DogController._bodyLife) ----
+    // three.js PropertyMixer skips re-writing bones on flat keyframe spans,
+    // so "read pose, ADD delta" compounds on those frames. Restore the clean
+    // pre-delta base when the mixer skipped a bone; re-capture when it wrote.
+    if (!this._lifeBones) {
+      const set = new Set();
+      [rig.body, rig.chest, rig.neck, rig.head, ...rig.tail,
+       rig.mouth, rig.lowerMouth, ...rig.tongue]
+        .forEach(b => { if (b) set.add(b); });
+      this._lifeBones = [...set].map(b => ({ b, base: { x: b.rotation.x, y: b.rotation.y, z: b.rotation.z }, fin: { x: NaN, y: NaN, z: NaN } }));
+    }
+    for (const r of this._lifeBones) {
+      const rot = r.b.rotation;
+      if (rot.x === r.fin.x && rot.y === r.fin.y && rot.z === r.fin.z) {
+        rot.set(r.base.x, r.base.y, r.base.z);
+      } else {
+        r.base.x = rot.x; r.base.y = rot.y; r.base.z = rot.z;
+      }
+    }
     const poseYPrev = this._poseYOff || 0;
     this._poseYOff = 0;
 
@@ -25360,8 +25417,19 @@ class SnakeController {
       }
     }
 
+    // ---- Head tracking (scene-fed yaw, applied inside the safety net) ----
+    if (Math.abs(this.headYaw) > 0.001) {
+      if (rig.neck) rig.neck.rotation.y += this.headYaw * 0.5;
+      if (rig.head) rig.head.rotation.y += this.headYaw * 0.5;
+    }
+
     // ---- Single absolute y-write (belly plant + pose offset) ----
     this.snake.position.y += (this.baseY + poseYPrev - this.snake.position.y) * Math.min(1, d * 6);
+
+    // ---- Additive-layer safety net (bookend) ----
+    for (const r of this._lifeBones) {
+      r.fin.x = r.b.rotation.x; r.fin.y = r.b.rotation.y; r.fin.z = r.b.rotation.z;
+    }
   }
 }
 
@@ -25953,7 +26021,10 @@ function setupSnakes(scene, camera, level, levelIdx) {
       approachSpeed: +(approachSpeed || 0).toFixed(2),
     };
 
-    // --- Post-mixer head tracking while watching (composes on the rear pitch) ---
+    // --- Head tracking while watching (composes on the rear pitch) ---
+    // The smoothed yaw is handed to the controller, which applies it INSIDE
+    // its additive-layer safety net — the direct bone += here compounded on
+    // flat keyframe spans exactly like the dog's old vibration bug.
     const trackWeight = (snakeCtl.state === "watch" || snakeCtl.state === "defensive") ? 1 : 0;
     if (hasRig && (trackWeight > 0 || Math.abs(snakeCtl.headYaw) > 0.001) && controls && sp.neckBone) {
       const worldYaw = Math.atan2(controls.position.x - snake.position.x, controls.position.z - snake.position.z);
@@ -25961,8 +26032,7 @@ function setupSnakes(scene, camera, level, levelIdx) {
       rel = Math.atan2(Math.sin(rel), Math.cos(rel));
       const clamped = Math.max(-0.55, Math.min(0.55, rel)) * trackWeight;
       snakeCtl.headYaw += (clamped - snakeCtl.headYaw) * Math.min(1, dtN * 4);
-      sp.neckBone.rotation.y += snakeCtl.headYaw * 0.5;
-      if (sp.headBone) sp.headBone.rotation.y += snakeCtl.headYaw * 0.5;
+      snakeCtl.ctrl.headYaw = snakeCtl.headYaw;
     }
 
     // --- Slither rustle tracks the moving body ---
