@@ -11705,7 +11705,29 @@ class Body {
       fore.position.set(0, -foreLen / 2, 0);
       fore.castShadow = true;
       elbow.add(fore);
-      this.arms.push({ root: armRoot, elbow, side: sx });
+      // Elbow joint cap — smooths the sleeve/forearm junction when the arm
+      // bends (the legs already had knee caps; the arms hinged on a visible
+      // gap).
+      const elbowCap = new THREE.Mesh(new THREE.SphereGeometry(0.058, 12, 10), skin);
+      elbowCap.scale.set(1, 0.85, 1);
+      elbow.add(elbowCap);
+      // HAND — the arms used to end at the wrist, a mitten-less stump that
+      // read as "mannequin" in every third-person shot. A slightly cupped
+      // mitt (relaxed half-curl) with a thumb bump is all the silhouette
+      // needs at this art style's distance.
+      const hand = new THREE.Group();
+      hand.position.set(0, -foreLen - 0.035, 0);
+      const palm = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 10), skin);
+      palm.scale.set(0.85, 1.25, 0.62);
+      palm.rotation.x = 0.28;              // relaxed half-curl toward the thigh
+      palm.castShadow = true;
+      hand.add(palm);
+      const thumb = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), skin);
+      thumb.scale.set(0.9, 1.5, 0.8);
+      thumb.position.set(-sx * 0.042, 0.015, 0.012);   // inner side, toward the body
+      hand.add(thumb);
+      elbow.add(hand);
+      this.arms.push({ root: armRoot, elbow, hand, side: sx });
     }
 
     // Hips — pants belt block (kept as a named ref so the gait engine can
@@ -11751,11 +11773,19 @@ class Body {
       shin.position.y = -shinLen / 2;
       shin.castShadow = true;
       knee.add(shin);
-      // Foot rides the shin (ankle at the shin's bottom end)
+      // Foot rides the shin (ankle at the shin's bottom end). A slight
+      // out-toe (feet angle a few degrees outward) is how relaxed humans
+      // actually stand — parallel feet read as a toy soldier. The gait
+      // engine writes foot.rotation.x/z per frame, so the static out-toe
+      // lives on a wrapper group the walk math never touches.
+      const ankle = new THREE.Group();
+      ankle.position.set(0, -shinLen + 0.01, 0);
+      ankle.rotation.y = sx * 0.10;
+      knee.add(ankle);
       const foot = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, 0.26), shoes);
-      foot.position.set(0, -shinLen + 0.01, 0.06);
+      foot.position.set(0, 0, 0.06);
       foot.castShadow = true;
-      knee.add(foot);
+      ankle.add(foot);
       this.legs.push({ hip, knee, foot, side: sx });
     }
 
@@ -12422,6 +12452,13 @@ class Body {
     this._hipTwist += (hipTwistTarget - this._hipTwist) * Math.min(1, dtB * 15);   // dt-based (was per-frame 0.25)
     if (this.hips) this.hips.rotation.y = this._hipTwist * 1.7;
     if (this.chest) this.chest.rotation.y = -this._hipTwist * 1.2;
+    // Pelvis ROLL + shoulder counter-roll: the pelvis dips toward the
+    // swinging leg each step while the shoulders tilt the other way — with
+    // only the lateral weight-shift the torso slid side to side like a
+    // block on rails. Scaled by the body type's sway personality.
+    const gaitRoll = Math.sin(walkPhase) * walkAmt * this.bt.sway;
+    if (this.hips) this.hips.rotation.z = gaitRoll * 0.055;
+    if (this.chest) this.chest.rotation.z = -gaitRoll * 0.030;
     // Footstep audio + visible dust puff each time a foot plants. The
     // dust is an invisible-by-default Points cloud we lazy-create the
     // first time a step fires; each puff is N points expanding from the
