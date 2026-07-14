@@ -350,7 +350,11 @@ if ("serviceWorker" in navigator) {
   /* Stage (the simulation canvas) — the scene is the product, give it real
      estate. Now ideal 78vh (was 60vh) and capped higher so big displays get
      a properly cinematic frame. */
-  .stage-wrap { margin: 0 -28px; }
+  /* Full-bleed the stage through the page padding, but NEVER past the
+     viewport edge: the fixed -28px overshot the actual .app padding at most
+     widths, leaving the stage 3-12px wider than the screen — the panel
+     corners and any control hugging the stage edge rendered visibly cut. */
+  .stage-wrap { margin: 0 max(calc(50% - 50vw), -28px); }
   .stage {
     height: clamp(360px, 78vh, 900px);
     border-top: 1px solid var(--border);
@@ -739,9 +743,9 @@ if ("serviceWorker" in navigator) {
      overlaps the quick-bar. Truncates long dog names with ellipsis. */
   @media (max-width: 480px) {
     .stage .trust-hud {
-      top: 60px; right: 8px;
+      top: 58px; right: 8px;
       min-width: 128px;
-      max-width: 200px;
+      max-width: min(172px, calc(100% - 174px));
       padding: 7px 10px;
       font-size: 11px;
     }
@@ -2800,7 +2804,7 @@ if ("serviceWorker" in navigator) {
        reach edge-to-edge too, so the cmd buttons get the full screen width. */
     .app { padding: 14px 6px 100px; }
     .panel { padding: 14px; }
-    .stage-wrap { margin: 0 -14px; }
+    .stage-wrap { margin: 0 max(calc(50% - 50vw), -14px); }
     h2 { font-size: 20px; }
     .show-grid { grid-template-columns: 1fr; }
     .pillars { grid-template-columns: 1fr; }
@@ -2816,8 +2820,17 @@ if ("serviceWorker" in navigator) {
     .stage { height: clamp(280px, 62vh, 640px); }
     .stage .joystick { left: 12px; bottom: 12px; width: 84px; height: 84px; }
     .stage .joystick-thumb { width: 36px; height: 36px; margin: -18px 0 0 -18px; }
-    .stage .reach-hint { font-size: 12px; padding: 6px 12px; max-width: 80%; }
-    .stage .captions { font-size: 12px; max-width: 90%; padding: 6px 12px; bottom: 8px; line-height: 1.3; overflow-wrap: break-word; }
+    /* The lowest 108px belong to the joystick and action buttons. Messages
+       stack above that control deck instead of making the controls untappable. */
+    .stage .reach-hint {
+      bottom: 126px;
+      font-size: 12px; padding: 6px 12px; max-width: 88%;
+      white-space: normal; text-align: center;
+    }
+    .stage .captions {
+      font-size: 12px; max-width: 90%; padding: 6px 12px;
+      bottom: 174px; line-height: 1.3; overflow-wrap: break-word;
+    }
     .phobia-grid { grid-template-columns: 1fr; }
     .info-grid { grid-template-columns: 1fr; }
     .char-badge-name { display: none; }
@@ -2927,21 +2940,35 @@ if ("serviceWorker" in navigator) {
     .stage { height: clamp(280px, 62vh, 640px); }
     .stage-caption, .step-controls { padding-left: 14px; padding-right: 14px; }
     .app { padding: 16px 14px 64px; }
-    .stage-wrap { margin: 0 -14px; }
+    .stage-wrap { margin: 0 max(calc(50% - 50vw), -14px); }
     /* Camera toggle + fear meter — bring them in from the corner so they
        don't get clipped by the rounded panel edges on phones. */
     .stage .camera-toggle {
       top: 8px; left: 8px;
       padding: 6px 12px; font-size: 12px;
     }
-    .stage .fear-meter { top: 92px; left: 12px; width: 80px; }  /* below the hold pill */
+    /* The hold pill is the compact phone progress readout. A second meter in
+       the same corner only obscures the scene. */
+    .stage .fear-meter { display: none; }
     .stage .cmd-toggle { right: 8px; bottom: 8px; }
-    .stage .ctx-prompt { font-size: 12px; padding: 8px 12px; max-width: 90%; }
+    .stage .ctx-prompt {
+      bottom: 222px;
+      font-size: 12px; padding: 8px 12px; max-width: 90%;
+    }
+    /* Persistent orientation copy occupies the open lane beside the joystick,
+       clear of Ground me and Show controls. */
+    .stage .controls-hint {
+      left: 108px; right: 8px; bottom: 62px;
+      max-width: none;
+      padding: 6px 10px;
+      font-size: 10px;
+      line-height: 1.35;
+    }
   }
   /* Tablet / mid-width refinement */
   @media (min-width: 601px) and (max-width: 900px) {
     .app { padding: 18px 18px 72px; }
-    .stage-wrap { margin: 0 -22px; }
+    .stage-wrap { margin: 0 max(calc(50% - 50vw), -22px); }
   }
   /* Make sure the canvas always fills its container exactly. CSS pixel
      ratio mismatches were occasionally pushing it 1-2 px past the panel
@@ -8287,6 +8314,7 @@ function mountExposure(phobiaKey, levelIdx) {
         setIf("shirtColor", C.hexToInt(C.topHex(character)));
         setIf("hairColor",  C.hexToInt(C.hairHex(character)));
         setIf("eyeColor",   C.hexToInt(C.eyeHex(character)));
+        opts.bodyType  = character.bodyType || "man";
         opts.hairStyle = character.hairStyle || "short";
         opts.glasses   = character.glasses || "none";
         opts.facialHair = character.facialHair || "none";
@@ -10013,7 +10041,7 @@ function runTutorialTour(stage, phobiaKey) {
       target: () => stage.querySelector("canvas") || stage,
       title: "This is the scene",
       text: isTouch
-        ? "Drag to look around. Use the joystick to walk."
+        ? "Swipe to look around. Use the joystick to walk."
         : "Drag with your mouse to look around. WASD or arrows to walk.",
       arrow: "down",
     },
@@ -10935,8 +10963,11 @@ class FPControls {
     if (!this._vel) this._vel = { x: 0, z: 0 };
     const hasInput = ix !== 0 || iz !== 0;
     const velRate = hasInput ? 10 : 14;
-    this._vel.x += (ix * maxSpeed - this._vel.x) * Math.min(1, dt * velRate);
-    this._vel.z += (iz * maxSpeed - this._vel.z) * Math.min(1, dt * velRate);
+    // Exponential response is frame-rate independent. The old dt*rate
+    // approximation made starts and stops feel different at 30, 60 and 120 Hz.
+    const velAlpha = 1 - Math.exp(-velRate * dt);
+    this._vel.x += (ix * maxSpeed - this._vel.x) * velAlpha;
+    this._vel.z += (iz * maxSpeed - this._vel.z) * velAlpha;
     if (!hasInput && Math.hypot(this._vel.x, this._vel.z) < 0.02) {
       this._vel.x = 0; this._vel.z = 0;
     }
@@ -11485,6 +11516,22 @@ class Body {
       // "I'm somewhere with a real breeze".
       windExposure: 0.0,
     }, opts);
+    // ---- Body type: proportions + gait personality ----
+    // One set of scale factors turns the single mannequin into a man /
+    // woman / boy / girl: vertical landmarks scale with height, shoulders
+    // and hips diverge, kids get the bigger head-to-body ratio that reads
+    // "child" at a glance, and the gait picks up a personality (hip sway).
+    const BT = {
+      man:   { h: 1.00, shoulder: 1.00, hip: 1.00, head: 1.00, sway: 1.0 },
+      woman: { h: 0.95, shoulder: 0.85, hip: 1.14, head: 0.96, sway: 1.35 },
+      boy:   { h: 0.80, shoulder: 0.80, hip: 0.96, head: 1.16, sway: 0.9 },
+      girl:  { h: 0.78, shoulder: 0.76, hip: 1.02, head: 1.18, sway: 1.15 },
+    };
+    this.bt = BT[this.opts.bodyType] || BT.man;
+    for (const k of ["headY", "neckY", "chestTopY", "waistY", "hipY", "kneeY", "ankleY"]) {
+      this.opts[k] *= this.bt.h;
+    }
+    this.opts.width *= this.bt.shoulder;
     // Camera mode: "fp" hides the head + face (camera IS the head). "tp"
     // pulls the camera back so the user sees their visible character.
     this.cameraMode = "fp";
@@ -11634,7 +11681,7 @@ class Body {
     // Letting the elbow bend independently means reaching / petting / gripping
     // gestures look anatomically correct rather than a single rigid capsule.
     this.arms = [];
-    const upperLen = 0.28, foreLen = 0.26;
+    const upperLen = 0.28 * this.bt.h, foreLen = 0.26 * this.bt.h;
     for (const sx of [-1, 1]) {
       // armRoot rotates at the shoulder
       const armRoot = new THREE.Group();
@@ -11664,7 +11711,7 @@ class Body {
     // Hips — pants belt block (kept as a named ref so the gait engine can
     // twist the pelvis against the chest each step)
     const hips = new THREE.Mesh(
-      new THREE.BoxGeometry(o.width * 2.2, o.waistY - o.hipY, 0.26), pants
+      new THREE.BoxGeometry(o.width * 2.2 * (this.bt.hip / this.bt.shoulder), o.waistY - o.hipY, 0.26), pants
     );
     hips.position.set(0, (o.waistY + o.hipY) / 2, 0);
     hips.castShadow = true;
@@ -11722,6 +11769,10 @@ class Body {
     // Slightly lower than the camera (eyes sit a few cm below the top of the
     // head, and the camera approximates the eye position).
     this.head.position.set(0, o.headY - 0.06, 0);
+    // Head-to-body ratio: kids' heads are proportionally bigger — the single
+    // strongest silhouette cue for "child" — while the woman preset trims a
+    // touch. Scales the whole face rig (eyes, hair, glasses) coherently.
+    this.head.scale.setScalar(this.bt.head);
     this.head.visible = false;       // FP default — camera is the head
     this.group.add(this.head);
 
@@ -12207,8 +12258,11 @@ class Body {
     // scale.x (lateral lung expansion).
     if (this.chest) {
       const breathPhase = Math.sin(t * 1.4);          // matches the y-bob
-      this.chest.scale.y = 1.0 + breathPhase * 0.045 * (0.6 + idleFactor * 0.4);
-      this.chest.scale.x = 1.4 + breathPhase * 0.025 * (0.6 + idleFactor * 0.4);
+      const breathStrength = 0.6 + idleFactor * 0.4;
+      // Preserve the authored torso width. Resetting x to 1.4 on frame one
+      // made every avatar abruptly broad-chested and the breath look rubbery.
+      this.chest.scale.y = 1.0 + breathPhase * 0.028 * breathStrength;
+      this.chest.scale.x = 1.24 * (1.0 + breathPhase * 0.018 * breathStrength);
     }
     // Idle head turns — every 6-12 s the head naturally turns slightly to
     // either side as if scanning the environment. Only fires when not
@@ -12294,7 +12348,7 @@ class Body {
     const stepBob = (Math.abs(Math.sin(walkPhase)) - 0.64) * 0.034 * walkAmt * strideK;
     this.group.position.y += stepBob;
     const yawNow = this.group.rotation.y;
-    const weightShift = Math.sin(walkPhase) * 0.022 * walkAmt
+    const weightShift = Math.sin(walkPhase) * 0.022 * walkAmt * this.bt.sway
       // Idle: slow side-to-side balance transfer — nobody stands frozen.
       + Math.sin(t * 0.45) * 0.013 * idleFactor;
     this.group.position.x += Math.cos(yawNow) * weightShift;
@@ -12494,7 +12548,7 @@ class Body {
         const dist = Math.max(0.05, Math.hypot(horiz, ly));
         // Two-bone IK: elbow bend + shoulder correction from the triangle
         // (upper 0.30, forearm 0.26), clamped so full stretch stays sane.
-        const A = 0.30, B = 0.26;
+        const A = 0.30 * this.bt.h, B = 0.26 * this.bt.h;
         const d = Math.max(Math.abs(A - B) + 0.02, Math.min(A + B - 0.01, dist));
         const cosE = Math.max(-1, Math.min(1, (A * A + B * B - d * d) / (2 * A * B)));
         const bend = Math.PI - Math.acos(cosE);
@@ -14208,6 +14262,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     if (!result || result.body !== false) {
       const bodyOpts = Object.assign(
         {
+          bodyType:  opts.bodyType,
           skinColor: opts.skinColor,
           shirtColor: opts.shirtColor,
           hairColor: opts.hairColor,
@@ -18800,6 +18855,9 @@ class DogController {
     // Gallop stride: ground metres one Gallop cycle covers at timeScale 1.
     // Set from dog height by the scene alongside walkSpeed/strideSpeed.
     this.gallopStride = 2.4;
+    // Scalar locomotion velocity. The dog accelerates into a gait and brakes
+    // for a turn rather than changing from idle to full speed in one frame.
+    this._moveSpeed = 0;
     // Idle "alive" extras: occasional weight-shift + blink so a standing dog
     // isn't a statue between clips.
     this._idleShiftT = 2 + Math.random() * 4; this._idleShift = 0; this._idleShiftDir = 1;
@@ -19025,6 +19083,7 @@ class DogController {
     // frame. A frame that advances no time has nothing to update anyway.
     if (dt != null && dt < 0.0015) return;
     const d = dt || 0.016;
+    this._turnRate = 0;   // re-measured below when the idle watch-turn rotates
     // One-shot calibration once the model has been measured: the real body
     // radius replaces the scene's height-derived guess so player↔dog contact
     // distances match the visible coat.
@@ -19120,8 +19179,24 @@ class DogController {
         // clip while the body still moved at walk speed, so a "sprinting" dog
         // crawled across the room with churning legs.
         const gait = galloping ? this.gallopSpeed : this.walkSpeed;
-        const step = Math.min(dist, gait * ease * d);
-        const ux = dx / dist, uz = dz / dist;
+        const targetUx = dx / dist, targetUz = dz / dist;
+        // Travel along the body's current heading while it turns toward the
+        // target. Moving directly down the target vector made the paws slide
+        // sideways whenever a new goal was behind the dog.
+        const headingUx = Math.sin(this.dog.rotation.y);
+        const headingUz = Math.cos(this.dog.rotation.y);
+        const alignment = Math.max(0, headingUx * targetUx + headingUz * targetUz);
+        const desiredSpeed = gait * ease * (0.20 + 0.80 * alignment);
+        const speedRate = desiredSpeed > this._moveSpeed
+          ? (galloping ? 5.5 : 3.2)
+          : (galloping ? 8.0 : 5.5);
+        const speedDelta = Math.max(
+          -speedRate * d,
+          Math.min(speedRate * d, desiredSpeed - this._moveSpeed)
+        );
+        this._moveSpeed = Math.max(0, this._moveSpeed + speedDelta);
+        const step = Math.min(dist, this._moveSpeed * d);
+        const ux = headingUx, uz = headingUz;
         let nx = this.dog.position.x + ux * step;
         let nz = this.dog.position.z + uz * step;
         // Slide: if the full step is blocked, try axis-separated slides so the
@@ -19180,9 +19255,11 @@ class DogController {
         // Snap onto the goal and idle — avoids a leftover 0.2 m shuffle.
         this.dog.position.x = this.followTarget.x;
         this.dog.position.z = this.followTarget.z;
+        this._moveSpeed = 0;
         this.stopMove();
       }
     } else if (this.state === "idle" || this.state === "sit" || this.state === "lay") {
+      this._moveSpeed = Math.max(0, this._moveSpeed - d * 6);
       this.groundSpeed *= Math.max(0, 1 - d * 8);
       // Gently turn the whole body to watch the player when they're near and
       // we're not mid-sniff (headPitch high). Reads as a dog tracking you.
@@ -19199,7 +19276,9 @@ class DogController {
           if (Math.abs(off) > 0.55) this._watchTurn = true;
           else if (Math.abs(off) < 0.10) this._watchTurn = false;
           if (this._watchTurn) {
+            const beforeYaw = this.dog.rotation.y;
             this.dog.rotation.y = this._easeYaw(this.dog.rotation.y, wantYaw, d * 2.4, 2.6 * d);
+            this._turnRate = Math.abs(this.dog.rotation.y - beforeYaw) / Math.max(0.001, d);
           }
         }
       }
@@ -19240,6 +19319,34 @@ class DogController {
     // Track time spent sitting (scene's auto-lay-down uses this).
     if (this.state === "sit") this._sitTimer += d;
 
+    // ---- Turn-in-place step shuffle ----
+    // A dog pivoting on the spot takes little steps — rotating the group over
+    // planted paws read as ice-skating. While the idle watch-turn is actually
+    // rotating the body, blend the Walk clip in UNDER Idle at low weight so
+    // the paws visibly reposition with the turn.
+    {
+      const want = (this.state === "idle" && (this._turnRate || 0) > 0.35)
+        ? Math.min(0.85, this._turnRate / 2.0) : 0;
+      this._shufW = (this._shufW || 0) + (want - (this._shufW || 0)) * Math.min(1, d * 6);
+      const walkAct = this._has("Walk") ? this.parts.actions["Walk"] : null;
+      if (walkAct && this._action && this._action !== walkAct) {
+        if (this._shufW > 0.03) {
+          if (!this._shufOn) {
+            this._shufOn = true;
+            walkAct.reset();
+            walkAct.setLoop(THREE.LoopRepeat, Infinity);
+            walkAct.timeScale = 0.75;
+            walkAct.play();
+          }
+          walkAct.setEffectiveWeight(this._shufW);
+        } else if (this._shufOn) {
+          this._shufOn = false;
+          walkAct.stop();
+        }
+      } else if (this._shufOn) {
+        this._shufOn = false;   // Walk became the main action — it owns itself now
+      }
+    }
     p.mixer.update(d);
     this._bodyLife(t, d);
   }
@@ -21136,13 +21243,11 @@ function setupDogs(scene, camera, level, levelIdx) {
       pointerLock: true,
       lookSmoothing: 10,
       fearGait: true,
-      // Camera default: FIRST-person for every dog rung. Exposure is most
-      // visceral and least confusing when YOU are in the room looking at the
-      // dog — no faceless avatar standing between you and it, your own hands
-      // reach out to pet. The over-the-shoulder third-person view is still one
-      // tap away via the "View" toggle (and persists per-session once changed).
-      preferredCameraMode: "fp",
-      // Bias the third-person camera over the shoulder (used only if toggled to 3rd).
+      // Calm/alert rungs open over the shoulder so the customised character is
+      // visibly the protagonist. Barking stays first-person for direct,
+      // uncluttered distance work.
+      preferredCameraMode: intensity === "barking" ? "fp" : "tp",
+      // Bias the camera over the shoulder so the avatar does not mask the dog.
       tpShoulder: 0.62,
       tpDistance: 3.9,
       tpHeight: 0.42,
@@ -29344,6 +29449,17 @@ function buildAvatarFigure(c) {
       a.elbow.rotation.x = 0.06 + Math.sin(t * 1.6 + a.side) * 0.012;
     });
   };
+  // ===== BODY TYPE silhouette =====
+  // Mirror of the in-scene Body proportions: uniform height scale plus the
+  // child head-to-body ratio, so the creator preview matches what you'll
+  // actually see over-the-shoulder in scenes.
+  {
+    const bt = ({ man: { s: 1.0, head: 1.0 }, woman: { s: 0.96, head: 0.97 },
+                  boy: { s: 0.84, head: 1.15 }, girl: { s: 0.82, head: 1.17 } })[c && c.bodyType] || { s: 1.0, head: 1.0 };
+    group.scale.setScalar(bt.s);
+    head.scale.multiplyScalar(bt.head);
+  }
+
   return group;
 }
 

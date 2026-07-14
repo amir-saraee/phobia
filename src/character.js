@@ -75,19 +75,30 @@ const TOP_STYLES = [
   { id: "jacket", label: "Jacket" },
 ];
 
+// Body type drives the 3D avatar's proportions (height, shoulders, hips,
+// head-to-body ratio) and gait personality (hip sway, stride) so the
+// character reads as a man / woman / boy / girl, not one unisex mannequin.
+const BODY_TYPES = [
+  { id: "man",   label: "Man" },
+  { id: "woman", label: "Woman" },
+  { id: "boy",   label: "Boy" },
+  { id: "girl",  label: "Girl" },
+];
+
 // Curated "quick start" looks — one tap sets a whole tasteful, diverse
 // appearance the user can then tweak. (Distinct from the random dice.)
 const STARTER_PRESETS = [
-  { id: "sage",   label: "Sage",   skinTone: "olive",     hairColor: "grey",   hairStyle: "short", topColor: "forest", eyeColor: "green", glasses: "round",  facialHair: "beard" },
-  { id: "ember",  label: "Ember",  skinTone: "fair",      hairColor: "auburn", hairStyle: "curly", topColor: "rose",   eyeColor: "hazel", glasses: "none",   facialHair: "none" },
-  { id: "indigo", label: "Indigo", skinTone: "deep",      hairColor: "black",  hairStyle: "buzz",  topColor: "navy",   eyeColor: "brown", glasses: "square", facialHair: "none" },
-  { id: "bloom",  label: "Bloom",  skinTone: "porcelain", hairColor: "rose",   hairStyle: "long",  topColor: "plum",   eyeColor: "blue",  glasses: "none",   facialHair: "none" },
-  { id: "slate",  label: "Slate",  skinTone: "tan",       hairColor: "brown",  hairStyle: "pony",  topColor: "char",   eyeColor: "grey",  glasses: "none",   facialHair: "stubble" },
+  { id: "sage",   label: "Sage",   bodyType: "man",   skinTone: "olive",     hairColor: "grey",   hairStyle: "short", topColor: "forest", eyeColor: "green", glasses: "round",  facialHair: "beard" },
+  { id: "ember",  label: "Ember",  bodyType: "woman", skinTone: "fair",      hairColor: "auburn", hairStyle: "curly", topColor: "rose",   eyeColor: "hazel", glasses: "none",   facialHair: "none" },
+  { id: "indigo", label: "Indigo", bodyType: "man",   skinTone: "deep",      hairColor: "black",  hairStyle: "buzz",  topColor: "navy",   eyeColor: "brown", glasses: "square", facialHair: "none" },
+  { id: "bloom",  label: "Bloom",  bodyType: "woman", skinTone: "porcelain", hairColor: "rose",   hairStyle: "long",  topColor: "plum",   eyeColor: "blue",  glasses: "none",   facialHair: "none" },
+  { id: "slate",  label: "Slate",  bodyType: "woman", skinTone: "tan",       hairColor: "brown",  hairStyle: "pony",  topColor: "char",   eyeColor: "grey",  glasses: "none",   facialHair: "stubble" },
 ];
 
 function defaultCharacter() {
   return {
     name: "",
+    bodyType: "man",
     skinTone: "fair",
     hairColor: "brown",
     hairStyle: "short",
@@ -110,6 +121,7 @@ function randomCharacter() {
   const presets = ["calm", "encouraging", "brief"];
   return {
     name: "",
+    bodyType:   pick(BODY_TYPES),
     skinTone:   pick(SKIN_TONES),
     hairColor:  pick(HAIR_COLORS),
     hairStyle:  pick(HAIR_STYLES),
@@ -602,6 +614,10 @@ function viewCharacterCreator(existing, allPhobias) {
               <h3>Skin &amp; complexion</h3>
             </div>
             <div class="creator-row">
+              <label>Body</label>
+              <div class="swatches text" data-group="bodyType">${swatch(BODY_TYPES, c.bodyType || "man", "bodyType")}</div>
+            </div>
+            <div class="creator-row">
               <label>Skin tone</label>
               <div class="swatches" data-group="skinTone">${swatch(SKIN_TONES, c.skinTone, "skinTone")}</div>
             </div>
@@ -687,6 +703,7 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
   if (!root) return;
   const state = existing ? Object.assign({}, existing) : defaultCharacter();
   // Make sure new fields exist on legacy characters
+  if (!state.bodyType)    state.bodyType = "man";
   if (!state.eyeColor)    state.eyeColor = "brown";
   if (!state.glasses)     state.glasses = "none";
   if (!state.facialHair)  state.facialHair = "none";
@@ -873,6 +890,7 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
   function shuffleAppearance() {
     const r = randomCharacter();
     applyAppearance({
+      bodyType: r.bodyType,
       skinTone: r.skinTone, hairColor: r.hairColor, hairStyle: r.hairStyle,
       topColor: r.topColor, eyeColor: r.eyeColor, glasses: r.glasses,
       facialHair: r.facialHair, voicePreset: r.voicePreset,
@@ -897,7 +915,7 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
 }
 
 window.Character = {
-  SKIN_TONES, HAIR_COLORS, HAIR_STYLES, TOP_COLORS, TOP_STYLES,
+  SKIN_TONES, HAIR_COLORS, HAIR_STYLES, TOP_COLORS, TOP_STYLES, BODY_TYPES,
   EYE_COLORS, GLASSES, FACIAL_HAIR, HEADWEAR,
   defaultCharacter, randomCharacter,
   loadCharacter, loadCharacters, activeCharacterId,
