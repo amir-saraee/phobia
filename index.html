@@ -2978,6 +2978,385 @@ if ("serviceWorker" in navigator) {
     height: 100% !important;
     display: block;
   }
+  /* ================= THE COURAGE JOURNEY (game shell) =================
+     Everything below styles the game framing: the scroll-told title story,
+     the Valley of Fears journey map, realm trial paths, the shadow guardians
+     that shrink with progress, and the collectible Sparks of Wisdom. The
+     story/valley scenes pin their own night palette (they are "places", the
+     same in light and dark mode); cards inside them use the theme vars. */
+  .brand-tag {
+    font-size: 10px; letter-spacing: 2.2px; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+  }
+  @media (max-width: 520px) { .brand-tag { display: none; } }
+  .btn-xl { font-size: 17px; padding: 14px 26px; }
+  .spark-hud { position: relative; }
+  .spark-hud-n {
+    position: absolute; top: -4px; right: -4px;
+    background: linear-gradient(135deg, #f6c76a, #e78a4e); color: #221a08;
+    border-radius: 999px; font-size: 10px; font-weight: 800;
+    min-width: 16px; height: 16px; line-height: 16px; padding: 0 3px;
+  }
+
+  /* ---- Title story ---- */
+  .story-beat {
+    min-height: 74vh; position: relative;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 48px 18px;
+    opacity: 0; transform: translateY(24px);
+    transition: opacity .9s ease, transform .9s ease;
+  }
+  .story-beat.lit { opacity: 1; transform: none; }
+  .beat-hero {
+    min-height: 86vh; overflow: hidden; border-radius: var(--radius-xl);
+    background: radial-gradient(120% 90% at 50% 110%, #2c3a63 0%, #131c33 45%, #0b1122 100%);
+    border: 1px solid #25324f; color: #e8eef7;
+  }
+  .story-sky { position: absolute; inset: 0; pointer-events: none; }
+  .star {
+    position: absolute; border-radius: 50%; background: #dfe9ff;
+    opacity: var(--o, .5); animation: twinkle 4s ease-in-out infinite;
+    animation-delay: var(--tw, 0s);
+  }
+  @keyframes twinkle { 0%, 100% { opacity: var(--o, .5); } 50% { opacity: .08; } }
+  .story-moon {
+    position: absolute; top: 9%; right: 12%; width: 54px; height: 54px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #fdf6de, #d9d3b8 70%);
+    box-shadow: 0 0 42px 8px rgba(253, 246, 222, .25);
+  }
+  .story-figure {
+    position: relative; z-index: 1;
+    filter: drop-shadow(0 14px 22px rgba(0,0,0,.5));
+    animation: heroFloat 5s ease-in-out infinite;
+  }
+  @keyframes heroFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+  .story-kicker {
+    position: relative; letter-spacing: 3px; text-transform: uppercase;
+    font-size: 11px; color: var(--accent); margin: 14px 0 2px; font-weight: 700;
+  }
+  .story-title {
+    position: relative; margin: 0 0 12px;
+    font-size: clamp(34px, 7vw, 58px); letter-spacing: .5px; line-height: 1.06;
+    background: linear-gradient(180deg, #ffffff, #9fb4dc);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .story-bubble {
+    position: relative; max-width: 420px;
+    background: var(--panel); border: 1px solid var(--border-2); border-radius: 16px;
+    padding: 12px 18px; color: var(--text); font-size: 15px; box-shadow: var(--shadow-sm);
+  }
+  .story-bubble::after {
+    content: ""; position: absolute; top: -7px; left: 50%;
+    transform: translateX(-50%) rotate(45deg); width: 12px; height: 12px;
+    background: var(--panel); border-left: 1px solid var(--border-2); border-top: 1px solid var(--border-2);
+  }
+  .story-actions { justify-content: center; margin-top: 18px; position: relative; }
+  .scroll-hint {
+    position: absolute; bottom: 16px; left: 0; right: 0;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    color: #94a3b8; font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    animation: hintBob 2.2s ease-in-out infinite;
+  }
+  @keyframes hintBob { 0%, 100% { transform: translateY(0); opacity: .7; } 50% { transform: translateY(6px); opacity: 1; } }
+  .story-line { font-size: clamp(24px, 4.5vw, 36px); margin: 18px 0 8px; }
+  .story-text { max-width: 560px; font-size: 16px; }
+  .beat-shadow {
+    width: 90px; height: 74px; position: relative;
+    border-radius: 48% 52% 55% 45% / 60% 58% 42% 40%;
+    background: radial-gradient(circle at 50% 32%, #2c3654, #10162a 75%);
+    border: 1px solid #2c3654;
+    display: flex; gap: 14px; align-items: center; justify-content: center;
+    animation: blobDrift 7s ease-in-out infinite;
+    box-shadow: 0 18px 40px rgba(0,0,0,.45);
+  }
+  .beat-shadow .eye, .realm-shadow .eye, .shadow-blob .eye {
+    width: 9px; height: 9px; border-radius: 50%; background: #b7c6e8;
+    box-shadow: 0 0 8px #b7c6e8; display: block;
+  }
+  .beat-shadow.sz-1 { transform: scale(.9); }
+  .beat-shadow.sz-3 { transform: scale(1.9); margin-bottom: 26px; }
+  .beat-shadow.sz-0 { transform: scale(.55); opacity: .85; }
+  .beat-shadow.tamed { background: radial-gradient(circle at 50% 32%, #3d5f63, #17313a 75%); border-color: #3d8f7c; }
+  .beat-shadow.tamed .eye { background: #8fe3c9; box-shadow: 0 0 8px #8fe3c9; }
+  @keyframes blobDrift {
+    0%, 100% { border-radius: 48% 52% 55% 45% / 60% 58% 42% 40%; }
+    50%      { border-radius: 55% 45% 48% 52% / 52% 48% 55% 45%; }
+  }
+  .story-curve svg { width: min(420px, 86vw); height: auto; overflow: visible; }
+  .curve-path { stroke: var(--accent); stroke-dasharray: 620; stroke-dashoffset: 620; }
+  .story-beat.lit .curve-path { animation: curveDraw 2.4s ease forwards .3s; }
+  @keyframes curveDraw { to { stroke-dashoffset: 0; } }
+  .curve-label { fill: var(--muted); font-size: 11px; }
+  .story-realms {
+    display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
+    margin-top: 22px; max-width: 720px;
+  }
+  .story-realm {
+    display: flex; flex-direction: column; gap: 4px; align-items: center;
+    background: var(--panel); border: 1px solid var(--border-2); border-radius: 14px;
+    padding: 10px; width: 128px; cursor: pointer;
+    transition: transform .25s ease, border-color .25s ease;
+  }
+  .story-realm:hover:not(:disabled) { transform: translateY(-4px); border-color: var(--accent); }
+  .story-realm:disabled { opacity: .55; cursor: default; }
+  .story-realm-thumb { width: 104px; height: 62px; border-radius: 9px; overflow: hidden; display: block; }
+  .story-realm-thumb svg { width: 100%; height: 100%; display: block; }
+  .story-realm-name { font-size: 12.5px; font-weight: 700; color: var(--text); line-height: 1.2; }
+  .story-realm-fear { font-size: 10.5px; color: var(--accent); }
+  .beat-final { padding-bottom: 80px; }
+  .story-disclaimer {
+    max-width: 560px; margin-top: 26px; font-size: 12.5px; color: #fde68a;
+    background: rgba(245, 158, 11, .08); border: 1px solid rgba(245, 158, 11, .3);
+    padding: 10px 14px; border-radius: 10px;
+  }
+  body.light-mode .story-disclaimer { color: #8a5b00; }
+
+  /* ---- Journey map (the Valley of Fears) ---- */
+  /* NOTE: named .jworld because the legacy "how a session works" block already
+     owns the .journey class (a grid) — reusing it laid the camp and realm list
+     side-by-side. */
+  .jworld {
+    position: relative; overflow: hidden;
+    border-radius: var(--radius-xl); border: 1px solid #25324f;
+    background: linear-gradient(180deg, #0c1224 0%, #101a33 30%, #131c2f 62%, #26243f 86%, #4a3050 96%, #7a4a4e 100%);
+    padding: 26px 14px 44px; color: #e8eef7;
+  }
+  .jw-stars { position: absolute; inset: -45% 0 0; pointer-events: none; will-change: transform; }
+  .camp { position: relative; text-align: center; padding: 10px 0 6px; }
+  .camp-scene { display: flex; align-items: flex-end; justify-content: center; gap: 6px; min-height: 118px; }
+  .camp-char { transform: translateY(4px); filter: drop-shadow(0 10px 14px rgba(0,0,0,.5)); }
+  .campfire { position: relative; width: 64px; height: 74px; }
+  .campfire .logs {
+    position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
+    width: 44px; height: 10px; border-radius: 5px;
+    background: linear-gradient(180deg, #6b4a33, #3f2a1c);
+    box-shadow: -8px 2px 0 -2px #57381f, 8px 2px 0 -2px #57381f;
+  }
+  .campfire .flame { position: absolute; bottom: 12px; left: 50%; border-radius: 50% 50% 20% 20%; transform-origin: 50% 100%; }
+  .campfire .f1 { width: 22px; height: 34px; margin-left: -11px; background: radial-gradient(circle at 50% 80%, #ffd86b, #ff9a3d 60%, rgba(255,120,40,0)); animation: flick .9s ease-in-out infinite alternate; }
+  .campfire .f2 { width: 14px; height: 24px; margin-left: -15px; background: radial-gradient(circle at 50% 80%, #ffe9a8, #ffae52 65%, rgba(255,140,60,0)); animation: flick .7s ease-in-out infinite alternate .2s; }
+  .campfire .f3 { width: 12px; height: 20px; margin-left: 2px;  background: radial-gradient(circle at 50% 80%, #fff3c4, #ffb85e 65%, rgba(255,150,70,0)); animation: flick .8s ease-in-out infinite alternate .1s; }
+  @keyframes flick { from { transform: scaleY(1) skewX(0deg); } to { transform: scaleY(1.18) skewX(-4deg); } }
+  .fire-glow {
+    position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%);
+    width: 130px; height: 46px; pointer-events: none;
+    background: radial-gradient(ellipse at center, rgba(255,160,70,.35), transparent 70%);
+  }
+  .camp-bubble {
+    position: relative; display: inline-block; max-width: 460px; margin-top: 10px;
+    background: rgba(20, 28, 50, .85); border: 1px solid #3a4a72; border-radius: 14px;
+    padding: 10px 16px; font-size: 14.5px; color: #e8eef7; font-style: italic;
+  }
+  .camp-stats { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
+  .camp-stat {
+    background: rgba(15, 23, 42, .55); border: 1px solid #3a4a72; color: #e8eef7;
+    border-radius: 999px; padding: 6px 14px; font-size: 12.5px; font-weight: 600;
+  }
+  .camp-stat.as-btn { cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 600; }
+  .camp-stat.as-btn:hover { border-color: var(--accent); }
+  .camp-hint { margin-top: 14px; color: #94a3b8; font-size: 11px; letter-spacing: 1.6px; text-transform: uppercase; }
+
+  .realm-list { list-style: none; margin: 8px auto 0; padding: 0; max-width: 760px; position: relative; }
+  .path-seg { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 10px 0; }
+  .path-seg i { width: 5px; height: 5px; border-radius: 50%; background: #4c5b82; opacity: .8; }
+  .path-seg i:nth-child(2) { transform: translateX(8px); }
+  .path-seg i:nth-child(3) { transform: translateX(-7px); }
+  .realm-node {
+    position: relative; display: grid; grid-template-columns: 190px 1fr;
+    background: linear-gradient(180deg, var(--panel), var(--panel-3));
+    border: 1px solid var(--border-2); border-radius: 18px; overflow: hidden;
+    cursor: pointer; box-shadow: var(--shadow-sm);
+    opacity: 0; transform: translateY(26px);
+    transition: transform .3s ease, border-color .3s ease, box-shadow .3s ease, opacity .8s ease;
+  }
+  .realm-node.lit { opacity: 1; transform: none; }
+  .realm-node:hover, .realm-node:focus-visible {
+    border-color: var(--accent); transform: translateY(-3px);
+    box-shadow: 0 14px 44px rgba(0,0,0,.45);
+  }
+  .realm-node.side-r { margin-left: min(64px, 8%); }
+  .realm-node.side-l { margin-right: min(64px, 8%); }
+  .realm-node.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 10px 40px rgba(124, 209, 197, .12); }
+  .realm-thumb { position: relative; min-height: 132px; }
+  .realm-thumb > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .realm-shadow {
+    position: absolute; right: 8px; bottom: 8px;
+    width: calc(26px + var(--rem, 1) * 34px); height: calc(22px + var(--rem, 1) * 28px);
+    border-radius: 48% 52% 55% 45% / 60% 58% 42% 40%;
+    background: radial-gradient(circle at 50% 30%, rgba(24, 32, 58, .92), rgba(6, 10, 22, .95));
+    border: 1px solid rgba(90, 110, 160, .5);
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    animation: blobDrift 6s ease-in-out infinite;
+    opacity: calc(.45 + var(--rem, 1) * .55);
+  }
+  .realm-shadow .eye { width: 7px; height: 7px; }
+  .realm-tamed {
+    position: absolute; right: 8px; bottom: 8px;
+    background: rgba(20, 40, 38, .85); color: #8fe3c9; border: 1px solid #3d8f7c;
+    border-radius: 999px; font-size: 11px; padding: 3px 9px; font-weight: 700;
+  }
+  .you-marker {
+    position: absolute; top: 6px; left: 8px; z-index: 2;
+    display: flex; flex-direction: column; align-items: center;
+    animation: heroFloat 4s ease-in-out infinite;
+    filter: drop-shadow(0 8px 10px rgba(0,0,0,.5));
+  }
+  .you-marker > span {
+    font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+    background: var(--accent); color: #08221e; font-weight: 800;
+    border-radius: 999px; padding: 1px 8px; margin-top: -6px;
+  }
+  .realm-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 3px; text-align: left; }
+  .realm-kicker { font-size: 10.5px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+  .realm-name { margin: 0; font-size: 20px; color: var(--text); }
+  .realm-epithet { margin: 0; font-size: 12.5px; color: var(--muted); font-style: italic; }
+  .realm-pips { display: flex; gap: 5px; margin: 7px 0 2px; }
+  .pip { width: 14px; height: 6px; border-radius: 3px; background: #2c3854; }
+  body.light-mode .pip { background: #cbd3e0; }
+  .pip.lit { background: linear-gradient(90deg, #ffd86b, #ff9a3d); box-shadow: 0 0 8px rgba(255, 170, 80, .5); }
+  .realm-state { margin: 2px 0 4px; font-size: 12.5px; color: var(--muted); }
+  .realm-cta { margin-top: auto; color: var(--accent); font-weight: 700; font-size: 13px; }
+  .jw-dawn {
+    text-align: center; margin-top: 36px; position: relative;
+    opacity: 0; transform: translateY(20px);
+    transition: opacity .8s ease, transform .8s ease;
+  }
+  .jw-dawn.lit { opacity: 1; transform: none; }
+  .jw-dawn h3 { color: #ffd9b0; }
+  .jw-dawn p { color: #d8b8a8; }
+  @media (max-width: 640px) {
+    .realm-node { grid-template-columns: 1fr; }
+    .realm-node.side-r, .realm-node.side-l { margin-left: 0; margin-right: 0; }
+    .realm-thumb { min-height: 110px; }
+  }
+
+  /* ---- Realm view (a fear's five trials) ---- */
+  .realm-view { display: flex; flex-direction: column; gap: 14px; }
+  .realm-hero {
+    position: relative; overflow: hidden; min-height: 190px;
+    border-radius: var(--radius-lg); border: 1px solid var(--border-2);
+    display: flex; align-items: flex-end; gap: 14px; padding: 18px;
+  }
+  .realm-hero-art, .realm-hero-art > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .realm-hero-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(10, 14, 26, .15) 0%, rgba(10, 14, 26, .55) 55%, rgba(10, 14, 26, .92) 100%);
+  }
+  .realm-hero-text { position: relative; z-index: 1; flex: 1; }
+  .realm-hero-text .realm-kicker { color: #9fe8dc; }
+  .realm-hero-text h2 { margin: 2px 0; font-size: clamp(24px, 4.4vw, 34px); color: #fff; }
+  .realm-hero-text .realm-epithet { color: #b8c4dd; }
+  .guardian-box {
+    position: relative; z-index: 1; min-width: 108px;
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+  }
+  .shadow-blob {
+    width: calc(34px + var(--rem, 1) * 44px); height: calc(28px + var(--rem, 1) * 36px);
+    border-radius: 48% 52% 55% 45% / 60% 58% 42% 40%;
+    background: radial-gradient(circle at 50% 30%, #222c4c, #0a0f20 78%);
+    border: 1px solid #33406a;
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    animation: blobDrift 6s ease-in-out infinite;
+    box-shadow: 0 12px 30px rgba(0,0,0,.5);
+  }
+  .guardian.tamed-bird { font-size: 34px; animation: heroFloat 4s ease-in-out infinite; }
+  .guardian-meter { width: 92px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.14); overflow: hidden; }
+  .guardian-meter-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #8f9bff, #5f6fd6); }
+  .guardian-label { font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: #aab6d4; font-weight: 700; text-align: center; }
+  .realm-bubble {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel); border: 1px solid var(--border-2); border-radius: 14px;
+    padding: 9px 14px; font-size: 14px; color: var(--text); font-style: italic;
+  }
+  .realm-bubble-avatar { flex: 0 0 auto; display: flex; }
+  .trial-path { list-style: none; margin: 4px 0 0; padding: 0; }
+  .trial-link { height: 26px; margin-left: 27px; border-left: 2px dashed #3a4a72; }
+  .trial { display: flex; gap: 14px; align-items: stretch; }
+  .trial-marker {
+    flex: 0 0 56px; width: 56px; height: 56px; border-radius: 50%; align-self: center;
+    background: var(--panel-2); border: 2px solid var(--border-2);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 19px; color: var(--muted);
+  }
+  .trial.done .trial-marker { border-color: #ff9a3d; background: rgba(255, 154, 61, .12); font-size: 22px; }
+  .trial.current .trial-marker { border-color: var(--accent); color: var(--accent); animation: pulseRing 2.4s ease-in-out infinite; }
+  @keyframes pulseRing {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(124, 209, 197, .14); }
+    50%      { box-shadow: 0 0 0 9px rgba(124, 209, 197, .04); }
+  }
+  .trial-card {
+    flex: 1; background: linear-gradient(180deg, var(--panel), var(--panel-3));
+    border: 1px solid var(--border-2); border-radius: 14px; padding: 12px 16px;
+  }
+  .trial.current .trial-card { border-color: var(--accent); }
+  .trial.future .trial-card { opacity: .72; }
+  .trial-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .trial-head strong { font-size: 15.5px; }
+  .trial-flames { display: flex; gap: 3px; }
+  .tf { width: 7px; height: 11px; border-radius: 4px 4px 2px 2px; background: #2c3854; }
+  body.light-mode .tf { background: #cbd3e0; }
+  .tf.on { background: linear-gradient(180deg, #ffd86b, #ff7a3d); }
+  .trial-desc { margin: 3px 0 4px; font-size: 13.5px; }
+  .trial-whisper { margin: 0 0 6px; font-size: 12.8px; color: var(--accent); font-style: italic; }
+  .trial-whisper.misty { color: var(--muted); opacity: .75; }
+  .trial-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .trial-stats { font-size: 11.5px; color: var(--muted); }
+  @media (max-width: 560px) {
+    .trial { gap: 10px; }
+    .trial-marker { flex-basis: 44px; width: 44px; height: 44px; font-size: 16px; }
+    .trial-link { margin-left: 21px; }
+    .realm-hero { flex-wrap: wrap; }
+  }
+
+  /* ---- Sparks of Wisdom (collectible psychoeducation) ---- */
+  .spark-reveal { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 16px 0; }
+  .spark-card { position: relative; width: min(330px, 88vw); height: 195px; cursor: pointer; perspective: 900px; }
+  .spark-face {
+    position: absolute; inset: 0; border-radius: 16px; padding: 16px;
+    backface-visibility: hidden; -webkit-backface-visibility: hidden;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; text-align: center;
+    transition: transform .8s cubic-bezier(.2, .7, .25, 1);
+  }
+  .spark-back { background: linear-gradient(160deg, #2a3457, #171f38); border: 1px solid #40507e; transform: rotateY(0deg); }
+  .spark-back > span:first-child { font-size: 30px; color: #f6c76a; text-shadow: 0 0 18px rgba(246, 199, 106, .6); animation: twinkle 2.2s ease-in-out infinite; }
+  .spark-back em { color: #e8eef7; font-style: normal; font-weight: 700; }
+  .spark-tap { font-size: 11px; color: #94a3b8; letter-spacing: 1.6px; text-transform: uppercase; }
+  .spark-front { background: linear-gradient(160deg, #3c3320, #221c10); border: 1px solid #8a6d35; transform: rotateY(180deg); }
+  .spark-front .spark-icon { font-size: 26px; }
+  .spark-front strong { color: #ffe1a1; font-size: 16px; }
+  .spark-front p { margin: 0; font-size: 12.8px; color: #d9cba8; line-height: 1.45; }
+  .spark-card.flipped .spark-back { transform: rotateY(-180deg); }
+  .spark-card.flipped .spark-front { transform: rotateY(0deg); }
+  .spark-count a { color: var(--accent); }
+  .journal-panel .spark-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 12px; margin: 14px 0 18px;
+  }
+  .spark-slot {
+    border-radius: 14px; padding: 14px;
+    border: 1px solid #8a6d35; background: linear-gradient(160deg, #37301e, #201a0f);
+    display: flex; flex-direction: column; gap: 5px;
+    animation: viewIn .4s ease-out both; animation-delay: calc(var(--i, 0) * 40ms);
+  }
+  .spark-slot .spark-icon { font-size: 22px; }
+  .spark-slot strong { color: #ffe1a1; font-size: 14.5px; }
+  .spark-slot p { margin: 0; font-size: 12.5px; color: #d9cba8; line-height: 1.45; }
+  .spark-slot.locked { background: var(--panel-3); border-color: var(--border-2); opacity: .7; }
+  .spark-slot.locked .spark-icon, .spark-slot.locked strong, .spark-slot.locked p { color: var(--muted); }
+
+  /* ---- Reduced motion: the journey stays readable, just still ---- */
+  @media (prefers-reduced-motion: reduce) {
+    .story-beat, .realm-node, .jw-dawn { opacity: 1 !important; transform: none !important; transition: none; }
+    .beat-shadow.sz-1 { transform: scale(.9) !important; }
+    .beat-shadow.sz-3 { transform: scale(1.9) !important; }
+    .beat-shadow.sz-0 { transform: scale(.55) !important; }
+    .star, .campfire .flame, .beat-shadow, .realm-shadow, .shadow-blob,
+    .story-figure, .you-marker, .scroll-hint, .guardian.tamed-bird,
+    .spark-back > span:first-child, .trial.current .trial-marker { animation: none !important; }
+    .curve-path { stroke-dashoffset: 0 !important; animation: none !important; }
+    .spark-face { transition: none; }
+  }
 </style>
 </head>
 <body>
@@ -6015,6 +6394,218 @@ const PHOBIAS = {
   }
 };
 
+// ---------- The Journey: game-world data ----------
+// The whole app is framed as ONE game: your character travels the Valley of
+// Fears, where the six most famous phobias live as "realms" along a winding
+// path. A realm's ladder is its five "trials"; each finished trial shrinks
+// that realm's shadow guardian and earns a collectible Spark of Wisdom — the
+// psychoeducation, dripped one card at a time instead of dumped as a wall of
+// text. Non-featured phobias keep working via deep links / old progress, but
+// the journey map and pickers only surface these six (+ user-forged ladders).
+const FEATURED = ["dogs", "spiders", "snakes", "heights", "dark", "enclosed"];
+
+// Per-realm flavour. `whispers` is the per-trial psychology drip: one short
+// principle per rung, phrased for THIS fear, revealed as the traveler reaches
+// that trial (future trials stay misty — curiosity is part of the pull).
+const REALMS = {
+  dogs: {
+    realmName: "The Meadow Yard",
+    epithet: "where the barking lives",
+    guardianName: "the Hound Shadow",
+    line: "Every yard I crossed the street to avoid made the barking louder in my head.",
+    clearedLine: "The yard is just a yard now. The dog is just a dog.",
+    whispers: [
+      "Watching from a distance IS the work. Your body is collecting evidence right now.",
+      "If it looks at you, let it. Being seen by the fear — and staying — is the rep.",
+      "Ears up doesn't mean danger. Let your body learn to tell 'alert' from 'attack'.",
+      "Close is loud. Stay until loud gets boring — boredom is the sound of learning.",
+      "You control the distance. Choosing to stand near the bark is the final lesson."
+    ]
+  },
+  spiders: {
+    realmName: "The Old Cellar",
+    epithet: "where small things skitter",
+    guardianName: "the Weaver Shadow",
+    line: "It's not the size. It's the legs. But I'm done checking every corner of every room.",
+    clearedLine: "The cellar is quiet. It was always mostly quiet.",
+    whispers: [
+      "A dot in the corner. Your alarm fires anyway — alarms are cheap, danger is rare.",
+      "It moved, then stilled. Notice your prediction ('it will run at me') failing.",
+      "Darting looks like intent. It isn't — it's how small things stay alive.",
+      "Near your feet and… nothing happens. Let 'nothing happens' sink all the way in.",
+      "Eye level, on the wall. You've seen the whole truth of it now — and stayed."
+    ]
+  },
+  snakes: {
+    realmName: "The Sunlit Clearing",
+    epithet: "where the grass moves",
+    guardianName: "the River Shadow",
+    line: "A rope on a path once stopped my heart. I want my heart back.",
+    clearedLine: "The grass moves. Sometimes it's just the wind. You can tell now.",
+    whispers: [
+      "It's basking, not hunting. Most of a snake's day is spent doing nothing at all.",
+      "It slides, it settles. Stillness — yours — is a language it understands.",
+      "It crossed your path and kept going. You were never the destination.",
+      "It rose to look. Being seen and standing slow-and-still is your power here.",
+      "Rush it and it warns; move gently and it settles. Calm is a skill you now own."
+    ]
+  },
+  heights: {
+    realmName: "The Summit",
+    epithet: "where the ground looks up at you",
+    guardianName: "the Hollow-Stomach Shadow",
+    line: "It's not the falling. It's the pull of the edge. I want to stand there and just… look.",
+    clearedLine: "The drop is still deep. Your legs just no longer vote against you.",
+    whispers: [
+      "One step of height, same legs. The wobble is a guess your body makes, not a fact.",
+      "Hold the rail if you need it — then loosen one finger. That's how trust starts.",
+      "Looking down is allowed. The swoop in your stomach rises, peaks, and passes.",
+      "Wind is information, not threat. The building held everyone before you.",
+      "The edge, respected — not feared. That difference is the whole climb."
+    ]
+  },
+  dark: {
+    realmName: "The House at Night",
+    epithet: "where shapes grow eyes",
+    guardianName: "the Lightless Shadow",
+    line: "I know there's nothing there. I just want my body to know it too.",
+    clearedLine: "The dark is just the room with the lights off. It always was.",
+    whispers: [
+      "Dim is a good teacher. Your eyes adjust faster than your fear predicts.",
+      "Long shadows are geometry, not creatures. Watch one until it's boring.",
+      "In low light the mind fills gaps with monsters. Notice it doing it — that's the trick.",
+      "Your own breath is the loudest thing here. That's how safe this room is.",
+      "Total dark, and you're still you. Nothing was added when the light left."
+    ]
+  },
+  enclosed: {
+    realmName: "The Narrow Passage",
+    epithet: "where walls come close",
+    guardianName: "the Tight-Chest Shadow",
+    line: "Elevators, tunnels, tight rooms — my chest decides before I do. I'm taking the decision back.",
+    clearedLine: "Small rooms are just rooms. Your breath fits in all of them.",
+    whispers: [
+      "A roomy space to start. Map the exits once, then stop checking — that's the rep.",
+      "Walls in reach ≠ walls closing in. Touch one. It's just standing there.",
+      "Doors close. Air keeps arriving. The chest-squeeze is a false fuel gauge.",
+      "Shoulder-width walls, full-size breaths. Prove it slowly, on purpose.",
+      "Stillness in the narrowest place. You didn't need the room — you needed the calm."
+    ]
+  }
+};
+// Fallback realm flavour for custom / legacy phobias so every ladder still
+// renders as a realm even if it isn't one of the six featured fears.
+function realmOf(key) {
+  const p = PHOBIAS[key];
+  return REALMS[key] || {
+    realmName: p ? `The Realm of ${p.label}` : "An Unmapped Realm",
+    epithet: "a fear you carry",
+    guardianName: "its shadow",
+    line: "I named this fear myself. That's already half the map.",
+    clearedLine: "You walked the whole path you drew.",
+    whispers: [
+      "Starting small isn't cheating — it's how the nervous system actually learns.",
+      "Stay until the alarm gets bored. Boredom is progress wearing a disguise.",
+      "Notice what you predicted, and what actually happened. Mind the gap.",
+      "The urge to leave will crest and pass. Watch it like weather.",
+      "The last step is just the first step, repeated by someone braver — you."
+    ]
+  };
+}
+const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+
+// ---------- Sparks of Wisdom (collectible psychoeducation) ----------
+// One card is earned per finished trial, in a deliberate teaching order —
+// the psychology arrives little by little, at the exact moment it was just
+// FELT in the scene. Collected cards live in the Journal (#/journal).
+const INSIGHT_CARDS = [
+  { id: "wave",       icon: "🌊", title: "Fear is a wave",
+    text: "Anxiety rises, peaks, and falls on its own — even if you do nothing but stay. You just rode one. No wave is endless." },
+  { id: "avoidance",  icon: "🍂", title: "Avoidance feeds the shadow",
+    text: "Escaping a fear feels great for a minute — and teaches your brain the danger was real. Every avoided yard makes the bark louder. Facing is the only diet a shadow can't survive." },
+  { id: "brave",      icon: "🛡️", title: "Brave is not calm",
+    text: "Courage isn't the absence of fear — it's your hands shaking while you stay anyway. If you felt afraid in there, you weren't doing it wrong. You were doing it exactly right." },
+  { id: "habituation",icon: "🧠", title: "The body learns by staying",
+    text: "Stay near a fear long enough and the alarm quiets on its own. That's habituation — no willpower required, just time in the room. Boredom is the sound of it working." },
+  { id: "gap",        icon: "🎯", title: "The gap is the lesson",
+    text: "You predicted an 8. It was a 4. That gap — felt in the body, not read in a book — is literally your brain rewriting what counts as dangerous." },
+  { id: "exhale",     icon: "🌬️", title: "The long exhale",
+    text: "A slow out-breath presses your body's brake pedal (the vagus nerve). Out longer than in — 4 in, 6 out — and the heart has no choice but to follow." },
+  { id: "steps",      icon: "🪜", title: "Small steps beat big leaps",
+    text: "The nervous system trusts gradual evidence, not heroic jumps. A trial that's only a little scary, repeated, rewires more than one terrifying plunge." },
+  { id: "newmemory",  icon: "🌱", title: "A new memory, not a deleted one",
+    text: "Exposure doesn't erase the fear memory — it grows a stronger 'this is safe' memory on top of it. That's why practice matters: you're feeding the new one." },
+  { id: "attention",  icon: "👁️", title: "Look at it, not away",
+    text: "Distraction feels kinder, but attention is what lets safety learning stick. Watching the spider do nothing is the medicine. Looking away skips the dose." },
+  { id: "openhand",   icon: "🫱", title: "Open hand, not clenched fist",
+    text: "Fighting the feeling amplifies it. Letting fear be there — in the room, unfought — while you keep doing the thing loosens its grip faster than any struggle." },
+  { id: "spiral",     icon: "🌀", title: "Wobbles are part of the path",
+    text: "A scared day after a brave week isn't relapse. Learning is a spiral, not a line — you pass the same spot again, but higher up." },
+  { id: "bodyfirst",  icon: "⚡", title: "The body votes first",
+    text: "Racing heart, then scary thought — in that order. The alarm is a reflex, not a report. You can feel danger and be perfectly safe at the same time." },
+  { id: "portable",   icon: "🧭", title: "Courage travels",
+    text: "Practicing in different places, moods and times of day makes the safety learning portable — so it shows up in the real yard, not just this one." },
+  { id: "rest",       icon: "🌙", title: "Rest writes it down",
+    text: "Your brain consolidates the day's safety learning while you sleep. The bravest thing you can do after a trial is nothing at all." },
+  { id: "coach",      icon: "💬", title: "Talk like a coach, not a critic",
+    text: "'This is hard and I can stay' beats 'don't panic'. The voice that gets you through a trial is kind, specific, and on your side — practice using it on yourself." }
+];
+function getSparks() {
+  const cs = activeCharSlice();
+  if (!Array.isArray(cs.sparks)) cs.sparks = [];
+  return cs.sparks;
+}
+function awardSpark() {
+  const owned = getSparks();
+  const next = INSIGHT_CARDS.find(c => !owned.includes(c.id));
+  if (!next) return null;
+  owned.push(next.id);
+  saveState();
+  return next;
+}
+
+// The realms shown on the journey map: the six featured fears, plus anything
+// the traveler already carries (legacy progress, a non-featured primary fear,
+// or a forged/custom ladder) so nothing they own ever disappears.
+function journeyKeys() {
+  const keys = FEATURED.filter(k => PHOBIAS[k]);
+  const extra = [];
+  const ch = window.Character && window.Character.loadCharacter();
+  if (ch) [ch.primaryPhobia, ...(ch.additionalPhobias || [])].forEach(k => {
+    if (k && PHOBIAS[k] && !keys.includes(k) && !extra.includes(k)) extra.push(k);
+  });
+  Object.keys(state.progress || {}).forEach(k => {
+    if (PHOBIAS[k] && (state.progress[k].highestCompleted ?? -1) >= 0 && !keys.includes(k) && !extra.includes(k)) extra.push(k);
+  });
+  Object.keys(PHOBIAS).forEach(k => {
+    if (PHOBIAS[k].isCustom && !keys.includes(k) && !extra.includes(k)) extra.push(k);
+  });
+  return keys.concat(extra);
+}
+// Subset of PHOBIAS offered in pickers (character creator): featured + custom
+// + whatever this character already selected, so editing never loses a fear.
+function pickablePhobias(existingChar) {
+  const keys = FEATURED.filter(k => PHOBIAS[k]);
+  Object.keys(PHOBIAS).forEach(k => { if (PHOBIAS[k].isCustom && !keys.includes(k)) keys.push(k); });
+  if (existingChar) [existingChar.primaryPhobia, ...(existingChar.additionalPhobias || [])].forEach(k => {
+    if (k && PHOBIAS[k] && !keys.includes(k)) keys.push(k);
+  });
+  const out = {};
+  keys.forEach(k => { out[k] = PHOBIAS[k]; });
+  return out;
+}
+// Where the traveler "is" on the map: the realm of their most recent session,
+// else their primary fear, else the first featured realm they haven't cleared.
+function currentRealmKey() {
+  const keys = journeyKeys();
+  const lastEntry = (state.log && state.log.length) ? state.log[state.log.length - 1] : null;
+  if (lastEntry && keys.includes(lastEntry.phobia)) return lastEntry.phobia;
+  const ch = window.Character && window.Character.loadCharacter();
+  if (ch && ch.primaryPhobia && keys.includes(ch.primaryPhobia)) return ch.primaryPhobia;
+  const firstOpen = keys.find(k => (getProgress(k).highestCompleted ?? -1) < (PHOBIAS[k].levels.length - 1));
+  return firstOpen || keys[0];
+}
+
 // ---------- State ----------
 const STATE_KEY = "fobia.state.v1";
 let state = loadState();
@@ -6164,6 +6755,10 @@ function markCompleted(phobiaKey, levelIdx, suds, predicted, peak, outcome) {
     milestones: newMilestones.map(m => m.title),
     key: `${phobiaKey}.${levelIdx}`,
     ts: Date.now(),
+    // Spark of Wisdom: one psychoeducation card per FINISHED trial, dealt in
+    // teaching order. Early exits still earn courage but not a card — the
+    // card celebrates a completed hold, and the deck is finite.
+    spark: finished ? (awardSpark()?.id || null) : null,
   };
   // Award an achievement toast for first-time completions
   if (wasNew) {
@@ -6354,6 +6949,7 @@ function serializeRoute(view, params = {}) {
   switch (view) {
     case "welcome":   return "/";
     case "select":    return "/fears";
+    case "journal":   return "/journal";
     case "insights":  return "/insights";
     case "profiles":  return "/profiles";
     case "character": return params.editing ? "/me/edit" : "/me";
@@ -6375,6 +6971,7 @@ function parseRoute(hash) {
   if (parts.length === 0) return { view: "welcome", params: {} };
   switch (parts[0]) {
     case "fears":    return { view: "select",    params: {} };
+    case "journal":  return { view: "journal",   params: {} };
     case "insights": return { view: "insights",  params: {} };
     case "profiles": return { view: "profiles",  params: {} };
     case "me":       return { view: "character", params: { editing: parts[1] === "edit" } };
@@ -6480,20 +7077,24 @@ function render(view, params) {
       ${allChars.length > 1 ? `<span class="char-badge-count">${allChars.length}</span>` : ""}
       ${streak >= 2 ? `<span class="char-badge-streak" title="${streak}-day streak">🔥 ${streak}</span>` : ""}
     </button>` : "";
+  const sparkCount = character ? getSparks().length : 0;
+  const sparksBtn = sparkCount > 0
+    ? `<button class="audio-btn spark-hud" id="sparksBtn" title="Book of Sparks — the wisdom you've earned" aria-label="Open your Book of Sparks">✦<span class="spark-hud-n">${sparkCount}</span></button>` : "";
   const html = `
     <a class="skip-link" href="#view">Skip to main content</a>
     <header class="brand" role="banner">
       <div class="brand-left">
         ${menuBtn}
-        <h1><span class="dot"></span> Mira</h1>
+        <h1><span class="dot"></span> Mira <span class="brand-tag">the courage journey</span></h1>
       </div>
       <nav class="nav-actions" aria-label="App navigation">
-        ${getCourage() > 0 ? `<span class="courage-badge" id="courageBadge" title="Your courage points — earned by completing steps">⚡ ${getCourage()}</span>` : ""}
+        ${getCourage() > 0 ? `<span class="courage-badge" id="courageBadge" title="Courage — earned every time you face a trial">⚡ ${getCourage()}</span>` : ""}
         ${charBadge}
+        ${sparksBtn}
         ${insightsBtn}
         ${audioBtn}
         ${settingsBtn}
-        ${view !== "welcome" && view !== "character" ? `<button class="home-btn" id="home" aria-label="Back to phobia list">Home</button>` : ""}
+        ${view !== "welcome" && view !== "character" ? `<button class="home-btn" id="home" aria-label="Back to the journey map">🏕 Camp</button>` : ""}
       </nav>
     </header>
     <main id="view" role="main"></main>
@@ -6521,6 +7122,7 @@ function render(view, params) {
     v.innerHTML = viewComplete(params.phobia, params.level, suds, predicted, peak);
   }
   if (view === "insights")    v.innerHTML = viewInsights();
+  if (view === "journal")     v.innerHTML = viewJournal();
   if (view === "profiles")    v.innerHTML = viewProfiles();
   if (view === "custom")      v.innerHTML = viewCustom(params.editing);
   if (view === "phobia-progress") v.innerHTML = viewPhobiaProgress(params.phobia);
@@ -6533,6 +7135,8 @@ function render(view, params) {
   if (view === "custom")    attachCustomHandlers(params.editing);
   if (view === "exposure")  mountExposure(params.phobia, params.level);
   if (view === "breathe")   runBreathing();
+  if (view === "welcome")   mountStory();
+  if (view === "select")    mountJourney();
 
   // Move focus to the new view's heading so keyboard + screen-reader users
   // don't get stranded on the just-removed element (which drops focus to
@@ -6567,7 +7171,7 @@ function viewCharacterPage(editing) {
   const existing = editing ? window.Character.loadCharacter() : null;
   return `
     <div class="panel">
-      ${window.Character.viewCharacterCreator(existing, PHOBIAS)}
+      ${window.Character.viewCharacterCreator(existing, pickablePhobias(existing))}
     </div>
   `;
 }
@@ -6576,7 +7180,7 @@ function attachCharacterHandlers(editing) {
   if (!window.Character) return;
   const existing = editing ? window.Character.loadCharacter() : null;
   window.Character.attachCreatorHandlers(
-    existing, PHOBIAS,
+    existing, pickablePhobias(existing),
     (savedChar) => {
       window._prevActiveCharId = null;
       // After saving, take them straight to the ladder for their primary phobia
@@ -6610,6 +7214,18 @@ function attachHandlers(view, params) {
   if (settingsBtn) settingsBtn.onclick = openSettings;
   const menuBtn = document.getElementById("menuBtn");
   if (menuBtn) menuBtn.onclick = openMenu;
+  const sparksHud = document.getElementById("sparksBtn");
+  if (sparksHud) sparksHud.onclick = () => go("journal");
+  // Spark of Wisdom card on the victory screen: tap (or wait) to flip it over.
+  const sparkCard = document.getElementById("sparkCard");
+  if (sparkCard) {
+    const flip = () => sparkCard.classList.add("flipped");
+    sparkCard.addEventListener("click", flip);
+    sparkCard.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); }
+    });
+    setTimeout(() => { if (sparkCard.isConnected) flip(); }, 2200);
+  }
   const howBtn = document.getElementById("howItWorksBtn");
   if (howBtn) howBtn.onclick = () => {
     const panel = document.getElementById("howItWorksPanel");
@@ -6708,20 +7324,21 @@ function openMenu() {
       </div>
     ` : ""}
     <ul class="menu-list">
-      <li><button data-go="welcome">🏠 ${window.t ? window.t("nav.home") : "Home"}</button></li>
-      <li><button data-go="select">${window.t ? window.t("menu.allFears") : "✦ All fears"}</button></li>
-      ${ch ? `<li><button data-go="ladder" data-phobia="${ch.primaryPhobia || ""}">${window.t ? window.t("menu.continueLadder") : "▶ Continue your ladder"}</button></li>` : ""}
-      <li><button data-go="insights">${window.t ? window.t("menu.yourProgress") : "📊 Your progress"}</button></li>
-      <li><button data-go="custom">${window.t ? window.t("menu.customLadder") : "＋ Build a custom ladder"}</button></li>
+      <li><button data-go="welcome">🌌 Title screen — the story</button></li>
+      <li><button data-go="select">🗺 The Valley of Fears</button></li>
+      ${ch ? `<li><button data-go="ladder" data-phobia="${ch.primaryPhobia || ""}">⚔ Continue your trials</button></li>` : ""}
+      <li><button data-go="journal">✦ Book of Sparks</button></li>
+      <li><button data-go="insights">📜 Your story so far</button></li>
+      <li><button data-go="custom">🛠 Forge a custom fear</button></li>
     </ul>
     <div class="menu-divider"></div>
     <ul class="menu-list">
-      <li><button data-go="character" data-edit="1">${window.t ? window.t("menu.editCharacter") : "✎ Edit character"}</button></li>
-      ${allChars.length > 1 ? `<li><button data-go="profiles">${window.t ? window.t("menu.switchCharacter") : "⇄ Switch character"}</button></li>` : ""}
+      <li><button data-go="character" data-edit="1">${window.t ? window.t("menu.editCharacter") : "✎ Edit your traveler"}</button></li>
+      ${allChars.length > 1 ? `<li><button data-go="profiles">${window.t ? window.t("menu.switchCharacter") : "⇄ Switch traveler"}</button></li>` : ""}
       <li><button id="menuOpenSettings">${window.t ? window.t("menu.settings") : "⚙ Settings"}</button></li>
     </ul>
     <div class="menu-divider"></div>
-    <p class="menu-footer">${window.t ? window.t("menu.footer") : "Step Up · prototype, not therapy."}</p>
+    <p class="menu-footer">Mira · a practice game, not therapy.</p>
   `;
   const backdrop = document.createElement("div");
   backdrop.className = "menu-backdrop";
@@ -7151,6 +7768,8 @@ function handleAction(d, params) {
       break;
     }
     case "open-select":     go("select"); break;
+    case "open-journal":    go("journal"); break;
+    case "open-custom":     go("custom"); break;
     case "edit-goal":       openGoalEditor(d.phobia); break;
     case "reset-progress":  if (confirm("Reset this character's progress? Other characters are not affected.")) { resetActiveProgress(); go("select"); } break;
   }
@@ -7181,198 +7800,288 @@ function handleRateSubmit(d, params) {
 }
 
 // ---------- Views ----------
+// The title screen is a scroll-told story. Each "beat" is a near-full-screen
+// frame that lights up as it enters the viewport; the shadow creature grows
+// while the story explains how avoidance feeds fear, then shrinks when the
+// story reaches "face it". The psychology arrives as story, not syllabus.
+function starfieldHTML(n) {
+  let out = "";
+  for (let i = 0; i < n; i++) {
+    const x = (Math.random() * 100).toFixed(2);
+    const y = (Math.random() * 100).toFixed(2);
+    const s = (Math.random() * 1.6 + 0.8).toFixed(2);
+    const d = (Math.random() * 6).toFixed(2);
+    const o = (Math.random() * 0.5 + 0.3).toFixed(2);
+    out += `<i class="star" style="left:${x}%;top:${y}%;width:${s}px;height:${s}px;--tw:${d}s;--o:${o}"></i>`;
+  }
+  return out;
+}
+
 function viewWelcome() {
-  // Sample avatars for the "create your character" sample row
-  const sampleChars = [
-    { skinTone: "fair",     hairColor: "brown", hairStyle: "short", topColor: "teal",   eyeColor: "brown", glasses: "round",  facialHair: "stubble" },
-    { skinTone: "deep",     hairColor: "rose",  hairStyle: "long",  topColor: "plum",   eyeColor: "hazel", glasses: "none",   facialHair: "none"   },
-    { skinTone: "olive",    hairColor: "black", hairStyle: "curly", topColor: "amber",  eyeColor: "green", glasses: "none",   facialHair: "beard"  },
-    { skinTone: "porcelain",hairColor: "blond", hairStyle: "pony",  topColor: "rose",   eyeColor: "blue",  glasses: "square", facialHair: "none"   },
-  ];
-  const sampleSVG = (window.Character && window.Character.avatarSVG) ? sampleChars.map(c => `
-    <div class="sample-avatar">${window.Character.avatarSVG(c, 56)}</div>
-  `).join("") : "";
+  const ch = window.Character && window.Character.loadCharacter();
+  const heroFigure = (window.Character && window.Character.avatarSVG)
+    ? `<div class="story-figure">${window.Character.avatarSVG(ch || { skinTone: "fair", hairColor: "brown", hairStyle: "short", topColor: "teal", eyeColor: "brown" }, 120)}</div>`
+    : "";
+  const heroLine = ch
+    ? `Welcome back, <strong>${escapeHtml(ch.name || "traveler")}</strong>. The valley kept your place.`
+    : `Everyone carries a fear. This one is yours to face — one small, safe step at a time.`;
+  const cta = ch
+    ? `<button class="btn-primary btn-xl" data-action="begin">⚔ Continue the journey</button>`
+    : `<button class="btn-primary btn-xl" data-action="begin">✨ Create your traveler</button>`;
 
-  // Showcase grid of all phobias on the home page
-  const phobiaCards = Object.entries(PHOBIAS).map(([key, p]) => {
-    const info = window.PhobiaInfo && window.PhobiaInfo[key];
-    const thumb = phobiaThumbnail(key);
-    return `
-      <div class="show-card" data-action="select-phobia" data-phobia="${key}">
-        <div class="show-thumb">${thumb}</div>
-        <div class="show-icon">${p.icon}</div>
-        <div class="show-label">${p.label}</div>
-        <div class="show-clinical">${p.name}</div>
-        <p class="show-blurb">${info ? info.summary : p.blurb}</p>
-        ${info ? `<div class="show-prevalence">${info.prevalence}</div>` : ""}
-      </div>
-    `;
-  }).join("");
+  const realmTeasers = FEATURED.filter(k => PHOBIAS[k]).map(k => `
+    <button class="story-realm" data-action="select-phobia" data-phobia="${k}" ${ch ? "" : `disabled title="Create your traveler first"`}>
+      <span class="story-realm-thumb" aria-hidden="true">${phobiaThumbnail(k)}</span>
+      <span class="story-realm-name">${escapeHtml(realmOf(k).realmName)}</span>
+      <span class="story-realm-fear">${escapeHtml(PHOBIAS[k].name)}</span>
+    </button>`).join("");
 
   return `
-    <div class="hero">
-      <div class="floaters">
-        <div class="floater" style="font-size:34px">🌊</div>
-        <div class="floater" style="font-size:34px">🕷</div>
-        <div class="floater" style="font-size:34px">🏙</div>
-      </div>
-      <span class="eyebrow">A mindful path · backed by CBT</span>
-      <h1 class="huge">Face what frightens you, gently.</h1>
-      <p class="lead">
-        Mira is a quiet practice space for the things that scare you.
-        Clinicians call this <em>gradual exposure</em> — meeting a softer
-        version of the fear, staying with it until your body learns it is
-        safe, then taking the next small step. You walk every step yourself.
-      </p>
-      <div class="actions">
-        <button class="btn-primary" data-action="begin">Begin</button>
-        <button class="btn-ghost" id="howItWorksBtn">How a session works</button>
-      </div>
-    </div>
+  <div class="story" id="storyRoot">
+    <section class="story-beat beat-hero lit">
+      <div class="story-sky" aria-hidden="true">${starfieldHTML(70)}<div class="story-moon"></div></div>
+      ${heroFigure}
+      <p class="story-kicker">a tiny game about big fears</p>
+      <h1 class="story-title">The Valley of Fears</h1>
+      <div class="story-bubble">${heroLine}</div>
+      <div class="actions story-actions">${cta}</div>
+      <div class="scroll-hint" aria-hidden="true"><span>the story</span>▾</div>
+    </section>
 
-    <div class="pillars">
-      <div class="pillar">
-        <h4>You stay in control</h4>
-        <p>Pause, breathe, or leave any step. Nothing locks. Nothing surprises you.</p>
-      </div>
-      <div class="pillar">
-        <h4>Your body learns calm</h4>
-        <p>Anxiety naturally falls when you stay with it. Each step asks you to hold a little longer.</p>
-      </div>
-      <div class="pillar">
-        <h4>Built on real science</h4>
-        <p>Mira uses inhibitory learning — exposure builds a stronger "safe" memory on top of the old fear.</p>
-      </div>
-    </div>
+    <section class="story-beat" data-beat="1">
+      <div class="beat-shadow sz-1" aria-hidden="true"><i class="eye"></i><i class="eye"></i></div>
+      <h2 class="story-line">Fear starts small.</h2>
+      <p class="story-text">A bark behind a fence. A spider in the bath. A balcony you didn't step onto. A room that felt too tight to breathe in.</p>
+    </section>
 
-    <div class="panel coming-soon" style="margin-top: var(--space-5);">
-      <div class="cs-row">
-        <div class="cs-text">
-          <span class="cs-eyebrow">Coming soon</span>
-          <h3>Beyond fear: meditation, breathwork, gratitude</h3>
-          <p>Mira is starting with phobias, but the same gentle approach
-          works for everyday calm. Guided meditation, breathing exercises,
-          and grounding practices are on the way.</p>
-        </div>
-        <div class="cs-icons" aria-hidden="true">
-          <span>🧘</span><span>🌬️</span><span>🌱</span>
-        </div>
-      </div>
-    </div>
+    <section class="story-beat" data-beat="2">
+      <div class="beat-shadow sz-3" aria-hidden="true"><i class="eye"></i><i class="eye"></i></div>
+      <h2 class="story-line">Avoid it, and it grows.</h2>
+      <p class="story-text">Every time you cross the street, take the stairs, leave the light on — the relief feels wonderful. And the shadow learns you fear it. That relief is exactly what feeds it.</p>
+    </section>
 
-    ${sampleSVG ? `
-    <div class="panel character-callout" style="margin-top:18px">
-      <div class="character-callout-row">
-        <div class="character-callout-text">
-          <h3>First, make yourself.</h3>
-          <p>Pick a name, a face, what you wear, what fears you want to work on. The character walks every scene with you — your skin tone is the hand on the railing, your shirt is what you wear into the cabin. You can change anything later.</p>
-          <div class="actions" style="margin-top:8px">
-            <button class="btn-primary" data-action="begin">Create your character</button>
-          </div>
-        </div>
-        <div class="character-callout-samples">
-          ${sampleSVG}
-        </div>
+    <section class="story-beat" data-beat="3">
+      <div class="story-curve" aria-hidden="true">
+        <svg viewBox="0 0 320 120" preserveAspectRatio="none">
+          <path class="curve-path" d="M8,104 C60,100 84,26 128,22 C176,18 216,74 264,92 C288,99 304,102 312,103"
+                fill="none" stroke-width="3" stroke-linecap="round"/>
+          <text x="96" y="14" class="curve-label">it peaks…</text>
+          <text x="196" y="78" class="curve-label">…then falls on its own</text>
+        </svg>
       </div>
-    </div>` : ""}
+      <h2 class="story-line">But fear has a secret.</h2>
+      <p class="story-text">Stay near it — gently, on your own terms — and it rises, peaks, and <em>falls by itself</em>. Your body learns what nobody could tell you: it's safe. Face the shadow, and it shrinks.</p>
+    </section>
 
-    <div class="panel" style="margin-top:18px">
-      <h3 style="margin-bottom:6px">${Object.keys(PHOBIAS).length} fears you can work with</h3>
-      <p>Hover any one to read the science behind it. Pick yours when you start.</p>
-      <div class="show-grid">${phobiaCards}</div>
-    </div>
+    <section class="story-beat" data-beat="4">
+      <div class="beat-shadow sz-0 tamed" aria-hidden="true"><i class="eye"></i><i class="eye"></i></div>
+      <h2 class="story-line">That's the whole game.</h2>
+      <p class="story-text">Six famous fears live in this valley. Each holds five trials, from "barely a whisper" to "the real thing". Walk them at your own pace — you can leave any trial at any moment, and leaving is never a defeat.</p>
+      <div class="story-realms">${realmTeasers}</div>
+    </section>
 
-    <div class="panel" id="howItWorksPanel" style="margin-top:18px;">
-      <h3>What happens in a session</h3>
-      <div class="journey">
-        <div class="journey-step">
-          <div class="journey-num">1</div>
-          <div class="journey-text">
-            <strong>Pick a rung</strong>
-            <span>Each phobia has 5 rungs from easy to intense. Ladder shows what to expect at each one.</span>
-          </div>
-        </div>
-        <div class="journey-step">
-          <div class="journey-num">2</div>
-          <div class="journey-text">
-            <strong>3 second countdown · breath cue</strong>
-            <span>Get ready. Notice your body before the scene appears.</span>
-          </div>
-        </div>
-        <div class="journey-step">
-          <div class="journey-num">3</div>
-          <div class="journey-text">
-            <strong>Hold the exposure</strong>
-            <span>Look around in 3D. A calm voice grounds you. The hold timer recommends staying just long enough for the anxiety curve to fall.</span>
-          </div>
-        </div>
-        <div class="journey-step">
-          <div class="journey-num">4</div>
-          <div class="journey-text">
-            <strong>Rate · breathe · climb</strong>
-            <span>Self-rate your anxiety on the SUDS scale. If it's high, take a guided box-breath. When ready, the next rung.</span>
-          </div>
-        </div>
-      </div>
-      <div class="disclaimer" style="margin-top:14px">
-        <strong>This is a prototype, not therapy.</strong> Real exposure work for phobias
-        belongs with a trained clinician who paces the work and supports you through it.
-        Use this for curiosity, education, or as a conversation starter — not treatment.
-      </div>
-    </div>
-  `;
+    <section class="story-beat beat-final" data-beat="5">
+      <h2 class="story-line">Your journey starts at the campfire.</h2>
+      <p class="story-text">Make a traveler — a face, a name, the fears you want to face. They walk every scene with you: their hand on the railing, their feet at the cellar stairs.</p>
+      <div class="actions story-actions">${cta}</div>
+      <p class="story-disclaimer"><strong>A practice game, not therapy.</strong> Real exposure work for phobias belongs with a trained clinician who paces it and supports you. Use Mira for curiosity, education, or as a conversation starter — not treatment.</p>
+    </section>
+  </div>`;
 }
 
+function mountStory() {
+  const rootEl = document.getElementById("storyRoot");
+  if (!rootEl) return;
+  const beats = rootEl.querySelectorAll(".story-beat");
+  if (!("IntersectionObserver" in window)) { beats.forEach(b => b.classList.add("lit")); return; }
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add("lit"); io.unobserve(e.target); } });
+  }, { threshold: 0.35 });
+  beats.forEach(b => io.observe(b));
+}
+
+// The journey map: a night valley the traveler scrolls down through — the
+// campfire at the top, realms along a winding dotted path, a dawn glow at the
+// far end. This IS the fear menu, drawn as a place instead of a grid; each
+// realm's shadow blob shrinks as its trials are faced. Route stays "#/fears".
 function viewSelect() {
-  const cards = Object.entries(PHOBIAS).map(([key, p], i) => {
-    const prog = getProgress(key);
-    const completed = prog.highestCompleted + 1;
-    const total = p.levels.length;
-    const attempts = state.log.filter(l => l.phobia === key).length;
-    const cta = completed === 0 ? "Begin" : completed >= total ? "Revisit" : "Continue";
-    const meta = `
-      <div class="meta">
-        <span>${completed === 0 ? `${total} rungs · start anywhere` : completed === total ? "ladder complete ✓" : `rung ${completed} of ${total}`}</span>
-        ${attempts > 0 ? `<span class="dotsep">·</span><span>${attempts} session${attempts === 1 ? "" : "s"}</span>` : ""}
-      </div>`;
-    return `
-      <div class="card" data-action="select-phobia" data-phobia="${key}" style="--i:${i}" tabindex="0" role="button" aria-label="${p.label} — ${cta}">
-        ${completed > 0 ? `<span class="progress-pill">${completed}/${total}</span>` : ""}
-        <div class="icon">${p.icon}</div>
-        <h3>${escapeHtml(p.label)}</h3>
-        <div class="small" style="color: var(--accent); margin-bottom: 8px;">${escapeHtml(p.name)}</div>
-        <p style="margin: 0; font-size: 13.5px;">${escapeHtml(p.blurb)}</p>
-        ${meta}
-        ${completed > 0 ? `<div class="progress-bar"><div style="width:${(completed/total)*100}%"></div></div>` : ""}
-        <span class="card-go">${cta} <span class="arr">→</span></span>
-      </div>
-    `;
-  }).join("");
+  const ch = window.Character && window.Character.loadCharacter();
+  const keys = journeyKeys();
+  const curKey = currentRealmKey();
+  const totalTrials = keys.reduce((s, k) => s + PHOBIAS[k].levels.length, 0);
+  const facedTrials = keys.reduce((s, k) => s + Math.min(PHOBIAS[k].levels.length, (getProgress(k).highestCompleted ?? -1) + 1), 0);
+  const sparks = ch ? getSparks().length : 0;
 
-  // Compute a tiny session summary
-  const totalSessions = state.log.length;
-  const completedLadders = Object.entries(PHOBIAS).filter(([k, p]) => (state.progress[k]?.highestCompleted ?? -1) >= p.levels.length - 1).length;
+  // Campfire line: the character speaks about where they are on the journey.
+  const curRealm = realmOf(curKey);
+  const curProg = (getProgress(curKey).highestCompleted ?? -1) + 1;
+  const campLine = !ch ? "A campfire, waiting for a traveler."
+    : facedTrials === 0 ? `“${curRealm.line}”`
+    : curProg >= PHOBIAS[curKey].levels.length ? `“${curRealm.clearedLine}”`
+    : `“Trial ${curProg + 1} of ${curRealm.realmName} is waiting for me.”`;
+
+  const nodes = keys.map((k, i) => {
+    const p = PHOBIAS[k];
+    const realm = realmOf(k);
+    const prog = getProgress(k);
+    const done = Math.min(p.levels.length, prog.highestCompleted + 1);
+    const total = p.levels.length;
+    const cleared = done >= total;
+    const isCurrent = k === curKey;
+    const remaining = 1 - done / total;   // 1 = untouched shadow, 0 = tamed
+    const pips = Array.from({ length: total }, (_, j) =>
+      `<i class="pip ${j < done ? "lit" : ""}" title="Trial ${j + 1}${j < done ? " — faced" : ""}"></i>`).join("");
+    const stateLine = cleared ? realm.clearedLine
+      : done > 0 ? `${realm.guardianName} is weakening — ${total - done} trial${total - done === 1 ? "" : "s"} left.`
+      : `${realm.guardianName} still holds this place.`;
+    return `
+      <li class="realm-node ${i % 2 ? "side-r" : "side-l"} ${cleared ? "cleared" : ""} ${isCurrent ? "current" : ""}"
+          data-action="select-phobia" data-phobia="${k}" tabindex="0" role="button"
+          aria-label="${escapeHtml(realm.realmName)} — ${escapeHtml(p.name)}, ${done} of ${total} trials faced">
+        <div class="realm-thumb" aria-hidden="true">${phobiaThumbnail(k)}
+          ${cleared ? `<span class="realm-tamed">🕊 tamed</span>` : `<span class="realm-shadow" style="--rem:${remaining.toFixed(2)}"><i class="eye"></i><i class="eye"></i></span>`}
+          ${isCurrent && ch ? `<span class="you-marker" title="You are here">${window.Character.avatarSVG(ch, 40)}<span>you</span></span>` : ""}
+        </div>
+        <div class="realm-body">
+          <span class="realm-kicker">Realm ${ROMAN[i] || i + 1} · ${escapeHtml(p.name)}</span>
+          <h3 class="realm-name">${escapeHtml(realm.realmName)}</h3>
+          <p class="realm-epithet">${escapeHtml(realm.epithet)}</p>
+          <div class="realm-pips">${pips}</div>
+          <p class="realm-state">${escapeHtml(stateLine)}</p>
+          <span class="realm-cta">${done === 0 ? "Enter the realm" : cleared ? "Walk it again" : "Continue"} <span class="arr">→</span></span>
+        </div>
+      </li>`;
+  }).join(`<li class="path-seg" aria-hidden="true"><i></i><i></i><i></i></li>`);
 
   return `
-    <div class="panel">
-      <h2>Choose a phobia to work with</h2>
-      <p>Pick the one you're curious about. You can stop, change, or reset whenever.</p>
-      ${totalSessions > 0 ? `<p class="small" style="color:var(--accent);margin-top:-6px">${totalSessions} session${totalSessions === 1 ? "" : "s"} so far · ${completedLadders} ladder${completedLadders === 1 ? "" : "s"} complete</p>` : ""}
-      <div class="grid big">${cards}</div>
-    </div>
-  `;
+  <div class="jworld" id="journeyRoot">
+    <div class="jw-stars" aria-hidden="true">${starfieldHTML(60)}</div>
+    <section class="camp">
+      <div class="camp-scene" aria-hidden="true">
+        ${ch ? `<div class="camp-char">${window.Character.avatarSVG(ch, 104)}</div>` : ""}
+        <div class="campfire"><i class="flame f1"></i><i class="flame f2"></i><i class="flame f3"></i><span class="logs"></span><span class="fire-glow"></span></div>
+      </div>
+      <div class="camp-bubble">${campLine}</div>
+      <div class="camp-stats">
+        <span class="camp-stat" title="Courage — earned every time you face a trial">⚡ ${getCourage()} courage</span>
+        <span class="camp-stat" title="Trials faced across the valley">🛡 ${facedTrials}/${totalTrials} trials</span>
+        <button class="camp-stat as-btn" data-action="open-journal" title="Book of Sparks — the wisdom you've collected">✦ ${sparks}/${INSIGHT_CARDS.length} sparks</button>
+      </div>
+      <p class="camp-hint">the path descends through the valley — choose a realm ▾</p>
+    </section>
+    <ol class="realm-list">${nodes}</ol>
+    <section class="jw-dawn">
+      <h3>Beyond the valley</h3>
+      <p>Fears the map doesn't know yet — forge your own path for them.</p>
+      <div class="actions" style="justify-content:center">
+        <button class="btn-ghost" data-action="open-custom">🛠 Forge a custom fear</button>
+        ${state.log.length ? `<button class="btn-ghost" data-action="open-insights">📜 Your story so far</button>` : ""}
+      </div>
+    </section>
+  </div>`;
 }
 
+function mountJourney() {
+  const rootEl = document.getElementById("journeyRoot");
+  if (!rootEl) return;
+  const nodes = rootEl.querySelectorAll(".realm-node, .jw-dawn");
+  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if ("IntersectionObserver" in window && !reduce) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add("lit"); io.unobserve(e.target); } });
+    }, { threshold: 0.18 });
+    nodes.forEach(n => io.observe(n));
+  } else {
+    nodes.forEach(n => n.classList.add("lit"));
+  }
+  // Gentle star parallax while the valley scrolls. Self-removing: the listener
+  // detaches itself the first time it fires after this view is torn down.
+  const stars = rootEl.querySelector(".jw-stars");
+  if (stars && !reduce) {
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (!stars.isConnected) { window.removeEventListener("scroll", onScroll); return; }
+        stars.style.transform = `translateY(${window.scrollY * 0.35}px)`;
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+  }
+  // The game remembers where you are: bring the current realm into view once
+  // the traveler has actually started walking (fresh travelers see the camp).
+  const cur = rootEl.querySelector(".realm-node.current");
+  if (cur && state.log && state.log.length) {
+    requestAnimationFrame(() => {
+      try { cur.scrollIntoView({ block: "center", behavior: "instant" }); }
+      catch { cur.scrollIntoView(); }
+    });
+  }
+}
+
+// The Book of Sparks — every psychology card earned so far, plus face-down
+// slots for the ones still out there. Psychoeducation as a collection screen:
+// learning reads as loot, not homework.
+function viewJournal() {
+  const owned = getSparks();
+  const cards = INSIGHT_CARDS.map((c, i) => {
+    const has = owned.includes(c.id);
+    return has ? `
+      <div class="spark-slot owned" style="--i:${i}">
+        <span class="spark-icon">${c.icon}</span>
+        <strong>${escapeHtml(c.title)}</strong>
+        <p>${escapeHtml(c.text)}</p>
+      </div>` : `
+      <div class="spark-slot locked" style="--i:${i}" title="Face another trial to earn this spark">
+        <span class="spark-icon">?</span>
+        <strong>Spark ${i + 1}</strong>
+        <p>Still out there. Face another trial to earn it.</p>
+      </div>`;
+  }).join("");
+  return `
+    <div class="panel journal-panel">
+      <span class="badge">Book of Sparks</span>
+      <h2 style="margin-top:10px">The wisdom you've earned</h2>
+      <p>Every finished trial leaves a spark — one piece of the psychology of fear, collected by living it rather than reading it. ${owned.length ? `You hold <strong>${owned.length} of ${INSIGHT_CARDS.length}</strong>.` : "Your book is empty — face your first trial to begin it."}</p>
+      <div class="spark-grid">${cards}</div>
+      <div class="actions"><button class="btn-primary" data-action="open-select">🗺 Back to the valley</button></div>
+    </div>`;
+}
+
+// A realm's page: the fear's five rungs drawn as a trial path beneath the
+// realm's shadow guardian, which visibly shrinks as trials are faced. The
+// deep psychoeducation is kept, tucked behind "The Guide's notes"; the
+// per-trial psychology drips out as one whisper per reached trial instead.
 function viewLadder(phobiaKey) {
   const p = PHOBIAS[phobiaKey];
+  const realm = realmOf(phobiaKey);
   const prog = getProgress(phobiaKey);
   const previous = state.log.filter(l => l.phobia === phobiaKey);
   const info = (window.PhobiaInfo && window.PhobiaInfo[phobiaKey]) || null;
+  const ch = window.Character && window.Character.loadCharacter();
+  const total = p.levels.length;
+  const done = Math.min(total, prog.highestCompleted + 1);
+  const cleared = done >= total;
+  const remaining = 1 - done / total;
+  const realmIdx = journeyKeys().indexOf(phobiaKey);
 
-  // Build the rich info block if we have data
+  // The guardian: this fear made visible. Shrinks with every faced trial;
+  // once all five are done it becomes the tamed bird.
+  const guardian = `
+    <div class="guardian-box" aria-hidden="true">
+      ${cleared
+        ? `<div class="guardian tamed-bird">🕊</div>`
+        : `<div class="guardian shadow-blob" style="--rem:${remaining.toFixed(2)}"><i class="eye"></i><i class="eye"></i></div>`}
+      <div class="guardian-meter"><div class="guardian-meter-fill" style="width:${(remaining * 100).toFixed(0)}%"></div></div>
+      <span class="guardian-label">${cleared ? "tamed" : `${escapeHtml(realm.guardianName)} · strength ${total - done}/${total}`}</span>
+    </div>`;
+
+  // The Guide's notes — the full clinical background, kept intact but tucked
+  // behind a flap so the page leads with the game, not the syllabus.
   const infoBlock = info ? `
-    <details class="phobia-info" ${prog.highestCompleted >= 0 ? "" : "open"}>
-      <summary>About this fear · what to expect</summary>
+    <details class="phobia-info">
+      <summary>🧭 The Guide's notes — what this fear is, and why facing it works</summary>
       <div class="info-body">
         <p class="info-summary">${info.summary}</p>
         <div class="info-grid">
@@ -7384,12 +8093,12 @@ function viewLadder(phobiaKey) {
             <ul>${info.cognitive.map(s => `<li>${s}</li>`).join("")}</ul>
           </div>
           <div class="info-card">
-            <h4>Why exposure works</h4>
+            <h4>Why facing it works</h4>
             <p>${info.science}</p>
             <p class="info-prevalence">${info.prevalence}</p>
           </div>
           <div class="info-card">
-            <h4>Tips for this rung</h4>
+            <h4>Tips for the trials</h4>
             <ul>${info.tips.map(t => `<li>${t}</li>`).join("")}</ul>
           </div>
         </div>
@@ -7400,60 +8109,57 @@ function viewLadder(phobiaKey) {
     </details>
   ` : "";
 
-  // All rungs are ALWAYS playable — the user picks the difficulty they're
-  // ready for. Done / current / future are visual indicators of YOUR
-  // progress, not gates. This is "your adventure, your pace".
+  // Every trial is ALWAYS playable — done / current / future are indicators
+  // of your progress, not gates. Your adventure, your pace.
   const items = p.levels.map((lv, i) => {
-    const done = i <= prog.highestCompleted;
+    const doneT = i <= prog.highestCompleted;
     const current = i === prog.highestCompleted + 1;
-    const intensity = Array.from({ length: 5 }, (_, k) => `<i class="${k <= i ? 'on' : ''}"></i>`).join("");
+    const future = !doneT && !current;
     const lastSuds = previous.filter(l => l.level === i).slice(-1)[0]?.suds;
-    const stats = [];
-    if (lastSuds != null) stats.push(`last anxiety ${lastSuds}/10`);
     const minHold = 6 + i * 4;
-    stats.push(`hold ~${minHold}s`);
-    const buttonLabel = done ? "Try again" : (current ? "Start" : "Try this one");
-    const buttonClass = current ? "btn-primary" : (done ? "btn-ghost" : "btn-ghost");
+    const flames = Array.from({ length: 5 }, (_, k2) => `<i class="tf ${k2 <= i ? "on" : ""}"></i>`).join("");
+    const whisper = (doneT || current)
+      ? `<p class="trial-whisper">🕯 ${escapeHtml((realm.whispers && realm.whispers[i]) || "")}</p>`
+      : `<p class="trial-whisper misty">🕯 The whisper for this trial is still in the mist…</p>`;
+    const stats = [`hold ~${minHold}s`];
+    if (lastSuds != null) stats.unshift(`last fear ${lastSuds}/10`);
+    const btn = doneT ? "Face it again" : current ? "Face this trial" : "Skip ahead";
     return `
-      <div class="climb-rung ${done?'done':''} ${current?'current':''}">
-        <div class="marker">${done ? "✓" : (i + 1)}</div>
-        <div class="info">
-          <strong>${escapeHtml(lv.title)}</strong>
-          <div class="desc">${escapeHtml(lv.desc)}</div>
-          <div class="intensity-bars">${intensity}</div>
-          <div class="stats">${stats.join(" · ")}</div>
+      <li class="trial ${doneT ? "done" : ""} ${current ? "current" : ""} ${future ? "future" : ""}">
+        <div class="trial-marker">${doneT ? "🔥" : `<span>${i + 1}</span>`}</div>
+        <div class="trial-card">
+          <div class="trial-head">
+            <strong>${escapeHtml(lv.title)}</strong>
+            <span class="trial-flames" title="intensity ${i + 1} of 5">${flames}</span>
+          </div>
+          <p class="trial-desc">${escapeHtml(lv.desc)}</p>
+          ${whisper}
+          <div class="trial-foot">
+            <span class="trial-stats">${stats.join(" · ")}</span>
+            <button class="${current ? "btn-primary" : "btn-ghost"}" data-action="start-level" data-phobia="${phobiaKey}" data-level="${i}">${btn}</button>
+          </div>
         </div>
-        <div>
-          <button class="${buttonClass}"
-            data-action="start-level" data-phobia="${phobiaKey}" data-level="${i}">
-            ${buttonLabel}
-          </button>
-        </div>
-      </div>
-    `;
-  });
-  // Insert little connector lines between rungs
-  const climb = items.map((it, idx) => idx === 0 ? it : `<div class="climb-line"></div>${it}`).join("");
+      </li>`;
+  }).join(`<li class="trial-link" aria-hidden="true"></li>`);
 
-  // Show user's other phobias as quick-switch tabs
-  const character = window.Character && window.Character.loadCharacter();
-  const allMine = character ? [character.primaryPhobia, ...(character.additionalPhobias || [])].filter(Boolean) : [];
+  // Quick-switch tabs across the traveler's own fears.
+  const allMine = ch ? [ch.primaryPhobia, ...(ch.additionalPhobias || [])].filter(Boolean) : [];
   const tabs = allMine.length > 1 ? `
     <div class="phobia-tabs">
       ${allMine.map(k => `
         <button class="phobia-tab ${k === phobiaKey ? "active" : ""}"
                 data-action="select-phobia" data-phobia="${k}">
-          ${PHOBIAS[k]?.label || k}
+          ${PHOBIAS[k] ? escapeHtml(realmOf(k).realmName) : k}
         </button>
       `).join("")}
     </div>` : "";
 
-  const sessionsOnThisPhobia = state.log.filter(l => l.phobia === phobiaKey).length;
+  const sessionsOnThisPhobia = previous.length;
   const progressLink = sessionsOnThisPhobia > 0
-    ? `<a href="#${serializeRoute("phobia-progress", { phobia: phobiaKey })}" class="ladder-progress-link">📊 ${sessionsOnThisPhobia} session${sessionsOnThisPhobia === 1 ? "" : "s"} · view progress</a>`
+    ? `<a href="#${serializeRoute("phobia-progress", { phobia: phobiaKey })}" class="ladder-progress-link">📜 ${sessionsOnThisPhobia} session${sessionsOnThisPhobia === 1 ? "" : "s"} in this realm · view your record</a>`
     : "";
 
-  // Goal block — show progress toward the user's goal for this phobia
+  // The oath (goal) block — progress toward the traveler's pledge here.
   const goal = getGoal(phobiaKey);
   const wkSessions = thisWeekSessions(phobiaKey);
   const goalBlock = `
@@ -7462,8 +8168,8 @@ function viewLadder(phobiaKey) {
         <div class="goal-row">
           <div class="goal-meter">
             <div class="goal-meter-label">
-              <span>Target rung</span>
-              <strong>${goal.targetRung + 1} of ${p.levels.length}</strong>
+              <span>Oath: reach trial</span>
+              <strong>${goal.targetRung + 1} of ${total}</strong>
             </div>
             <div class="goal-meter-track">
               <div class="goal-meter-fill" style="width:${Math.min(100, ((prog.highestCompleted + 1) / (goal.targetRung + 1)) * 100)}%"></div>
@@ -7478,39 +8184,48 @@ function viewLadder(phobiaKey) {
               <div class="goal-meter-fill" style="width:${Math.min(100, (wkSessions / goal.perWeek) * 100)}%"></div>
             </div>
           </div>
-          <button class="btn-ghost" data-action="edit-goal" data-phobia="${phobiaKey}" style="font-size:11px;padding:5px 10px;">Edit goal</button>
+          <button class="btn-ghost" data-action="edit-goal" data-phobia="${phobiaKey}" style="font-size:11px;padding:5px 10px;">Edit oath</button>
         </div>
       ` : `
-        <button class="btn-ghost" data-action="edit-goal" data-phobia="${phobiaKey}">+ Set a goal for ${p.label}</button>
+        <button class="btn-ghost" data-action="edit-goal" data-phobia="${phobiaKey}">🎯 Swear an oath for this realm</button>
       `}
     </div>
   `;
-  // One obvious primary action above the fold: continue (or start) the
-  // ladder. The rung list itself sat below the goal + education blocks, so
-  // returning users had to scroll past reading material to keep going.
-  const nextIdx = Math.min(p.levels.length - 1, prog.highestCompleted + 1);
+
+  // One obvious primary action above the fold: continue (or start) the trials.
+  const nextIdx = Math.min(total - 1, prog.highestCompleted + 1);
   const ctaLabel = prog.highestCompleted < 0
-    ? `Start — rung 1: ${p.levels[0].title}`
-    : prog.highestCompleted >= p.levels.length - 1
-      ? `Revisit — rung ${p.levels.length}: ${p.levels[p.levels.length - 1].title}`
-      : `Continue — rung ${nextIdx + 1}: ${p.levels[nextIdx].title}`;
+    ? `Begin — trial 1: ${p.levels[0].title}`
+    : cleared
+      ? `Walk it again — trial ${total}: ${p.levels[total - 1].title}`
+      : `Continue — trial ${nextIdx + 1}: ${p.levels[nextIdx].title}`;
   const heroCta = `
     <div class="ladder-cta">
       <button class="btn-primary" data-action="start-level" data-phobia="${phobiaKey}" data-level="${nextIdx}">
-        ${ctaLabel} <span class="arr">→</span>
+        ⚔ ${escapeHtml(ctaLabel)} <span class="arr">→</span>
       </button>
-      <span class="ladder-cta-sub">${p.levels.length} rungs · any order · Esc grounds you at any moment</span>
+      <span class="ladder-cta-sub">${total} trials · any order, your pace · Esc grounds you at any moment</span>
     </div>`;
+
   return `
-    <div class="panel">
+    <div class="realm-view">
+      <header class="realm-hero">
+        <div class="realm-hero-art" aria-hidden="true">${phobiaThumbnail(phobiaKey)}</div>
+        <div class="realm-hero-grad" aria-hidden="true"></div>
+        <div class="realm-hero-text">
+          <span class="realm-kicker">${realmIdx >= 0 ? `Realm ${ROMAN[realmIdx] || realmIdx + 1} · ` : ""}${escapeHtml(p.name)} — ${escapeHtml(p.label)}</span>
+          <h2>${escapeHtml(realm.realmName)}</h2>
+          <p class="realm-epithet">${escapeHtml(realm.epithet)}</p>
+        </div>
+        ${guardian}
+      </header>
+      ${ch ? `<div class="realm-bubble"><span class="realm-bubble-avatar" aria-hidden="true">${window.Character.avatarSVG(ch, 40)}</span><span>“${escapeHtml(cleared ? realm.clearedLine : realm.line)}”</span></div>` : ""}
       ${tabs}
-      <h2>${escapeHtml(p.label)} <span class="small" style="color:var(--accent)">— ${escapeHtml(p.name)}</span></h2>
-      <p>${escapeHtml(p.blurb)}</p>
       ${heroCta}
       ${progressLink}
       ${goalBlock}
       ${infoBlock}
-      <div class="climb-ladder">${climb}</div>
+      <ol class="trial-path">${items}</ol>
     </div>
   `;
 }
@@ -7803,10 +8518,10 @@ function viewPredict(phobiaKey, levelIdx) {
   const suggested = Math.min(8, 4 + levelIdx);
   return `
     <div class="panel">
-      <span class="badge">Rung ${levelIdx+1} of ${p.levels.length} — ${escapeHtml(p.label)}</span>
-      <h2 style="margin-top:10px">Before you start</h2>
-      <p>One thing that makes exposure work: <em>predict</em> what you think will happen, then see how it actually goes.
-      Most people over-predict the fear — and that's the lesson the brain needs to update.</p>
+      <span class="badge">Trial ${levelIdx+1} of ${p.levels.length} — ${escapeHtml(realmOf(phobiaKey).realmName)}</span>
+      <h2 style="margin-top:10px">At the gate: name your fear's number</h2>
+      <p>A traveler's ritual that makes the trial count double: <em>predict</em> how loud the fear will be, then see how it actually goes.
+      Most people over-predict — and catching your own shadow exaggerating is exactly the lesson the brain needs.</p>
       <p class="hint" style="margin-top:14px">You'll be: <strong>${escapeHtml(lv.title)}</strong>${lv.desc ? ` — ${escapeHtml(lv.desc)}` : ""}</p>
 
       <div class="suds" style="margin-top:18px">
@@ -7821,8 +8536,8 @@ function viewPredict(phobiaKey, levelIdx) {
       </div>
 
       <div class="actions">
-        <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">Back</button>
-        <button class="btn-primary" data-action="confirm-predict" data-phobia="${phobiaKey}" data-level="${levelIdx}">Begin the rung</button>
+        <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">Back to the realm</button>
+        <button class="btn-primary" data-action="confirm-predict" data-phobia="${phobiaKey}" data-level="${levelIdx}">⚔ Enter the trial</button>
       </div>
     </div>
   `;
@@ -7990,9 +8705,9 @@ function viewRate(phobiaKey, levelIdx) {
     : "";
   return `
     <div class="panel">
-      <h2>How anxious are you right now?</h2>
+      <h2>The trial is behind you. How loud was it?</h2>
       ${earlyNote}
-      <p>This is the <strong>SUDS</strong> scale — Subjective Units of Distress. Be honest; it's just for you.</p>
+      <p>Rate the fear you feel <em>right now</em> on the <strong>SUDS</strong> scale — Subjective Units of Distress. Be honest; the journal is only for you.</p>
       <div class="suds">
         <label for="suds">Anxiety level</label>
         <div class="scale-row">
@@ -8015,8 +8730,8 @@ function viewRate(phobiaKey, levelIdx) {
 function viewBreathe(phobiaKey, levelIdx) {
   return `
     <div class="panel">
-      <h2>Box breathing</h2>
-      <p>Follow the circle. Inhale 4 seconds, hold, exhale 4 seconds. Repeat for as long as you like.</p>
+      <h2>The campfire breath</h2>
+      <p>A traveler's tool: follow the circle. In for 4, hold, out for 4 — the long exhale presses your body's brake pedal. Stay as long as you like; the fire isn't going anywhere.</p>
       <div class="breath-wrap">
         <div class="breath-circle" id="breathCircle">Breathe</div>
       </div>
@@ -8144,14 +8859,34 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     rewardStrip = `<div class="reward-strip">${bits.join(" · ")}${lastAward.milestones.length ? `<div class="reward-milestone">🏅 Milestone unlocked: ${escapeHtml(lastAward.milestones.join(", "))}</div>` : ""}</div>`;
   }
 
+  // Spark of Wisdom — the psychoeducation card earned by THIS finish, dealt
+  // face-down and flipped by tap (or on a short timer). Same freshness gate
+  // as the reward strip so a hash re-nav doesn't replay the reveal.
+  let sparkBlock = "";
+  if (lastAward && lastAward.spark && lastAward.key === `${phobiaKey}.${levelIdx}` && last && Math.abs((last.ts || 0) - lastAward.ts) < 5000) {
+    const card = INSIGHT_CARDS.find(c => c.id === lastAward.spark);
+    if (card) {
+      const ownedN = getSparks().length;
+      sparkBlock = `
+        <div class="spark-reveal">
+          <div class="spark-card" id="sparkCard" role="button" tabindex="0" aria-label="Reveal your Spark of Wisdom: ${escapeHtml(card.title)}">
+            <div class="spark-face spark-back"><span>✦</span><em>You earned a Spark of Wisdom</em><span class="spark-tap">tap to turn it over</span></div>
+            <div class="spark-face spark-front"><span class="spark-icon">${card.icon}</span><strong>${escapeHtml(card.title)}</strong><p>${escapeHtml(card.text)}</p></div>
+          </div>
+          <p class="spark-count small">Spark ${ownedN} of ${INSIGHT_CARDS.length} · kept in your <a href="#/journal">Book of Sparks</a></p>
+        </div>`;
+    }
+  }
+
   return `
     <div class="panel">
-      <span class="badge">${early ? `Rung ${levelIdx+1} · early exit` : `Rung ${levelIdx+1} done`}</span>
-      <h2 style="margin-top: 10px;">${early ? "You stepped out early — still a rep." : "Nice work."}</h2>
+      <span class="badge">${early ? `Trial ${levelIdx+1} · stepped back` : `Trial ${levelIdx+1} faced`} · ${escapeHtml(realmOf(phobiaKey).realmName)}</span>
+      <h2 style="margin-top: 10px;">${early ? "You stepped back — showing up still counts." : "Trial faced. The shadow shrinks."}</h2>
       ${rewardStrip}
+      ${sparkBlock}
       <p>${early
-        ? `You spent time with <strong>${escapeHtml(p.levels[levelIdx].title)}</strong> and rated your anxiety at <strong>${suds}/10</strong>.`
-        : `You completed <strong>${escapeHtml(p.levels[levelIdx].title)}</strong>. You rated your anxiety at <strong>${suds}/10</strong>.`}</p>
+        ? `You stood with <strong>${escapeHtml(p.levels[levelIdx].title)}</strong> and rated your fear at <strong>${suds}/10</strong>.`
+        : `You faced <strong>${escapeHtml(p.levels[levelIdx].title)}</strong> and rated your fear at <strong>${suds}/10</strong>.`}</p>
       ${habituationBlock}
       ${acrossBlock}
       ${predictionBlock}
@@ -8165,8 +8900,8 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       </div>
 
       <div class="actions">
-        ${!isLast ? `<button class="btn-primary" data-action="next-level" data-phobia="${phobiaKey}" data-level="${next}">Climb to rung ${next+1}</button>` : `<button class="btn-primary" data-action="back-ladder" data-phobia="${phobiaKey}">You finished the ladder</button>`}
-        <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">Back to ladder</button>
+        ${!isLast ? `<button class="btn-primary" data-action="next-level" data-phobia="${phobiaKey}" data-level="${next}">⚔ Next trial: ${escapeHtml(p.levels[next].title)}</button>` : `<button class="btn-primary" data-action="back-ladder" data-phobia="${phobiaKey}">🕊 The realm is tamed — see it</button>`}
+        <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">Back to the realm</button>
       </div>
     </div>
   `;
