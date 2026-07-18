@@ -2560,19 +2560,24 @@ if ("serviceWorker" in navigator) {
     50%      { box-shadow: 0 0 28px rgba(124,209,197,.35), 0 0 0 6px rgba(124,209,197,0); }
   }
 
-  /* Per-phobia command bar (game feel — buttons under the stage) */
+  /* Per-phobia command bar — a game HOTBAR floating INSIDE the stage frame
+     (it used to be a plain strip below the frame, which read as buttons
+     hanging out of the game). Absolute against .stage-wrap: the bar takes no
+     flow space, so the wrap's height IS the stage's and "bottom" pins it
+     inside the frame, above the toggle/hint line. */
+  .stage-wrap { position: relative; }
   .scene-cmd-bar, .dog-cmd-bar {
-    /* Wrap onto multiple rows when there are many buttons, and allow a
-       horizontal scroll on extremely narrow screens so nothing is clipped
-       silently. justify-content keeps the row centred when there's leftover
-       space, so a single-row bar doesn't look stranded. */
-    display: flex; gap: 8px; flex-wrap: wrap;
-    justify-content: center;
-    padding: 12px 16px;
-    background: linear-gradient(180deg, #161e34, #131a2c);
-    border-top: 1px solid var(--border);
-    overflow-x: auto;
-    transition: max-height .25s ease, opacity .2s ease, padding .25s ease;
+    position: absolute; left: 50%; bottom: 64px; z-index: 7;
+    transform: translateX(-50%);
+    display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+    width: max-content; max-width: min(92%, 640px);
+    padding: 8px 10px;
+    background: rgba(10, 14, 28, .72);
+    border: 1px solid rgba(124, 209, 197, .28);
+    border-radius: 18px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+    transition: opacity .22s ease, transform .22s ease;
   }
   /* Character-driven scenes start with the command bar collapsed — events
      fire from where the player walks / what they look at / what they click
@@ -2580,9 +2585,8 @@ if ("serviceWorker" in navigator) {
      fallback (touch users, screen readers, anyone who prefers explicit
      controls) but the player gets a clean view by default. */
   .scene-cmd-bar.collapsed {
-    max-height: 0; padding-top: 0; padding-bottom: 0;
-    opacity: 0; pointer-events: none; overflow: hidden;
-    border-top: none;
+    opacity: 0; pointer-events: none;
+    transform: translateX(-50%) translateY(10px);
   }
   /* Floating "show controls" / "hide controls" toggle that lives in the
      scene UI when the bar is collapsible. */
@@ -2751,9 +2755,11 @@ if ("serviceWorker" in navigator) {
     }
   }
   .cmd-btn {
-    background: var(--panel-2);
+    /* Glassy in-frame style so the hotbar buttons match the rest of the
+       stage HUD (quick bar, camera toggle) instead of the page's panels. */
+    background: rgba(16, 22, 40, .82);
     color: var(--text);
-    border: 1px solid var(--border);
+    border: 1px solid rgba(255, 255, 255, .16);
     padding: 8px 14px; border-radius: 999px;
     font: inherit; font-size: 13px; font-weight: 600;
     display: inline-flex; align-items: center; gap: 6px;
@@ -2761,11 +2767,11 @@ if ("serviceWorker" in navigator) {
     cursor: pointer;
     transition: border-color .15s, background .15s, transform .08s;
   }
-  .cmd-btn:hover { border-color: var(--accent); background: rgba(124,209,197,.08); }
+  .cmd-btn:hover { border-color: var(--accent); background: rgba(124,209,197,.15); }
   .cmd-btn:active { transform: translateY(1px); }
   .cmd-btn .cmd-icon { font-size: 16px; line-height: 1; }
   @media (max-width: 600px) {
-    .scene-cmd-bar, .dog-cmd-bar { padding: 10px 12px; }
+    .scene-cmd-bar, .dog-cmd-bar { bottom: 60px; padding: 6px 8px; gap: 6px; }
     .cmd-btn { padding: 8px 12px; font-size: 12px; }
   }
 
@@ -3496,6 +3502,50 @@ if ("serviceWorker" in navigator) {
     .ss-blob { animation: none; }
     .rank-fill { transition: none; }
     .jw-dawnglow, .camp-bubble, .realm-thumb, .realm-thumb::after { transition: none; }
+  }
+
+  /* ============ Stage HUD layout v2 (in-frame, tidy, one family) ============
+     All transient in-scene messages share ONE visual family (dark glass pill,
+     soft accent border, same radius/blur) and live in FIXED bottom-centre
+     slots that never cover the middle of the view:
+        captions (guidance)  → slot 1, bottom 56
+        reach-hint           → slot 2, above captions
+        ctx-prompt (events)  → slot 3, top of the stack
+     When the hotbar is open (.cmds-open) the whole stack slides up above it.
+     Late in the sheet on purpose: these override the older per-element
+     positions at equal specificity. */
+  .stage .captions,
+  .stage .ctx-prompt,
+  .stage .reach-hint {
+    background: rgba(10, 14, 28, .78);
+    border: 1px solid rgba(124, 209, 197, .28);
+    border-radius: 14px;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, .3);
+    line-height: 1.4;
+    text-align: center;
+    overflow-wrap: break-word;
+  }
+  .stage .captions {
+    bottom: 56px; font-size: 13.5px; padding: 8px 14px;
+    max-width: min(560px, 84%);
+    transition: opacity .3s ease, bottom .25s ease;
+  }
+  .stage .reach-hint { font-size: 12.5px; transition: opacity .3s ease, bottom .25s ease; }
+  .stage .ctx-prompt {
+    bottom: 148px; font-size: 13px; max-width: min(420px, 84%);
+    transition: opacity .35s ease, transform .35s ease, bottom .25s ease;
+  }
+  /* Hotbar open: the message stack rides up above it (bar ≈ 64px + height). */
+  .stage.cmds-open .captions   { bottom: 132px; }
+  .stage.cmds-open .ctx-prompt { bottom: 224px; }
+  @media (max-width: 600px) {
+    .stage .captions {
+      bottom: 52px; font-size: 12px; padding: 6px 11px; max-width: 90%;
+    }
+    .stage .ctx-prompt { bottom: 128px; font-size: 12px; max-width: 90%; }
+    .stage.cmds-open .captions   { bottom: 148px; }
+    .stage.cmds-open .ctx-prompt { bottom: 224px; }
   }
 </style>
 </head>
@@ -5491,10 +5541,11 @@ const PhobiaAudio = (() => {
   // Tiny, quiet feedback sounds for the SHELL (map, cards, victory) — kept
   // far below the diegetic scene mix so they read as "the game responding",
   // never as noise. All routed through master so the mute toggle covers them.
-  function ui(kind = "whoosh") {
+  function ui(kind = "whoosh", volMul = 1) {
     const c = ensureCtx(); if (!c) return;
     const now = c.currentTime;
     const bell = (freq, t0, dur = 0.7, vol = 0.055) => {
+      vol *= volMul;
       const osc = c.createOscillator(); osc.type = "sine"; osc.frequency.value = freq;
       const shimmer = c.createOscillator(); shimmer.type = "sine"; shimmer.frequency.value = freq * 2.01;
       const g = c.createGain(); const g2 = c.createGain();
@@ -5523,7 +5574,7 @@ const PhobiaAudio = (() => {
       bp.frequency.exponentialRampToValueAtTime(900, now + 0.35);
       const g = c.createGain();
       g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(0.075, now + 0.16);
+      g.gain.exponentialRampToValueAtTime(0.075 * volMul, now + 0.16);
       g.gain.exponentialRampToValueAtTime(0.0008, now + 0.5);
       src.connect(bp).connect(g).connect(master);
       src.start(now); src.stop(now + 0.6);
@@ -11735,6 +11786,10 @@ class FPControls {
       bounds: null,         // { minX, maxX, minZ, maxZ } in walkable mode
       speed: 2.5,           // units per second
       lookSpeed: 0.0045,    // radians per pixel
+      // Smoothed look ON by default (10 Hz cutoff ≈ 1.5 frames of lag —
+      // imperceptible latency that kills raw-delta stair-stepping). Scenes
+      // may still pass their own value, or 0 to opt out.
+      lookSmoothing: 10,
       pitchMin: -Math.PI / 2 + 0.15,
       pitchMax:  Math.PI / 2 - 0.15,
       yawMin: -Infinity,
@@ -14485,7 +14540,11 @@ class Hands {
     // own lighting — not glowing plastic. Skin has a touch of warmth.
     const skin = new THREE.MeshStandardMaterial({
       color: this.opts.skinColor, roughness: 0.62, metalness: 0,
-      emissive: new THREE.Color(this.opts.skinColor).multiplyScalar(0.04),
+      // Near-zero self-glow: visible glow in a pitch-dark scene broke the
+      // "these are my hands lit by this room" illusion. The (slightly
+      // stronger) camera fill below carries dim scenes instead.
+      emissive: new THREE.Color(this.opts.skinColor).multiplyScalar(0.02),
+      envMapIntensity: 0.5,
     });
     const sleeve = new THREE.MeshStandardMaterial({
       color: this.opts.sleeveColor, roughness: 0.9,
@@ -14499,7 +14558,7 @@ class Hands {
     // A very gentle, warm fill on the camera so the hands never go pitch-black
     // in dim scenes — but far softer than before (it used to bleach the view).
     // The scene's own lighting does the real work, so the hands match the room.
-    this.fillLight = new THREE.PointLight(0xffe9d2, 0.18, 1.0);
+    this.fillLight = new THREE.PointLight(0xffe9d2, 0.24, 1.4);
     this.fillLight.position.set(0, 0.04, 0);
     camera.add(this.fillLight);
 
@@ -14634,7 +14693,15 @@ class Hands {
     // anxiety in the user's OWN hands — the most personal place it can live.
     const w = controls && controls.getWalkState ? controls.getWalkState() : { phase: 0, amount: 0 };
     const fearK = (window.PhobiaFear ? window.PhobiaFear.get() : 0) / 100;
-    const breathY = Math.sin(t * (1.2 + fearK * 1.6)) * (0.005 + fearK * 0.004);
+    const breathRate = 1.2 + fearK * 1.6;
+    const breathAmp = 0.005 + fearK * 0.004;
+    // Soft cloth whoosh as a reach engages — touch you can HEAR beginning.
+    if (this._reach && this._reachStrength > 0.45 && !this._reachSounded) {
+      this._reachSounded = true;
+      try { window.PhobiaAudio && window.PhobiaAudio.ui && window.PhobiaAudio.ui("whoosh", 0.4); } catch {}
+    } else if (!this._reach && this._reachStrength < 0.1) {
+      this._reachSounded = false;
+    }
     // Camera-look inertia: the hand meshes ride the camera, so without lag
     // they pan AS the camera — weightless. Track smoothed look velocity and
     // let the hands trail the turn by a few centimetres (and roll slightly
@@ -14661,7 +14728,9 @@ class Hands {
       let targetRotX = baseRot.x, targetRotY = baseRot.y, targetRotZ = baseRot.z;
       let fingerCurl = 0;
 
-      target.y += breathY;
+      // Per-hand breath: real arms don't rise and fall in perfect unison —
+      // a small phase offset per side breaks the mirrored-mannequin read.
+      target.y += Math.sin(t * breathRate + side * 0.9) * breathAmp;
 
       switch (this.gestureType) {
         case "grab": {
@@ -14737,10 +14806,19 @@ class Hands {
       // same-side leg with a small bounce at each plant — faded out while a
       // gesture needs the hand steady.
       const gaitFree = 1 - this.gestureStrength;
-      const armPhase = w.phase + (side > 0 ? Math.PI : 0);
-      finalPos.z += Math.sin(armPhase) * 0.030 * w.amount * gaitFree;
-      finalPos.y += (Math.abs(Math.sin(w.phase)) - 0.5) * 0.012 * w.amount * gaitFree;
+      // Asymmetric counter-swing: the off hand swings a touch shorter and a
+      // hair behind — perfectly mirrored arms are the classic robot tell.
+      const armAmp = side > 0 ? 0.88 : 1.0;
+      const armPhase = w.phase + (side > 0 ? Math.PI * 1.04 : 0);
+      finalPos.z += Math.sin(armPhase) * 0.030 * armAmp * w.amount * gaitFree;
+      finalPos.y += (Math.abs(Math.sin(w.phase)) - 0.5) * 0.012 * armAmp * w.amount * gaitFree;
       finalPos.x += Math.sin(w.phase * 0.5) * 0.008 * w.amount * side * gaitFree;
+      // Idle life: when nothing else owns the hand, it wanders a few
+      // millimetres on slow, per-hand noise — never perfectly still.
+      const idleK = gaitFree * (1 - this._reachStrength) * (1 - w.amount * 0.6);
+      finalPos.x += Math.sin(t * 0.53 + side * 2.1) * 0.0045 * idleK;
+      finalPos.y += Math.sin(t * 0.71 + side * 4.7) * 0.0040 * idleK;
+      finalPos.z += Math.sin(t * 0.41 + side * 1.3) * 0.0035 * idleK;
       // Look inertia: hands trail a fast camera turn and roll slightly into
       // the drag (position offset here; the matching wrist roll is folded
       // into the rotation targets below).
@@ -14781,12 +14859,20 @@ class Hands {
       // object produces visible grip feedback (not just clicks during pet
       // / brush / touch states). The pulse decays over ~0.7 s.
       const pulseCurl = this.actionPulse * 0.5;
-      const curl = (fingerCurl * this.gestureStrength) + pulseCurl;
-      for (const finger of hand.userData.fingers) {
+      // Resting curl: a relaxed hand is never flat — fingers hold a soft
+      // natural bend that slowly "breathes", and each finger flexes on its
+      // own tiny phase. Straight rigid fingers were the strongest mannequin
+      // tell in first person. Fades out as a gesture/reach takes the hand.
+      const restCurl = (0.16 + Math.sin(t * 0.8 + side * 1.7) * 0.035)
+        * (1 - this.gestureStrength) * (1 - this._reachStrength);
+      const curl = restCurl + (fingerCurl * this.gestureStrength) + pulseCurl;
+      hand.userData.fingers.forEach((finger, fi) => {
         const distal = finger.userData.distal;
-        finger.rotation.x = curl * 1.2;
-        if (distal) distal.rotation.x = curl * 1.4;
-      }
+        const microFlex = Math.sin(t * 0.9 + fi * 1.25 + side * 3.1) * 0.03
+          * (1 - this.gestureStrength) * (1 - this._reachStrength);
+        finger.rotation.x = curl * (1.2 + fi * 0.05) + microFlex;
+        if (distal) distal.rotation.x = curl * 1.4 + microFlex * 0.8;
+      });
       // Universal pulse: hand jiggles up slightly with the squeeze so
       // even idle hands react visibly to a click.
       hand.position.y += this.actionPulse * 0.018 * (side === 1 ? 1 : 0.5);
@@ -15731,6 +15817,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       e.stopPropagation();
       const collapsed = cmdBarEl.classList.toggle("collapsed");
       cmdToggle.textContent = collapsed ? "Show controls" : "Hide controls";
+      // The bar now floats INSIDE the frame — flag the stage so the caption /
+      // prompt stack slides up out of its way while it's open.
+      container.classList.toggle("cmds-open", !collapsed);
     });
     container.appendChild(cmdToggle);
     if (active && active.overlays) active.overlays.push(cmdToggle);
