@@ -9,11 +9,37 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" type="image/svg+xml" href="icon.svg" />
 <link rel="apple-touch-icon" href="icon.svg" />
-<title>Mira — The Courage Journey</title>
-<meta name="description" content="A tiny game about big fears. Walk the Valley of Fears, face six famous phobias in gentle 3D trials, and watch their shadows shrink. Built on real CBT exposure principles." />
+<title>Mira — The Courage Journey · face your fears in a tiny 3D game</title>
+<meta name="description" content="A tiny free game about big fears. Walk the Valley of Fears, face six famous phobias — dogs, spiders, snakes, heights, the dark, tight spaces — in gentle 3D trials built on real CBT exposure principles, then take the real-world steps that matter. بازی کوچکی برای رو‌به‌رو شدن با ترس‌ها — با پشتیبانی فارسی." />
+<meta name="author" content="Amir Saraee" />
+<link rel="canonical" href="https://phobia-kappa.vercel.app/" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Mira" />
+<meta property="og:url" content="https://phobia-kappa.vercel.app/" />
 <meta property="og:title" content="Mira — The Courage Journey" />
-<meta property="og:description" content="A tiny game about big fears — face them one small, safe step at a time." />
+<meta property="og:description" content="A tiny game about big fears — face six famous phobias one small, safe step at a time. Free, in your browser, English + فارسی." />
+<meta property="og:image" content="https://phobia-kappa.vercel.app/dog-desktop.png" />
+<meta property="og:image:alt" content="A third-person 3D scene from Mira: your character standing in a warm room, facing a small dog." />
+<meta property="og:locale" content="en_US" />
+<meta property="og:locale:alternate" content="fa_IR" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Mira — The Courage Journey" />
+<meta name="twitter:description" content="A tiny game about big fears — face six famous phobias one small, safe step at a time." />
+<meta name="twitter:image" content="https://phobia-kappa.vercel.app/dog-desktop.png" />
 <meta name="format-detection" content="telephone=no" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Mira — The Courage Journey",
+  "url": "https://phobia-kappa.vercel.app/",
+  "applicationCategory": "HealthApplication",
+  "operatingSystem": "Web browser",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "inLanguage": ["en", "fa"],
+  "description": "A free browser game about facing fears: six famous phobias as gentle 3D exposure trials built on CBT principles, with real-world bridge steps, self-tracked outcomes and a printable progress report. A practice game, not therapy."
+}
+</script>
 <script>
 // Register the service worker as soon as possible — only over https or localhost
 if ("serviceWorker" in navigator) {
@@ -3677,6 +3703,34 @@ if ("serviceWorker" in navigator) {
   @media (max-width: 640px) {
     .report-table { display: block; overflow-x: auto; }
   }
+  /* ---- RTL (Persian) ----
+     <html dir="rtl"> is stamped by i18n applyLang(). Flex/grid mirror on
+     their own; these overrides fix the handful of hard-coded left/right
+     positions. The 3D stage and the clinician report deliberately STAY LTR
+     (scene HUD geometry, and the report is written in English for now). */
+  html[lang="fa"] body {
+    font-family: system-ui, -apple-system, "Segoe UI", Tahoma, "Noto Sans Arabic", sans-serif;
+    line-height: 1.75;
+  }
+  html[dir="rtl"] .menu-drawer { left: auto; right: 0; transform: translateX(100%); }
+  html[dir="rtl"] .menu-drawer.open { transform: translateX(0); }
+  html[dir="rtl"] .realm-node.side-r { margin-left: 0; margin-right: min(64px, 8%); }
+  html[dir="rtl"] .realm-node.side-l { margin-right: 0; margin-left: min(64px, 8%); }
+  html[dir="rtl"] .realm-body { text-align: right; }
+  html[dir="rtl"] .trial-link { margin-left: 0; margin-right: 27px; border-left: none; border-right: 2px dashed #3a4a72; }
+  @media (max-width: 560px) {
+    html[dir="rtl"] .trial-link { margin-right: 21px; }
+    html[dir="rtl"] .bridge-btn { margin-left: 0; margin-right: 29px; }
+  }
+  html[dir="rtl"] .you-marker { left: auto; right: 8px; }
+  html[dir="rtl"] .realm-shadow, html[dir="rtl"] .realm-tamed { right: auto; left: 8px; }
+  html[dir="rtl"] .report-note { border-left: none; border-right: 3px solid var(--border-2); padding-left: 0; padding-right: 10px; }
+  /* Keep the 3D stage + its HUD in LTR geometry regardless of UI language */
+  html[dir="rtl"] .stage, html[dir="rtl"] .stage-wrap { direction: ltr; }
+  /* The report stays English/LTR until it's translated */
+  html[dir="rtl"] .report-view { direction: ltr; text-align: left; }
+  html[dir="rtl"] .lang-btn, .lang-btn { font-weight: 800; font-size: 13px; }
+
   @media print {
     /* The report prints clean: white page, black ink, no app chrome. */
     body { background: #fff !important; }
@@ -3695,6 +3749,14 @@ if ("serviceWorker" in navigator) {
 </style>
 </head>
 <body>
+<noscript>
+  <div style="max-width:640px;margin:60px auto;padding:24px;font-family:system-ui,sans-serif;line-height:1.6">
+    <h1>Mira — The Courage Journey</h1>
+    <p>A tiny free browser game about big fears: walk the Valley of Fears and face six famous phobias — dogs, spiders, snakes, heights, the dark, tight spaces — in gentle 3D trials built on CBT graded-exposure principles, then take matching real-world steps and watch your fear scores fall.</p>
+    <p>Mira needs JavaScript (and WebGL) to run — please enable JavaScript and reload. A practice game, not therapy.</p>
+    <p lang="fa" dir="rtl">میرا یک بازی رایگان مرورگری برای رو‌به‌رو شدن تدریجی با ترس‌هاست. برای اجرا به جاوااسکریپت نیاز دارد.</p>
+  </div>
+</noscript>
 <div class="app" id="app"></div>
 
 <script>
@@ -6876,7 +6938,7 @@ const REALMS = {
 // renders as a realm even if it isn't one of the six featured fears.
 function realmOf(key) {
   const p = PHOBIAS[key];
-  return REALMS[key] || {
+  const base = REALMS[key] || {
     realmName: p ? `The Realm of ${p.label}` : "An Unmapped Realm",
     epithet: "a fear you carry",
     guardianName: "its shadow",
@@ -6890,6 +6952,19 @@ function realmOf(key) {
       "The last step is just the first step, repeated by someone braver — you."
     ]
   };
+  // Content-layer localization: structured keys ("realm.dogs.name") resolve
+  // through t(); English mode returns `base` untouched since the en pack
+  // omits content keys and t() falls back to the string passed here.
+  if (window.I18n && window.I18n.currentLanguage() !== "en") {
+    return Object.assign({}, base, {
+      realmName:    t(`realm.${key}.name`,     base.realmName),
+      epithet:      t(`realm.${key}.epithet`,  base.epithet),
+      guardianName: t(`realm.${key}.guardian`, base.guardianName),
+      line:         t(`realm.${key}.line`,     base.line),
+      clearedLine:  t(`realm.${key}.cleared`,  base.clearedLine),
+    });
+  }
+  return base;
 }
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 
@@ -7042,10 +7117,10 @@ const FEAR_CHECK_ITEMS = [
 ];
 const FEAR_CHECK_SCALE = ["not at all", "a little", "somewhat", "a lot", "extremely"];
 function fearCheckBand(total) {
-  if (total <= 4)  return { label: "a whisper",  tone: "calm" };
-  if (total <= 9)  return { label: "audible",    tone: "mild" };
-  if (total <= 14) return { label: "loud",       tone: "warm" };
-  return { label: "very loud", tone: "hot" };
+  const idx = total <= 4 ? 0 : total <= 9 ? 1 : total <= 14 ? 2 : 3;
+  const tones  = ["calm", "mild", "warm", "hot"];
+  const labels = ["a whisper", "audible", "loud", "very loud"];
+  return { label: t(`mirror.b${idx}`, labels[idx]), tone: tones[idx] };
 }
 function getChecks(phobiaKey) {
   const cs = activeCharSlice();
@@ -7389,19 +7464,19 @@ function openWorldstepModal(phobiaKey, stepIdx) {
   overlay.className = "goal-modal-overlay";
   overlay.innerHTML = `
     <div class="goal-modal ws-modal" role="dialog" aria-label="Record a real-world step">
-      <span class="bridge-invite-kicker">🌍 The Real Path</span>
+      <span class="bridge-invite-kicker">${t("ws.kicker", "🌍 The Real Path")}</span>
       <h3 style="margin:6px 0 4px">${escapeHtml(s.t)}</h3>
-      <p class="small" style="margin-bottom:12px">You did this out in the world — that's the bravest kind of trial. One honest question:</p>
-      <label for="wsSuds" style="font-size:13.5px">How loud was the fear at its peak out there?</label>
+      <p class="small" style="margin-bottom:12px">${t("ws.p", "You did this out in the world — that's the bravest kind of trial. One honest question:")}</p>
+      <label for="wsSuds" style="font-size:13.5px">${t("ws.q", "How loud was the fear at its peak out there?")}</label>
       <div class="scale-row" style="margin-top:6px">
-        <span class="small">0 calm</span>
+        <span class="small">${t("scale.calm", "0 calm")}</span>
         <input type="range" id="wsSuds" min="0" max="10" value="5"/>
-        <span class="small">10 panic</span>
+        <span class="small">${t("scale.panic", "10 panic")}</span>
         <div class="value" id="wsSudsValue">5</div>
       </div>
       <div class="actions" style="margin-top:14px">
-        <button class="btn-ghost" id="wsCancel">Not yet</button>
-        <button class="btn-primary" id="wsSave">🌍 I faced it</button>
+        <button class="btn-ghost" id="wsCancel">${t("ws.notYet", "Not yet")}</button>
+        <button class="btn-primary" id="wsSave">${t("ws.save", "🌍 I faced it")}</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -7429,24 +7504,24 @@ function openFearCheckModal(phobiaKey, at) {
   overlay.className = "goal-modal-overlay";
   const items = FEAR_CHECK_ITEMS.map((it, i) => `
     <div class="fc-item" data-item="${i}">
-      <p class="fc-q">${i + 1}. ${escapeHtml(it.q)}</p>
+      <p class="fc-q">${i + 1}. ${escapeHtml(t(`mirror.q${i + 1}`, it.q))}</p>
       <div class="fc-scale" role="radiogroup" aria-label="${escapeHtml(it.q)}">
         ${FEAR_CHECK_SCALE.map((lab, v) => `
-          <button type="button" class="fc-opt" data-v="${v}" role="radio" aria-checked="false" title="${lab}">
-            <span class="fc-n">${v}</span><span class="fc-lab">${lab}</span>
+          <button type="button" class="fc-opt" data-v="${v}" role="radio" aria-checked="false" title="${t(`mirror.s${v}`, lab)}">
+            <span class="fc-n">${v}</span><span class="fc-lab">${t(`mirror.s${v}`, lab)}</span>
           </button>`).join("")}
       </div>
     </div>`).join("");
   overlay.innerHTML = `
     <div class="goal-modal fc-modal" role="dialog" aria-label="Fear check-in">
-      <span class="bridge-invite-kicker">🪞 The Mirror — ${escapeHtml(realm.realmName)}</span>
-      <h3 style="margin:6px 0 2px">How is this fear, out there?</h3>
-      <p class="small" style="margin-bottom:12px">Answer about <strong>real life</strong> — not the game. 60 seconds, just for you. A self-check, not a diagnosis.</p>
+      <span class="bridge-invite-kicker">${t("mirror.kicker", "🪞 The Mirror")} — ${escapeHtml(realm.realmName)}</span>
+      <h3 style="margin:6px 0 2px">${t("mirror.modalTitle", "How is this fear, out there?")}</h3>
+      <p class="small" style="margin-bottom:12px">${t("mirror.modalP", "Answer about <strong>real life</strong> — not the game. 60 seconds, just for you. A self-check, not a diagnosis.")}</p>
       <div class="fc-items">${items}</div>
       <div class="fc-result" id="fcResult" hidden></div>
       <div class="actions" style="margin-top:14px">
-        <button class="btn-ghost" id="fcCancel">Not now</button>
-        <button class="btn-primary" id="fcSave" disabled>Hold up the mirror</button>
+        <button class="btn-ghost" id="fcCancel">${t("mirror.notNow", "Not now")}</button>
+        <button class="btn-primary" id="fcSave" disabled>${t("mirror.save", "Hold up the mirror")}</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -7477,16 +7552,16 @@ function openFearCheckModal(phobiaKey, at) {
     if (baseline && baseline.total !== total) {
       const d = total - baseline.total;
       deltaLine = d < 0
-        ? `<p class="fc-delta down">▼ ${Math.abs(d)} quieter than your first mirror (${baseline.total} → ${total}). That change happened out there, in your life.</p>`
-        : `<p class="fc-delta up">▲ ${d} louder than your first mirror (${baseline.total} → ${total}). Fear wobbles — this is information, not failure.</p>`;
+        ? `<p class="fc-delta down">${tf("mirror.gotQuieter", "▼ {d} quieter than your first mirror ({a} → {b}). That change happened out there, in your life.", { d: Math.abs(d), a: baseline.total, b: total })}</p>`
+        : `<p class="fc-delta up">${tf("mirror.gotLouder", "▲ {d} louder than your first mirror ({a} → {b}). Fear wobbles — this is information, not failure.", { d, a: baseline.total, b: total })}</p>`;
     } else if (!baseline) {
-      deltaLine = `<p class="fc-delta">This is your starting point. The next mirrors will show the change.</p>`;
+      deltaLine = `<p class="fc-delta">${t("mirror.first", "This is your starting point. The next mirrors will show the change.")}</p>`;
     }
     res.innerHTML = `
       <div class="fc-score band-${band.tone}"><strong>${total}</strong><span>/ 20 — ${band.label}</span></div>
       ${deltaLine}`;
     res.hidden = false;
-    saveBtn.textContent = "Done";
+    saveBtn.textContent = t("mirror.done", "Done");
     saveBtn.onclick = () => {
       close();
       const route = parseRoute(location.hash);
@@ -7737,6 +7812,8 @@ function render(view, params) {
       ${streak >= 2 ? `<span class="char-badge-streak" title="${streak}-day streak">🔥 ${streak}</span>` : ""}
     </button>` : "";
   const sparkCount = character ? getSparks().length : 0;
+  const isFa = window.I18n && window.I18n.currentLanguage() === "fa";
+  const langBtn = `<button class="audio-btn lang-btn" id="langBtn" title="${isFa ? "Switch to English" : "تغییر زبان به فارسی"}" aria-label="Change language" lang="${isFa ? "en" : "fa"}">${isFa ? "EN" : "فا"}</button>`;
   const sparksBtn = sparkCount > 0
     ? `<button class="audio-btn spark-hud" id="sparksBtn" title="Book of Sparks — the wisdom you've earned" aria-label="Open your Book of Sparks">✦<span class="spark-hud-n">${sparkCount}</span></button>` : "";
   const html = `
@@ -7744,16 +7821,17 @@ function render(view, params) {
     <header class="brand" role="banner">
       <div class="brand-left">
         ${menuBtn}
-        <h1><span class="dot"></span> Mira <span class="brand-tag">the courage journey</span></h1>
+        <h1><span class="dot"></span> Mira <span class="brand-tag">${t("hud.tag", "the courage journey")}</span></h1>
       </div>
       <nav class="nav-actions" aria-label="App navigation">
         ${getCourage() > 0 ? `<span class="courage-badge" id="courageBadge" title="Courage — earned every time you face a trial">⚡ ${getCourage()}</span>` : ""}
         ${charBadge}
         ${sparksBtn}
         ${insightsBtn}
+        ${langBtn}
         ${audioBtn}
         ${settingsBtn}
-        ${view !== "welcome" && view !== "character" ? `<button class="home-btn" id="home" aria-label="Back to the journey map">🏕 Camp</button>` : ""}
+        ${view !== "welcome" && view !== "character" ? `<button class="home-btn" id="home" aria-label="Back to the journey map">${t("hud.camp", "🏕 Camp")}</button>` : ""}
       </nav>
     </header>
     <main id="view" role="main"></main>
@@ -7877,6 +7955,14 @@ function attachHandlers(view, params) {
   if (menuBtn) menuBtn.onclick = openMenu;
   const sparksHud = document.getElementById("sparksBtn");
   if (sparksHud) sparksHud.onclick = () => go("journal");
+  // Language toggle: swap en <-> fa, re-render in place (applyLang inside
+  // setLang stamps <html lang dir>, so RTL flips without a reload).
+  const langBtnEl = document.getElementById("langBtn");
+  if (langBtnEl) langBtnEl.onclick = () => {
+    window.I18n.setLang(window.I18n.currentLanguage() === "fa" ? "en" : "fa");
+    const route = parseRoute(location.hash);
+    render(route.view, route.params);
+  };
   // Progress report: print (browser print → PDF) + raw JSON download of the
   // active character's data. No network — a local Blob, revoked after click.
   const reportPrint = document.getElementById("reportPrint");
@@ -8022,22 +8108,22 @@ function openMenu() {
       </div>
     ` : ""}
     <ul class="menu-list">
-      <li><button data-go="welcome">🌌 Title screen — the story</button></li>
-      <li><button data-go="select">🗺 The Valley of Fears</button></li>
-      ${ch ? `<li><button data-go="ladder" data-phobia="${ch.primaryPhobia || ""}">⚔ Continue your trials</button></li>` : ""}
-      <li><button data-go="journal">✦ Book of Sparks</button></li>
-      <li><button data-go="insights">📜 Your story so far</button></li>
-      <li><button data-go="report">📄 Progress report — print / share</button></li>
-      <li><button data-go="custom">🛠 Forge a custom fear</button></li>
+      <li><button data-go="welcome">${t("menu.title", "🌌 Title screen — the story")}</button></li>
+      <li><button data-go="select">${t("menu.valley", "🗺 The Valley of Fears")}</button></li>
+      ${ch ? `<li><button data-go="ladder" data-phobia="${ch.primaryPhobia || ""}">${t("menu.trials", "⚔ Continue your trials")}</button></li>` : ""}
+      <li><button data-go="journal">${t("menu.sparks", "✦ Book of Sparks")}</button></li>
+      <li><button data-go="insights">${t("menu.story", "📜 Your story so far")}</button></li>
+      <li><button data-go="report">${t("menu.report", "📄 Progress report — print / share")}</button></li>
+      <li><button data-go="custom">${t("menu.forge", "🛠 Forge a custom fear")}</button></li>
     </ul>
     <div class="menu-divider"></div>
     <ul class="menu-list">
-      <li><button data-go="character" data-edit="1">${window.t ? window.t("menu.editCharacter") : "✎ Edit your traveler"}</button></li>
-      ${allChars.length > 1 ? `<li><button data-go="profiles">${window.t ? window.t("menu.switchCharacter") : "⇄ Switch traveler"}</button></li>` : ""}
-      <li><button id="menuOpenSettings">${window.t ? window.t("menu.settings") : "⚙ Settings"}</button></li>
+      <li><button data-go="character" data-edit="1">${t("menu.editCharacter", "✎ Edit your traveler")}</button></li>
+      ${allChars.length > 1 ? `<li><button data-go="profiles">${t("menu.switchCharacter", "⇄ Switch traveler")}</button></li>` : ""}
+      <li><button id="menuOpenSettings">${t("menu.settings", "⚙ Settings")}</button></li>
     </ul>
     <div class="menu-divider"></div>
-    <p class="menu-footer">Mira · a practice game, not therapy.</p>
+    <p class="menu-footer">${t("menu.footer", "Mira · a practice game, not therapy.")}</p>
   `;
   const backdrop = document.createElement("div");
   backdrop.className = "menu-backdrop";
@@ -8525,11 +8611,11 @@ function viewWelcome() {
     ? `<div class="story-figure" id="storyFigure3d" title="Drag to spin your traveler">${window.Character.avatarSVG(ch || { skinTone: "fair", hairColor: "brown", hairStyle: "short", topColor: "teal", eyeColor: "brown" }, 120)}</div>`
     : "";
   const heroLine = ch
-    ? `Welcome back, <strong>${escapeHtml(ch.name || "traveler")}</strong>. The valley kept your place.`
-    : `Everyone carries a fear. This one is yours to face — one small, safe step at a time.`;
+    ? tf("story.welcomeBack", "Welcome back, {name}. The valley kept your place.", { name: `<strong>${escapeHtml(ch.name || "traveler")}</strong>` })
+    : t("story.firstLine", "Everyone carries a fear. This one is yours to face — one small, safe step at a time.");
   const cta = ch
-    ? `<button class="btn-primary btn-xl" data-action="begin">⚔ Continue the journey</button>`
-    : `<button class="btn-primary btn-xl" data-action="begin">✨ Create your traveler</button>`;
+    ? `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaBack", "⚔ Continue the journey")}</button>`
+    : `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaNew", "✨ Create your traveler")}</button>`;
 
   const realmTeasers = FEATURED.filter(k => PHOBIAS[k]).map(k => `
     <button class="story-realm" data-action="select-phobia" data-phobia="${k}" ${ch ? "" : `disabled title="Create your traveler first"`}>
@@ -8543,23 +8629,23 @@ function viewWelcome() {
     <section class="story-beat beat-hero lit">
       <div class="story-sky" aria-hidden="true">${starfieldHTML(70)}<div class="story-moon"></div></div>
       ${heroFigure}
-      <p class="story-kicker">a tiny game about big fears</p>
-      <h1 class="story-title">The Valley of Fears</h1>
+      <p class="story-kicker">${t("story.kicker", "a tiny game about big fears")}</p>
+      <h1 class="story-title">${t("story.title", "The Valley of Fears")}</h1>
       <div class="story-bubble">${heroLine}</div>
       <div class="actions story-actions">${cta}</div>
-      <div class="scroll-hint" aria-hidden="true"><span>the story</span>▾</div>
+      <div class="scroll-hint" aria-hidden="true"><span>${t("story.hint", "the story")}</span>▾</div>
     </section>
 
     <section class="story-beat" data-beat="1">
       <div class="beat-shadow sz-1" aria-hidden="true"><i class="eye"></i><i class="eye"></i></div>
-      <h2 class="story-line">Fear starts small.</h2>
-      <p class="story-text">A bark behind a fence. A spider in the bath. A balcony you didn't step onto. A room that felt too tight to breathe in.</p>
+      <h2 class="story-line">${t("story.b1h", "Fear starts small.")}</h2>
+      <p class="story-text">${t("story.b1p", "A bark behind a fence. A spider in the bath. A balcony you didn't step onto. A room that felt too tight to breathe in.")}</p>
     </section>
 
     <section class="story-beat" data-beat="2">
       <div class="beat-shadow sz-3" aria-hidden="true"><i class="eye"></i><i class="eye"></i></div>
-      <h2 class="story-line">Avoid it, and it grows.</h2>
-      <p class="story-text">Every time you cross the street, take the stairs, leave the light on — the relief feels wonderful. And the shadow learns you fear it. That relief is exactly what feeds it.</p>
+      <h2 class="story-line">${t("story.b2h", "Avoid it, and it grows.")}</h2>
+      <p class="story-text">${t("story.b2p", "Every time you cross the street, take the stairs, leave the light on — the relief feels wonderful. And the shadow learns you fear it. That relief is exactly what feeds it.")}</p>
     </section>
 
     <section class="story-beat" data-beat="3">
@@ -8571,22 +8657,22 @@ function viewWelcome() {
           <text x="196" y="78" class="curve-label">…then falls on its own</text>
         </svg>
       </div>
-      <h2 class="story-line">But fear has a secret.</h2>
-      <p class="story-text">Stay near it — gently, on your own terms — and it rises, peaks, and <em>falls by itself</em>. Your body learns what nobody could tell you: it's safe. Face the shadow, and it shrinks.</p>
+      <h2 class="story-line">${t("story.b3h", "But fear has a secret.")}</h2>
+      <p class="story-text">${t("story.b3p", "Stay near it — gently, on your own terms — and it rises, peaks, and <em>falls by itself</em>. Your body learns what nobody could tell you: it's safe. Face the shadow, and it shrinks.")}</p>
     </section>
 
     <section class="story-beat" data-beat="4">
       <div class="beat-shadow sz-0 tamed" aria-hidden="true"><i class="eye"></i><i class="eye"></i></div>
-      <h2 class="story-line">That's the whole game.</h2>
-      <p class="story-text">Six famous fears live in this valley. Each holds five trials, from "barely a whisper" to "the real thing". Walk them at your own pace — you can leave any trial at any moment, and leaving is never a defeat.</p>
+      <h2 class="story-line">${t("story.b4h", "That's the whole game.")}</h2>
+      <p class="story-text">${t("story.b4p", 'Six famous fears live in this valley. Each holds five trials, from "barely a whisper" to "the real thing". Walk them at your own pace — you can leave any trial at any moment, and leaving is never a defeat.')}</p>
       <div class="story-realms">${realmTeasers}</div>
     </section>
 
     <section class="story-beat beat-final" data-beat="5">
-      <h2 class="story-line">Your journey starts at the campfire.</h2>
-      <p class="story-text">Make a traveler — a face, a name, the fears you want to face. They walk every scene with you: their hand on the railing, their feet at the cellar stairs.</p>
+      <h2 class="story-line">${t("story.b5h", "Your journey starts at the campfire.")}</h2>
+      <p class="story-text">${t("story.b5p", "Make a traveler — a face, a name, the fears you want to face. They walk every scene with you: their hand on the railing, their feet at the cellar stairs.")}</p>
       <div class="actions story-actions">${cta}</div>
-      <p class="story-disclaimer"><strong>A practice game, not therapy.</strong> Real exposure work for phobias belongs with a trained clinician who paces it and supports you. Use Mira for curiosity, education, or as a conversation starter — not treatment.</p>
+      <p class="story-disclaimer">${t("story.disclaimer", "<strong>A practice game, not therapy.</strong> Real exposure work for phobias belongs with a trained clinician who paces it and supports you. Use Mira for curiosity, education, or as a conversation starter — not treatment.")}</p>
     </section>
   </div>`;
 }
@@ -8632,10 +8718,10 @@ function viewSelect() {
   // Campfire line: the character speaks about where they are on the journey.
   const curRealm = realmOf(curKey);
   const curProg = (getProgress(curKey).highestCompleted ?? -1) + 1;
-  const campLine = !ch ? "A campfire, waiting for a traveler."
+  const campLine = !ch ? t("camp.empty", "A campfire, waiting for a traveler.")
     : facedTrials === 0 ? `“${curRealm.line}”`
     : curProg >= PHOBIAS[curKey].levels.length ? `“${curRealm.clearedLine}”`
-    : `“Trial ${curProg + 1} of ${curRealm.realmName} is waiting for me.”`;
+    : tf("camp.trialWaiting", "“Trial {n} of {realm} is waiting for me.”", { n: curProg + 1, realm: curRealm.realmName });
 
   const nodes = keys.map((k, i) => {
     const p = PHOBIAS[k];
@@ -8649,23 +8735,23 @@ function viewSelect() {
     const pips = Array.from({ length: total }, (_, j) =>
       `<i class="pip ${j < done ? "lit" : ""}" title="Trial ${j + 1}${j < done ? " — faced" : ""}"></i>`).join("");
     const stateLine = cleared ? realm.clearedLine
-      : done > 0 ? `${realm.guardianName} is weakening — ${total - done} trial${total - done === 1 ? "" : "s"} left.`
-      : `${realm.guardianName} still holds this place.`;
+      : done > 0 ? tf("node.weakening", `{g} is weakening — {n} trial${total - done === 1 ? "" : "s"} left.`, { g: realm.guardianName, n: total - done })
+      : tf("node.holds", "{g} still holds this place.", { g: realm.guardianName });
     return `
       <li class="realm-node ${i % 2 ? "side-r" : "side-l"} ${cleared ? "cleared" : ""} ${isCurrent ? "current" : ""}"
           data-action="select-phobia" data-phobia="${k}" tabindex="0" role="button"
           aria-label="${escapeHtml(realm.realmName)} — ${escapeHtml(p.name)}, ${done} of ${total} trials faced">
         <div class="realm-thumb" aria-hidden="true">${phobiaThumbnail(k)}
-          ${cleared ? `<span class="realm-tamed">🕊 tamed</span>` : `<span class="realm-shadow" style="--rem:${remaining.toFixed(2)}"><i class="eye"></i><i class="eye"></i></span>`}
-          ${isCurrent && ch ? `<span class="you-marker" title="You are here">${window.Character.avatarSVG(ch, 40)}<span>you</span></span>` : ""}
+          ${cleared ? `<span class="realm-tamed">${t("node.tamed", "🕊 tamed")}</span>` : `<span class="realm-shadow" style="--rem:${remaining.toFixed(2)}"><i class="eye"></i><i class="eye"></i></span>`}
+          ${isCurrent && ch ? `<span class="you-marker" title="You are here">${window.Character.avatarSVG(ch, 40)}<span>${t("node.you", "you")}</span></span>` : ""}
         </div>
         <div class="realm-body">
-          <span class="realm-kicker">Realm ${ROMAN[i] || i + 1} · ${escapeHtml(p.name)}</span>
+          <span class="realm-kicker">${t("realmWord", "Realm")} ${ROMAN[i] || i + 1} · ${escapeHtml(p.name)}</span>
           <h3 class="realm-name">${escapeHtml(realm.realmName)}</h3>
           <p class="realm-epithet">${escapeHtml(realm.epithet)}</p>
           <div class="realm-pips">${pips}</div>
           <p class="realm-state">${escapeHtml(stateLine)}</p>
-          <span class="realm-cta">${done === 0 ? "Enter the realm" : cleared ? "Walk it again" : "Continue"} <span class="arr">→</span></span>
+          <span class="realm-cta">${done === 0 ? t("node.enter", "Enter the realm") : cleared ? t("node.again", "Walk it again") : t("node.continue", "Continue")} <span class="arr">→</span></span>
         </div>
       </li>`;
   }).join(`<li class="path-seg" aria-hidden="true"><i></i><i></i><i></i></li>`);
@@ -8689,39 +8775,39 @@ function viewSelect() {
       <div class="rank-row" title="Courage builds your traveler rank — every trial adds to it">
         <span class="rank-chip">${rank.icon} ${rank.title}</span>
         <div class="rank-bar" aria-hidden="true"><div class="rank-fill" style="width:${rankPct}%"></div></div>
-        <span class="rank-next">${rank.next ? `${courage}/${rank.next.min} ⚡ to ${rank.next.title}` : "highest rank reached"}</span>
+        <span class="rank-next">${rank.next ? tf("rank.to", "{a}/{b} ⚡ to {title}", { a: courage, b: rank.next.min, title: rank.next.title }) : t("rank.max", "highest rank reached")}</span>
       </div>
       <div class="camp-stats">
-        <span class="camp-stat" title="Courage — earned every time you face a trial">⚡ ${courage} courage</span>
-        <span class="camp-stat" title="Trials faced across the valley">🛡 ${facedTrials}/${totalTrials} trials</span>
-        <button class="camp-stat as-btn" data-action="open-journal" title="Book of Sparks — the wisdom you've collected">✦ ${sparks}/${INSIGHT_CARDS.length} sparks</button>
-        ${streak >= 2 ? `<span class="camp-stat streak" title="Days in a row you've practiced">🔥 ${streak}-day flame</span>` : ""}
-        ${worldstepCount() > 0 ? `<span class="camp-stat worldsteps" title="Real-world steps faced outside the game — the ones that count double">🌍 ${worldstepCount()} real step${worldstepCount() === 1 ? "" : "s"}</span>` : ""}
+        <span class="camp-stat" title="Courage — earned every time you face a trial">${tf("camp.courage", "⚡ {n} courage", { n: courage })}</span>
+        <span class="camp-stat" title="Trials faced across the valley">${tf("camp.trials", "🛡 {a}/{b} trials", { a: facedTrials, b: totalTrials })}</span>
+        <button class="camp-stat as-btn" data-action="open-journal" title="Book of Sparks — the wisdom you've collected">${tf("camp.sparks", "✦ {a}/{b} sparks", { a: sparks, b: INSIGHT_CARDS.length })}</button>
+        ${streak >= 2 ? `<span class="camp-stat streak" title="Days in a row you've practiced">${tf("camp.streak", "🔥 {n}-day flame", { n: streak })}</span>` : ""}
+        ${worldstepCount() > 0 ? `<span class="camp-stat worldsteps" title="Real-world steps faced outside the game — the ones that count double">${tf("camp.realsteps", `🌍 {n} real step${worldstepCount() === 1 ? "" : "s"}`, { n: worldstepCount() })}</span>` : ""}
       </div>
       ${ch ? `
       <div class="quest-card ${doneToday ? "done" : ""}">
         <div class="quest-head">
-          <span class="quest-flag">🪧 Today's step</span>
-          ${doneToday ? `<span class="quest-chip done-chip">🔥 ember earned</span>` : `<span class="quest-chip">+15 ember for the first trial today</span>`}
+          <span class="quest-flag">${t("quest.flag", "🪧 Today's step")}</span>
+          ${doneToday ? `<span class="quest-chip done-chip">${t("quest.earned", "🔥 ember earned")}</span>` : `<span class="quest-chip">${t("quest.bonus", "+15 ember for the first trial today")}</span>`}
         </div>
         <div class="quest-body">
-          <strong>${escapeHtml(questRealm.realmName)} · trial ${questDone + 1}: ${escapeHtml(PHOBIAS[questKey].levels[questDone].title)}</strong>
-          <p>${doneToday ? "You showed up today — the flame is lit. Another step is always welcome." : "One small step a day keeps the flame lit. You can step out at any moment."}</p>
+          <strong>${escapeHtml(questRealm.realmName)} · ${tf("quest.trial", "trial {n}", { n: questDone + 1 })}: ${escapeHtml(PHOBIAS[questKey].levels[questDone].title)}</strong>
+          <p>${doneToday ? t("quest.doneP", "You showed up today — the flame is lit. Another step is always welcome.") : t("quest.todoP", "One small step a day keeps the flame lit. You can step out at any moment.")}</p>
         </div>
         <button class="${doneToday ? "btn-ghost" : "btn-primary"}" data-action="start-level" data-phobia="${questKey}" data-level="${questDone}">
-          ${doneToday ? "Take another step" : "⚔ Take today's step"}
+          ${doneToday ? t("quest.btnDone", "Take another step") : t("quest.btnTodo", "⚔ Take today's step")}
         </button>
       </div>` : ""}
-      <p class="camp-hint">the path descends through the valley — choose a realm ▾</p>
+      <p class="camp-hint">${t("camp.hint", "the path descends through the valley — choose a realm ▾")}</p>
     </section>
     <ol class="realm-list">${nodes}</ol>
     <section class="jw-dawn">
-      <h3>Beyond the valley</h3>
-      ${tamedCount > 0 ? `<p class="jw-dawn-count">🕊 ${tamedCount} of ${keys.length} shadows tamed — the dawn is closer.</p>` : ""}
-      <p>Fears the map doesn't know yet — forge your own path for them.</p>
+      <h3>${t("dawn.h", "Beyond the valley")}</h3>
+      ${tamedCount > 0 ? `<p class="jw-dawn-count">${tf("dawn.tamed", "🕊 {a} of {b} shadows tamed — the dawn is closer.", { a: tamedCount, b: keys.length })}</p>` : ""}
+      <p>${t("dawn.p", "Fears the map doesn't know yet — forge your own path for them.")}</p>
       <div class="actions" style="justify-content:center">
-        <button class="btn-ghost" data-action="open-custom">🛠 Forge a custom fear</button>
-        ${state.log.length ? `<button class="btn-ghost" data-action="open-insights">📜 Your story so far</button>` : ""}
+        <button class="btn-ghost" data-action="open-custom">${t("dawn.forge", "🛠 Forge a custom fear")}</button>
+        ${state.log.length ? `<button class="btn-ghost" data-action="open-insights">${t("dawn.story", "📜 Your story so far")}</button>` : ""}
       </div>
     </section>
   </div>`;
@@ -8952,7 +9038,10 @@ const RANKS = [
 function courageRank(c) {
   let idx = 0;
   for (let i = 0; i < RANKS.length; i++) if (c >= RANKS[i].min) idx = i;
-  return Object.assign({ idx, next: RANKS[idx + 1] || null }, RANKS[idx]);
+  const next = RANKS[idx + 1]
+    ? Object.assign({}, RANKS[idx + 1], { title: t(`ranks.${idx + 1}`, RANKS[idx + 1].title) })
+    : null;
+  return Object.assign({ idx, next }, RANKS[idx], { title: t(`ranks.${idx}`, RANKS[idx].title) });
 }
 function isSameLocalDay(ts) {
   if (!ts) return false;
@@ -8970,22 +9059,22 @@ function viewJournal() {
     return has ? `
       <div class="spark-slot owned" style="--i:${i}">
         <span class="spark-icon">${c.icon}</span>
-        <strong>${escapeHtml(c.title)}</strong>
-        <p>${escapeHtml(c.text)}</p>
+        <strong>${escapeHtml(t(`card.${c.id}.title`, c.title))}</strong>
+        <p>${escapeHtml(t(`card.${c.id}.text`, c.text))}</p>
       </div>` : `
       <div class="spark-slot locked" style="--i:${i}" title="Face another trial to earn this spark">
         <span class="spark-icon">?</span>
-        <strong>Spark ${i + 1}</strong>
-        <p>Still out there. Face another trial to earn it.</p>
+        <strong>${tf("journal.lockedT", "Spark {n}", { n: i + 1 })}</strong>
+        <p>${t("journal.lockedP", "Still out there. Face another trial to earn it.")}</p>
       </div>`;
   }).join("");
   return `
     <div class="panel journal-panel">
-      <span class="badge">Book of Sparks</span>
-      <h2 style="margin-top:10px">The wisdom you've earned</h2>
-      <p>Every finished trial leaves a spark — one piece of the psychology of fear, collected by living it rather than reading it. ${owned.length ? `You hold <strong>${owned.length} of ${INSIGHT_CARDS.length}</strong>.` : "Your book is empty — face your first trial to begin it."}</p>
+      <span class="badge">${t("spark.book", "Book of Sparks")}</span>
+      <h2 style="margin-top:10px">${t("journal.h2", "The wisdom you've earned")}</h2>
+      <p>${t("journal.p1", "Every finished trial leaves a spark — one piece of the psychology of fear, collected by living it rather than reading it.")} ${owned.length ? tf("journal.have", "You hold <strong>{a} of {b}</strong>.", { a: owned.length, b: INSIGHT_CARDS.length }) : t("journal.empty", "Your book is empty — face your first trial to begin it.")}</p>
       <div class="spark-grid">${cards}</div>
-      <div class="actions"><button class="btn-primary" data-action="open-select">🗺 Back to the valley</button></div>
+      <div class="actions"><button class="btn-primary" data-action="open-select">${t("journal.backValley", "🗺 Back to the valley")}</button></div>
     </div>`;
 }
 
@@ -9014,14 +9103,14 @@ function viewLadder(phobiaKey) {
         ? `<div class="guardian tamed-bird">🕊</div>`
         : `<div class="guardian shadow-blob" style="--rem:${remaining.toFixed(2)}"><i class="eye"></i><i class="eye"></i></div>`}
       <div class="guardian-meter"><div class="guardian-meter-fill" style="width:${(remaining * 100).toFixed(0)}%"></div></div>
-      <span class="guardian-label">${cleared ? "tamed" : `${escapeHtml(realm.guardianName)} · strength ${total - done}/${total}`}</span>
+      <span class="guardian-label">${cleared ? t("guardian.tamed", "tamed") : `${escapeHtml(realm.guardianName)} · ${t("guardian.strength", "strength")} ${total - done}/${total}`}</span>
     </div>`;
 
   // The Guide's notes — the full clinical background, kept intact but tucked
   // behind a flap so the page leads with the game, not the syllabus.
   const infoBlock = info ? `
     <details class="phobia-info">
-      <summary>🧭 The Guide's notes — what this fear is, and why facing it works</summary>
+      <summary>${t("guide.notes", "🧭 The Guide's notes — what this fear is, and why facing it works")}</summary>
       <div class="info-body">
         <p class="info-summary">${info.summary}</p>
         <div class="info-grid">
@@ -9060,10 +9149,10 @@ function viewLadder(phobiaKey) {
     const flames = Array.from({ length: 5 }, (_, k2) => `<i class="tf ${k2 <= i ? "on" : ""}"></i>`).join("");
     const whisper = (doneT || current)
       ? `<p class="trial-whisper">🕯 ${escapeHtml((realm.whispers && realm.whispers[i]) || "")}</p>`
-      : `<p class="trial-whisper misty">🕯 The whisper for this trial is still in the mist…</p>`;
-    const stats = [`hold ~${minHold}s`];
-    if (lastSuds != null) stats.unshift(`last fear ${lastSuds}/10`);
-    const btn = doneT ? "Face it again" : current ? "Face this trial" : "Skip ahead";
+      : `<p class="trial-whisper misty">${t("trial.misty", "🕯 The whisper for this trial is still in the mist…")}</p>`;
+    const stats = [tf("trial.hold", "hold ~{n}s", { n: minHold })];
+    if (lastSuds != null) stats.unshift(tf("trial.lastFear", "last fear {n}/10", { n: lastSuds }));
+    const btn = doneT ? t("trial.again", "Face it again") : current ? t("trial.face", "Face this trial") : t("trial.skip", "Skip ahead");
     return `
       <li class="trial ${doneT ? "done" : ""} ${current ? "current" : ""} ${future ? "future" : ""}">
         <div class="trial-marker">${doneT ? "🔥" : `<span>${i + 1}</span>`}</div>
@@ -9096,7 +9185,7 @@ function viewLadder(phobiaKey) {
 
   const sessionsOnThisPhobia = previous.length;
   const progressLink = sessionsOnThisPhobia > 0
-    ? `<a href="#${serializeRoute("phobia-progress", { phobia: phobiaKey })}" class="ladder-progress-link">📜 ${sessionsOnThisPhobia} session${sessionsOnThisPhobia === 1 ? "" : "s"} in this realm · view your record</a>`
+    ? `<a href="#${serializeRoute("phobia-progress", { phobia: phobiaKey })}" class="ladder-progress-link">${tf("progress.link", `📜 {n} session${sessionsOnThisPhobia === 1 ? "" : "s"} in this realm · view your record`, { n: sessionsOnThisPhobia })}</a>`
     : "";
 
   // The oath (goal) block — progress toward the traveler's pledge here.
@@ -9108,7 +9197,7 @@ function viewLadder(phobiaKey) {
         <div class="goal-row">
           <div class="goal-meter">
             <div class="goal-meter-label">
-              <span>Oath: reach trial</span>
+              <span>${t("oath.reach", "Oath: reach trial")}</span>
               <strong>${goal.targetRung + 1} of ${total}</strong>
             </div>
             <div class="goal-meter-track">
@@ -9117,17 +9206,17 @@ function viewLadder(phobiaKey) {
           </div>
           <div class="goal-meter">
             <div class="goal-meter-label">
-              <span>This week</span>
+              <span>${t("oath.week", "This week")}</span>
               <strong>${wkSessions} of ${goal.perWeek} session${goal.perWeek === 1 ? "" : "s"}</strong>
             </div>
             <div class="goal-meter-track">
               <div class="goal-meter-fill" style="width:${Math.min(100, (wkSessions / goal.perWeek) * 100)}%"></div>
             </div>
           </div>
-          <button class="btn-ghost" data-action="edit-goal" data-phobia="${phobiaKey}" style="font-size:11px;padding:5px 10px;">Edit oath</button>
+          <button class="btn-ghost" data-action="edit-goal" data-phobia="${phobiaKey}" style="font-size:11px;padding:5px 10px;">${t("oath.edit", "Edit oath")}</button>
         </div>
       ` : `
-        <button class="btn-ghost" data-action="edit-goal" data-phobia="${phobiaKey}">🎯 Swear an oath for this realm</button>
+        <button class="btn-ghost" data-action="edit-goal" data-phobia="${phobiaKey}">${t("oath.set", "🎯 Swear an oath for this realm")}</button>
       `}
     </div>
   `;
@@ -9135,16 +9224,16 @@ function viewLadder(phobiaKey) {
   // One obvious primary action above the fold: continue (or start) the trials.
   const nextIdx = Math.min(total - 1, prog.highestCompleted + 1);
   const ctaLabel = prog.highestCompleted < 0
-    ? `Begin — trial 1: ${p.levels[0].title}`
+    ? tf("ladder.begin", "Begin — trial 1: {t}", { t: p.levels[0].title })
     : cleared
-      ? `Walk it again — trial ${total}: ${p.levels[total - 1].title}`
-      : `Continue — trial ${nextIdx + 1}: ${p.levels[nextIdx].title}`;
+      ? tf("ladder.again", "Walk it again — trial {n}: {t}", { n: total, t: p.levels[total - 1].title })
+      : tf("ladder.continue", "Continue — trial {n}: {t}", { n: nextIdx + 1, t: p.levels[nextIdx].title });
   const heroCta = `
     <div class="ladder-cta">
       <button class="btn-primary" data-action="start-level" data-phobia="${phobiaKey}" data-level="${nextIdx}">
         ⚔ ${escapeHtml(ctaLabel)} <span class="arr">→</span>
       </button>
-      <span class="ladder-cta-sub">${total} trials · any order, your pace · Esc grounds you at any moment</span>
+      <span class="ladder-cta-sub">${tf("ladder.sub", "{n} trials · any order, your pace · Esc grounds you at any moment", { n: total })}</span>
     </div>`;
 
   const bridgeBlock = bridgeBlockFor(phobiaKey, prog);
@@ -9159,18 +9248,18 @@ function viewLadder(phobiaKey) {
   if (!checks.length) {
     mirrorBlock = `
       <div class="mirror-invite">
-        <span class="bridge-invite-kicker">🪞 Before your first trial</span>
-        <strong>Hold up the Mirror — 60 seconds</strong>
-        <p>Five quick questions about how this fear is in <em>real life</em> right now. Do it once now, and later mirrors will show you — in numbers — how much quieter it gets.</p>
-        <button class="btn-primary" data-action="fear-check" data-phobia="${phobiaKey}" data-at="baseline">Look in the mirror</button>
+        <span class="bridge-invite-kicker">${t("mirror.before", "🪞 Before your first trial")}</span>
+        <strong>${t("mirror.title", "Hold up the Mirror — 60 seconds")}</strong>
+        <p>${t("mirror.p", "Five quick questions about how this fear is in <em>real life</em> right now. Do it once now, and later mirrors will show you — in numbers — how much quieter it gets.")}</p>
+        <button class="btn-primary" data-action="fear-check" data-phobia="${phobiaKey}" data-at="baseline">${t("mirror.btn", "Look in the mirror")}</button>
       </div>`;
   } else {
     const band = fearCheckBand(lastC.total);
     const delta = baseC && lastC !== baseC ? lastC.total - baseC.total : null;
     mirrorBlock = `
       <div class="mirror-chip">
-        <span>🪞 The fear out there: <strong>${lastC.total}/20</strong> — ${band.label}${delta != null ? (delta < 0 ? ` · ▼${Math.abs(delta)} since your first mirror` : delta > 0 ? ` · ▲${delta} since your first mirror` : "") : ""}</span>
-        <button class="btn-ghost mirror-recheck" data-action="fear-check" data-phobia="${phobiaKey}" data-at="manual">Re-check</button>
+        <span>${tf("mirror.chip", "🪞 The fear out there: {n}/20 — {band}", { n: `<strong>${lastC.total}</strong>`, band: band.label })}${delta != null ? (delta < 0 ? ` · ${tf("mirror.down", "▼{n} since your first mirror", { n: Math.abs(delta) })}` : delta > 0 ? ` · ${tf("mirror.up", "▲{n} since your first mirror", { n: delta })}` : "") : ""}</span>
+        <button class="btn-ghost mirror-recheck" data-action="fear-check" data-phobia="${phobiaKey}" data-at="manual">${t("mirror.recheck", "Re-check")}</button>
       </div>`;
   }
 
@@ -9181,7 +9270,7 @@ function viewLadder(phobiaKey) {
         <div class="realm-hero-grad" aria-hidden="true"></div>
         <div class="realm-3d" id="realmHero3d" title="Drag to look around"></div>
         <div class="realm-hero-text">
-          <span class="realm-kicker">${realmIdx >= 0 ? `Realm ${ROMAN[realmIdx] || realmIdx + 1} · ` : ""}${escapeHtml(p.name)} — ${escapeHtml(p.label)}</span>
+          <span class="realm-kicker">${realmIdx >= 0 ? `${t("realmWord", "Realm")} ${ROMAN[realmIdx] || realmIdx + 1} · ` : ""}${escapeHtml(p.name)} — ${escapeHtml(t(`phobia.${phobiaKey}.label`, p.label))}</span>
           <h2>${escapeHtml(realm.realmName)}</h2>
           <p class="realm-epithet">${escapeHtml(realm.epithet)}</p>
         </div>
@@ -9216,17 +9305,17 @@ function bridgeBlockFor(phobiaKey, prog) {
         <div class="bridge-text">
           <strong>${escapeHtml(s.t)}</strong>
           ${unlocked && !done ? `<p>${escapeHtml(s.how)}</p>` : ""}
-          ${done ? `<p class="bridge-done-note">Faced${rec && rec.suds != null ? ` · fear ${rec.suds}/10` : ""}${rec ? ` · ${new Date(rec.ts).toLocaleDateString()}` : ""}</p>` : ""}
-          ${!unlocked ? `<p class="bridge-locked-note">Face trial ${i + 1} in the valley to unlock this step.</p>` : ""}
+          ${done ? `<p class="bridge-done-note">${t("bridge.faced", "Faced")}${rec && rec.suds != null ? ` · ${tf("bridge.fear", "fear {n}/10", { n: rec.suds })}` : ""}${rec ? ` · ${new Date(rec.ts).toLocaleDateString()}` : ""}</p>` : ""}
+          ${!unlocked ? `<p class="bridge-locked-note">${tf("bridge.locked", "Face trial {n} in the valley to unlock this step.", { n: i + 1 })}</p>` : ""}
         </div>
-        ${unlocked && !done ? `<button class="btn-ghost bridge-btn" data-action="do-worldstep" data-phobia="${phobiaKey}" data-step="${i}">I did this</button>` : ""}
+        ${unlocked && !done ? `<button class="btn-ghost bridge-btn" data-action="do-worldstep" data-phobia="${phobiaKey}" data-step="${i}">${t("bridge.didThis", "I did this")}</button>` : ""}
       </li>`;
   }).join("");
   return `
     <section class="bridge-block">
       <div class="bridge-head">
-        <h3>🌍 The Real Path</h3>
-        <span class="bridge-sub">The valley is practice. These small steps out there are the point — always optional, always your pace, worth extra courage.</span>
+        <h3>${t("bridge.head", "🌍 The Real Path")}</h3>
+        <span class="bridge-sub">${t("bridge.sub", "The valley is practice. These small steps out there are the point — always optional, always your pace, worth extra courage.")}</span>
       </div>
       <ol class="bridge-list">${rows}</ol>
     </section>`;
@@ -9521,26 +9610,25 @@ function viewPredict(phobiaKey, levelIdx) {
   const suggested = Math.min(8, 4 + levelIdx);
   return `
     <div class="panel">
-      <span class="badge">Trial ${levelIdx+1} of ${p.levels.length} — ${escapeHtml(realmOf(phobiaKey).realmName)}</span>
-      <h2 style="margin-top:10px">At the gate: name your fear's number</h2>
-      <p>A traveler's ritual that makes the trial count double: <em>predict</em> how loud the fear will be, then see how it actually goes.
-      Most people over-predict — and catching your own shadow exaggerating is exactly the lesson the brain needs.</p>
+      <span class="badge">${tf("predict.badge", "Trial {n} of {m} — {realm}", { n: levelIdx + 1, m: p.levels.length, realm: escapeHtml(realmOf(phobiaKey).realmName) })}</span>
+      <h2 style="margin-top:10px">${t("predict.h2", "At the gate: name your fear's number")}</h2>
+      <p>${t("predict.p", "A traveler's ritual that makes the trial count double: <em>predict</em> how loud the fear will be, then see how it actually goes. Most people over-predict — and catching your own shadow exaggerating is exactly the lesson the brain needs.")}</p>
       <p class="hint" style="margin-top:14px">You'll be: <strong>${escapeHtml(lv.title)}</strong>${lv.desc ? ` — ${escapeHtml(lv.desc)}` : ""}</p>
 
       <div class="suds" style="margin-top:18px">
-        <label for="predictedSuds">How anxious do you expect to feel during <strong>${escapeHtml(lv.title)}</strong>?</label>
+        <label for="predictedSuds">${tf("predict.label", "How anxious do you expect to feel during {t}?", { t: `<strong>${escapeHtml(lv.title)}</strong>` })}</label>
         <div class="scale-row">
-          <span class="small">0 calm</span>
+          <span class="small">${t("scale.calm", "0 calm")}</span>
           <input type="range" id="predictedSuds" min="0" max="10" value="${suggested}"/>
-          <span class="small">10 panic</span>
+          <span class="small">${t("scale.panic", "10 panic")}</span>
           <div class="value" id="predictedValue">${suggested}</div>
         </div>
         <div class="hint">After the rung, you'll rate how it actually felt — and we'll compare. The gap is where the learning happens.</div>
       </div>
 
       <div class="actions">
-        <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">Back to the realm</button>
-        <button class="btn-primary" data-action="confirm-predict" data-phobia="${phobiaKey}" data-level="${levelIdx}">⚔ Enter the trial</button>
+        <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">${t("complete.back", "Back to the realm")}</button>
+        <button class="btn-primary" data-action="confirm-predict" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("predict.enter", "⚔ Enter the trial")}</button>
       </div>
     </div>
   `;
@@ -9708,23 +9796,23 @@ function viewRate(phobiaKey, levelIdx) {
     : "";
   return `
     <div class="panel">
-      <h2>The trial is behind you. How loud was it?</h2>
+      <h2>${t("rate.h2", "The trial is behind you. How loud was it?")}</h2>
       ${earlyNote}
-      <p>Rate the fear you feel <em>right now</em> on the <strong>SUDS</strong> scale — Subjective Units of Distress. Be honest; the journal is only for you.</p>
+      <p>${t("rate.p", "Rate the fear you feel <em>right now</em> on the <strong>SUDS</strong> scale — Subjective Units of Distress. Be honest; the journal is only for you.")}</p>
       <div class="suds">
         <label for="suds">Anxiety level</label>
         <div class="scale-row">
-          <span class="small">0 calm</span>
+          <span class="small">${t("scale.calm", "0 calm")}</span>
           <input type="range" id="suds" min="0" max="10" value="5" aria-label="Anxiety level, 0 calm to 10 panic" />
-          <span class="small">10 panic</span>
+          <span class="small">${t("scale.panic", "10 panic")}</span>
           <div class="value" id="sudsValue">—</div>
         </div>
         <div class="hint" id="sudsHint">Move the slider to record how it actually felt — there's no right answer.</div>
         <div class="hint">Low (0–3): you're ready to climb. &nbsp; Mid (4–6): a breath break helps. &nbsp; High (7–10): stay here, breathe, repeat.</div>
       </div>
       <div class="actions">
-        <button class="btn-warn" data-action="do-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">Take a breath first</button>
-        <button class="btn-primary" id="rateSubmit" data-action="submit-rate" data-phobia="${phobiaKey}" data-level="${levelIdx}" disabled>Save &amp; continue</button>
+        <button class="btn-warn" data-action="do-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("rate.breathe", "Take a breath first")}</button>
+        <button class="btn-primary" id="rateSubmit" data-action="submit-rate" data-phobia="${phobiaKey}" data-level="${levelIdx}" disabled>${t("rate.save", "Save &amp; continue")}</button>
       </div>
     </div>
   `;
@@ -9733,13 +9821,13 @@ function viewRate(phobiaKey, levelIdx) {
 function viewBreathe(phobiaKey, levelIdx) {
   return `
     <div class="panel">
-      <h2>The campfire breath</h2>
-      <p>A traveler's tool: follow the circle. In for 4, hold, out for 4 — the long exhale presses your body's brake pedal. Stay as long as you like; the fire isn't going anywhere.</p>
+      <h2>${t("breathe.h2", "The campfire breath")}</h2>
+      <p>${t("breathe.p", "A traveler's tool: follow the circle. In for 4, hold, out for 4 — the long exhale presses your body's brake pedal. Stay as long as you like; the fire isn't going anywhere.")}</p>
       <div class="breath-wrap">
         <div class="breath-circle" id="breathCircle">Breathe</div>
       </div>
       <div class="actions" style="justify-content: center;">
-        <button class="btn-primary" data-action="after-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">I'm calmer — continue</button>
+        <button class="btn-primary" data-action="after-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("breathe.btn", "I'm calmer — continue")}</button>
       </div>
     </div>
   `;
@@ -9876,8 +9964,8 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
           <span class="ss-blob" style="--rem:${((after + 1) / total).toFixed(2)}"><i></i><i></i></span>
           <span class="ss-arrow">➜</span>
           ${after === 0
-            ? `<span class="ss-tamed">🕊</span><span class="ss-text"><strong>${escapeHtml(realm.guardianName)}</strong> is tamed. The realm is yours.</span>`
-            : `<span class="ss-blob small" style="--rem:${(after / total).toFixed(2)}"><i></i><i></i></span><span class="ss-text"><strong>${escapeHtml(realm.guardianName)}</strong> weakened — strength ${after}/${total}.</span>`}
+            ? `<span class="ss-tamed">🕊</span><span class="ss-text"><strong>${escapeHtml(realm.guardianName)}</strong> ${t("shadow.tamedLine", "is tamed. The realm is yours.")}</span>`
+            : `<span class="ss-blob small" style="--rem:${(after / total).toFixed(2)}"><i></i><i></i></span><span class="ss-text"><strong>${escapeHtml(realm.guardianName)}</strong> ${tf("shadow.weakened", "weakened — strength {a}/{b}.", { a: after, b: total })}</span>`}
         </div>`;
     }
     // The bridge invitation: this finish just unlocked the matching
@@ -9888,10 +9976,10 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       if (bs) {
         bridgeInvite = `
           <div class="bridge-invite">
-            <span class="bridge-invite-kicker">🌍 Real step unlocked</span>
+            <span class="bridge-invite-kicker">${t("bridge.inviteKicker", "🌍 Real step unlocked")}</span>
             <strong>${escapeHtml(bs.t)}</strong>
-            <p>${escapeHtml(bs.how)} The valley was practice — this is the point. Whenever you're ready; it pays ${30 + 10 * levelIdx} courage.</p>
-            <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">See the Real Path</button>
+            <p>${escapeHtml(bs.how)} ${tf("bridge.inviteTail", "The valley was practice — this is the point. Whenever you're ready; it pays {n} courage.", { n: 30 + 10 * levelIdx })}</p>
+            <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">${t("bridge.see", "See the Real Path")}</button>
           </div>`;
       }
     }
@@ -9901,9 +9989,9 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       const stage = levelIdx === 2 ? "mid" : "post";
       mirrorPrompt = `
         <div class="mirror-invite compact">
-          <span class="bridge-invite-kicker">🪞 A good moment to look</span>
-          <p>You're ${stage === "mid" ? "halfway up this realm" : "at the top of this realm"}. Sixty seconds with the Mirror will show what's changed <em>out there</em> since you started.</p>
-          <button class="btn-ghost" data-action="fear-check" data-phobia="${phobiaKey}" data-at="${stage}">Hold up the Mirror</button>
+          <span class="bridge-invite-kicker">${t("mirror.promptKicker", "🪞 A good moment to look")}</span>
+          <p>${stage === "mid" ? t("mirror.promptMid", "You're halfway up this realm. Sixty seconds with the Mirror will show what's changed <em>out there</em> since you started.") : t("mirror.promptPost", "You're at the top of this realm. Sixty seconds with the Mirror will show what's changed <em>out there</em> since you started.")}</p>
+          <button class="btn-ghost" data-action="fear-check" data-phobia="${phobiaKey}" data-at="${stage}">${t("mirror.hold", "Hold up the Mirror")}</button>
         </div>`;
     }
     // A calm ember rise (not confetti): fire-coloured motes float up once.
@@ -9927,18 +10015,18 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       sparkBlock = `
         <div class="spark-reveal">
           <div class="spark-card" id="sparkCard" role="button" tabindex="0" aria-label="Reveal your Spark of Wisdom: ${escapeHtml(card.title)}">
-            <div class="spark-face spark-back"><span>✦</span><em>You earned a Spark of Wisdom</em><span class="spark-tap">tap to turn it over</span></div>
-            <div class="spark-face spark-front"><span class="spark-icon">${card.icon}</span><strong>${escapeHtml(card.title)}</strong><p>${escapeHtml(card.text)}</p></div>
+            <div class="spark-face spark-back"><span>✦</span><em>${t("spark.earned", "You earned a Spark of Wisdom")}</em><span class="spark-tap">${t("spark.tap", "tap to turn it over")}</span></div>
+            <div class="spark-face spark-front"><span class="spark-icon">${card.icon}</span><strong>${escapeHtml(t(`card.${card.id}.title`, card.title))}</strong><p>${escapeHtml(t(`card.${card.id}.text`, card.text))}</p></div>
           </div>
-          <p class="spark-count small">Spark ${ownedN} of ${INSIGHT_CARDS.length} · kept in your <a href="#/journal">Book of Sparks</a></p>
+          <p class="spark-count small">${tf("spark.count", "Spark {a} of {b} · kept in your {link}", { a: ownedN, b: INSIGHT_CARDS.length, link: `<a href="#/journal">${t("spark.book", "Book of Sparks")}</a>` })}</p>
         </div>`;
     }
   }
 
   return `
     <div class="panel victory-panel">
-      <span class="badge">${early ? `Trial ${levelIdx+1} · stepped back` : `Trial ${levelIdx+1} faced`} · ${escapeHtml(realmOf(phobiaKey).realmName)}</span>
-      <h2 style="margin-top: 10px;">${early ? "You stepped back — showing up still counts." : "Trial faced. The shadow shrinks."}</h2>
+      <span class="badge">${early ? tf("complete.early", "Trial {n} · stepped back", { n: levelIdx + 1 }) : tf("complete.faced", "Trial {n} faced", { n: levelIdx + 1 })} · ${escapeHtml(realmOf(phobiaKey).realmName)}</span>
+      <h2 style="margin-top: 10px;">${early ? t("complete.h2early", "You stepped back — showing up still counts.") : t("complete.h2", "Trial faced. The shadow shrinks.")}</h2>
       ${celebration}
       ${rewardStrip}
       ${shadowStrip}
@@ -9961,8 +10049,8 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       </div>
 
       <div class="actions">
-        ${!isLast ? `<button class="btn-primary" data-action="next-level" data-phobia="${phobiaKey}" data-level="${next}">⚔ Next trial: ${escapeHtml(p.levels[next].title)}</button>` : `<button class="btn-primary" data-action="back-ladder" data-phobia="${phobiaKey}">🕊 The realm is tamed — see it</button>`}
-        <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">Back to the realm</button>
+        ${!isLast ? `<button class="btn-primary" data-action="next-level" data-phobia="${phobiaKey}" data-level="${next}">${tf("complete.next", "⚔ Next trial: {t}", { t: escapeHtml(p.levels[next].title) })}</button>` : `<button class="btn-primary" data-action="back-ladder" data-phobia="${phobiaKey}">${t("complete.tamed", "🕊 The realm is tamed — see it")}</button>`}
+        <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">${t("complete.back", "Back to the realm")}</button>
       </div>
     </div>
   `;

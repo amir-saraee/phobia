@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# Single-page app — everything lives at the root URL.
+# Hash routes (#/fears, #/dogs, …) are client-side only.
