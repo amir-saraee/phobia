@@ -3562,6 +3562,91 @@ if ("serviceWorker" in navigator) {
     .stage.cmds-open .captions   { bottom: 148px; }
     .stage.cmds-open .ctx-prompt { bottom: 224px; }
   }
+
+  /* ---- The Real Path (real-world bridge quests) ---- */
+  .bridge-block {
+    margin-top: 18px; border-radius: var(--radius-lg); padding: 16px 18px;
+    background: linear-gradient(180deg, rgba(22, 40, 34, .55), rgba(14, 26, 24, .65));
+    border: 1px solid #2e6b58;
+  }
+  .bridge-head h3 { margin: 0 0 4px; color: #8fe3c9; }
+  .bridge-sub { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 12px; }
+  .bridge-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .bridge-step {
+    display: flex; align-items: flex-start; gap: 12px;
+    background: var(--panel); border: 1px solid var(--border-2);
+    border-radius: 12px; padding: 10px 14px;
+  }
+  .bridge-step.open { border-color: #2e6b58; }
+  .bridge-step.done { border-color: #3d8f7c; background: linear-gradient(180deg, rgba(20,40,36,.6), var(--panel)); }
+  .bridge-step.locked { opacity: .62; }
+  .bridge-mark { font-size: 17px; line-height: 1.3; flex: 0 0 auto; }
+  .bridge-text { flex: 1; }
+  .bridge-text strong { font-size: 14px; color: var(--text); }
+  .bridge-step.done .bridge-text strong { color: #b9e8d9; }
+  .bridge-text p { margin: 2px 0 0; font-size: 12.5px; }
+  .bridge-done-note { color: #7cd1a5; }
+  .bridge-locked-note { font-style: italic; }
+  .bridge-btn { flex: 0 0 auto; align-self: center; font-size: 12.5px; padding: 8px 14px; border-color: #2e6b58; }
+  .bridge-invite {
+    margin: 14px 0; border-radius: 14px; padding: 14px 16px;
+    background: linear-gradient(180deg, rgba(22, 40, 34, .8), rgba(14, 26, 24, .85));
+    border: 1px solid #2e6b58;
+    display: flex; flex-direction: column; gap: 4px; align-items: flex-start;
+  }
+  .bridge-invite-kicker {
+    font-size: 10.5px; letter-spacing: 1.4px; text-transform: uppercase;
+    font-weight: 800; color: #8fe3c9;
+  }
+  .bridge-invite strong { font-size: 15px; color: #d9efe7; }
+  .bridge-invite p { margin: 2px 0 8px; font-size: 12.8px; color: #9dbfb4; }
+  .camp-stat.worldsteps { border-color: #2e6b58; color: #a9e8d2; }
+  .ws-modal { max-width: 420px; }
+  @media (max-width: 560px) {
+    .bridge-step { flex-wrap: wrap; }
+    .bridge-btn { align-self: flex-start; margin-left: 29px; }
+  }
+
+  /* ---- Progress report (screen + print) ---- */
+  .report-view h2 { margin-bottom: 4px; }
+  .report-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .report-line { font-size: 13.5px; margin: 2px 0 6px; }
+  .report-note {
+    font-size: 12px; color: var(--muted); border-left: 3px solid var(--border-2);
+    padding-left: 10px; margin: 10px 0 18px;
+  }
+  .report-fear { margin: 18px 0 8px; }
+  .report-fear h3 { margin-bottom: 2px; }
+  .report-clinical { font-size: 12.5px; color: var(--accent); font-weight: 600; }
+  .report-chart { max-width: 560px; margin: 6px 0; }
+  .report-table {
+    width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0 10px;
+  }
+  .report-table th, .report-table td {
+    text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-2);
+  }
+  .report-table th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .6px; }
+  .report-ws { margin: 4px 0 10px; padding-left: 18px; font-size: 12.8px; color: var(--text); }
+  .report-ws li { margin-bottom: 3px; }
+  /* On very narrow screens the table scrolls inside the panel, never the page */
+  @media (max-width: 640px) {
+    .report-table { display: block; overflow-x: auto; }
+  }
+  @media print {
+    /* The report prints clean: white page, black ink, no app chrome. */
+    body { background: #fff !important; }
+    header.brand, .report-actions, .menu-drawer, .menu-backdrop, .settings-drawer { display: none !important; }
+    .app { max-width: 100%; padding: 0; }
+    .panel.report-view {
+      background: #fff; border: none; box-shadow: none; color: #111; padding: 0;
+    }
+    .report-view h2, .report-view h3, .report-view p, .report-view li,
+    .report-view td, .report-view th, .report-line { color: #111 !important; }
+    .report-note { color: #444 !important; border-left-color: #999; }
+    .report-clinical { color: #0a6b60 !important; }
+    .report-table th, .report-table td { border-bottom: 1px solid #ccc; }
+    .report-fear { break-inside: avoid; }
+  }
 </style>
 </head>
 <body>
@@ -6813,6 +6898,88 @@ function awardSpark() {
   return next;
 }
 
+// ---------- The Real Path (real-world bridge quests) ----------
+// Screen exposure is the on-ramp; the destination is real life. Each in-game
+// trial, once finished, unlocks a matching tiny REAL-WORLD step. Design rules:
+// real steps are never required to progress in the game (pressure backfires),
+// they self-report on the same SUDS scale, and they pay MORE than game trials
+// (30 + 10×step courage) because they are worth more. Stored separately from
+// state.log (cs.worldsteps) so no existing session consumer double-counts.
+const BRIDGES = {
+  dogs: [
+    { t: "Look at photos of dogs for 2 minutes", how: "Let the alarm rise and settle while you keep looking." },
+    { t: "Watch a dog video with the sound ON", how: "Barking included. Notice it's loud, not dangerous." },
+    { t: "Stand across the street from a dog park for 5 minutes", how: "Just watch. Distance is yours to choose." },
+    { t: "Let a leashed dog walk past you", how: "Don't cross the street. Feet planted, long exhale." },
+    { t: "Stand near a calm, leashed dog with someone you trust", how: "Ask the owner first. You don't have to touch." }
+  ],
+  spiders: [
+    { t: "Look at spider photos for 2 minutes", how: "Full-screen, not thumbnails. Stay till it's boring." },
+    { t: "Watch a short spider video", how: "Legs moving and all. Watch it do ordinary spider things." },
+    { t: "Stay in the same room as a house spider", how: "Don't leave, don't make anyone remove it. 5 minutes." },
+    { t: "Watch a real spider from a metre away", how: "2 minutes. Notice it wants nothing to do with you." },
+    { t: "Cup-and-release a small spider", how: "Glass and paper. You're in charge of every second." }
+  ],
+  snakes: [
+    { t: "Look at snake photos for 2 minutes", how: "Coiled and moving ones. Breathe out longer than in." },
+    { t: "Watch a snake documentary clip with sound", how: "The slide and the tongue — let your body get used to both." },
+    { t: "Visit a reptile section and look from the doorway", how: "Pet shop or zoo. Doorway counts. Stay 2 minutes." },
+    { t: "Stand at the glass of a snake enclosure", how: "5 minutes at the glass. It cannot reach you; teach your body that." },
+    { t: "Stay at the glass while the snake moves", how: "The movement is the hard part. Watch one full glide." }
+  ],
+  heights: [
+    { t: "Stand on the first step of a staircase for 1 minute", how: "Both feet, no hand on the rail if you can." },
+    { t: "Look out of a 2nd or 3rd floor window for 2 minutes", how: "Open the curtain fully. Look out, then briefly down." },
+    { t: "Stand on a balcony or bridge, one step from the rail", how: "One step back is still ON the balcony. 3 minutes." },
+    { t: "Stand at the rail and look OUT for 2 minutes", how: "Horizon first. Hands resting on the rail is allowed." },
+    { t: "Stand at the rail and look DOWN", how: "Three slow breaths while looking down. Then step back proud." }
+  ],
+  dark: [
+    { t: "Sit in a dim room for 5 minutes", how: "One small lamp only. Do nothing else — just sit." },
+    { t: "Sit in your room with lights off, door open", how: "2 minutes. The hallway light is your safety line — that's fine." },
+    { t: "Lie in bed in the dark, door closed, before sleep", how: "5 minutes before reaching for any light. Name what you hear." },
+    { t: "Walk through your dark home without turning lights on", how: "One slow lap. Hands out is allowed, phone stays in pocket." },
+    { t: "Spend 10 minutes in full dark, breathing slowly", how: "Sitting or lying. Nothing was added to the room when the light left." }
+  ],
+  enclosed: [
+    { t: "Sit in a small room with the door closed for 5 minutes", how: "Bathroom or closet-office. Notice the air keeps arriving." },
+    { t: "Ride an elevator one floor with someone", how: "One floor, together. Long exhale on the ride." },
+    { t: "Ride an elevator three floors alone", how: "No phone in hand. Watch the numbers, breathe out slow." },
+    { t: "Sit in a parked car, doors closed, windows up", how: "5 minutes. You hold the handle the whole time if you want." },
+    { t: "Choose one tight space you usually avoid — and stay", how: "Crowded aisle, middle seat, small café corner. 5 minutes." }
+  ]
+};
+const BRIDGE_FALLBACK = [
+  { t: "Look at pictures of the thing you fear for 2 minutes", how: "Let the alarm rise and settle while you keep looking." },
+  { t: "Watch a video of it with the sound on", how: "Stay until interest replaces alarm, even a little." },
+  { t: "Observe the real thing from a safe distance", how: "You choose the distance. Stay 5 minutes." },
+  { t: "Close half the distance, briefly", how: "One minute closer than comfortable, then step back proud." },
+  { t: "Stay close on purpose", how: "Five minutes at the closest distance you can allow. That's the summit." }
+];
+function bridgeOf(key) { return BRIDGES[key] || BRIDGE_FALLBACK; }
+function getWorldsteps(phobiaKey) {
+  const cs = activeCharSlice();
+  if (!cs.worldsteps) cs.worldsteps = {};
+  if (!Array.isArray(cs.worldsteps[phobiaKey])) cs.worldsteps[phobiaKey] = [];
+  return cs.worldsteps[phobiaKey];
+}
+function worldstepDone(phobiaKey, step) {
+  return getWorldsteps(phobiaKey).some(w => w.step === step);
+}
+function worldstepCount() {
+  const cs = activeCharSlice();
+  return Object.values(cs.worldsteps || {}).reduce((s, arr) => s + arr.length, 0);
+}
+function completeWorldstep(phobiaKey, step, suds) {
+  const list = getWorldsteps(phobiaKey);
+  if (list.some(w => w.step === step)) return;
+  list.push({ step, suds: Number.isFinite(suds) ? suds : null, ts: Date.now() });
+  saveState();
+  awardCourage(30 + 10 * step, "a real-world step");
+  showAchievement("A real-world step", `You faced it out there — that's worth more than any trial in here.`, "🌍");
+  checkMilestones();
+}
+
 // The realms shown on the journey map: the six featured fears, plus anything
 // the traveler already carries (legacy progress, a non-featured primary fear,
 // or a forged/custom ladder) so nothing they own ever disappears.
@@ -7067,6 +7234,12 @@ const MILESTONES = [
   { id: "three_phobias",  title: "Multi-fear practice",  icon: "🌐",
     desc: "Worked on three different fears.",
     check: () => Object.keys(state.progress).filter(k => state.progress[k].highestCompleted >= 0).length >= 3 },
+  { id: "first_worldstep", title: "Out of the valley",   icon: "🌍",
+    desc: "Took your first real-world step. The game was practice — this was the point.",
+    check: () => worldstepCount() >= 1 },
+  { id: "five_worldsteps", title: "Walking the real path", icon: "🥾",
+    desc: "Five real-world steps faced outside the game.",
+    check: () => worldstepCount() >= 5 },
   { id: "streak_7",       title: "Seven days running",   icon: "🔥",
     desc: "A 7-day session streak.",
     check: () => computeStreak() >= 7 },
@@ -7111,6 +7284,44 @@ function checkMilestones() {
       showAchievement(m.title, m.desc, m.icon), i * 1500));
   }
   return newlyUnlocked;
+}
+
+// Modal dialog for self-reporting a real-world bridge step. Same SUDS scale
+// as in-game trials; saving awards the (bigger) worldstep courage and
+// re-renders the realm so the step flips to done.
+function openWorldstepModal(phobiaKey, stepIdx) {
+  const s = bridgeOf(phobiaKey)[stepIdx];
+  if (!s || worldstepDone(phobiaKey, stepIdx)) return;
+  const overlay = document.createElement("div");
+  overlay.className = "goal-modal-overlay";
+  overlay.innerHTML = `
+    <div class="goal-modal ws-modal" role="dialog" aria-label="Record a real-world step">
+      <span class="bridge-invite-kicker">🌍 The Real Path</span>
+      <h3 style="margin:6px 0 4px">${escapeHtml(s.t)}</h3>
+      <p class="small" style="margin-bottom:12px">You did this out in the world — that's the bravest kind of trial. One honest question:</p>
+      <label for="wsSuds" style="font-size:13.5px">How loud was the fear at its peak out there?</label>
+      <div class="scale-row" style="margin-top:6px">
+        <span class="small">0 calm</span>
+        <input type="range" id="wsSuds" min="0" max="10" value="5"/>
+        <span class="small">10 panic</span>
+        <div class="value" id="wsSudsValue">5</div>
+      </div>
+      <div class="actions" style="margin-top:14px">
+        <button class="btn-ghost" id="wsCancel">Not yet</button>
+        <button class="btn-primary" id="wsSave">🌍 I faced it</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const slider = overlay.querySelector("#wsSuds");
+  slider.oninput = () => { overlay.querySelector("#wsSudsValue").textContent = slider.value; };
+  const close = () => overlay.remove();
+  overlay.querySelector("#wsCancel").onclick = close;
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
+  overlay.querySelector("#wsSave").onclick = () => {
+    completeWorldstep(phobiaKey, stepIdx, parseInt(slider.value, 10));
+    close();
+    go("ladder", { phobia: phobiaKey });
+  };
 }
 
 // Modal dialog for setting / editing a per-phobia goal
@@ -7214,6 +7425,7 @@ function serializeRoute(view, params = {}) {
     case "welcome":   return "/";
     case "select":    return "/fears";
     case "journal":   return "/journal";
+    case "report":    return "/report";
     case "insights":  return "/insights";
     case "profiles":  return "/profiles";
     case "character": return params.editing ? "/me/edit" : "/me";
@@ -7236,6 +7448,7 @@ function parseRoute(hash) {
   switch (parts[0]) {
     case "fears":    return { view: "select",    params: {} };
     case "journal":  return { view: "journal",   params: {} };
+    case "report":   return { view: "report",    params: {} };
     case "insights": return { view: "insights",  params: {} };
     case "profiles": return { view: "profiles",  params: {} };
     case "me":       return { view: "character", params: { editing: parts[1] === "edit" } };
@@ -7397,6 +7610,7 @@ function render(view, params) {
   }
   if (view === "insights")    v.innerHTML = viewInsights();
   if (view === "journal")     v.innerHTML = viewJournal();
+  if (view === "report")      v.innerHTML = viewReport();
   if (view === "profiles")    v.innerHTML = viewProfiles();
   if (view === "custom")      v.innerHTML = viewCustom(params.editing);
   if (view === "phobia-progress") v.innerHTML = viewPhobiaProgress(params.phobia);
@@ -7491,6 +7705,35 @@ function attachHandlers(view, params) {
   if (menuBtn) menuBtn.onclick = openMenu;
   const sparksHud = document.getElementById("sparksBtn");
   if (sparksHud) sparksHud.onclick = () => go("journal");
+  // Progress report: print (browser print → PDF) + raw JSON download of the
+  // active character's data. No network — a local Blob, revoked after click.
+  const reportPrint = document.getElementById("reportPrint");
+  if (reportPrint) reportPrint.onclick = () => window.print();
+  const reportJson = document.getElementById("reportJson");
+  if (reportJson) reportJson.onclick = () => {
+    const ch = window.Character && window.Character.loadCharacter();
+    const cs = activeCharSlice();
+    const payload = {
+      app: "Mira — exposure practice export",
+      exportedAt: new Date().toISOString(),
+      character: ch ? { name: ch.name || null, primaryPhobia: ch.primaryPhobia || null } : null,
+      progress: state.progress,
+      sessions: state.log,
+      worldsteps: cs.worldsteps || {},
+      courage: cs.courage || 0,
+      sparks: cs.sparks || [],
+      milestones: cs.milestones || [],
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `mira-progress-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
   // Spark of Wisdom card on the victory screen: tap (or wait) to flip it over.
   const sparkCard = document.getElementById("sparkCard");
   if (sparkCard) {
@@ -7611,6 +7854,7 @@ function openMenu() {
       ${ch ? `<li><button data-go="ladder" data-phobia="${ch.primaryPhobia || ""}">⚔ Continue your trials</button></li>` : ""}
       <li><button data-go="journal">✦ Book of Sparks</button></li>
       <li><button data-go="insights">📜 Your story so far</button></li>
+      <li><button data-go="report">📄 Progress report — print / share</button></li>
       <li><button data-go="custom">🛠 Forge a custom fear</button></li>
     </ul>
     <div class="menu-divider"></div>
@@ -8052,6 +8296,8 @@ function handleAction(d, params) {
     case "open-select":     go("select"); break;
     case "open-journal":    go("journal"); break;
     case "open-custom":     go("custom"); break;
+    case "open-report":     go("report"); break;
+    case "do-worldstep":    openWorldstepModal(d.phobia, parseInt(d.step, 10)); break;
     case "edit-goal":       openGoalEditor(d.phobia); break;
     case "reset-progress":  if (confirm("Reset this character's progress? Other characters are not affected.")) { resetActiveProgress(); go("select"); } break;
   }
@@ -8276,6 +8522,7 @@ function viewSelect() {
         <span class="camp-stat" title="Trials faced across the valley">🛡 ${facedTrials}/${totalTrials} trials</span>
         <button class="camp-stat as-btn" data-action="open-journal" title="Book of Sparks — the wisdom you've collected">✦ ${sparks}/${INSIGHT_CARDS.length} sparks</button>
         ${streak >= 2 ? `<span class="camp-stat streak" title="Days in a row you've practiced">🔥 ${streak}-day flame</span>` : ""}
+        ${worldstepCount() > 0 ? `<span class="camp-stat worldsteps" title="Real-world steps faced outside the game — the ones that count double">🌍 ${worldstepCount()} real step${worldstepCount() === 1 ? "" : "s"}</span>` : ""}
       </div>
       ${ch ? `
       <div class="quest-card ${doneToday ? "done" : ""}">
@@ -8390,6 +8637,69 @@ function mountJourney() {
       node.addEventListener("pointerleave", () => { art.style.transform = ""; });
     });
   }
+}
+
+// ---------- Progress report (clinician-readable export) ----------
+// Turns the session log into something a user can print (browser print →
+// PDF) or hand a therapist as JSON. Presentation only: every number comes
+// from state that already exists. Language here is deliberately CLINICAL,
+// not game-flavoured — it's written for the professional reading it.
+function viewReport() {
+  const ch = window.Character && window.Character.loadCharacter();
+  const cs = activeCharSlice();
+  const log = state.log || [];
+  const keys = Object.keys(PHOBIAS).filter(k =>
+    (state.progress[k]?.highestCompleted ?? -1) >= 0 ||
+    log.some(l => l.phobia === k) ||
+    getWorldsteps(k).length > 0
+  );
+  const fmtD = ts => ts ? new Date(ts).toLocaleDateString() : "—";
+  const first = log[0], last = log[log.length - 1];
+  const sections = keys.map(k => {
+    const p = PHOBIAS[k];
+    const sessions = log.filter(l => l.phobia === k);
+    const done = Math.min(p.levels.length, (state.progress[k]?.highestCompleted ?? -1) + 1);
+    const rows = sessions.map(l => `
+      <tr>
+        <td>${fmtD(l.ts)}</td>
+        <td>${l.level + 1}. ${escapeHtml(p.levels[l.level]?.title || "")}</td>
+        <td>${l.predicted ?? "—"}</td>
+        <td>${l.suds ?? "—"}</td>
+        <td>${l.peak ?? "—"}</td>
+        <td>${l.finished === false ? "left early (allowed)" : "completed hold"}</td>
+      </tr>`).join("");
+    const ws = getWorldsteps(k);
+    const wsRows = ws.slice().sort((a, b) => a.step - b.step).map(w => `
+      <li>${escapeHtml(bridgeOf(k)[w.step]?.t || `Step ${w.step + 1}`)} — ${fmtD(w.ts)}${w.suds != null ? `, peak anxiety ${w.suds}/10` : ""}</li>`).join("");
+    return `
+      <section class="report-fear">
+        <h3>${escapeHtml(p.label)} <span class="report-clinical">(${escapeHtml(p.name)})</span></h3>
+        <p class="report-line">Exposure hierarchy: ${done} of ${p.levels.length} levels completed · ${sessions.length} session${sessions.length === 1 ? "" : "s"}</p>
+        ${sessions.length ? `
+          <div class="report-chart">${drawSudsChart(sessions, 520, 110)}</div>
+          <table class="report-table">
+            <thead><tr><th>Date</th><th>Exposure level</th><th>Predicted (0–10)</th><th>Reported (0–10)</th><th>Peak</th><th>Outcome</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>` : ""}
+        ${ws.length ? `<p class="report-line"><strong>Real-world (in-vivo) steps, self-reported:</strong></p><ul class="report-ws">${wsRows}</ul>` : ""}
+      </section>`;
+  }).join("");
+  return `
+    <div class="panel report-view">
+      <div class="report-actions">
+        <button class="btn-primary" id="reportPrint">🖨 Print / save as PDF</button>
+        <button class="btn-ghost" id="reportJson">⤓ Download data (JSON)</button>
+        <button class="btn-ghost" data-action="open-select">Back to the valley</button>
+      </div>
+      <h2>Exposure practice report</h2>
+      <p class="report-line">
+        ${ch && ch.name ? `Traveler: <strong>${escapeHtml(ch.name)}</strong> · ` : ""}
+        ${log.length} logged session${log.length === 1 ? "" : "s"}${first ? ` · ${fmtD(first.ts)} – ${fmtD(last.ts)}` : ""}
+        · ${worldstepCount()} real-world step${worldstepCount() === 1 ? "" : "s"}
+      </p>
+      <p class="report-note">Generated by Mira, a self-guided graded-exposure practice game. Anxiety ratings are self-reported SUDS (0 calm – 10 panic); "predicted" is rated before each exposure, "reported" after — the gap reflects expectancy violation. This is a personal practice record, not a clinical assessment.</p>
+      ${sections || `<p>No practice recorded yet.</p>`}
+    </div>`;
 }
 
 // ---------- Shell 3D wiring ----------
@@ -8644,6 +8954,8 @@ function viewLadder(phobiaKey) {
       <span class="ladder-cta-sub">${total} trials · any order, your pace · Esc grounds you at any moment</span>
     </div>`;
 
+  const bridgeBlock = bridgeBlockFor(phobiaKey, prog);
+
   return `
     <div class="realm-view">
       <header class="realm-hero">
@@ -8664,8 +8976,41 @@ function viewLadder(phobiaKey) {
       ${goalBlock}
       ${infoBlock}
       <ol class="trial-path">${items}</ol>
+      ${bridgeBlock}
     </div>
   `;
+}
+
+// "The Real Path" — the realm's real-world bridge quests. Each finished
+// in-game trial unlocks the matching real step; steps are invitations, never
+// gates (nothing in the game requires them). Completion self-reports on the
+// same SUDS scale via a small modal and pays more courage than game trials.
+function bridgeBlockFor(phobiaKey, prog) {
+  const steps = bridgeOf(phobiaKey);
+  const rows = steps.map((s, i) => {
+    const unlocked = i <= prog.highestCompleted;
+    const done = worldstepDone(phobiaKey, i);
+    const rec = done ? getWorldsteps(phobiaKey).find(w => w.step === i) : null;
+    return `
+      <li class="bridge-step ${done ? "done" : unlocked ? "open" : "locked"}">
+        <span class="bridge-mark">${done ? "🌍" : unlocked ? "☐" : "🔒"}</span>
+        <div class="bridge-text">
+          <strong>${escapeHtml(s.t)}</strong>
+          ${unlocked && !done ? `<p>${escapeHtml(s.how)}</p>` : ""}
+          ${done ? `<p class="bridge-done-note">Faced${rec && rec.suds != null ? ` · fear ${rec.suds}/10` : ""}${rec ? ` · ${new Date(rec.ts).toLocaleDateString()}` : ""}</p>` : ""}
+          ${!unlocked ? `<p class="bridge-locked-note">Face trial ${i + 1} in the valley to unlock this step.</p>` : ""}
+        </div>
+        ${unlocked && !done ? `<button class="btn-ghost bridge-btn" data-action="do-worldstep" data-phobia="${phobiaKey}" data-step="${i}">I did this</button>` : ""}
+      </li>`;
+  }).join("");
+  return `
+    <section class="bridge-block">
+      <div class="bridge-head">
+        <h3>🌍 The Real Path</h3>
+        <span class="bridge-sub">The valley is practice. These small steps out there are the point — always optional, always your pace, worth extra courage.</span>
+      </div>
+      <ol class="bridge-list">${rows}</ol>
+    </section>`;
 }
 
 // Tiny SVG line+dot chart for SUDS history. Returns an inline-SVG string.
@@ -8942,6 +9287,7 @@ function viewInsights() {
 
       <div class="actions" style="margin-top:18px">
         <button class="btn-primary" id="shareCardBtn">Share progress card</button>
+        <button class="btn-ghost" data-action="open-report">📄 Full report for a therapist</button>
       </div>
     </div>
   `;
@@ -9293,6 +9639,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
   let rewardStrip = "";
   let shadowStrip = "";
   let celebration = "";
+  let bridgeInvite = "";
   if (lastAward && lastAward.key === `${phobiaKey}.${levelIdx}` && last && Math.abs((last.ts || 0) - lastAward.ts) < 5000) {
     const bits = [`+${lastAward.points} courage`];
     if (lastAward.daily) bits.push(`🔥 daily ember +15`);
@@ -9312,6 +9659,21 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
             ? `<span class="ss-tamed">🕊</span><span class="ss-text"><strong>${escapeHtml(realm.guardianName)}</strong> is tamed. The realm is yours.</span>`
             : `<span class="ss-blob small" style="--rem:${(after / total).toFixed(2)}"><i></i><i></i></span><span class="ss-text"><strong>${escapeHtml(realm.guardianName)}</strong> weakened — strength ${after}/${total}.</span>`}
         </div>`;
+    }
+    // The bridge invitation: this finish just unlocked the matching
+    // real-world step. Shown at the motivation peak, framed as an
+    // invitation — the game never requires it.
+    if (!early && lastAward.advanced && !worldstepDone(phobiaKey, levelIdx)) {
+      const bs = bridgeOf(phobiaKey)[levelIdx];
+      if (bs) {
+        bridgeInvite = `
+          <div class="bridge-invite">
+            <span class="bridge-invite-kicker">🌍 Real step unlocked</span>
+            <strong>${escapeHtml(bs.t)}</strong>
+            <p>${escapeHtml(bs.how)} The valley was practice — this is the point. Whenever you're ready; it pays ${30 + 10 * levelIdx} courage.</p>
+            <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">See the Real Path</button>
+          </div>`;
+      }
     }
     // A calm ember rise (not confetti): fire-coloured motes float up once.
     if (!early) {
@@ -9350,6 +9712,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       ${rewardStrip}
       ${shadowStrip}
       ${sparkBlock}
+      ${bridgeInvite}
       <p>${early
         ? `You stood with <strong>${escapeHtml(p.levels[levelIdx].title)}</strong> and rated your fear at <strong>${suds}/10</strong>.`
         : `You faced <strong>${escapeHtml(p.levels[levelIdx].title)}</strong> and rated your fear at <strong>${suds}/10</strong>.`}</p>
