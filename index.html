@@ -3607,6 +3607,51 @@ if ("serviceWorker" in navigator) {
     .bridge-btn { align-self: flex-start; margin-left: 29px; }
   }
 
+  /* ---- The Mirror (fear check-ins) ---- */
+  .mirror-invite {
+    margin: 4px 0 10px; border-radius: 14px; padding: 14px 16px;
+    background: linear-gradient(180deg, rgba(38, 32, 52, .75), rgba(24, 20, 36, .8));
+    border: 1px solid #5b5182;
+    display: flex; flex-direction: column; gap: 4px; align-items: flex-start;
+  }
+  .mirror-invite .bridge-invite-kicker { color: #c3b8ec; }
+  .mirror-invite strong { font-size: 15px; color: #e4ddf7; }
+  .mirror-invite p { margin: 2px 0 8px; font-size: 12.8px; color: #a99ecf; }
+  .mirror-invite.compact { margin: 14px 0; }
+  .mirror-invite.compact p { margin: 2px 0 6px; }
+  .mirror-chip {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    margin: 4px 0 10px; border-radius: 12px; padding: 8px 14px;
+    background: rgba(50, 43, 74, .45); border: 1px solid #4a4170;
+    font-size: 13px; color: #cfc6ea;
+  }
+  .mirror-chip strong { color: #e4ddf7; }
+  .mirror-recheck { font-size: 12px; padding: 6px 12px; min-height: 34px; }
+  .fc-modal { max-width: 560px; max-height: 86vh; overflow-y: auto; }
+  .fc-item { margin-bottom: 12px; }
+  .fc-q { margin: 0 0 6px; font-size: 13.5px; color: var(--text); }
+  .fc-scale { display: flex; gap: 6px; flex-wrap: wrap; }
+  .fc-opt {
+    flex: 1 1 0; min-width: 58px; min-height: 46px;
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+    background: var(--panel-2); border: 1px solid var(--border-2);
+    border-radius: 10px; padding: 5px 4px; cursor: pointer;
+  }
+  .fc-opt .fc-n { font-weight: 800; font-size: 14px; color: var(--text); }
+  .fc-opt .fc-lab { font-size: 9.5px; color: var(--muted); letter-spacing: .2px; }
+  .fc-opt.sel { border-color: var(--accent); background: rgba(124, 209, 197, .12); }
+  .fc-opt.sel .fc-n { color: var(--accent); }
+  .fc-result { margin-top: 12px; border-top: 1px solid var(--border-2); padding-top: 12px; }
+  .fc-score { display: flex; align-items: baseline; gap: 6px; font-size: 15px; }
+  .fc-score strong { font-size: 26px; }
+  .fc-score.band-calm strong { color: #7cd1a5; }
+  .fc-score.band-mild strong { color: #d1c67c; }
+  .fc-score.band-warm strong { color: #e8a25c; }
+  .fc-score.band-hot strong { color: #e87a6a; }
+  .fc-delta { margin: 6px 0 0; font-size: 12.8px; color: var(--muted); }
+  .fc-delta.down { color: #7cd1a5; }
+  .fc-delta.up { color: #e8a25c; }
+
   /* ---- Progress report (screen + print) ---- */
   .report-view h2 { margin-bottom: 4px; }
   .report-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -6980,6 +7025,54 @@ function completeWorldstep(phobiaKey, step, suds) {
   checkMilestones();
 }
 
+// ---------- The Mirror (fear-severity check-ins) ----------
+// Outcome measurement, not activity measurement: a 5-item self-check rated
+// about REAL LIFE (not the game), covering the dimensions standard fear
+// instruments measure — avoidance, peak intensity, physiological reaction,
+// interference, danger belief — in original wording. 0–4 each, total 0–20.
+// Taken as a baseline when a realm is first entered, re-offered after trials
+// 3 and 5. The baseline→latest delta is the number that says whether any of
+// this is working, and it feeds the therapist report. Not a diagnosis.
+const FEAR_CHECK_ITEMS = [
+  { id: "avoid",  q: "Out in real life, how much do you go out of your way to avoid it?" },
+  { id: "peak",   q: "When you do meet it, how strong is the fear at its peak?" },
+  { id: "body",   q: "How strongly does your body react — heart, breath, sweat, freeze?" },
+  { id: "limit",  q: "How much does this fear limit your daily life — routes, places, plans?" },
+  { id: "danger", q: "Right now, how convinced are you that meeting it would end badly?" },
+];
+const FEAR_CHECK_SCALE = ["not at all", "a little", "somewhat", "a lot", "extremely"];
+function fearCheckBand(total) {
+  if (total <= 4)  return { label: "a whisper",  tone: "calm" };
+  if (total <= 9)  return { label: "audible",    tone: "mild" };
+  if (total <= 14) return { label: "loud",       tone: "warm" };
+  return { label: "very loud", tone: "hot" };
+}
+function getChecks(phobiaKey) {
+  const cs = activeCharSlice();
+  if (!cs.checks) cs.checks = {};
+  if (!Array.isArray(cs.checks[phobiaKey])) cs.checks[phobiaKey] = [];
+  return cs.checks[phobiaKey];
+}
+function latestCheck(phobiaKey) {
+  const c = getChecks(phobiaKey);
+  return c.length ? c[c.length - 1] : null;
+}
+function saveCheck(phobiaKey, scores, at) {
+  const total = scores.reduce((s, v) => s + v, 0);
+  getChecks(phobiaKey).push({ ts: Date.now(), scores, total, at: at || "manual" });
+  saveState();
+  return total;
+}
+// A re-check is "due" on the victory screen after trials 3 and 5 (level idx
+// 2 / 4) when the traveler hasn't already checked at that stage.
+function fearCheckDue(phobiaKey, levelIdx) {
+  if (levelIdx !== 2 && levelIdx !== 4) return false;
+  const stage = levelIdx === 2 ? "mid" : "post";
+  const checks = getChecks(phobiaKey);
+  if (!checks.length) return false;          // no baseline — don't nag mid-flow
+  return !checks.some(c => c.at === stage);
+}
+
 // The realms shown on the journey map: the six featured fears, plus anything
 // the traveler already carries (legacy progress, a non-featured primary fear,
 // or a forged/custom ladder) so nothing they own ever disappears.
@@ -7321,6 +7414,85 @@ function openWorldstepModal(phobiaKey, stepIdx) {
     completeWorldstep(phobiaKey, stepIdx, parseInt(slider.value, 10));
     close();
     go("ladder", { phobia: phobiaKey });
+  };
+}
+
+// The Mirror modal: five 0–4 items answered about real life. On submit it
+// shows the score + band + delta vs baseline inline, then re-renders the
+// current view so chips update. `at` tags the stage: baseline | mid | post |
+// manual — the report charts these over time.
+function openFearCheckModal(phobiaKey, at) {
+  const p = PHOBIAS[phobiaKey];
+  if (!p) return;
+  const realm = realmOf(phobiaKey);
+  const overlay = document.createElement("div");
+  overlay.className = "goal-modal-overlay";
+  const items = FEAR_CHECK_ITEMS.map((it, i) => `
+    <div class="fc-item" data-item="${i}">
+      <p class="fc-q">${i + 1}. ${escapeHtml(it.q)}</p>
+      <div class="fc-scale" role="radiogroup" aria-label="${escapeHtml(it.q)}">
+        ${FEAR_CHECK_SCALE.map((lab, v) => `
+          <button type="button" class="fc-opt" data-v="${v}" role="radio" aria-checked="false" title="${lab}">
+            <span class="fc-n">${v}</span><span class="fc-lab">${lab}</span>
+          </button>`).join("")}
+      </div>
+    </div>`).join("");
+  overlay.innerHTML = `
+    <div class="goal-modal fc-modal" role="dialog" aria-label="Fear check-in">
+      <span class="bridge-invite-kicker">🪞 The Mirror — ${escapeHtml(realm.realmName)}</span>
+      <h3 style="margin:6px 0 2px">How is this fear, out there?</h3>
+      <p class="small" style="margin-bottom:12px">Answer about <strong>real life</strong> — not the game. 60 seconds, just for you. A self-check, not a diagnosis.</p>
+      <div class="fc-items">${items}</div>
+      <div class="fc-result" id="fcResult" hidden></div>
+      <div class="actions" style="margin-top:14px">
+        <button class="btn-ghost" id="fcCancel">Not now</button>
+        <button class="btn-primary" id="fcSave" disabled>Hold up the mirror</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const answers = new Array(FEAR_CHECK_ITEMS.length).fill(null);
+  const saveBtn = overlay.querySelector("#fcSave");
+  overlay.querySelectorAll(".fc-item").forEach((itemEl, i) => {
+    itemEl.querySelectorAll(".fc-opt").forEach(btn => {
+      btn.addEventListener("click", () => {
+        answers[i] = parseInt(btn.dataset.v, 10);
+        itemEl.querySelectorAll(".fc-opt").forEach(b => {
+          b.classList.toggle("sel", b === btn);
+          b.setAttribute("aria-checked", b === btn ? "true" : "false");
+        });
+        saveBtn.disabled = answers.some(v => v == null);
+      });
+    });
+  });
+  const close = () => overlay.remove();
+  overlay.querySelector("#fcCancel").onclick = close;
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
+  saveBtn.onclick = () => {
+    if (answers.some(v => v == null)) return;
+    const baseline = getChecks(phobiaKey)[0] || null;
+    const total = saveCheck(phobiaKey, answers.slice(), at);
+    const band = fearCheckBand(total);
+    const res = overlay.querySelector("#fcResult");
+    let deltaLine = "";
+    if (baseline && baseline.total !== total) {
+      const d = total - baseline.total;
+      deltaLine = d < 0
+        ? `<p class="fc-delta down">▼ ${Math.abs(d)} quieter than your first mirror (${baseline.total} → ${total}). That change happened out there, in your life.</p>`
+        : `<p class="fc-delta up">▲ ${d} louder than your first mirror (${baseline.total} → ${total}). Fear wobbles — this is information, not failure.</p>`;
+    } else if (!baseline) {
+      deltaLine = `<p class="fc-delta">This is your starting point. The next mirrors will show the change.</p>`;
+    }
+    res.innerHTML = `
+      <div class="fc-score band-${band.tone}"><strong>${total}</strong><span>/ 20 — ${band.label}</span></div>
+      ${deltaLine}`;
+    res.hidden = false;
+    saveBtn.textContent = "Done";
+    saveBtn.onclick = () => {
+      close();
+      const route = parseRoute(location.hash);
+      render(route.view, route.params);
+    };
+    overlay.querySelector("#fcCancel").style.display = "none";
   };
 }
 
@@ -7720,6 +7892,7 @@ function attachHandlers(view, params) {
       progress: state.progress,
       sessions: state.log,
       worldsteps: cs.worldsteps || {},
+      fearChecks: cs.checks || {},
       courage: cs.courage || 0,
       sparks: cs.sparks || [],
       milestones: cs.milestones || [],
@@ -8298,6 +8471,7 @@ function handleAction(d, params) {
     case "open-custom":     go("custom"); break;
     case "open-report":     go("report"); break;
     case "do-worldstep":    openWorldstepModal(d.phobia, parseInt(d.step, 10)); break;
+    case "fear-check":      openFearCheckModal(d.phobia, d.at || "manual"); break;
     case "edit-goal":       openGoalEditor(d.phobia); break;
     case "reset-progress":  if (confirm("Reset this character's progress? Other characters are not affected.")) { resetActiveProgress(); go("select"); } break;
   }
@@ -8682,6 +8856,25 @@ function viewReport() {
             <tbody>${rows}</tbody>
           </table>` : ""}
         ${ws.length ? `<p class="report-line"><strong>Real-world (in-vivo) steps, self-reported:</strong></p><ul class="report-ws">${wsRows}</ul>` : ""}
+        ${(() => {
+          const checks = getChecks(k);
+          if (!checks.length) return "";
+          const stageLabel = { baseline: "baseline", mid: "mid-hierarchy", post: "post-hierarchy", manual: "self-initiated" };
+          const rows2 = checks.map(c => `
+            <tr>
+              <td>${fmtD(c.ts)}</td>
+              <td>${stageLabel[c.at] || c.at}</td>
+              <td>${c.scores.join(" · ")}</td>
+              <td><strong>${c.total}</strong> / 20</td>
+            </tr>`).join("");
+          const delta = checks.length > 1 ? checks[checks.length - 1].total - checks[0].total : null;
+          return `
+            <p class="report-line"><strong>Fear-severity self-checks</strong> (5 items × 0–4: avoidance, peak intensity, physiological reaction, interference, danger belief — rated about real life)${delta != null ? ` · change since baseline: ${delta > 0 ? "+" : ""}${delta}` : ""}</p>
+            <table class="report-table">
+              <thead><tr><th>Date</th><th>Stage</th><th>Item scores</th><th>Total</th></tr></thead>
+              <tbody>${rows2}</tbody>
+            </table>`;
+        })()}
       </section>`;
   }).join("");
   return `
@@ -8956,6 +9149,31 @@ function viewLadder(phobiaKey) {
 
   const bridgeBlock = bridgeBlockFor(phobiaKey, prog);
 
+  // The Mirror: baseline invite on first visit, then a quiet chip with the
+  // latest score + delta and a re-check link. Rated about real life — this
+  // is the realm's outcome measure, not another game stat.
+  const checks = getChecks(phobiaKey);
+  const lastC = latestCheck(phobiaKey);
+  const baseC = checks[0] || null;
+  let mirrorBlock = "";
+  if (!checks.length) {
+    mirrorBlock = `
+      <div class="mirror-invite">
+        <span class="bridge-invite-kicker">🪞 Before your first trial</span>
+        <strong>Hold up the Mirror — 60 seconds</strong>
+        <p>Five quick questions about how this fear is in <em>real life</em> right now. Do it once now, and later mirrors will show you — in numbers — how much quieter it gets.</p>
+        <button class="btn-primary" data-action="fear-check" data-phobia="${phobiaKey}" data-at="baseline">Look in the mirror</button>
+      </div>`;
+  } else {
+    const band = fearCheckBand(lastC.total);
+    const delta = baseC && lastC !== baseC ? lastC.total - baseC.total : null;
+    mirrorBlock = `
+      <div class="mirror-chip">
+        <span>🪞 The fear out there: <strong>${lastC.total}/20</strong> — ${band.label}${delta != null ? (delta < 0 ? ` · ▼${Math.abs(delta)} since your first mirror` : delta > 0 ? ` · ▲${delta} since your first mirror` : "") : ""}</span>
+        <button class="btn-ghost mirror-recheck" data-action="fear-check" data-phobia="${phobiaKey}" data-at="manual">Re-check</button>
+      </div>`;
+  }
+
   return `
     <div class="realm-view">
       <header class="realm-hero">
@@ -8971,6 +9189,7 @@ function viewLadder(phobiaKey) {
       </header>
       ${ch ? `<div class="realm-bubble"><span class="realm-bubble-avatar" aria-hidden="true">${window.Character.avatarSVG(ch, 40)}</span><span>“${escapeHtml(cleared ? realm.clearedLine : realm.line)}”</span></div>` : ""}
       ${tabs}
+      ${mirrorBlock}
       ${heroCta}
       ${progressLink}
       ${goalBlock}
@@ -9640,6 +9859,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
   let shadowStrip = "";
   let celebration = "";
   let bridgeInvite = "";
+  let mirrorPrompt = "";
   if (lastAward && lastAward.key === `${phobiaKey}.${levelIdx}` && last && Math.abs((last.ts || 0) - lastAward.ts) < 5000) {
     const bits = [`+${lastAward.points} courage`];
     if (lastAward.daily) bits.push(`🔥 daily ember +15`);
@@ -9674,6 +9894,17 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
             <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">See the Real Path</button>
           </div>`;
       }
+    }
+    // Mirror re-check after trials 3 and 5 — the stages worth measuring.
+    // Only offered if a baseline exists; measurement should never nag.
+    if (!early && fearCheckDue(phobiaKey, levelIdx)) {
+      const stage = levelIdx === 2 ? "mid" : "post";
+      mirrorPrompt = `
+        <div class="mirror-invite compact">
+          <span class="bridge-invite-kicker">🪞 A good moment to look</span>
+          <p>You're ${stage === "mid" ? "halfway up this realm" : "at the top of this realm"}. Sixty seconds with the Mirror will show what's changed <em>out there</em> since you started.</p>
+          <button class="btn-ghost" data-action="fear-check" data-phobia="${phobiaKey}" data-at="${stage}">Hold up the Mirror</button>
+        </div>`;
     }
     // A calm ember rise (not confetti): fire-coloured motes float up once.
     if (!early) {
@@ -9713,6 +9944,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       ${shadowStrip}
       ${sparkBlock}
       ${bridgeInvite}
+      ${mirrorPrompt}
       <p>${early
         ? `You stood with <strong>${escapeHtml(p.levels[levelIdx].title)}</strong> and rated your fear at <strong>${suds}/10</strong>.`
         : `You faced <strong>${escapeHtml(p.levels[levelIdx].title)}</strong> and rated your fear at <strong>${suds}/10</strong>.`}</p>
