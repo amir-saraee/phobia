@@ -3357,6 +3357,122 @@ if ("serviceWorker" in navigator) {
     .curve-path { stroke-dashoffset: 0 !important; animation: none !important; }
     .spark-face { transition: none; }
   }
+
+  /* ---- Shell 3D vignettes: containers + 2D fallbacks ---- */
+  /* Camp: the 3D canvas replaces the CSS campfire the moment it mounts.
+     Until then (or if WebGL is unavailable) the 2D scene stays. */
+  .camp-scene { position: relative; }
+  .camp-3d { display: none; }
+  .camp-scene.has3d .camp-3d {
+    display: block; width: min(560px, 92%); height: 235px; margin: 0 auto;
+  }
+  .camp-3d canvas { display: block; width: 100% !important; height: 100% !important; }
+  .camp-scene.has3d .camp-2d { display: none; }
+  .camp-2d { display: flex; align-items: flex-end; justify-content: center; gap: 6px; min-height: 118px; }
+  /* Realm hero: the live diorama sits over the illustrated art (alpha canvas),
+     under the text. Drag-to-spin works through it on the right side. */
+  .realm-3d { display: none; }
+  .realm-hero.has3d { min-height: 240px; }
+  .realm-hero.has3d .realm-3d {
+    display: block; position: absolute; inset: 0; z-index: 1;
+  }
+  .realm-3d canvas { width: 100% !important; height: 100% !important; display: block; }
+  .realm-hero.has3d .realm-hero-text, .realm-hero.has3d .guardian-box { z-index: 2; pointer-events: none; }
+  /* Title screen: swap the flat SVG for the 3D turntable when it mounts */
+  .story-figure { width: 200px; height: 230px; display: flex; align-items: center; justify-content: center; }
+  .story-figure.has3d svg { display: none; }
+  .story-figure.has3d { cursor: grab; }
+  .story-figure canvas { width: 200px !important; height: 230px !important; }
+
+  /* ---- Rank (courage levels) ---- */
+  .rank-row {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    flex-wrap: wrap; margin-top: 12px;
+  }
+  .rank-chip {
+    background: linear-gradient(135deg, rgba(246,199,106,.18), rgba(231,138,78,.14));
+    border: 1px solid #8a6d35; color: #ffe1a1;
+    border-radius: 999px; padding: 5px 14px; font-size: 12.5px; font-weight: 800;
+    letter-spacing: .4px;
+  }
+  .rank-bar {
+    width: min(220px, 40vw); height: 7px; border-radius: 4px;
+    background: rgba(255,255,255,.12); overflow: hidden;
+  }
+  .rank-fill {
+    height: 100%; border-radius: 4px;
+    background: linear-gradient(90deg, #ffd86b, #ff9a3d);
+    box-shadow: 0 0 10px rgba(255,170,80,.5);
+    transition: width .6s ease;
+  }
+  .rank-next { font-size: 11px; color: #aab6d4; letter-spacing: .4px; }
+  .camp-stat.streak { border-color: #8a5a35; color: #ffcf9e; }
+
+  /* ---- Daily quest ("Today's step") ---- */
+  .quest-card {
+    max-width: 480px; margin: 16px auto 0; text-align: left;
+    background: linear-gradient(180deg, rgba(38,32,20,.92), rgba(24,20,12,.94));
+    border: 1px solid #8a6d35; border-radius: 16px; padding: 14px 16px;
+    box-shadow: 0 10px 34px rgba(0,0,0,.4);
+  }
+  .quest-card.done { border-color: #3d8f7c; background: linear-gradient(180deg, rgba(18,36,32,.92), rgba(12,24,22,.94)); }
+  .quest-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .quest-flag { font-weight: 800; color: #ffe1a1; font-size: 13.5px; letter-spacing: .4px; }
+  .quest-card.done .quest-flag { color: #8fe3c9; }
+  .quest-chip {
+    font-size: 10.5px; letter-spacing: .8px; text-transform: uppercase; font-weight: 700;
+    color: #d9a75a; background: rgba(246,199,106,.12); border: 1px solid rgba(246,199,106,.35);
+    border-radius: 999px; padding: 3px 9px;
+  }
+  .quest-chip.done-chip { color: #8fe3c9; background: rgba(61,143,124,.14); border-color: #3d8f7c; }
+  .quest-body strong { display: block; color: #f2e6cd; font-size: 14.5px; margin-bottom: 2px; }
+  .quest-card.done .quest-body strong { color: #d9efe7; }
+  .quest-body p { margin: 0 0 10px; font-size: 12.5px; color: #b9a98a; }
+  .quest-card.done .quest-body p { color: #9dbfb4; }
+
+  /* ---- Victory celebration: a single calm ember rise ---- */
+  .victory-panel { position: relative; overflow: hidden; }
+  .ember-burst { position: absolute; inset: 0; pointer-events: none; overflow: hidden; border-radius: inherit; }
+  .ember-burst i {
+    position: absolute; left: var(--x, 50%); bottom: -8px;
+    width: calc(5px * var(--s, 1)); height: calc(5px * var(--s, 1)); border-radius: 50%;
+    background: radial-gradient(circle, #ffd86b, #ff9a3d 70%);
+    box-shadow: 0 0 8px rgba(255,170,80,.7);
+    opacity: 0;
+    animation: emberRise 2.6s ease-out forwards;
+    animation-delay: var(--d, 0s);
+  }
+  @keyframes emberRise {
+    0%   { transform: translateY(0) scale(1); opacity: 0; }
+    12%  { opacity: .95; }
+    100% { transform: translateY(-78vh) scale(.4); opacity: 0; }
+  }
+
+  /* ---- Shadow-shrink strip on the victory screen ---- */
+  .shadow-shrink {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    background: var(--panel-2); border: 1px solid var(--border-2);
+    border-radius: 12px; padding: 10px 14px; margin: 10px 0;
+  }
+  .ss-blob {
+    width: calc(22px + var(--rem, 1) * 26px); height: calc(18px + var(--rem, 1) * 21px);
+    border-radius: 48% 52% 55% 45% / 60% 58% 42% 40%;
+    background: radial-gradient(circle at 50% 30%, #222c4c, #0a0f20 78%);
+    border: 1px solid #33406a;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    animation: blobDrift 6s ease-in-out infinite;
+  }
+  .ss-blob i { width: 5px; height: 5px; border-radius: 50%; background: #b7c6e8; box-shadow: 0 0 6px #b7c6e8; }
+  .ss-arrow { color: var(--muted); font-size: 15px; }
+  .ss-tamed { font-size: 22px; }
+  .ss-text { font-size: 13px; color: var(--muted); }
+  .ss-text strong { color: var(--text); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ember-burst { display: none; }
+    .ss-blob { animation: none; }
+    .rank-fill { transition: none; }
+  }
 </style>
 </head>
 <body>
@@ -6700,8 +6816,16 @@ function getProgress(phobiaKey) {
 function awardCourage(points, reason) {
   if (!Number.isFinite(points) || points <= 0) return;
   const cs = activeCharSlice();
-  cs.courage = (cs.courage || 0) + Math.round(points);
+  const before = cs.courage || 0;
+  cs.courage = before + Math.round(points);
   saveState();
+  // Rank-up: crossing a threshold is a named moment, not just a bigger number.
+  try {
+    const rBefore = courageRank(before), rAfter = courageRank(cs.courage);
+    if (rAfter.idx > rBefore.idx) {
+      setTimeout(() => showAchievement(`Rank up — ${rAfter.title}`, `The valley knows your name now. (${cs.courage} courage)`, rAfter.icon), 900);
+    }
+  } catch {}
   // Re-render the header courage badge if visible
   try {
     const badge = document.getElementById("courageBadge");
@@ -6729,6 +6853,10 @@ function markCompleted(phobiaKey, levelIdx, suds, predicted, peak, outcome) {
   // "clicked continue at second two" and "held the full time" read the same.
   const finished = !outcome || outcome.finished !== false;
   const wasNew = finished && levelIdx > p.highestCompleted;
+  // Daily ember: the FIRST finished trial each day earns a small bonus —
+  // a daily-quest loop that rewards showing up, checked BEFORE this session
+  // is pushed to the log.
+  const firstToday = finished && !state.log.some(l => l.finished !== false && isSameLocalDay(l.ts));
   if (finished) p.highestCompleted = Math.max(p.highestCompleted, levelIdx);
   state.progress[phobiaKey] = p;
   state.log.push({
@@ -6745,6 +6873,7 @@ function markCompleted(phobiaKey, levelIdx, suds, predicted, peak, outcome) {
   const isFirstTime = wasNew;
   const points = Math.round((isFirstTime ? basePoints * 2 : basePoints) * (finished ? 1 : 0.5));
   awardCourage(points, finished ? (isFirstTime ? "first time" : "well done") : "you showed up");
+  if (firstToday) awardCourage(15, "daily ember");
   // Check for newly-unlocked milestones (after the log push so they see this entry)
   const newMilestones = checkMilestones() || [];
   // Stash the concrete reward so the Complete screen can surface it at the peak
@@ -6759,6 +6888,8 @@ function markCompleted(phobiaKey, levelIdx, suds, predicted, peak, outcome) {
     // teaching order. Early exits still earn courage but not a card — the
     // card celebrates a completed hold, and the deck is finite.
     spark: finished ? (awardSpark()?.id || null) : null,
+    daily: firstToday,
+    advanced: wasNew,
   };
   // Award an achievement toast for first-time completions
   if (wasNew) {
@@ -7055,6 +7186,16 @@ function render(view, params) {
   if (window.Scene3D && typeof window.Scene3D.unmount === "function") {
     window.Scene3D.unmount();
   }
+  // Shell vignettes (camp fire, realm heroes) are per-view; drop them too.
+  if (window.ShellScenes && typeof window.ShellScenes.unmountAll === "function") {
+    window.ShellScenes.unmountAll();
+  }
+  // The title-screen avatar turntable — full cleanup (listeners + geometry),
+  // not just the renderer self-dispose. The character creator re-mounts its
+  // own instance after render, so this is always safe.
+  if (window.AvatarPreview && typeof window.AvatarPreview.unmount === "function") {
+    window.AvatarPreview.unmount();
+  }
   if (window.PhobiaVoice) window.PhobiaVoice.stop();
   // Any leftover tutorial overlays from a previous mount must be removed,
   // otherwise they linger on body when the view re-renders.
@@ -7137,6 +7278,7 @@ function render(view, params) {
   if (view === "breathe")   runBreathing();
   if (view === "welcome")   mountStory();
   if (view === "select")    mountJourney();
+  if (view === "welcome" || view === "select" || view === "ladder") mountShell3D(view, params);
 
   // Move focus to the new view's heading so keyboard + screen-reader users
   // don't get stranded on the just-removed element (which drops focus to
@@ -7820,7 +7962,7 @@ function starfieldHTML(n) {
 function viewWelcome() {
   const ch = window.Character && window.Character.loadCharacter();
   const heroFigure = (window.Character && window.Character.avatarSVG)
-    ? `<div class="story-figure">${window.Character.avatarSVG(ch || { skinTone: "fair", hairColor: "brown", hairStyle: "short", topColor: "teal", eyeColor: "brown" }, 120)}</div>`
+    ? `<div class="story-figure" id="storyFigure3d" title="Drag to spin your traveler">${window.Character.avatarSVG(ch || { skinTone: "fair", hairColor: "brown", hairStyle: "short", topColor: "teal", eyeColor: "brown" }, 120)}</div>`
     : "";
   const heroLine = ch
     ? `Welcome back, <strong>${escapeHtml(ch.name || "traveler")}</strong>. The valley kept your place.`
@@ -7911,6 +8053,21 @@ function viewSelect() {
   const totalTrials = keys.reduce((s, k) => s + PHOBIAS[k].levels.length, 0);
   const facedTrials = keys.reduce((s, k) => s + Math.min(PHOBIAS[k].levels.length, (getProgress(k).highestCompleted ?? -1) + 1), 0);
   const sparks = ch ? getSparks().length : 0;
+  // Gamification surface: rank + next-goal bar, streak flame, and the daily
+  // quest ("Today's step") — one obvious, low-friction action per day.
+  const courage = getCourage();
+  const rank = courageRank(courage);
+  const rankPct = rank.next ? Math.min(100, Math.round(((courage - rank.min) / (rank.next.min - rank.min)) * 100)) : 100;
+  const streak = computeStreak();
+  const doneToday = state.log.some(l => l.finished !== false && isSameLocalDay(l.ts));
+  // Today's step targets the current realm — unless it's already tamed, in
+  // which case the quest moves the traveler on to the next untamed realm.
+  let questKey = curKey;
+  if ((getProgress(curKey).highestCompleted ?? -1) + 1 >= PHOBIAS[curKey].levels.length) {
+    questKey = keys.find(k => (getProgress(k).highestCompleted ?? -1) + 1 < PHOBIAS[k].levels.length) || curKey;
+  }
+  const questRealm = realmOf(questKey);
+  const questDone = Math.min(PHOBIAS[questKey].levels.length - 1, (getProgress(questKey).highestCompleted ?? -1) + 1);
 
   // Campfire line: the character speaks about where they are on the journey.
   const curRealm = realmOf(curKey);
@@ -7958,15 +8115,38 @@ function viewSelect() {
     <div class="jw-stars" aria-hidden="true">${starfieldHTML(60)}</div>
     <section class="camp">
       <div class="camp-scene" aria-hidden="true">
-        ${ch ? `<div class="camp-char">${window.Character.avatarSVG(ch, 104)}</div>` : ""}
-        <div class="campfire"><i class="flame f1"></i><i class="flame f2"></i><i class="flame f3"></i><span class="logs"></span><span class="fire-glow"></span></div>
+        <div class="camp-3d" id="camp3d"></div>
+        <div class="camp-2d">
+          ${ch ? `<div class="camp-char">${window.Character.avatarSVG(ch, 104)}</div>` : ""}
+          <div class="campfire"><i class="flame f1"></i><i class="flame f2"></i><i class="flame f3"></i><span class="logs"></span><span class="fire-glow"></span></div>
+        </div>
       </div>
       <div class="camp-bubble">${campLine}</div>
+      <div class="rank-row" title="Courage builds your traveler rank — every trial adds to it">
+        <span class="rank-chip">${rank.icon} ${rank.title}</span>
+        <div class="rank-bar" aria-hidden="true"><div class="rank-fill" style="width:${rankPct}%"></div></div>
+        <span class="rank-next">${rank.next ? `${courage}/${rank.next.min} ⚡ to ${rank.next.title}` : "highest rank reached"}</span>
+      </div>
       <div class="camp-stats">
-        <span class="camp-stat" title="Courage — earned every time you face a trial">⚡ ${getCourage()} courage</span>
+        <span class="camp-stat" title="Courage — earned every time you face a trial">⚡ ${courage} courage</span>
         <span class="camp-stat" title="Trials faced across the valley">🛡 ${facedTrials}/${totalTrials} trials</span>
         <button class="camp-stat as-btn" data-action="open-journal" title="Book of Sparks — the wisdom you've collected">✦ ${sparks}/${INSIGHT_CARDS.length} sparks</button>
+        ${streak >= 2 ? `<span class="camp-stat streak" title="Days in a row you've practiced">🔥 ${streak}-day flame</span>` : ""}
       </div>
+      ${ch ? `
+      <div class="quest-card ${doneToday ? "done" : ""}">
+        <div class="quest-head">
+          <span class="quest-flag">🪧 Today's step</span>
+          ${doneToday ? `<span class="quest-chip done-chip">🔥 ember earned</span>` : `<span class="quest-chip">+15 ember for the first trial today</span>`}
+        </div>
+        <div class="quest-body">
+          <strong>${escapeHtml(questRealm.realmName)} · trial ${questDone + 1}: ${escapeHtml(PHOBIAS[questKey].levels[questDone].title)}</strong>
+          <p>${doneToday ? "You showed up today — the flame is lit. Another step is always welcome." : "One small step a day keeps the flame lit. You can step out at any moment."}</p>
+        </div>
+        <button class="${doneToday ? "btn-ghost" : "btn-primary"}" data-action="start-level" data-phobia="${questKey}" data-level="${questDone}">
+          ${doneToday ? "Take another step" : "⚔ Take today's step"}
+        </button>
+      </div>` : ""}
       <p class="camp-hint">the path descends through the valley — choose a realm ▾</p>
     </section>
     <ol class="realm-list">${nodes}</ol>
@@ -8018,6 +8198,71 @@ function mountJourney() {
       catch { cur.scrollIntoView(); }
     });
   }
+}
+
+// ---------- Shell 3D wiring ----------
+// Mount the live Three vignettes into the shell views. Every mount is a
+// progressive enhancement: on success the container gets .has3d (hiding the
+// 2D stand-in); on any failure the 2D art simply stays. The module script
+// loads async, so we wait for scene3d-ready when it hasn't arrived yet.
+function charHexes(ch) {
+  const C = window.Character;
+  if (!ch || !C || !C.skinHex) return null;
+  return Object.assign({}, ch, {
+    skinHex: C.skinHex(ch), hairHex: C.hairHex(ch),
+    shirtHex: C.topHex(ch), eyeHex: C.eyeHex(ch),
+  });
+}
+function mountShell3D(view, params) {
+  const start = () => {
+    try {
+      if (view === "select") {
+        const el = document.getElementById("camp3d");
+        const ch = window.Character && window.Character.loadCharacter();
+        if (el && window.ShellScenes && window.ShellScenes.mountCamp(el, charHexes(ch))) {
+          el.closest(".camp-scene")?.classList.add("has3d");
+        }
+      } else if (view === "ladder") {
+        const el = document.getElementById("realmHero3d");
+        if (el && window.ShellScenes && window.ShellScenes.mountRealm(el, params && params.phobia)) {
+          el.closest(".realm-hero")?.classList.add("has3d");
+        }
+      } else if (view === "welcome") {
+        // Title screen: the traveler as a real 3D turntable (drag to spin).
+        const el = document.getElementById("storyFigure3d");
+        const ch = window.Character && window.Character.loadCharacter();
+        if (el && window.AvatarPreview && window.AvatarPreview.mount) {
+          const hexes = charHexes(ch) || charHexes({ skinTone: "fair", hairColor: "brown", hairStyle: "short", topColor: "teal", eyeColor: "brown" });
+          if (hexes) { window.AvatarPreview.mount(el, hexes); el.classList.add("has3d"); }
+        }
+      }
+    } catch { /* 2D fallback stays */ }
+  };
+  if (window.ShellScenes && window.ShellScenes.ready) start();
+  else window.addEventListener("scene3d-ready", start, { once: true });
+}
+
+// ---------- Traveler ranks (courage levels) ----------
+// A visible progression ladder over the courage score: always show the next
+// goal (a core gamification loop the app previously lacked — points existed
+// but led nowhere). Thresholds are gentle; rank-ups fire an achievement toast.
+const RANKS = [
+  { min: 0,   title: "Novice Traveler", icon: "🌱" },
+  { min: 60,  title: "Wanderer",        icon: "🥾" },
+  { min: 150, title: "Pathfinder",      icon: "🧭" },
+  { min: 300, title: "Shadow-Tamer",    icon: "🕯️" },
+  { min: 500, title: "Valley Keeper",   icon: "🏔️" },
+  { min: 800, title: "Dawnbringer",     icon: "🌅" },
+];
+function courageRank(c) {
+  let idx = 0;
+  for (let i = 0; i < RANKS.length; i++) if (c >= RANKS[i].min) idx = i;
+  return Object.assign({ idx, next: RANKS[idx + 1] || null }, RANKS[idx]);
+}
+function isSameLocalDay(ts) {
+  if (!ts) return false;
+  const a = new Date(ts), b = new Date();
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
 // The Book of Sparks — every psychology card earned so far, plus face-down
@@ -8212,6 +8457,7 @@ function viewLadder(phobiaKey) {
       <header class="realm-hero">
         <div class="realm-hero-art" aria-hidden="true">${phobiaThumbnail(phobiaKey)}</div>
         <div class="realm-hero-grad" aria-hidden="true"></div>
+        <div class="realm-3d" id="realmHero3d" title="Drag to look around"></div>
         <div class="realm-hero-text">
           <span class="realm-kicker">${realmIdx >= 0 ? `Realm ${ROMAN[realmIdx] || realmIdx + 1} · ` : ""}${escapeHtml(p.name)} — ${escapeHtml(p.label)}</span>
           <h2>${escapeHtml(realm.realmName)}</h2>
@@ -8853,10 +9099,36 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
   // doesn't replay a stale "+15". Calm strip, not confetti. (day-N only >=2 to
   // avoid streak-pressure on day 1.)
   let rewardStrip = "";
+  let shadowStrip = "";
+  let celebration = "";
   if (lastAward && lastAward.key === `${phobiaKey}.${levelIdx}` && last && Math.abs((last.ts || 0) - lastAward.ts) < 5000) {
     const bits = [`+${lastAward.points} courage`];
+    if (lastAward.daily) bits.push(`🔥 daily ember +15`);
     if (lastAward.streakAfter >= 2) bits.push(`day ${lastAward.streakAfter} of practice`);
     rewardStrip = `<div class="reward-strip">${bits.join(" · ")}${lastAward.milestones.length ? `<div class="reward-milestone">🏅 Milestone unlocked: ${escapeHtml(lastAward.milestones.join(", "))}</div>` : ""}</div>`;
+    // The shadow visibly weakens — progress feedback in the game's own
+    // language, only when this finish actually advanced the realm.
+    if (!early && lastAward.advanced) {
+      const total = p.levels.length;
+      const after = total - (getProgress(phobiaKey).highestCompleted + 1);
+      const realm = realmOf(phobiaKey);
+      shadowStrip = `
+        <div class="shadow-shrink" aria-label="${escapeHtml(realm.guardianName)} weakened to strength ${after} of ${total}">
+          <span class="ss-blob" style="--rem:${((after + 1) / total).toFixed(2)}"><i></i><i></i></span>
+          <span class="ss-arrow">➜</span>
+          ${after === 0
+            ? `<span class="ss-tamed">🕊</span><span class="ss-text"><strong>${escapeHtml(realm.guardianName)}</strong> is tamed. The realm is yours.</span>`
+            : `<span class="ss-blob small" style="--rem:${(after / total).toFixed(2)}"><i></i><i></i></span><span class="ss-text"><strong>${escapeHtml(realm.guardianName)}</strong> weakened — strength ${after}/${total}.</span>`}
+        </div>`;
+    }
+    // A calm ember rise (not confetti): fire-coloured motes float up once.
+    if (!early) {
+      let motes = "";
+      for (let i = 0; i < 16; i++) {
+        motes += `<i style="--x:${(Math.random() * 100).toFixed(1)}%;--d:${(Math.random() * 1.4).toFixed(2)}s;--s:${(0.5 + Math.random() * 0.8).toFixed(2)}"></i>`;
+      }
+      celebration = `<div class="ember-burst" aria-hidden="true">${motes}</div>`;
+    }
   }
 
   // Spark of Wisdom — the psychoeducation card earned by THIS finish, dealt
@@ -8879,10 +9151,12 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
   }
 
   return `
-    <div class="panel">
+    <div class="panel victory-panel">
       <span class="badge">${early ? `Trial ${levelIdx+1} · stepped back` : `Trial ${levelIdx+1} faced`} · ${escapeHtml(realmOf(phobiaKey).realmName)}</span>
       <h2 style="margin-top: 10px;">${early ? "You stepped back — showing up still counts." : "Trial faced. The shadow shrinks."}</h2>
+      ${celebration}
       ${rewardStrip}
+      ${shadowStrip}
       ${sparkBlock}
       <p>${early
         ? `You stood with <strong>${escapeHtml(p.levels[levelIdx].title)}</strong> and rated your fear at <strong>${suds}/10</strong>.`
@@ -30358,6 +30632,441 @@ const AvatarPreview = (() => {
   return { mount, update, unmount, ready: true };
 })();
 window.AvatarPreview = AvatarPreview;
+
+// ---------- Shell 3D vignettes (camp + realm heroes) ----------
+// Small always-running Three scenes for the GAME SHELL (valley map camp,
+// realm hero banners) — separate from the exposure engine. Each mount returns
+// a ctx (truthy) on success or null on failure so the classic script keeps
+// the 2D fallback when WebGL is unavailable. Every ctx self-disposes when its
+// container leaves the DOM, and unmountAll() runs on every route render.
+// DPR is capped and reduced-motion renders a single still frame.
+const ShellScenes = (() => {
+  const registry = new Set();
+  const reduceMotion = () =>
+    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function makeCtx(container, opts = {}) {
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    } catch { return null; }
+    const w = container.clientWidth || 320, h = container.clientHeight || 220;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    renderer.setSize(w, h);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = opts.exposure || 1.0;
+    container.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    if (opts.fog) scene.fog = new THREE.FogExp2(opts.fog, opts.fogDensity || 0.09);
+    const camera = new THREE.PerspectiveCamera(opts.fov || 34, w / h, 0.05, 80);
+    const ctx = { container, renderer, scene, camera, raf: 0, disposed: false, onTick: null, elapsed: 0 };
+    const ro = ("ResizeObserver" in window) ? new ResizeObserver(() => {
+      const nw = container.clientWidth, nh = container.clientHeight;
+      if (nw && nh && !ctx.disposed) {
+        renderer.setSize(nw, nh);
+        camera.aspect = nw / nh;
+        camera.updateProjectionMatrix();
+      }
+    }) : null;
+    if (ro) ro.observe(container);
+    ctx.ro = ro;
+    let last = performance.now();
+    function tick() {
+      if (ctx.disposed) return;
+      if (!container.isConnected) { disposeCtx(ctx); return; }
+      const now = performance.now();
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      ctx.elapsed += dt;
+      if (ctx.onTick) { try { ctx.onTick(dt, ctx.elapsed); } catch {} }
+      renderer.render(scene, camera);
+      ctx.raf = requestAnimationFrame(tick);
+    }
+    ctx.start = () => {
+      if (reduceMotion()) {
+        // One still frame — the vignette becomes a picture, not a motion source.
+        if (ctx.onTick) { try { ctx.onTick(1 / 60, 0.5); } catch {} }
+        renderer.render(scene, camera);
+        return;
+      }
+      last = performance.now();
+      tick();
+    };
+    registry.add(ctx);
+    return ctx;
+  }
+
+  function disposeCtx(ctx) {
+    if (!ctx || ctx.disposed) return;
+    ctx.disposed = true;
+    cancelAnimationFrame(ctx.raf);
+    if (ctx.ro) { try { ctx.ro.disconnect(); } catch {} }
+    if (ctx.cleanupExtra) { try { ctx.cleanupExtra(); } catch {} }
+    try { disposeObject(ctx.scene); } catch {}
+    try { ctx.renderer.dispose(); } catch {}
+    const el = ctx.renderer.domElement;
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+    registry.delete(ctx);
+  }
+
+  // Drag-to-spin + slow auto turntable — the "you can touch this" affordance
+  // that makes a vignette read as 3D rather than a looping video.
+  function addDragSpin(ctx, target, speed = 0.25) {
+    let dragging = false, lastX = 0, pid = null;
+    const el = ctx.renderer.domElement;
+    el.style.cursor = "grab";
+    el.style.touchAction = "pan-y";
+    const onDown = (e) => { dragging = true; lastX = e.clientX; pid = e.pointerId; el.style.cursor = "grabbing"; try { el.setPointerCapture(pid); } catch {} };
+    const onMove = (e) => { if (!dragging) return; target.rotation.y += (e.clientX - lastX) * 0.012; lastX = e.clientX; };
+    const onUp = () => { if (!dragging) return; dragging = false; el.style.cursor = "grab"; try { el.releasePointerCapture(pid); } catch {} };
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
+    ctx.cleanupExtra = () => {
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+    };
+    return () => dragging;   // isDragging query for the tick
+  }
+
+  // Shared flame builder: three additive cones + flicker + a point light.
+  // Used by the camp fire; returns an update(dt, t) to run per tick.
+  function buildFire(parent, opts = {}) {
+    const s = opts.scale || 1;
+    const fire = new THREE.Group();
+    const mk = (r, hgt, color, op) => {
+      const m = new THREE.Mesh(
+        new THREE.ConeGeometry(r * s, hgt * s, 10, 1, true),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false })
+      );
+      m.position.y = (hgt * s) / 2;
+      fire.add(m);
+      return m;
+    };
+    const outer = mk(0.16, 0.52, 0xff6b2d, 0.55);
+    const mid   = mk(0.11, 0.42, 0xff9a3d, 0.75);
+    const inner = mk(0.06, 0.30, 0xffd86b, 0.95);
+    // Logs
+    const logM = new THREE.MeshStandardMaterial({ color: 0x4a3120, roughness: 0.95 });
+    for (let i = 0; i < 3; i++) {
+      const log = new THREE.Mesh(new THREE.CylinderGeometry(0.035 * s, 0.045 * s, 0.5 * s, 8), logM);
+      log.rotation.z = Math.PI / 2;
+      log.rotation.y = (i / 3) * Math.PI;
+      log.position.y = 0.045 * s;
+      fire.add(log);
+    }
+    const light = new THREE.PointLight(0xff9a4d, 1.8, 9 * s, 1.8);
+    light.position.y = 0.35 * s;
+    fire.add(light);
+    // Embers — a Points cloud rising in a slim column and wrapping.
+    const N = 42;
+    const pos = new Float32Array(N * 3);
+    const seed = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * 0.24 * s;
+      pos[i * 3 + 1] = Math.random() * 1.1 * s;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 0.24 * s;
+      seed[i] = Math.random();
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const embers = new THREE.Points(geo, new THREE.PointsMaterial({
+      color: 0xffc06b, size: 0.028 * s, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    fire.add(embers);
+    parent.add(fire);
+    if (opts.position) fire.position.copy(opts.position);
+    return {
+      group: fire,
+      update(dt, t) {
+        const n1 = Math.sin(t * 9.1) * 0.5 + Math.sin(t * 23.7) * 0.3 + Math.sin(t * 41.3) * 0.2;
+        inner.scale.set(1 + n1 * 0.10, 1 + n1 * 0.22, 1 + n1 * 0.10);
+        mid.scale.set(1 + n1 * 0.08, 1 + n1 * 0.16, 1 + n1 * 0.08);
+        outer.scale.set(1 + n1 * 0.05, 1 + n1 * 0.10, 1 + n1 * 0.05);
+        inner.rotation.y += dt * 1.7; mid.rotation.y -= dt * 1.2; outer.rotation.y += dt * 0.8;
+        light.intensity = 1.8 + n1 * 0.55;
+        const p = geo.attributes.position;
+        for (let i = 0; i < N; i++) {
+          let y = p.getY(i) + dt * (0.35 + seed[i] * 0.5) * s;
+          if (y > 1.15 * s) y = 0.05;
+          p.setY(i, y);
+          p.setX(i, p.getX(i) + Math.sin(t * 2 + seed[i] * 20) * dt * 0.03);
+        }
+        p.needsUpdate = true;
+      },
+    };
+  }
+
+  // ---- The camp: your 3D traveler by a living fire ----
+  function mountCamp(container, charHexes) {
+    const ctx = makeCtx(container, { fov: 30, fog: 0x0c1224, fogDensity: 0.045 });
+    if (!ctx) return null;
+    const { scene, camera } = ctx;
+    // Night lighting: cool moon key + faint ambient; the fire light does the rest.
+    const moon = new THREE.DirectionalLight(0x9fb4dc, 0.35);
+    moon.position.set(-3, 6, -2);
+    scene.add(moon);
+    scene.add(new THREE.AmbientLight(0x2a3450, 0.8));
+    const env = (typeof getRoomEnvMap === "function") ? getRoomEnvMap(ctx.renderer) : null;
+    if (env) scene.environment = env;
+    // Ground: a wide dark disc that fades into the CSS valley behind it.
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(6, 40),
+      new THREE.MeshStandardMaterial({ color: 0x131a2e, roughness: 1 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+    // A few low stones around the fire ring
+    const stoneM = new THREE.MeshStandardMaterial({ color: 0x2a3148, roughness: 0.95 });
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2 + 0.3;
+      const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.06 + Math.random() * 0.03, 0), stoneM);
+      st.position.set(Math.cos(a) * 0.42, 0.045, Math.sin(a) * 0.42);
+      st.rotation.set(Math.random(), Math.random(), Math.random());
+      scene.add(st);
+    }
+    const fire = buildFire(scene, { scale: 1 });
+    // The traveler — the same procedural figure used in-scene, idling by the fire.
+    let figure = null;
+    if (charHexes) {
+      try {
+        figure = buildAvatarFigure(charHexes);
+        figure.position.set(-0.85, 0, 0.25);
+        figure.rotation.y = 0.9;   // half-turned toward the fire, half toward you
+        scene.add(figure);
+      } catch { figure = null; }
+    }
+    camera.position.set(0.15, 1.15, 3.5);
+    camera.lookAt(-0.15, 0.75, 0);
+    ctx.onTick = (dt, t) => {
+      fire.update(dt, t);
+      if (figure && figure.userData && figure.userData.animate) figure.userData.animate(t);
+      camera.position.x = 0.15 + Math.sin(t * 0.14) * 0.12;
+      camera.position.y = 1.15 + Math.sin(t * 0.1) * 0.03;
+      camera.lookAt(-0.15, 0.75, 0);
+    };
+    ctx.start();
+    return ctx;
+  }
+
+  // ---- Realm heroes: the fear itself, alive on its page ----
+  function mountRealm(container, key) {
+    const builders = { dogs: realmDog, spiders: realmSpider, snakes: realmSnake, heights: realmHeights, dark: realmDark, enclosed: realmEnclosed };
+    const build = builders[key];
+    if (!build) return null;
+    const ctx = makeCtx(container, { fov: 32 });
+    if (!ctx) return null;
+    try { build(ctx); } catch { disposeCtx(ctx); return null; }
+    ctx.start();
+    return ctx;
+  }
+
+  // Shared stage for the creature turntables: soft key/fill/rim + shadow disc.
+  function creatureStage(ctx, tint = 0xfff0d8) {
+    const { scene, camera } = ctx;
+    const key = new THREE.DirectionalLight(tint, 1.4);
+    key.position.set(2.5, 3.5, 3);
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0xc8d4ff, 0.5);
+    fill.position.set(-2.5, 1.5, 2);
+    scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xfff5e0, 0.55);
+    rim.position.set(0, 2.5, -3);
+    scene.add(rim);
+    scene.add(new THREE.AmbientLight(0x39415c, 0.75));
+    const env = (typeof getRoomEnvMap === "function") ? getRoomEnvMap(ctx.renderer) : null;
+    if (env) scene.environment = env;
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(1.15, 36),
+      new THREE.MeshBasicMaterial({ color: 0x060a16, transparent: true, opacity: 0.55 })
+    );
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.y = 0.005;
+    scene.add(disc);
+    camera.position.set(0, 0.85, 3.1);
+    camera.lookAt(0, 0.5, 0);
+  }
+
+  function creatureTurntable(ctx, url, opts) {
+    creatureStage(ctx);
+    const holder = new THREE.Group();
+    ctx.scene.add(holder);
+    const creature = buildCreature(url, { targetSize: opts.targetSize, axis: opts.axis || "max" });
+    holder.add(creature);
+    creature.userData.onReady = () => {
+      const parts = creature.userData.parts;
+      if (parts && parts.play) parts.play(opts.clip || "idle", 0.2, { timeScale: opts.timeScale || 1 });
+      // Frame by measured height so shiba / spider / snake all fill the stage.
+      const h = (parts && parts.height) || 0.8;
+      ctx.camera.position.set(0, Math.max(0.55, h * 0.85), Math.max(2.4, h * 3.1));
+      ctx.camera.lookAt(0, h * 0.45, 0);
+      // The model streams in AFTER the first frame — render one explicitly so
+      // reduced-motion (single-still-frame mode) shows the creature, not an
+      // empty stage.
+      if (parts && parts.mixer) parts.mixer.update(0.05);
+      try { ctx.renderer.render(ctx.scene, ctx.camera); } catch {}
+    };
+    const isDragging = addDragSpin(ctx, holder);
+    ctx.onTick = (dt) => {
+      const parts = creature.userData.parts;
+      if (parts && parts.mixer) parts.mixer.update(dt);
+      if (!isDragging()) holder.rotation.y += dt * (opts.spin ?? 0.35);
+    };
+  }
+
+  function realmDog(ctx)    { creatureTurntable(ctx, DOG_MODELS.shiba,        { targetSize: 1.05, clip: "idle", spin: 0.3 }); }
+  function realmSpider(ctx) { creatureTurntable(ctx, CREATURE_MODELS.spider,  { targetSize: 1.15, clip: "idle", timeScale: 0.8 }); }
+  function realmSnake(ctx)  { creatureTurntable(ctx, CREATURE_MODELS.snake,   { targetSize: 1.15, clip: "idle", timeScale: 0.9 }); }
+
+  // The Summit: a rooftop ledge with railing, a low moon, drifting clouds.
+  function realmHeights(ctx) {
+    const { scene, camera } = ctx;
+    scene.fog = new THREE.FogExp2(0x1a2547, 0.055);
+    scene.add(new THREE.AmbientLight(0x35406a, 1.0));
+    const moonL = new THREE.DirectionalLight(0xcdd8f5, 0.9);
+    moonL.position.set(-4, 5, -3);
+    scene.add(moonL);
+    const ledge = new THREE.Mesh(
+      new THREE.BoxGeometry(3.6, 0.35, 1.6),
+      new THREE.MeshStandardMaterial({ color: 0x232b44, roughness: 0.9 })
+    );
+    ledge.position.set(0, -0.18, 0.2);
+    scene.add(ledge);
+    const railM = new THREE.MeshStandardMaterial({ color: 0x8f9bb5, roughness: 0.4, metalness: 0.6 });
+    for (let i = -2; i <= 2; i++) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.55, 8), railM);
+      post.position.set(i * 0.7, 0.27, -0.45);
+      scene.add(post);
+    }
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 3.1, 8), railM);
+    bar.rotation.z = Math.PI / 2;
+    bar.position.set(0, 0.55, -0.45);
+    scene.add(bar);
+    const moon = new THREE.Mesh(
+      new THREE.SphereGeometry(0.34, 24, 18),
+      new THREE.MeshBasicMaterial({ color: 0xfdf6de })
+    );
+    moon.position.set(-2.4, 2.1, -7);
+    scene.add(moon);
+    // City lights far below the ledge — tiny emissive dots on a dark slab.
+    const cityM = new THREE.MeshBasicMaterial({ color: 0xffe089 });
+    for (let i = 0; i < 26; i++) {
+      const dot = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.045, 0.045), cityM);
+      dot.position.set((Math.random() - 0.5) * 9, -2.6 - Math.random() * 1.6, -2.5 - Math.random() * 5);
+      scene.add(dot);
+    }
+    const clouds = [];
+    const cloudM = new THREE.MeshBasicMaterial({ color: 0x8a97bd, transparent: true, opacity: 0.16, depthWrite: false });
+    for (let i = 0; i < 4; i++) {
+      const c = new THREE.Mesh(new THREE.PlaneGeometry(2.4 + i, 0.5), cloudM);
+      c.position.set((Math.random() - 0.5) * 6, -1.2 - i * 0.5, -3 - i * 1.2);
+      scene.add(c);
+      clouds.push(c);
+    }
+    camera.position.set(0, 0.95, 2.9);
+    camera.lookAt(0, 0.25, -1.2);
+    ctx.onTick = (dt, t) => {
+      clouds.forEach((c, i) => {
+        c.position.x += dt * (0.08 + i * 0.03);
+        if (c.position.x > 5) c.position.x = -5;
+      });
+      camera.position.y = 0.95 + Math.sin(t * 0.4) * 0.02;   // faint vertigo breath
+      camera.lookAt(0, 0.25, -1.2);
+    };
+  }
+
+  // The House at Night: a lone lantern holding a small circle of warm light.
+  function realmDark(ctx) {
+    const { scene, camera } = ctx;
+    scene.fog = new THREE.FogExp2(0x05070f, 0.16);
+    scene.add(new THREE.AmbientLight(0x131a30, 0.7));
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(14, 14),
+      new THREE.MeshStandardMaterial({ color: 0x0c1020, roughness: 1 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    scene.add(floor);
+    // Lantern: post, cap, glowing core
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 1.0, 10),
+      new THREE.MeshStandardMaterial({ color: 0x1c2338, roughness: 0.7 }));
+    post.position.y = 0.5;
+    scene.add(post);
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0xffd9a0 }));
+    core.position.y = 1.06;
+    scene.add(core);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.12, 10),
+      new THREE.MeshStandardMaterial({ color: 0x1c2338, roughness: 0.7 }));
+    cap.position.y = 1.2;
+    scene.add(cap);
+    const glow = new THREE.PointLight(0xffc27a, 2.2, 6, 2.0);
+    glow.position.y = 1.06;
+    scene.add(glow);
+    // Door silhouette at the edge of the light
+    const door = new THREE.Mesh(new THREE.BoxGeometry(0.75, 1.6, 0.06),
+      new THREE.MeshStandardMaterial({ color: 0x0a0e1c, roughness: 1 }));
+    door.position.set(-1.5, 0.8, -1.8);
+    door.rotation.y = 0.5;
+    scene.add(door);
+    camera.position.set(0.4, 1.0, 2.7);
+    camera.lookAt(-0.1, 0.8, -0.4);
+    ctx.onTick = (dt, t) => {
+      const n = Math.sin(t * 7.3) * 0.4 + Math.sin(t * 17.1) * 0.25;
+      glow.intensity = 2.2 + n * 0.35;
+      core.scale.setScalar(1 + n * 0.05);
+      camera.position.x = 0.4 + Math.sin(t * 0.11) * 0.1;
+      camera.lookAt(-0.1, 0.8, -0.4);
+    };
+  }
+
+  // The Narrow Passage: receding door frames swallowed by fog; the camera
+  // breathes gently forward and back — closeness you can feel, not read.
+  function realmEnclosed(ctx) {
+    const { scene, camera } = ctx;
+    scene.fog = new THREE.FogExp2(0x0a0e1c, 0.22);
+    scene.add(new THREE.AmbientLight(0x39415c, 1.1));
+    const warm = new THREE.PointLight(0xd8c8a8, 1.1, 8, 1.6);
+    warm.position.set(0, 1.4, 2.2);
+    scene.add(warm);
+    const frameM = new THREE.MeshStandardMaterial({ color: 0x232b44, roughness: 0.85 });
+    for (let i = 0; i < 6; i++) {
+      const s = 1.0 - i * 0.09;
+      const z = -i * 1.15;
+      const top = new THREE.Mesh(new THREE.BoxGeometry(1.7 * s, 0.14, 0.22), frameM);
+      top.position.set(0, 1.9 * s, z);
+      scene.add(top);
+      const left = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.9 * s, 0.22), frameM);
+      left.position.set(-0.85 * s, 0.95 * s, z);
+      scene.add(left);
+      const right = left.clone();
+      right.position.x = 0.85 * s;
+      scene.add(right);
+    }
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(3, 16),
+      new THREE.MeshStandardMaterial({ color: 0x101527, roughness: 1 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.z = -5;
+    scene.add(floor);
+    camera.position.set(0, 1.0, 2.6);
+    camera.lookAt(0, 0.9, -3);
+    ctx.onTick = (dt, t) => {
+      camera.position.z = 2.6 - (Math.sin(t * 0.22) * 0.5 + 0.5) * 1.1;
+      camera.lookAt(0, 0.9, -3);
+    };
+  }
+
+  function unmountAll() { [...registry].forEach(disposeCtx); }
+
+  return { mountCamp, mountRealm, unmountAll, ready: true };
+})();
+window.ShellScenes = ShellScenes;
 
 // ---------- Asset prefetch ----------
 // Warms the GLTFLoader cache for the dog models (vendored locally, ~3 MB each)
