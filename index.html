@@ -13504,8 +13504,11 @@ class Body {
       const aimY = this._headAimYaw || 0;
       const wanderK = Math.max(0, 1 - Math.abs(aimY) * 3);
       this.head.rotation.y = this._headTurnAmount * wanderK + aimY;
-      // Tiny pitch wobble for life
-      this.head.rotation.x = Math.sin(t * 0.7) * 0.02;
+      // Tiny pitch wobble for life + a step-synced nod while walking: the
+      // head rides each footfall with a slight dip instead of floating
+      // gimbal-stabilised above a bobbing body.
+      this.head.rotation.x = Math.sin(t * 0.7) * 0.02
+        + (Math.abs(Math.sin(walkPhase)) - 0.6) * 0.035 * walkAmt;
     }
 
     // ---------- Gait engine ----------
@@ -13547,9 +13550,15 @@ class Body {
       // Knee clears the ground at mid-swing for fore-aft strides; sidesteps
       // use a smaller constant lift (you don't fold a knee to shuffle).
       const kneeFlex = (Math.max(0, Math.cos(θ)) * (0.30 + 0.65 * fwdShare) + 0.04) * walkAmt;
+      // Stance-phase knee YIELD: a real knee never locks straight under
+      // load — it gives ~8° as the body's weight rolls over the planted leg
+      // (loading response), then re-extends toward toe-off. A dead-straight
+      // stance leg was the strongest remaining "compass walk" tell.
+      const stanceYield = Math.pow(Math.max(0, Math.sin(θ - Math.PI / 2)), 1.5)
+        * 0.14 * walkAmt * fwdShare;
       leg.hip.rotation.x = -swing * gaitFwd;
       leg.hip.rotation.z = swing * gaitSide * 0.55;
-      leg.knee.rotation.x = kneeFlex;
+      leg.knee.rotation.x = kneeFlex + stanceYield;
       // Foot: level the sole against the combined leg rotation, then add a
       // heel-toe roll — toe up as the foot reaches forward, heel peel as it
       // pushes off behind. The roll belongs to FORWARD strides only; rolling
@@ -13649,6 +13658,14 @@ class Body {
     const gaitRoll = Math.sin(walkPhase) * walkAmt * this.bt.sway;
     if (this.hips) this.hips.rotation.z = gaitRoll * 0.055;
     if (this.chest) this.chest.rotation.z = -gaitRoll * 0.030;
+    // Pelvis ROTATION (around Y): the pelvis leads each stride — as the right
+    // leg swings forward the right hip advances with it (~5°). Stiff hips
+    // with free-swinging legs is the other half of the toy-soldier read.
+    // Body-local forward is +Z, so the advancing (+X) right side needs a
+    // negative Y rotation. Forward strides only — a strafe shuffle keeps
+    // the pelvis square.
+    if (this.hips) this.hips.rotation.y = -Math.sin(walkPhase) * 0.09 * walkAmt
+      * (typeof fwdShare === "number" ? fwdShare : 1);
     // Footstep audio + visible dust puff each time a foot plants. The
     // dust is an invisible-by-default Points cloud we lazy-create the
     // first time a step fires; each puff is N points expanding from the
@@ -13812,7 +13829,10 @@ class Body {
         // swings OPPOSITE to the same-side leg (which is how humans walk).
         // Wider amplitude than the legs since arms swing more freely.
         const armPhase = walkPhase + (side > 0 ? Math.PI : 0);
-        const swing = Math.sin(armPhase) * 0.65 * walkAmt * strideK;
+        // Calmer swing than the legs (0.65 was a power-walk pump — relaxed
+        // human arms swing through a NARROWER arc than the stride), with a
+        // touch of per-side asymmetry so the two arms never mirror exactly.
+        const swing = Math.sin(armPhase) * (side > 0 ? 0.40 : 0.45) * walkAmt * strideK;
         const shoulderTarget = side > 0 ? rightShoulder : leftShoulder;
         const elbowTarget    = side > 0 ? rightElbow    : leftElbow;
         // Layered priority: gesture > reach > walk swing. Gesture arms are
@@ -13837,7 +13857,10 @@ class Body {
         arm.root.rotation.z = spreadZ + naturalZ * (1 - spreadStrength);
         // Elbow: gesture > reach > walk passive bend (slightly relaxed at rest
         // so the forearm isn't a straight stick).
-        const passiveBend = 0.24 + Math.max(0, Math.sin(armPhase)) * 0.30 * walkAmt + idleSway * 0.5;
+        // The forearm TRAILS the upper arm by ~0.5 rad of phase (whip-like
+        // follow-through) — an elbow that bends in perfect sync with the
+        // shoulder reads as a single rigid pendulum.
+        const passiveBend = 0.24 + Math.max(0, Math.sin(armPhase - 0.5)) * 0.26 * walkAmt + idleSway * 0.5;
         let elbX =
             elbowTarget   * gestureWeight
           + reachElbow    * reachWeight
@@ -14640,8 +14663,12 @@ class Hands {
     hand.add(thumb);
 
     // Position the whole hand at the lower edge of the view
-    // (camera-space coords; -Z is forward, -Y is down)
-    hand.position.set(side * 0.15, -0.14, -0.33);
+    // (camera-space coords; -Z is forward, -Y is down). The REST pose is not
+    // flat-palms-down fingers-dead-ahead (mannequin): real relaxed hands sit
+    // a little lower and wider, droop at the wrist, turn slightly inward,
+    // and roll a few degrees toward thumbs-up.
+    hand.position.set(side * 0.17, -0.165, -0.32);
+    hand.rotation.set(0.24, side * -0.10, side * -0.24);
     hand.scale.setScalar(0.72);
     hand.userData = { side, basePos: hand.position.clone(), baseRot: hand.rotation.clone(), fingers, thumb };
     return hand;
