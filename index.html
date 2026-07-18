@@ -9,10 +9,10 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" type="image/svg+xml" href="icon.svg" />
 <link rel="apple-touch-icon" href="icon.svg" />
-<title>Mira — A mindful path through what frightens you</title>
-<meta name="description" content="Mira is a mindful exposure practice space. Walk gently toward what frightens you, at your own pace. Built on real CBT principles." />
-<meta property="og:title" content="Mira" />
-<meta property="og:description" content="A mindful path through what frightens you." />
+<title>Mira — The Courage Journey</title>
+<meta name="description" content="A tiny game about big fears. Walk the Valley of Fears, face six famous phobias in gentle 3D trials, and watch their shadows shrink. Built on real CBT exposure principles." />
+<meta property="og:title" content="Mira — The Courage Journey" />
+<meta property="og:description" content="A tiny game about big fears — face them one small, safe step at a time." />
 <meta name="format-detection" content="telephone=no" />
 <script>
 // Register the service worker as soon as possible — only over https or localhost
@@ -3468,10 +3468,34 @@ if ("serviceWorker" in navigator) {
   .ss-text { font-size: 13px; color: var(--muted); }
   .ss-text strong { color: var(--text); }
 
+  /* ---- Living valley: dawn progression, talking bubble, art tilt ---- */
+  /* Dawn glow: painted under the content (sections are positioned and later
+     in the DOM, so they stack above it) and scaled by tamed-realm count. */
+  .jw-dawnglow {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 55%;
+    background: linear-gradient(180deg, rgba(255,170,90,0) 0%, rgba(255,150,80,.10) 45%, rgba(255,170,90,.28) 100%);
+    pointer-events: none; opacity: 0; transition: opacity 1s ease;
+  }
+  .jw-dawn-count { color: #ffd9b0 !important; font-weight: 600; }
+  .camp-bubble { transition: opacity .35s ease, transform .35s ease; }
+  .camp-bubble.swap { opacity: 0; transform: translateY(4px); }
+  .realm-thumb { transition: transform .3s ease; will-change: transform; }
+  /* Shine sweep across the realm art on hover — a glassy 3D-card read. */
+  .realm-thumb::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,.14) 50%, transparent 60%);
+    transform: translateX(-120%);
+    transition: transform .6s ease;
+  }
+  .realm-node:hover .realm-thumb::after, .realm-node:focus-visible .realm-thumb::after {
+    transform: translateX(120%);
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .ember-burst { display: none; }
     .ss-blob { animation: none; }
     .rank-fill { transition: none; }
+    .jw-dawnglow, .camp-bubble, .realm-thumb, .realm-thumb::after { transition: none; }
   }
 </style>
 </head>
@@ -5463,8 +5487,51 @@ const PhobiaAudio = (() => {
     return { stop() { alive = false; if (timer) clearTimeout(timer); } };
   }
 
+  // ---------- Shell / game-UI one-shots ----------
+  // Tiny, quiet feedback sounds for the SHELL (map, cards, victory) — kept
+  // far below the diegetic scene mix so they read as "the game responding",
+  // never as noise. All routed through master so the mute toggle covers them.
+  function ui(kind = "whoosh") {
+    const c = ensureCtx(); if (!c) return;
+    const now = c.currentTime;
+    const bell = (freq, t0, dur = 0.7, vol = 0.055) => {
+      const osc = c.createOscillator(); osc.type = "sine"; osc.frequency.value = freq;
+      const shimmer = c.createOscillator(); shimmer.type = "sine"; shimmer.frequency.value = freq * 2.01;
+      const g = c.createGain(); const g2 = c.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(vol, t0 + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
+      g2.gain.value = 0.35;
+      osc.connect(g); shimmer.connect(g2).connect(g); g.connect(master);
+      osc.start(t0); osc.stop(t0 + dur + 0.05);
+      shimmer.start(t0); shimmer.stop(t0 + dur + 0.05);
+    };
+    if (kind === "spark") {
+      // A small glass bell, two notes — "you found something".
+      bell(880, now, 0.55, 0.05);
+      bell(1318.5, now + 0.09, 0.8, 0.045);
+    } else if (kind === "victory") {
+      // Gentle rising pentatonic triad — earned, not fanfare.
+      bell(523.25, now, 0.5, 0.04);
+      bell(659.25, now + 0.12, 0.55, 0.04);
+      bell(783.99, now + 0.24, 0.9, 0.05);
+    } else {
+      // "whoosh" — a soft air swell for stepping into a realm / trial.
+      const src = c.createBufferSource(); src.buffer = noiseBuffer(0.8);
+      const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.7;
+      bp.frequency.setValueAtTime(220, now);
+      bp.frequency.exponentialRampToValueAtTime(900, now + 0.35);
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.075, now + 0.16);
+      g.gain.exponentialRampToValueAtTime(0.0008, now + 0.5);
+      src.connect(bp).connect(g).connect(master);
+      src.start(now); src.stop(now + 0.6);
+    }
+  }
+
   return {
-    unlock, setMuted, isMuted, duck,
+    unlock, setMuted, isMuted, duck, ui,
     startMonitorBeep, startCreaks,
     startWind, startWaterLap, startUnderwater, startRoomTone, startCityHum,
     startBarking, startSkittering, startMRI, startBreathing, startHeartbeat,
@@ -7361,12 +7428,19 @@ function attachHandlers(view, params) {
   // Spark of Wisdom card on the victory screen: tap (or wait) to flip it over.
   const sparkCard = document.getElementById("sparkCard");
   if (sparkCard) {
-    const flip = () => sparkCard.classList.add("flipped");
+    const flip = () => {
+      if (!sparkCard.classList.contains("flipped")) { try { PhobiaAudio.ui("spark"); } catch {} }
+      sparkCard.classList.add("flipped");
+    };
     sparkCard.addEventListener("click", flip);
     sparkCard.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); }
     });
     setTimeout(() => { if (sparkCard.isConnected) flip(); }, 2200);
+  }
+  // Victory shimmer — once, only when this render carries the fresh celebration.
+  if (view === "complete" && document.querySelector(".ember-burst")) {
+    try { PhobiaAudio.ui("victory"); } catch {}
   }
   const howBtn = document.getElementById("howItWorksBtn");
   if (howBtn) howBtn.onclick = () => {
@@ -7842,8 +7916,8 @@ function handleAction(d, params) {
       go(existing ? "select" : "character", existing ? {} : { editing: false });
       break;
     }
-    case "select-phobia":   go("ladder", { phobia: d.phobia }); break;
-    case "start-level":     go("predict", { phobia: d.phobia, level: parseInt(d.level, 10) }); break;
+    case "select-phobia":   try { PhobiaAudio.ui("whoosh"); } catch {} go("ladder", { phobia: d.phobia }); break;
+    case "start-level":     try { PhobiaAudio.ui("whoosh"); } catch {} go("predict", { phobia: d.phobia, level: parseInt(d.level, 10) }); break;
     case "confirm-predict": {
       const lvl = parseInt(d.level, 10);
       const slider = document.getElementById("predictedSuds");
@@ -8110,8 +8184,12 @@ function viewSelect() {
       </li>`;
   }).join(`<li class="path-seg" aria-hidden="true"><i></i><i></i><i></i></li>`);
 
+  // The valley literally brightens as shadows are tamed: a dawn glow scales
+  // with the tamed-realm count — progress you can SEE in the world itself.
+  const tamedCount = keys.filter(k => (getProgress(k).highestCompleted ?? -1) + 1 >= PHOBIAS[k].levels.length).length;
   return `
   <div class="jworld" id="journeyRoot">
+    <div class="jw-dawnglow" aria-hidden="true" style="opacity:${(tamedCount / Math.max(1, keys.length)).toFixed(2)}"></div>
     <div class="jw-stars" aria-hidden="true">${starfieldHTML(60)}</div>
     <section class="camp">
       <div class="camp-scene" aria-hidden="true">
@@ -8152,6 +8230,7 @@ function viewSelect() {
     <ol class="realm-list">${nodes}</ol>
     <section class="jw-dawn">
       <h3>Beyond the valley</h3>
+      ${tamedCount > 0 ? `<p class="jw-dawn-count">🕊 ${tamedCount} of ${keys.length} shadows tamed — the dawn is closer.</p>` : ""}
       <p>Fears the map doesn't know yet — forge your own path for them.</p>
       <div class="actions" style="justify-content:center">
         <button class="btn-ghost" data-action="open-custom">🛠 Forge a custom fear</button>
@@ -8196,6 +8275,53 @@ function mountJourney() {
     requestAnimationFrame(() => {
       try { cur.scrollIntoView({ block: "center", behavior: "instant" }); }
       catch { cur.scrollIntoView(); }
+    });
+  }
+  // The traveler keeps talking at the fire: rotate through a small pool of
+  // lines (guardian voice, rank pride, tamed-count hope) so the camp feels
+  // inhabited rather than rendered. Interval self-clears with the view.
+  const bubble = rootEl.querySelector(".camp-bubble");
+  const chB = window.Character && window.Character.loadCharacter();
+  if (bubble && chB && !reduce) {
+    const curKey = currentRealmKey();
+    const realm = realmOf(curKey);
+    const tamed = journeyKeys().filter(k => (getProgress(k).highestCompleted ?? -1) + 1 >= PHOBIAS[k].levels.length).length;
+    const rank = courageRank(getCourage());
+    const pool = [
+      bubble.textContent,
+      `“${realm.line}”`,
+      "“Small steps. That's the whole secret.”",
+      "“The fire helps. So does coming back tomorrow.”",
+    ];
+    if (tamed > 0) pool.push(`“${tamed} shadow${tamed === 1 ? "" : "s"} tamed. The dawn is closer.”`);
+    if (rank.idx > 0) pool.push(`“They call me ${rank.title} now.”`);
+    const lines = [...new Set(pool)];
+    let li = 0;
+    const iv = setInterval(() => {
+      if (!bubble.isConnected) { clearInterval(iv); return; }
+      li = (li + 1) % lines.length;
+      bubble.classList.add("swap");
+      setTimeout(() => {
+        if (!bubble.isConnected) return;
+        bubble.textContent = lines[li];
+        bubble.classList.remove("swap");
+      }, 350);
+    }, 8000);
+  }
+  // Pointer tilt on the realm art (fine pointers only): a light 3D lean that
+  // follows the cursor — the map itself answers your hand.
+  const finePointer = window.matchMedia && window.matchMedia("(pointer: fine)").matches;
+  if (finePointer && !reduce) {
+    rootEl.querySelectorAll(".realm-node").forEach(node => {
+      const art = node.querySelector(".realm-thumb");
+      if (!art) return;
+      node.addEventListener("pointermove", (e) => {
+        const r = node.getBoundingClientRect();
+        const px = (e.clientX - r.left) / r.width - 0.5;
+        const py = (e.clientY - r.top) / r.height - 0.5;
+        art.style.transform = `perspective(600px) rotateY(${(px * 7).toFixed(2)}deg) rotateX(${(-py * 5).toFixed(2)}deg) scale(1.03)`;
+      });
+      node.addEventListener("pointerleave", () => { art.style.transform = ""; });
     });
   }
 }

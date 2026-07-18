@@ -1,7 +1,7 @@
 {
-  "name": "Mira — A mindful path through what frightens you",
+  "name": "Mira — The Courage Journey",
   "short_name": "Mira",
-  "description": "A mindful exposure practice space. Walk gently toward what frightens you, at your own pace.",
+  "description": "A tiny game about big fears. Walk the Valley of Fears and face six famous phobias one small, safe step at a time.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
