@@ -30045,15 +30045,18 @@ function buildAvatarFigure(c) {
   const hairShadow = new THREE.Color(hair).multiplyScalar(0.78).getHex();
   const shirtFold = new THREE.Color(shirt).multiplyScalar(0.78).getHex();
 
-  const skinM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(skin),   roughness: 0.78, metalness: 0.0 });
+  // Skin reflects the environment far less than default — full envMapIntensity
+  // reads as plastic; damped it reads as matte, living skin.
+  const skinM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(skin),   roughness: 0.78, metalness: 0.0, envMapIntensity: 0.5 });
   const skinShM = new THREE.MeshStandardMaterial({ color: skinShadow, roughness: 0.85 });
   const hairM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(hair),   roughness: 1.0 });
   const hairShM = new THREE.MeshStandardMaterial({ color: hairShadow, roughness: 1.0 });
   const browM   = new THREE.MeshStandardMaterial({ color: hairShadow, roughness: 1.0 });
-  const shirtM  = new THREE.MeshStandardMaterial({ color: new THREE.Color(shirt),  roughness: 0.85 });
+  const shirtM  = new THREE.MeshStandardMaterial({ color: new THREE.Color(shirt),  roughness: 0.85, envMapIntensity: 0.35 });
   const shirtFoldM = new THREE.MeshStandardMaterial({ color: shirtFold, roughness: 0.85 });
-  const irisM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(eye),    roughness: 0.25, metalness: 0.18 });
-  const eyeWhiteM = new THREE.MeshStandardMaterial({ color: 0xfff4ea, roughness: 0.30 });
+  // Eyes get a clearcoat "wet" glint — the single strongest alive-face cue.
+  const irisM   = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(eye),    roughness: 0.22, metalness: 0.1, clearcoat: 0.85, clearcoatRoughness: 0.2 });
+  const eyeWhiteM = new THREE.MeshPhysicalMaterial({ color: 0xfff4ea, roughness: 0.28, clearcoat: 0.6, clearcoatRoughness: 0.3 });
   const lipsM   = new THREE.MeshStandardMaterial({ color: lipsCol, roughness: 0.55 });
   const pantsM  = new THREE.MeshStandardMaterial({ color: 0x2c3a52, roughness: 0.95 });
   const shoeM   = new THREE.MeshStandardMaterial({ color: 0x18181c, roughness: 0.6 });
@@ -30760,12 +30763,15 @@ const AvatarPreview = (() => {
 window.AvatarPreview = AvatarPreview;
 
 // ---------- Shell 3D vignettes (camp + realm heroes) ----------
-// Small always-running Three scenes for the GAME SHELL (valley map camp,
-// realm hero banners) — separate from the exposure engine. Each mount returns
-// a ctx (truthy) on success or null on failure so the classic script keeps
-// the 2D fallback when WebGL is unavailable. Every ctx self-disposes when its
-// container leaves the DOM, and unmountAll() runs on every route render.
-// DPR is capped and reduced-motion renders a single still frame.
+// Small always-running Three dioramas for the GAME SHELL (valley map camp,
+// realm hero banners) — separate from the exposure engine but reusing its
+// procedural PBR texture bakery (makeEarthMaps / makeGrassMaps / …) and the
+// avatar/creature builders, so the shell reads as the SAME world as the
+// scenes: textured ground, real shadows, props, drifting fireflies. Each
+// mount returns a ctx (truthy) on success or null on failure so the classic
+// script keeps the 2D fallback when WebGL is unavailable. Every ctx
+// self-disposes when its container leaves the DOM, and unmountAll() runs on
+// every route render. DPR is capped; reduced-motion renders one still frame.
 const ShellScenes = (() => {
   const registry = new Set();
   const reduceMotion = () =>
@@ -30777,11 +30783,15 @@ const ShellScenes = (() => {
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     } catch { return null; }
     const w = container.clientWidth || 320, h = container.clientHeight || 220;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(w, h);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = opts.exposure || 1.0;
+    // Real shadows are what ground the figure/creature in these vignettes —
+    // the scenes are tiny (a handful of meshes), so soft maps are cheap.
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
     if (opts.fog) scene.fog = new THREE.FogExp2(opts.fog, opts.fogDensity || 0.09);
@@ -30859,8 +30869,93 @@ const ShellScenes = (() => {
     return () => dragging;   // isDragging query for the tick
   }
 
+  // Textured ground patch (uses the scene bakery so the shell matches the
+  // scenes' material language). kind: "earth" | "grass" | "planks" | "concrete"
+  function groundPatch(scene, kind, radius = 2.6, repeat = 3) {
+    let maps;
+    try {
+      maps = kind === "grass" ? makeGrassMaps()
+           : kind === "planks" ? makePlankMaps()
+           : kind === "concrete" ? makeConcreteMaps()
+           : makeEarthMaps();
+    } catch { maps = null; }
+    const mat = maps ? new THREE.MeshStandardMaterial({
+      map: maps.albedo, normalMap: maps.normal, roughnessMap: maps.roughness,
+      color: 0xffffff, envMapIntensity: 0.4,
+    }) : new THREE.MeshStandardMaterial({ color: 0x1c2438, roughness: 1 });
+    if (maps) {
+      [maps.albedo, maps.normal, maps.roughness].forEach(t => { if (t) { t.repeat.set(repeat, repeat); } });
+      if (mat.normalMap) mat.normalScale.set(0.9, 0.9);
+    }
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(radius, 48), mat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+    return ground;
+  }
+
+  // Small green tufts — cheap cones that sway; sells "living ground".
+  function grassTufts(scene, count, rMin, rMax, hue = 0x4a6626) {
+    const tufts = [];
+    const m1 = new THREE.MeshStandardMaterial({ color: hue, roughness: 1 });
+    const m2 = new THREE.MeshStandardMaterial({ color: new THREE.Color(hue).multiplyScalar(1.25), roughness: 1 });
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = rMin + Math.random() * (rMax - rMin);
+      const t = new THREE.Group();
+      const blades = 2 + Math.floor(Math.random() * 2);
+      for (let b = 0; b < blades; b++) {
+        const hgt = 0.08 + Math.random() * 0.1;
+        const blade = new THREE.Mesh(new THREE.ConeGeometry(0.012, hgt, 4), Math.random() < 0.5 ? m1 : m2);
+        blade.position.set((Math.random() - 0.5) * 0.06, hgt / 2, (Math.random() - 0.5) * 0.06);
+        blade.rotation.z = (Math.random() - 0.5) * 0.5;
+        blade.castShadow = true;
+        t.add(blade);
+      }
+      t.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+      t.userData.phase = Math.random() * Math.PI * 2;
+      scene.add(t);
+      tufts.push(t);
+    }
+    return {
+      update(t) {
+        for (const g of tufts) g.rotation.z = Math.sin(t * 1.6 + g.userData.phase) * 0.06;
+      },
+    };
+  }
+
+  // Fireflies: a handful of warm motes drifting slow figure-eights.
+  function fireflies(scene, count = 12, radius = 2.2) {
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(count * 3);
+    const seeds = [];
+    for (let i = 0; i < count; i++) {
+      seeds.push({ a: Math.random() * Math.PI * 2, r: radius * (0.5 + Math.random() * 0.5), y: 0.3 + Math.random() * 0.9, s: 0.3 + Math.random() * 0.5, p: Math.random() * Math.PI * 2 });
+    }
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+      color: 0xd8e878, size: 0.035, transparent: true, opacity: 0.85,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    scene.add(pts);
+    return {
+      update(t) {
+        const p = geo.attributes.position;
+        for (let i = 0; i < count; i++) {
+          const s = seeds[i];
+          const a = s.a + t * 0.12 * s.s;
+          p.setXYZ(i,
+            Math.cos(a) * s.r + Math.sin(t * 0.7 + s.p) * 0.2,
+            s.y + Math.sin(t * 0.9 + s.p) * 0.12,
+            Math.sin(a) * s.r + Math.cos(t * 0.6 + s.p) * 0.2);
+        }
+        p.needsUpdate = true;
+        pts.material.opacity = 0.6 + Math.sin(t * 2.1) * 0.25;
+      },
+    };
+  }
+
   // Shared flame builder: three additive cones + flicker + a point light.
-  // Used by the camp fire; returns an update(dt, t) to run per tick.
   function buildFire(parent, opts = {}) {
     const s = opts.scale || 1;
     const fire = new THREE.Group();
@@ -30883,6 +30978,7 @@ const ShellScenes = (() => {
       log.rotation.z = Math.PI / 2;
       log.rotation.y = (i / 3) * Math.PI;
       log.position.y = 0.045 * s;
+      log.castShadow = true;
       fire.add(log);
     }
     const light = new THREE.PointLight(0xff9a4d, 1.8, 9 * s, 1.8);
@@ -30928,35 +31024,76 @@ const ShellScenes = (() => {
     };
   }
 
-  // ---- The camp: your 3D traveler by a living fire ----
+  // ---- The camp: a real campsite — your 3D traveler by a living fire ----
   function mountCamp(container, charHexes) {
-    const ctx = makeCtx(container, { fov: 30, fog: 0x0c1224, fogDensity: 0.045 });
+    const ctx = makeCtx(container, { fov: 30, fog: 0x0c1224, fogDensity: 0.04 });
     if (!ctx) return null;
     const { scene, camera } = ctx;
-    // Night lighting: cool moon key + faint ambient; the fire light does the rest.
-    const moon = new THREE.DirectionalLight(0x9fb4dc, 0.35);
+    // Night lighting: a cool moon key that CASTS SHADOWS (what grounds the
+    // whole diorama) + faint ambient; the fire light warms the near side.
+    const moon = new THREE.DirectionalLight(0xa8bce0, 0.5);
     moon.position.set(-3, 6, -2);
+    moon.castShadow = true;
+    moon.shadow.mapSize.set(1024, 1024);
+    moon.shadow.camera.left = -4; moon.shadow.camera.right = 4;
+    moon.shadow.camera.top = 4;   moon.shadow.camera.bottom = -4;
+    moon.shadow.camera.near = 1;  moon.shadow.camera.far = 14;
+    moon.shadow.bias = -0.0004;
     scene.add(moon);
-    scene.add(new THREE.AmbientLight(0x2a3450, 0.8));
+    scene.add(new THREE.AmbientLight(0x2a3450, 0.7));
     const env = (typeof getRoomEnvMap === "function") ? getRoomEnvMap(ctx.renderer) : null;
     if (env) scene.environment = env;
-    // Ground: a wide dark disc that fades into the CSS valley behind it.
-    const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(6, 40),
-      new THREE.MeshStandardMaterial({ color: 0x131a2e, roughness: 1 })
-    );
-    ground.rotation.x = -Math.PI / 2;
-    scene.add(ground);
-    // A few low stones around the fire ring
+    // Ground: packed earth around the fire, fading into the CSS valley.
+    groundPatch(scene, "earth", 6, 7);
+    // Grass ring + a few low stones around the fire ring
+    const tufts = grassTufts(scene, 26, 1.4, 4.6);
     const stoneM = new THREE.MeshStandardMaterial({ color: 0x2a3148, roughness: 0.95 });
     for (let i = 0; i < 7; i++) {
       const a = (i / 7) * Math.PI * 2 + 0.3;
       const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.06 + Math.random() * 0.03, 0), stoneM);
       st.position.set(Math.cos(a) * 0.42, 0.045, Math.sin(a) * 0.42);
       st.rotation.set(Math.random(), Math.random(), Math.random());
+      st.castShadow = true;
       scene.add(st);
     }
+    // A-frame tent at the edge of the firelight — "someone lives here".
+    const tent = new THREE.Group();
+    const tentM = new THREE.MeshStandardMaterial({ color: 0x7a5b3a, roughness: 0.9, side: THREE.DoubleSide });
+    const tentDarkM = new THREE.MeshStandardMaterial({ color: 0x4c3a26, roughness: 0.95, side: THREE.DoubleSide });
+    const panelL = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.15), tentM);
+    panelL.position.set(0, 0.5, -0.42); panelL.rotation.x = -0.63;
+    const panelR = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.15), tentM);
+    panelR.position.set(0, 0.5, 0.42); panelR.rotation.x = 0.63;
+    const back = new THREE.Mesh(new THREE.CircleGeometry(0.62, 3), tentDarkM);
+    back.rotation.y = Math.PI / 2; back.rotation.z = Math.PI / 6;
+    back.position.set(-0.74, 0.35, 0);
+    [panelL, panelR, back].forEach(p => { p.castShadow = true; tent.add(p); });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.0, 6),
+      new THREE.MeshStandardMaterial({ color: 0x3a2c1c, roughness: 0.9 }));
+    pole.position.set(0.72, 0.5, 0); pole.rotation.z = 0.06;
+    tent.add(pole);
+    tent.position.set(-1.9, 0, -1.5);
+    tent.rotation.y = 0.7;
+    scene.add(tent);
+    // A log seat by the fire
+    const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.1, 0.9, 10),
+      new THREE.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.95 }));
+    seat.rotation.z = Math.PI / 2; seat.rotation.y = -0.4;
+    seat.position.set(0.95, 0.09, 0.75);
+    seat.castShadow = true; seat.receiveShadow = true;
+    scene.add(seat);
+    // Distant tree line — dark silhouettes ringing the clearing.
+    const treeM = new THREE.MeshStandardMaterial({ color: 0x121b2a, roughness: 1 });
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2 + 0.15 + (Math.random() - 0.5) * 0.3;
+      const r = 4.6 + Math.random() * 1.0;
+      const hgt = 1.6 + Math.random() * 1.1;
+      const tree = new THREE.Mesh(new THREE.ConeGeometry(0.42 + Math.random() * 0.2, hgt, 7), treeM);
+      tree.position.set(Math.cos(a) * r, hgt / 2 - 0.02, Math.sin(a) * r);
+      scene.add(tree);
+    }
     const fire = buildFire(scene, { scale: 1 });
+    const flies = fireflies(scene, 12, 2.6);
     // The traveler — the same procedural figure used in-scene, idling by the fire.
     let figure = null;
     if (charHexes) {
@@ -30964,6 +31101,7 @@ const ShellScenes = (() => {
         figure = buildAvatarFigure(charHexes);
         figure.position.set(-0.85, 0, 0.25);
         figure.rotation.y = 0.9;   // half-turned toward the fire, half toward you
+        figure.traverse(o => { if (o.isMesh) o.castShadow = true; });
         scene.add(figure);
       } catch { figure = null; }
     }
@@ -30971,6 +31109,8 @@ const ShellScenes = (() => {
     camera.lookAt(-0.15, 0.75, 0);
     ctx.onTick = (dt, t) => {
       fire.update(dt, t);
+      flies.update(t);
+      tufts.update(t);
       if (figure && figure.userData && figure.userData.animate) figure.userData.animate(t);
       camera.position.x = 0.15 + Math.sin(t * 0.14) * 0.12;
       camera.position.y = 1.15 + Math.sin(t * 0.1) * 0.03;
@@ -30992,11 +31132,18 @@ const ShellScenes = (() => {
     return ctx;
   }
 
-  // Shared stage for the creature turntables: soft key/fill/rim + shadow disc.
-  function creatureStage(ctx, tint = 0xfff0d8) {
+  // Shared stage for the creature turntables: key light with real shadows,
+  // textured ground so the creature stands SOMEWHERE, not on a void disc.
+  function creatureStage(ctx, opts = {}) {
     const { scene, camera } = ctx;
-    const key = new THREE.DirectionalLight(tint, 1.4);
+    const key = new THREE.DirectionalLight(opts.tint || 0xfff0d8, 1.4);
     key.position.set(2.5, 3.5, 3);
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.camera.left = -2.2; key.shadow.camera.right = 2.2;
+    key.shadow.camera.top = 2.6;   key.shadow.camera.bottom = -1;
+    key.shadow.camera.near = 0.5;  key.shadow.camera.far = 12;
+    key.shadow.bias = -0.0004;
     scene.add(key);
     const fill = new THREE.DirectionalLight(0xc8d4ff, 0.5);
     fill.position.set(-2.5, 1.5, 2);
@@ -31007,21 +31154,16 @@ const ShellScenes = (() => {
     scene.add(new THREE.AmbientLight(0x39415c, 0.75));
     const env = (typeof getRoomEnvMap === "function") ? getRoomEnvMap(ctx.renderer) : null;
     if (env) scene.environment = env;
-    const disc = new THREE.Mesh(
-      new THREE.CircleGeometry(1.15, 36),
-      new THREE.MeshBasicMaterial({ color: 0x060a16, transparent: true, opacity: 0.55 })
-    );
-    disc.rotation.x = -Math.PI / 2;
-    disc.position.y = 0.005;
-    scene.add(disc);
+    groundPatch(scene, opts.ground || "earth", 1.6, 2);
     camera.position.set(0, 0.85, 3.1);
     camera.lookAt(0, 0.5, 0);
   }
 
   function creatureTurntable(ctx, url, opts) {
-    creatureStage(ctx);
+    creatureStage(ctx, opts);
     const holder = new THREE.Group();
     ctx.scene.add(holder);
+    if (opts.dress) { try { opts.dress(holder, ctx); } catch {} }
     const creature = buildCreature(url, { targetSize: opts.targetSize, axis: opts.axis || "max" });
     holder.add(creature);
     creature.userData.onReady = () => {
@@ -31045,9 +31187,73 @@ const ShellScenes = (() => {
     };
   }
 
-  function realmDog(ctx)    { creatureTurntable(ctx, DOG_MODELS.shiba,        { targetSize: 1.05, clip: "idle", spin: 0.3 }); }
-  function realmSpider(ctx) { creatureTurntable(ctx, CREATURE_MODELS.spider,  { targetSize: 1.15, clip: "idle", timeScale: 0.8 }); }
-  function realmSnake(ctx)  { creatureTurntable(ctx, CREATURE_MODELS.snake,   { targetSize: 1.15, clip: "idle", timeScale: 0.9 }); }
+  // Per-realm set dressing: a couple of props that say "this is a place".
+  function realmDog(ctx) {
+    creatureTurntable(ctx, DOG_MODELS.shiba, {
+      targetSize: 1.05, clip: "idle", spin: 0.3, ground: "planks",
+      dress(holder, c) {
+        try {
+          const rugMaps = makeRugMaps();
+          const rug = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.05),
+            new THREE.MeshStandardMaterial({ map: rugMaps.albedo, normalMap: rugMaps.normal, color: 0xffffff, roughness: 0.95 }));
+          rug.rotation.x = -Math.PI / 2; rug.rotation.z = 0.15;
+          rug.position.y = 0.006;
+          rug.receiveShadow = true;
+          holder.add(rug);
+        } catch {}
+        const ball = new THREE.Mesh(new THREE.SphereGeometry(0.07, 18, 14),
+          new THREE.MeshStandardMaterial({ color: 0xc23b2e, roughness: 0.45 }));
+        ball.position.set(0.6, 0.07, 0.35);
+        ball.castShadow = true;
+        holder.add(ball);
+      },
+    });
+  }
+  function realmSpider(ctx) {
+    creatureTurntable(ctx, CREATURE_MODELS.spider, {
+      targetSize: 1.15, clip: "idle", timeScale: 0.8, ground: "concrete", tint: 0xd8e0f0,
+      dress(holder) {
+        try {
+          const plank = makePlankMaps();
+          const crate = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.42),
+            new THREE.MeshStandardMaterial({ map: plank.albedo, color: 0xb8a888, roughness: 0.9 }));
+          crate.position.set(-0.72, 0.21, -0.35);
+          crate.rotation.y = 0.4;
+          crate.castShadow = true; crate.receiveShadow = true;
+          holder.add(crate);
+        } catch {}
+        // A few silk strands from the crate corner — barely-there web hints.
+        const silkM = new THREE.LineBasicMaterial({ color: 0xdde6f2, transparent: true, opacity: 0.28 });
+        for (let i = 0; i < 3; i++) {
+          const g = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(-0.72, 0.42, -0.35),
+            new THREE.Vector3(-0.72 + 0.5 + i * 0.18, 0.02, -0.35 + 0.4 - i * 0.25),
+          ]);
+          holder.add(new THREE.Line(g, silkM));
+        }
+      },
+    });
+  }
+  function realmSnake(ctx) {
+    creatureTurntable(ctx, CREATURE_MODELS.snake, {
+      targetSize: 1.15, clip: "idle", timeScale: 0.9, ground: "grass", tint: 0xffe6b8,
+      dress(holder, c) {
+        const stoneM = new THREE.MeshStandardMaterial({ color: 0x6a625a, roughness: 0.85 });
+        const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.22, 0), stoneM);
+        rock.position.set(-0.65, 0.1, -0.3); rock.scale.y = 0.55;
+        rock.castShadow = true; rock.receiveShadow = true;
+        holder.add(rock);
+        const rock2 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.13, 0), stoneM);
+        rock2.position.set(0.6, 0.05, 0.4); rock2.scale.y = 0.6;
+        rock2.castShadow = true;
+        holder.add(rock2);
+        try { c._tufts = grassTufts(c.scene, 10, 0.9, 1.5); } catch {}
+      },
+    });
+    // sway the tufts alongside the turntable tick
+    const baseTick = ctx.onTick;
+    ctx.onTick = (dt, t) => { if (baseTick) baseTick(dt, t); if (ctx._tufts) ctx._tufts.update(t); };
+  }
 
   // The Summit: a rooftop ledge with railing, a low moon, drifting clouds.
   function realmHeights(ctx) {
@@ -31056,22 +31262,34 @@ const ShellScenes = (() => {
     scene.add(new THREE.AmbientLight(0x35406a, 1.0));
     const moonL = new THREE.DirectionalLight(0xcdd8f5, 0.9);
     moonL.position.set(-4, 5, -3);
+    moonL.castShadow = true;
+    moonL.shadow.mapSize.set(512, 512);
+    moonL.shadow.camera.left = -3; moonL.shadow.camera.right = 3;
+    moonL.shadow.camera.top = 3;   moonL.shadow.camera.bottom = -3;
     scene.add(moonL);
-    const ledge = new THREE.Mesh(
-      new THREE.BoxGeometry(3.6, 0.35, 1.6),
-      new THREE.MeshStandardMaterial({ color: 0x232b44, roughness: 0.9 })
-    );
+    let ledgeMat;
+    try {
+      const conc = makeConcreteMaps();
+      [conc.albedo, conc.normal, conc.roughness].forEach(t => { if (t) t.repeat.set(2.4, 1.2); });
+      ledgeMat = new THREE.MeshStandardMaterial({ map: conc.albedo, normalMap: conc.normal, roughnessMap: conc.roughness, color: 0xd0d4de });
+    } catch {
+      ledgeMat = new THREE.MeshStandardMaterial({ color: 0x232b44, roughness: 0.9 });
+    }
+    const ledge = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.35, 1.6), ledgeMat);
     ledge.position.set(0, -0.18, 0.2);
+    ledge.receiveShadow = true;
     scene.add(ledge);
     const railM = new THREE.MeshStandardMaterial({ color: 0x8f9bb5, roughness: 0.4, metalness: 0.6 });
     for (let i = -2; i <= 2; i++) {
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.55, 8), railM);
       post.position.set(i * 0.7, 0.27, -0.45);
+      post.castShadow = true;
       scene.add(post);
     }
     const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 3.1, 8), railM);
     bar.rotation.z = Math.PI / 2;
     bar.position.set(0, 0.55, -0.45);
+    bar.castShadow = true;
     scene.add(bar);
     const moon = new THREE.Mesh(
       new THREE.SphereGeometry(0.34, 24, 18),
@@ -31111,16 +31329,29 @@ const ShellScenes = (() => {
     const { scene, camera } = ctx;
     scene.fog = new THREE.FogExp2(0x05070f, 0.16);
     scene.add(new THREE.AmbientLight(0x131a30, 0.7));
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(14, 14),
-      new THREE.MeshStandardMaterial({ color: 0x0c1020, roughness: 1 })
-    );
+    // Faint blue moon shafts through the room + shadow-casting for the post.
+    const moonL = new THREE.DirectionalLight(0x8898c8, 0.35);
+    moonL.position.set(3, 4, 2);
+    moonL.castShadow = true;
+    moonL.shadow.mapSize.set(512, 512);
+    scene.add(moonL);
+    let floorMat;
+    try {
+      const conc = makeConcreteMaps();
+      [conc.albedo, conc.normal, conc.roughness].forEach(t => { if (t) t.repeat.set(5, 5); });
+      floorMat = new THREE.MeshStandardMaterial({ map: conc.albedo, normalMap: conc.normal, roughnessMap: conc.roughness, color: 0x5a6070 });
+    } catch {
+      floorMat = new THREE.MeshStandardMaterial({ color: 0x0c1020, roughness: 1 });
+    }
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 14), floorMat);
     floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
     scene.add(floor);
     // Lantern: post, cap, glowing core
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 1.0, 10),
       new THREE.MeshStandardMaterial({ color: 0x1c2338, roughness: 0.7 }));
     post.position.y = 0.5;
+    post.castShadow = true;
     scene.add(post);
     const core = new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 12),
       new THREE.MeshBasicMaterial({ color: 0xffd9a0 }));
@@ -31129,6 +31360,7 @@ const ShellScenes = (() => {
     const cap = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.12, 10),
       new THREE.MeshStandardMaterial({ color: 0x1c2338, roughness: 0.7 }));
     cap.position.y = 1.2;
+    cap.castShadow = true;
     scene.add(cap);
     const glow = new THREE.PointLight(0xffc27a, 2.2, 6, 2.0);
     glow.position.y = 1.06;
@@ -31138,6 +31370,7 @@ const ShellScenes = (() => {
       new THREE.MeshStandardMaterial({ color: 0x0a0e1c, roughness: 1 }));
     door.position.set(-1.5, 0.8, -1.8);
     door.rotation.y = 0.5;
+    door.castShadow = true;
     scene.add(door);
     camera.position.set(0.4, 1.0, 2.7);
     camera.lookAt(-0.1, 0.8, -0.4);
@@ -31159,26 +31392,40 @@ const ShellScenes = (() => {
     const warm = new THREE.PointLight(0xd8c8a8, 1.1, 8, 1.6);
     warm.position.set(0, 1.4, 2.2);
     scene.add(warm);
-    const frameM = new THREE.MeshStandardMaterial({ color: 0x232b44, roughness: 0.85 });
+    let frameM;
+    try {
+      const plaster = makePlasterMaps();
+      frameM = new THREE.MeshStandardMaterial({ map: plaster.albedo, normalMap: plaster.normal, color: 0x9aa2b8, roughness: 0.9 });
+    } catch {
+      frameM = new THREE.MeshStandardMaterial({ color: 0x232b44, roughness: 0.85 });
+    }
     for (let i = 0; i < 6; i++) {
       const s = 1.0 - i * 0.09;
       const z = -i * 1.15;
       const top = new THREE.Mesh(new THREE.BoxGeometry(1.7 * s, 0.14, 0.22), frameM);
       top.position.set(0, 1.9 * s, z);
+      top.castShadow = true;
       scene.add(top);
       const left = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.9 * s, 0.22), frameM);
       left.position.set(-0.85 * s, 0.95 * s, z);
+      left.castShadow = true;
       scene.add(left);
       const right = left.clone();
       right.position.x = 0.85 * s;
       scene.add(right);
     }
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(3, 16),
-      new THREE.MeshStandardMaterial({ color: 0x101527, roughness: 1 })
-    );
+    let floorMat2;
+    try {
+      const conc = makeConcreteMaps();
+      [conc.albedo, conc.normal, conc.roughness].forEach(t => { if (t) t.repeat.set(2, 10); });
+      floorMat2 = new THREE.MeshStandardMaterial({ map: conc.albedo, normalMap: conc.normal, roughnessMap: conc.roughness, color: 0x707890 });
+    } catch {
+      floorMat2 = new THREE.MeshStandardMaterial({ color: 0x101527, roughness: 1 });
+    }
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(3, 16), floorMat2);
     floor.rotation.x = -Math.PI / 2;
     floor.position.z = -5;
+    floor.receiveShadow = true;
     scene.add(floor);
     camera.position.set(0, 1.0, 2.6);
     camera.lookAt(0, 0.9, -3);
@@ -31193,6 +31440,7 @@ const ShellScenes = (() => {
   return { mountCamp, mountRealm, unmountAll, ready: true };
 })();
 window.ShellScenes = ShellScenes;
+
 
 // ---------- Asset prefetch ----------
 // Warms the GLTFLoader cache for the dog models (vendored locally, ~3 MB each)
