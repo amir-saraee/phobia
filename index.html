@@ -350,11 +350,12 @@ if ("serviceWorker" in navigator) {
   /* Stage (the simulation canvas) — the scene is the product, give it real
      estate. Now ideal 78vh (was 60vh) and capped higher so big displays get
      a properly cinematic frame. */
-  /* Full-bleed the stage through the page padding, but NEVER past the
-     viewport edge: the fixed -28px overshot the actual .app padding at most
-     widths, leaving the stage 3-12px wider than the screen — the panel
-     corners and any control hugging the stage edge rendered visibly cut. */
-  .stage-wrap { margin: 0 max(calc(50% - 50vw), -28px); }
+  /* The stage stays INSIDE its frame on tablet/desktop. The old full-bleed
+     negative margin (-28px) pushed the stage past the surrounding panel
+     border, so corner controls (View toggle, trust HUD, Show controls)
+     rendered half OUTSIDE the frame. Edge-to-edge is now a phones-only
+     treatment (≤600px, where the screen edge IS the frame). */
+  .stage-wrap { margin: 0; }
   .stage {
     height: clamp(360px, 78vh, 900px);
     border-top: 1px solid var(--border);
@@ -362,6 +363,21 @@ if ("serviceWorker" in navigator) {
     overflow: hidden; position: relative;
     background: #0a0f1c;
     transition: height .25s ease;
+  }
+  /* Tablet/desktop: a fully framed, rounded stage — neat and contained. */
+  @media (min-width: 601px) {
+    .stage {
+      border: 1px solid var(--border-2);
+      border-radius: 14px;
+    }
+  }
+  /* First-person: a soft view vignette — the through-the-eyes cue. Sits under
+     the HUD chips (z 5+) and never intercepts input. */
+  .stage.fp-view::after {
+    content: "";
+    position: absolute; inset: 0;
+    pointer-events: none; z-index: 4;
+    background: radial-gradient(ellipse 105% 90% at 50% 46%, transparent 58%, rgba(4, 7, 16, .42) 100%);
   }
   /* Theater mode — taller stage that fills more of the viewport without
      going full-fullscreen. Toggled via the 🎬 button in the quick bar. */
@@ -2971,10 +2987,9 @@ if ("serviceWorker" in navigator) {
       line-height: 1.35;
     }
   }
-  /* Tablet / mid-width refinement */
+  /* Tablet / mid-width refinement (stage stays contained — no bleed) */
   @media (min-width: 601px) and (max-width: 900px) {
     .app { padding: 18px 18px 72px; }
-    .stage-wrap { margin: 0 max(calc(50% - 50vw), -22px); }
   }
   /* Make sure the canvas always fills its container exactly. CSS pixel
      ratio mismatches were occasionally pushing it 1-2 px past the panel
@@ -14579,9 +14594,11 @@ class Hands {
     this.group.add(this.left, this.right);
 
     // A very gentle, warm fill on the camera so the hands never go pitch-black
-    // in dim scenes — but far softer than before (it used to bleach the view).
-    // The scene's own lighting does the real work, so the hands match the room.
-    this.fillLight = new THREE.PointLight(0xffe9d2, 0.24, 1.4);
+    // in dim scenes. Range is clamped HARD (0.6 m, quadratic decay): at 1.4 m
+    // it reached the floor and pooled a blown-white ellipse across the bottom
+    // of every first-person view. 0.6 m covers the hands (~0.35 m away) and
+    // physically cannot touch the ground from eye height.
+    this.fillLight = new THREE.PointLight(0xffe9d2, 0.13, 0.6, 2);
     this.fillLight.position.set(0, 0.04, 0);
     camera.add(this.fillLight);
 
@@ -14597,12 +14614,12 @@ class Hands {
     // elbow) and slimmer than before, so it reads as an arm rather than a fat
     // blue tube. Rounded cuff at the wrist.
     const sleeveMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.036, 0.05, 0.22, 18), sleeve
+      new THREE.CylinderGeometry(0.031, 0.043, 0.22, 18), sleeve
     );
     sleeveMesh.rotation.x = Math.PI / 2;
     sleeveMesh.position.set(0, 0, 0.11);
     hand.add(sleeveMesh);
-    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.022, 18), sleeve);
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.022, 18), sleeve);
     cuff.rotation.x = Math.PI / 2;
     cuff.position.set(0, 0, 0.005);
     hand.add(cuff);
@@ -15534,10 +15551,13 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     if (ssaoPass && result && result.ssao === false) {
       ssaoPass.enabled = false;
     }
-    // First-person hands (if scene wants them) — caller can override skin color
+    // First-person hands (if scene wants them) — the character's own skin and
+    // shirt colours win over the scene's literals. (Sleeves used to stay the
+    // scene's hard-coded grey, so the FP forearm never matched the traveler.)
     if (result && result.hands) {
       const handOpts = Object.assign({}, result.hands === true ? {} : result.hands);
       if (opts.skinColor != null) handOpts.skinColor = opts.skinColor;
+      if (opts.shirtColor != null) handOpts.sleeveColor = opts.shirtColor;
       hands = new Hands(scene, camera, handOpts);
     }
     // First-person body — defaults to enabled. Pass through character colours
@@ -16168,6 +16188,10 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // both their current mode and that the chip is interactive.
     const inTP = controls.cameraMode === "tp";
     cameraToggle.innerHTML = `View: ${inTP ? "3rd" : "1st"} <span style="opacity:.7">⇄</span>`;
+    // First-person gets a soft CSS vignette on the stage (.fp-view::after) —
+    // the through-the-eyes cue. Class-driven so it tracks every toggle path
+    // (chip, V key, scene default).
+    container.classList.toggle("fp-view", !inTP);
   }
   refreshCameraLabel();
   // Mark that the user has explicitly toggled the camera mode. Session-scoped
@@ -30163,10 +30187,10 @@ function buildAvatarFigure(c) {
 
   // Skin reflects the environment far less than default — full envMapIntensity
   // reads as plastic; damped it reads as matte, living skin.
-  const skinM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(skin),   roughness: 0.78, metalness: 0.0, envMapIntensity: 0.5 });
-  const skinShM = new THREE.MeshStandardMaterial({ color: skinShadow, roughness: 0.85 });
-  const hairM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(hair),   roughness: 1.0 });
-  const hairShM = new THREE.MeshStandardMaterial({ color: hairShadow, roughness: 1.0 });
+  const skinM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(skin),   roughness: 0.62, metalness: 0.0, envMapIntensity: 0.5 });
+  const skinShM = new THREE.MeshStandardMaterial({ color: skinShadow, roughness: 0.7 });
+  const hairM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(hair),   roughness: 0.82, envMapIntensity: 0.5 });
+  const hairShM = new THREE.MeshStandardMaterial({ color: hairShadow, roughness: 0.85 });
   const browM   = new THREE.MeshStandardMaterial({ color: hairShadow, roughness: 1.0 });
   const shirtM  = new THREE.MeshStandardMaterial({ color: new THREE.Color(shirt),  roughness: 0.85, envMapIntensity: 0.35 });
   const shirtFoldM = new THREE.MeshStandardMaterial({ color: shirtFold, roughness: 0.85 });
@@ -30182,7 +30206,12 @@ function buildAvatarFigure(c) {
   // The head sits on a separate Group so we can rotate it independently
   // (idle look-around). All facial features hang off this group.
   const head = new THREE.Group();
-  head.position.y = 1.55;
+  head.position.y = 1.52;
+  // Human head-to-body ratio. The facial features were authored around a
+  // 0.20 cranium — bobblehead territory on a 1.75 m frame, and the single
+  // biggest "alien" cue in the creator. Scaling the whole head GROUP keeps
+  // every feature's relative layout while bringing the ratio to ~1:7.
+  head.scale.setScalar(0.86);
   group.add(head);
 
   // Cranium — slightly egg-shaped (taller than wide, slightly flatter back)
@@ -30526,8 +30555,8 @@ function buildAvatarFigure(c) {
   }
 
   // ===== NECK =====
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.095, 0.18, 18), skinM);
-  neck.position.y = 1.32;
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.082, 0.18, 18), skinM);
+  neck.position.y = 1.33;
   group.add(neck);
 
   // ===== TORSO (tapered: shoulders > chest > waist) =====
@@ -30535,7 +30564,7 @@ function buildAvatarFigure(c) {
   // UNDER the shoulder span: at 1.30× the chest swallowed the arms entirely
   // (capsules hung inside its silhouette) and the figure read as armless.
   const chest = new THREE.Mesh(new THREE.SphereGeometry(0.20, 28, 20), shirtM);
-  chest.scale.set(1.10, 1.05, 0.70);
+  chest.scale.set(1.14, 1.02, 0.62);
   chest.position.y = 1.10;
   chest.castShadow = true;
   group.add(chest);
@@ -30548,7 +30577,7 @@ function buildAvatarFigure(c) {
   group.add(seam);
   // Waist — narrower than chest
   const waist = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.20, 0.30, 18), shirtM);
-  waist.scale.set(1.04, 1, 0.78);
+  waist.scale.set(0.97, 1, 0.70);
   waist.position.y = 0.78;
   waist.castShadow = true;
   group.add(waist);
@@ -30598,9 +30627,9 @@ function buildAvatarFigure(c) {
   // floated above the silhouette like balloons.
   const shoulders = [];
   for (const sx of [-1, 1]) {
-    const sh = new THREE.Mesh(new THREE.SphereGeometry(0.095, 16, 12), shirtM);
-    sh.scale.set(1.0, 0.82, 0.88);
-    sh.position.set(sx * 0.235, 1.20, 0);
+    const sh = new THREE.Mesh(new THREE.SphereGeometry(0.085, 16, 12), shirtM);
+    sh.scale.set(0.92, 0.74, 0.82);
+    sh.position.set(sx * 0.222, 1.185, 0);
     sh.castShadow = true;
     group.add(sh);
     shoulders.push(sh);
@@ -30613,19 +30642,19 @@ function buildAvatarFigure(c) {
   for (const sx of [-1, 1]) {
     const armRoot = new THREE.Group();
     // Rooted just outside the (narrowed) chest so the whole arm is visible.
-    armRoot.position.set(sx * 0.255, 1.18, 0);
-    armRoot.rotation.z = sx * 0.10;     // arms hang slightly out
+    armRoot.position.set(sx * 0.245, 1.18, 0);
+    armRoot.rotation.z = sx * 0.07;     // arms hang close to the body, relaxed
     armRoot.rotation.x = 0.04;          // and a touch forward
     group.add(armRoot);
 
-    // Upper arm (shirt-coloured)
-    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, upperArmLen, 8, 14), shirtM);
+    // Upper arm (shirt-coloured) — slim; thick capsules read as inflatable
+    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.062, upperArmLen, 8, 14), shirtM);
     upper.position.set(0, -upperArmLen / 2, 0);
     upper.castShadow = true;
     armRoot.add(upper);
 
     // Sleeve cuff (slightly darker band where shirt ends)
-    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.025, 14), shirtFoldM);
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.067, 0.067, 0.025, 14), shirtFoldM);
     cuff.position.set(0, -upperArmLen - 0.005, 0);
     armRoot.add(cuff);
 
@@ -30634,27 +30663,44 @@ function buildAvatarFigure(c) {
     elbow.position.set(0, -upperArmLen - 0.02, 0);
     armRoot.add(elbow);
 
-    // Forearm (skin)
-    const fore = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, forearmLen, 8, 14), skinM);
+    // Forearm (skin) — tapers toward the wrist
+    const fore = new THREE.Mesh(new THREE.CapsuleGeometry(0.048, forearmLen, 8, 14), skinM);
     fore.position.set(0, -forearmLen / 2, 0);
     fore.castShadow = true;
     elbow.add(fore);
+    const wristTaper = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.046, 0.06, 12), skinM);
+    wristTaper.position.set(0, -forearmLen + 0.01, 0);
+    elbow.add(wristTaper);
 
-    // Hand — palm + thumb stub
+    // Hand — flattened palm, opposable thumb, four INDIVIDUAL fingers with
+    // human length variation (index < middle > ring > pinky) and a soft
+    // rest curl. The old single "finger plate" box read as a mitten.
     const hand = new THREE.Group();
-    hand.position.set(0, -forearmLen - 0.04, 0);
+    hand.position.set(0, -forearmLen - 0.035, 0);
+    hand.rotation.y = sx * -0.35;       // palms turn toward the thighs at rest
     elbow.add(hand);
-    const palm = new THREE.Mesh(new THREE.SphereGeometry(0.065, 14, 12), skinM);
-    palm.scale.set(0.8, 1.1, 0.5);
+    const palm = new THREE.Mesh(new THREE.SphereGeometry(0.058, 14, 12), skinM);
+    palm.scale.set(0.74, 1.0, 0.44);
     hand.add(palm);
-    const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.018, 0.04, 6, 8), skinM);
-    thumb.position.set(sx * 0.04, 0.02, 0.015);
-    thumb.rotation.z = -sx * 0.4;
+    const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.0145, 0.045, 6, 8), skinM);
+    thumb.position.set(sx * 0.04, -0.01, 0.018);
+    thumb.rotation.z = -sx * 0.55;
+    thumb.rotation.x = 0.25;
     hand.add(thumb);
-    // Finger plate (4 fingers as a single shaped block)
-    const fingers = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.07, 0.025), skinM);
-    fingers.position.set(0, -0.06, 0);
-    hand.add(fingers);
+    const fingerLens = [0.048, 0.056, 0.050, 0.038];
+    for (let f = 0; f < 4; f++) {
+      const fl = fingerLens[f];
+      // Knuckle pivot so the rest curl bends from the palm edge, not the
+      // finger's midpoint (a mid-pivot rotation drives fingertips into the palm).
+      const knuckle = new THREE.Group();
+      knuckle.position.set(sx * (f - 1.5) * 0.0215, -0.052, 0.004);
+      knuckle.rotation.x = 0.30;                     // relaxed curl
+      knuckle.rotation.z = sx * (f - 1.5) * -0.05;   // slight natural splay
+      hand.add(knuckle);
+      const finger = new THREE.Mesh(new THREE.CapsuleGeometry(0.0105, fl, 6, 8), skinM);
+      finger.position.set(0, -fl / 2, 0);
+      knuckle.add(finger);
+    }
 
     armRefs.push({ root: armRoot, elbow, hand, side: sx });
   }
@@ -30669,11 +30715,12 @@ function buildAvatarFigure(c) {
   const hipY = 0.79;
   for (const sx of [-1, 1]) {
     const legRoot = new THREE.Group();
-    legRoot.position.set(sx * 0.10, hipY, 0);
+    legRoot.position.set(sx * 0.104, hipY, 0);
+    legRoot.rotation.y = sx * 0.07;     // natural out-toed stance
     group.add(legRoot);
 
     // Thigh
-    const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.095, thighLen, 8, 14), pantsM);
+    const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.084, thighLen, 8, 14), pantsM);
     thigh.position.set(0, -thighLen / 2, 0);
     thigh.castShadow = true;
     legRoot.add(thigh);
@@ -30684,7 +30731,7 @@ function buildAvatarFigure(c) {
     legRoot.add(knee);
 
     // Shin
-    const shin = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, shinLen, 8, 14), pantsM);
+    const shin = new THREE.Mesh(new THREE.CapsuleGeometry(0.063, shinLen, 8, 14), pantsM);
     shin.position.set(0, -shinLen / 2, 0);
     shin.castShadow = true;
     knee.add(shin);
@@ -30734,11 +30781,14 @@ function buildAvatarFigure(c) {
       lidY = 0.05 + Math.sin(k * Math.PI) * 0.95;
     }
     eyeRefs.forEach(e => { e.lid.scale.y = lidY; });
-    // Arms gently sway with breathing
+    // Arms gently sway with breathing. The elbow rests at a visible bend —
+    // fully straight arms are the classic "mannequin" tell.
     armRefs.forEach(a => {
       a.root.rotation.x = 0.04 + Math.sin(t * 1.6 + a.side * 0.3) * 0.01;
-      a.elbow.rotation.x = 0.06 + Math.sin(t * 1.6 + a.side) * 0.012;
+      a.elbow.rotation.x = 0.16 + Math.sin(t * 1.6 + a.side) * 0.012;
     });
+    // Slow weight shift at the hips — standing perfectly still is another one.
+    waist.rotation.y = Math.sin(t * 0.4) * 0.02;
   };
   // ===== BODY TYPE silhouette =====
   // Mirror of the in-scene Body proportions: uniform height scale plus the
