@@ -12792,7 +12792,7 @@ class Body {
       color: o.shirtColor, roughness: 0.88, emissive: emissive(o.shirtColor, 0.04),
     });
     const skin  = new THREE.MeshStandardMaterial({
-      color: o.skinColor, roughness: 0.72, emissive: emissive(o.skinColor, 0.05),
+      color: o.skinColor, roughness: 0.62, emissive: emissive(o.skinColor, 0.05),
     });
     const shirtFold = new THREE.MeshStandardMaterial({
       color: new THREE.Color(o.shirtColor).multiplyScalar(0.78), roughness: 0.95
@@ -12916,21 +12916,38 @@ class Body {
       const elbowCap = new THREE.Mesh(new THREE.SphereGeometry(0.058, 12, 10), skin);
       elbowCap.scale.set(1, 0.85, 1);
       elbow.add(elbowCap);
-      // HAND — the arms used to end at the wrist, a mitten-less stump that
-      // read as "mannequin" in every third-person shot. A slightly cupped
-      // mitt (relaxed half-curl) with a thumb bump is all the silhouette
-      // needs at this art style's distance.
+      // HAND — same construction as the creator-preview figure: flattened
+      // palm, opposable thumb, and four INDIVIDUAL fingers on knuckle pivots
+      // with human length variation (index < middle > ring > pinky) and a
+      // relaxed rest curl. The old cupped mitt read as mannequin the moment
+      // the camera or a pet gesture brought a hand near the lens. Everything
+      // lives inside the same `hand` group, so the gait engine and every
+      // reach/pet gesture keep driving it unchanged.
       const hand = new THREE.Group();
       hand.position.set(0, -foreLen - 0.035, 0);
-      const palm = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 10), skin);
-      palm.scale.set(0.85, 1.25, 0.62);
-      palm.rotation.x = 0.28;              // relaxed half-curl toward the thigh
+      hand.rotation.y = sx * -0.35;        // palms turn toward the thighs at rest
+      const palm = new THREE.Mesh(new THREE.SphereGeometry(0.050, 12, 10), skin);
+      palm.scale.set(0.74, 1.0, 0.44);
       palm.castShadow = true;
       hand.add(palm);
-      const thumb = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), skin);
-      thumb.scale.set(0.9, 1.5, 0.8);
-      thumb.position.set(-sx * 0.042, 0.015, 0.012);   // inner side, toward the body
+      const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.0125, 0.038, 6, 8), skin);
+      thumb.position.set(sx * 0.034, -0.008, 0.016);
+      thumb.rotation.z = -sx * 0.55;
+      thumb.rotation.x = 0.25;
       hand.add(thumb);
+      const fingerLens = [0.040, 0.047, 0.042, 0.032];
+      for (let f = 0; f < 4; f++) {
+        const fl = fingerLens[f];
+        const knuckle = new THREE.Group();
+        knuckle.position.set(sx * (f - 1.5) * 0.0185, -0.044, 0.003);
+        knuckle.rotation.x = 0.30;                     // relaxed curl
+        knuckle.rotation.z = sx * (f - 1.5) * -0.05;   // slight natural splay
+        hand.add(knuckle);
+        const finger = new THREE.Mesh(new THREE.CapsuleGeometry(0.009, fl, 6, 8), skin);
+        finger.position.set(0, -fl / 2, 0);
+        finger.castShadow = true;
+        knuckle.add(finger);
+      }
       elbow.add(hand);
       this.arms.push({ root: armRoot, elbow, hand, side: sx });
     }
