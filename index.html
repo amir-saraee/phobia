@@ -3678,6 +3678,32 @@ if ("serviceWorker" in navigator) {
   .fc-delta.down { color: #7cd1a5; }
   .fc-delta.up { color: #e8a25c; }
 
+  /* ---- First-run consent + About + backup nudge ---- */
+  .consent-overlay { z-index: 300; }
+  .consent-modal { max-width: 520px; }
+  .consent-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .consent-list li {
+    display: flex; gap: 10px; align-items: flex-start;
+    font-size: 13.5px; color: var(--text); line-height: 1.5;
+  }
+  .consent-list li > span:first-child { flex: 0 0 auto; font-size: 16px; margin-top: 1px; }
+  .consent-list a { color: var(--accent); font-weight: 700; }
+  .about-view h3 { margin-top: 18px; }
+  .about-view a { color: var(--accent); }
+  .about-credits { font-size: 13px; }
+  .backup-nudge {
+    max-width: 480px; margin: 14px auto 0;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    background: rgba(50, 43, 30, .55); border: 1px solid #7a6a3a; border-radius: 12px;
+    padding: 9px 14px; font-size: 12.5px; color: #e8dcbb; text-align: start;
+  }
+  .backup-nudge-btns { display: flex; align-items: center; gap: 8px; }
+  .backup-nudge .btn-ghost { font-size: 12px; padding: 6px 12px; min-height: 34px; }
+  .backup-later {
+    background: none; border: none; color: #a89a74; font-size: 12px;
+    text-decoration: underline; cursor: pointer; padding: 6px; min-height: 34px;
+  }
+
   /* ---- Progress report (screen + print) ---- */
   .report-view h2 { margin-bottom: 4px; }
   .report-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -3781,6 +3807,40 @@ window.addEventListener("unhandledrejection", (e) => {
 // ---------- Procedural audio engine (Web Audio API) ----------
 // Builds wind, water, breathing, barks, skittering, MRI clanks, heartbeat, etc.
 // All generated on the fly — no external sound files needed.
+// ---------- Error journal (launch diagnostics) ----------
+// The app has no server, so breakage on a stranger's phone is invisible.
+// Unhandled errors land in a small localStorage ring buffer surfaced in
+// Settings → Diagnostics (count / copy / clear) — a user can paste them into
+// a bug report, which is the whole telemetry budget of a local-only app.
+const ERRLOG_KEY = "fobia.errlog.v1";
+function readErrLog() {
+  try { return JSON.parse(localStorage.getItem(ERRLOG_KEY)) || []; } catch { return []; }
+}
+function pushErrLog(entry) {
+  try {
+    const log = readErrLog();
+    log.push(entry);
+    while (log.length > 25) log.shift();
+    localStorage.setItem(ERRLOG_KEY, JSON.stringify(log));
+  } catch {}
+}
+window.addEventListener("error", (e) => {
+  pushErrLog({
+    ts: Date.now(),
+    msg: String((e && (e.message || e.error)) || "unknown").slice(0, 300),
+    src: `${(e && e.filename) || ""}:${(e && e.lineno) || 0}`,
+    route: location.hash,
+  });
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const r = e && e.reason;
+  pushErrLog({
+    ts: Date.now(),
+    msg: ("Promise: " + String((r && (r.message || r)) || "unknown")).slice(0, 300),
+    route: location.hash,
+  });
+});
+
 const PhobiaAudio = (() => {
   let ctx = null, master = null, creatureBus = null, muted = false;
   // Last-known listener position (updateListener writes it) — used by
@@ -7671,6 +7731,7 @@ function serializeRoute(view, params = {}) {
   switch (view) {
     case "welcome":   return "/";
     case "select":    return "/fears";
+    case "about":     return "/about";
     case "journal":   return "/journal";
     case "report":    return "/report";
     case "insights":  return "/insights";
@@ -7694,6 +7755,7 @@ function parseRoute(hash) {
   if (parts.length === 0) return { view: "welcome", params: {} };
   switch (parts[0]) {
     case "fears":    return { view: "select",    params: {} };
+    case "about":    return { view: "about",     params: {} };
     case "journal":  return { view: "journal",   params: {} };
     case "report":   return { view: "report",    params: {} };
     case "insights": return { view: "insights",  params: {} };
@@ -7860,6 +7922,7 @@ function render(view, params) {
   }
   if (view === "insights")    v.innerHTML = viewInsights();
   if (view === "journal")     v.innerHTML = viewJournal();
+  if (view === "about")       v.innerHTML = viewAbout();
   if (view === "report")      v.innerHTML = viewReport();
   if (view === "profiles")    v.innerHTML = viewProfiles();
   if (view === "custom")      v.innerHTML = viewCustom(params.editing);
@@ -8120,6 +8183,7 @@ function openMenu() {
     <ul class="menu-list">
       <li><button data-go="character" data-edit="1">${t("menu.editCharacter", "✎ Edit your traveler")}</button></li>
       ${allChars.length > 1 ? `<li><button data-go="profiles">${t("menu.switchCharacter", "⇄ Switch traveler")}</button></li>` : ""}
+      <li><button data-go="about">${t("menu.about", "ℹ️ About Mira")}</button></li>
       <li><button id="menuOpenSettings">${t("menu.settings", "⚙ Settings")}</button></li>
     </ul>
     <div class="menu-divider"></div>
@@ -8223,8 +8287,7 @@ function openSettings() {
       </div>
       <select id="langSelect" class="select-pill">
         <option value="en" ${(window.I18n?.currentLanguage() === "en") ? "selected" : ""}>English</option>
-        <option value="es" ${(window.I18n?.currentLanguage() === "es") ? "selected" : ""}>Español</option>
-        <option value="fr" ${(window.I18n?.currentLanguage() === "fr") ? "selected" : ""}>Français</option>
+        <option value="fa" ${(window.I18n?.currentLanguage() === "fa") ? "selected" : ""}>فارسی</option>
       </select>
     </div>
 
@@ -8318,9 +8381,27 @@ function openSettings() {
       <button class="btn-warn" id="resetAllBtn" style="padding:6px 12px;font-size:12px;">Reset</button>
     </div>
 
+    <div class="settings-section">${t("settings.diag", "Diagnostics")}</div>
+    <div class="row">
+      <div>
+        <label>${t("settings.diagErrors", "Error journal")}</label>
+        <div class="small" id="diagCount">${readErrLog().length ? tf("settings.diagCount", "{n} error(s) recorded on this device.", { n: readErrLog().length }) : t("settings.diagNone", "No errors recorded. If something breaks, it lands here.")}</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-ghost" id="diagCopyBtn" style="padding:6px 12px;font-size:12px;" ${readErrLog().length ? "" : "disabled"}>${t("settings.diagCopy", "Copy")}</button>
+        <button class="btn-ghost" id="diagClearBtn" style="padding:6px 12px;font-size:12px;" ${readErrLog().length ? "" : "disabled"}>${t("settings.diagClear", "Clear")}</button>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>${t("settings.about", "About Mira")}</label>
+        <div class="small">${t("settings.aboutSub", "What this is, the science, privacy, credits.")}</div>
+      </div>
+      <button class="btn-ghost" id="aboutBtn" style="padding:6px 12px;font-size:12px;">${t("settings.aboutOpen", "Open")}</button>
+    </div>
+
     <p class="small" style="margin-top:18px">
-      This is a prototype, not therapy. If a phobia is interfering with your life,
-      a trained clinician can run real exposure work with you safely.
+      ${t("settings.footer", "This is a practice game, not therapy. If a phobia is interfering with your life, a trained clinician can run real exposure work with you safely.")}
     </p>
   `;
   const backdrop = document.createElement("div");
@@ -8445,7 +8526,25 @@ function openSettings() {
     go("profiles");
   };
   // Export your data
-  drawer.querySelector("#exportBtn").onclick = () => exportData();
+  drawer.querySelector("#exportBtn").onclick = () => {
+    exportData();
+    // Remember the backup moment — the camp nudge keys off it.
+    try { localStorage.setItem("fobia.lastExportAt", String(Date.now())); } catch {}
+  };
+  drawer.querySelector("#aboutBtn").onclick = () => { close(); go("about"); };
+  drawer.querySelector("#diagCopyBtn").onclick = () => {
+    const text = JSON.stringify(readErrLog(), null, 2);
+    try { navigator.clipboard.writeText(text); } catch {
+      try { prompt("Copy the error journal:", text); } catch {}
+    }
+  };
+  drawer.querySelector("#diagClearBtn").onclick = () => {
+    try { localStorage.removeItem(ERRLOG_KEY); } catch {}
+    const c = drawer.querySelector("#diagCount");
+    if (c) c.textContent = t("settings.diagNone", "No errors recorded. If something breaks, it lands here.");
+    drawer.querySelector("#diagCopyBtn").disabled = true;
+    drawer.querySelector("#diagClearBtn").disabled = true;
+  };
   drawer.querySelector("#importBtn").onclick = () => importData();
   drawer.querySelector("#customBtn").onclick = () => { close(); go("custom"); };
   drawer.querySelector("#replayTourBtn").onclick = (e) => {
@@ -8558,6 +8657,19 @@ function handleAction(d, params) {
     case "open-report":     go("report"); break;
     case "do-worldstep":    openWorldstepModal(d.phobia, parseInt(d.step, 10)); break;
     case "fear-check":      openFearCheckModal(d.phobia, d.at || "manual"); break;
+    case "open-about":      go("about"); break;
+    case "show-consent":    showConsent(true); break;
+    case "backup-now": {
+      exportData();
+      try { localStorage.setItem("fobia.lastExportAt", String(Date.now())); } catch {}
+      go("select");
+      break;
+    }
+    case "backup-later": {
+      try { localStorage.setItem("fobia.backupSnooze", String(Date.now())); } catch {}
+      go("select");
+      break;
+    }
     case "edit-goal":       openGoalEditor(d.phobia); break;
     case "reset-progress":  if (confirm("Reset this character's progress? Other characters are not affected.")) { resetActiveProgress(); go("select"); } break;
   }
@@ -8706,6 +8818,14 @@ function viewSelect() {
   const rankPct = rank.next ? Math.min(100, Math.round(((courage - rank.min) / (rank.next.min - rank.min)) * 100)) : 100;
   const streak = computeStreak();
   const doneToday = state.log.some(l => l.finished !== false && isSameLocalDay(l.ts));
+  // Backup nudge: this journey lives only in localStorage — one browser
+  // cleanup deletes months of work. Gentle, dismissable, and only once the
+  // traveler has something worth losing.
+  const _lastExport = parseInt((() => { try { return localStorage.getItem("fobia.lastExportAt") || "0"; } catch { return "0"; } })(), 10);
+  const _backupSnooze = parseInt((() => { try { return localStorage.getItem("fobia.backupSnooze") || "0"; } catch { return "0"; } })(), 10);
+  const needBackup = state.log.length >= 5 &&
+    (Date.now() - _lastExport > 14 * 864e5) &&
+    (Date.now() - _backupSnooze > 7 * 864e5);
   // Today's step targets the current realm — unless it's already tamed, in
   // which case the quest moves the traveler on to the next untamed realm.
   let questKey = curKey;
@@ -8797,6 +8917,14 @@ function viewSelect() {
         <button class="${doneToday ? "btn-ghost" : "btn-primary"}" data-action="start-level" data-phobia="${questKey}" data-level="${questDone}">
           ${doneToday ? t("quest.btnDone", "Take another step") : t("quest.btnTodo", "⚔ Take today's step")}
         </button>
+      </div>` : ""}
+      ${needBackup ? `
+      <div class="backup-nudge">
+        <span>💾 ${t("camp.backup", "Your whole journey lives only on this device. One browser cleanup could erase it — take a copy?")}</span>
+        <span class="backup-nudge-btns">
+          <button class="btn-ghost" data-action="backup-now">${t("camp.backupNow", "Download backup")}</button>
+          <button class="backup-later" data-action="backup-later">${t("camp.backupLater", "later")}</button>
+        </span>
       </div>` : ""}
       <p class="camp-hint">${t("camp.hint", "the path descends through the valley — choose a realm ▾")}</p>
     </section>
@@ -8978,6 +9106,37 @@ function viewReport() {
       </p>
       <p class="report-note">Generated by Mira, a self-guided graded-exposure practice game. Anxiety ratings are self-reported SUDS (0 calm – 10 panic); "predicted" is rated before each exposure, "reported" after — the gap reflects expectancy violation. This is a personal practice record, not a clinical assessment.</p>
       ${sections || `<p>No practice recorded yet.</p>`}
+    </div>`;
+}
+
+// About page — the trust surface: what Mira is, the science model in plain
+// words, the honest limits, privacy, and credits. This is the page a curious
+// visitor (or journalist, or clinician) should be able to link to.
+function viewAbout() {
+  return `
+    <div class="panel about-view">
+      <span class="badge">${t("about.badge", "About")}</span>
+      <h2 style="margin-top:10px">${t("about.title", "Mira — a tiny game about big fears")}</h2>
+      <p>${t("about.intro", "Mira is a free practice game about how fear works. You make a traveler, walk into a valley where six famous fears live, and face each one in small, safe, always-optional steps — first in 3D scenes, then through tiny real-world quests.")}</p>
+
+      <h3>${t("about.scienceH", "The science it leans on")}</h3>
+      <p>${t("about.science1", "The whole game is built around graded exposure — the best-studied approach for specific fears. Anxiety rises, peaks, and falls on its own when you stay; avoidance is what keeps a fear alive. Each 'trial' asks you to predict how bad it will be, stay a little, and then compare — that prediction gap is where the brain updates.")}</p>
+      <p>${t("about.science2", "Progress is measured, not just played: short fear check-ins (avoidance, intensity, body reaction, interference, belief) tracked over time, and a printable report you could hand to a clinician.")}</p>
+
+      <h3>${t("about.limitsH", "What Mira is not")}</h3>
+      <p>${t("about.limits", "Not therapy, not diagnosis, not a medical device. It was made for curiosity and education. If a fear is seriously limiting your life, a trained clinician can run real exposure work with you safely — bring the report; it makes a good first conversation.")}
+      <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a></p>
+
+      <h3>${t("about.privacyH", "Privacy")}</h3>
+      <p>${t("about.privacy", "Everything stays in your browser: characters, sessions, check-ins — all of it lives in this device's local storage. No account, no analytics, no server. Your data leaves only when you export it yourself (Settings → Export).")}</p>
+
+      <h3>${t("about.creditsH", "Credits")}</h3>
+      <p class="about-credits">${t("about.credits", "Built for fun with")} <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> · ${t("about.creditsModels", "creature models by")} <a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a> (CC0) · ${t("about.creditsMade", "made with care by Amir.")}</p>
+
+      <div class="actions" style="margin-top:14px">
+        <button class="btn-ghost" data-action="show-consent">${t("about.reread", "Re-read the welcome notice")}</button>
+        <button class="btn-primary" data-action="open-select">${t("about.back", "🗺 To the valley")}</button>
+      </div>
     </div>`;
 }
 
@@ -12057,6 +12216,47 @@ function applyVoicePreset() {
   window.PhobiaVoice.setRate(rate);
 }
 
+// ---------- First-run notice (consent) ----------
+// Shown once before anything else: what this is (a practice game, not
+// therapy), that data never leaves the device, that the user is always in
+// control, and where real help lives. Re-readable from the About page.
+const CONSENT_KEY = "fobia.consent.v1";
+function hasConsented() {
+  try { return localStorage.getItem(CONSENT_KEY) === "1"; } catch { return false; }
+}
+function showConsent(rereading) {
+  if (document.querySelector(".consent-overlay")) return;
+  const overlay = document.createElement("div");
+  overlay.className = "goal-modal-overlay consent-overlay";
+  overlay.innerHTML = `
+    <div class="goal-modal consent-modal" role="dialog" aria-modal="true" aria-label="${t("consent.title", "Before you begin")}">
+      <span class="bridge-invite-kicker">🕯 ${t("consent.kicker", "A minute of honesty, then the valley")}</span>
+      <h3 style="margin:6px 0 10px">${t("consent.title", "Before you begin")}</h3>
+      <ul class="consent-list">
+        <li><span>🎮</span>${t("consent.game", "Mira is a practice game about how fear works — built for curiosity and education. It is not therapy and doesn't replace a clinician.")}</li>
+        <li><span>🔒</span>${t("consent.privacy", "Everything you do here stays in this browser, on this device. No account, no tracking, nothing sent anywhere.")}</li>
+        <li><span>🚪</span>${t("consent.control", "You are always in control: leave any scene at any moment, and Esc always grounds you. Stepping out is never a failure.")}</li>
+        <li><span>🤝</span>${t("consent.help", "If a fear is seriously limiting your life, a trained clinician can run real exposure work with you safely — this app can be the conversation starter.")}</li>
+        <li><span>☎️</span>${t("consent.crisis", "If you're in crisis right now, please reach a real person:")} <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a></li>
+      </ul>
+      <div class="actions" style="margin-top:14px">
+        ${rereading ? "" : `<button class="btn-ghost" id="consentAbout">${t("consent.more", "Read more")}</button>`}
+        <button class="btn-primary" id="consentOk">${rereading ? t("consent.close", "Close") : t("consent.ok", "I understand — begin")}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector("#consentOk").onclick = () => {
+    try { localStorage.setItem(CONSENT_KEY, "1"); } catch {}
+    overlay.remove();
+  };
+  const aboutBtn = overlay.querySelector("#consentAbout");
+  if (aboutBtn) aboutBtn.onclick = () => {
+    try { localStorage.setItem(CONSENT_KEY, "1"); } catch {}
+    overlay.remove();
+    go("about");
+  };
+}
+
 // ---------- Boot ----------
 // Wait for the deferred src/character.js + src/phobia-info.js to load before
 // the first render — that way the welcome page can use the avatar SVG and
@@ -12076,6 +12276,8 @@ function boot() {
   // Honor the URL on first load so refreshes / shared links land correctly
   const route = location.hash ? parseRoute(location.hash) : { view: "welcome", params: {} };
   render(route.view, route.params);
+  // First visit: the honest-welcome notice comes before anything else.
+  if (!hasConsented()) showConsent(false);
   // Make sure the URL bar matches what we rendered
   const expected = "#" + serializeRoute(route.view, route.params);
   if (location.hash !== expected) {
