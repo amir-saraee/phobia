@@ -3678,6 +3678,33 @@ if ("serviceWorker" in navigator) {
   .fc-delta.down { color: #7cd1a5; }
   .fc-delta.up { color: #e8a25c; }
 
+  /* ---- Touch-mode stage fixes ---- */
+  /* The joystick owns the bottom-left lane at EVERY width (a touch-capable
+     wide device — iPad landscape, touch laptop — used to get the hint box
+     underneath the joystick). :has() is supported everywhere we ship 3D. */
+  .stage:has(.joystick) .controls-hint {
+    left: 112px; bottom: 14px; max-width: min(420px, 58%);
+  }
+  /* Open command bar on touch: reserve the left lane for the joystick and
+     the Ground-me pill (they collided with the first buttons), and hide the
+     intro hint while the bar is open — it re-shows when controls collapse.
+     NOTE: the bar is a SIBLING of #stage inside .stage-wrap, so the :has()
+     guard must live on the wrap, not the stage. */
+  .stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) { padding-left: 118px; }
+  .stage.cmds-open:has(.joystick) .controls-hint { display: none; }
+  @media (max-width: 600px) {
+    .stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) .cmd-btn {
+      font-size: 12px; padding: 8px 10px; min-height: 40px;
+    }
+  }
+  /* Compact creature trust HUD on phones: at full size it covered half the
+     room. Name + bar + % stay; the hint shrinks; width is capped. */
+  @media (max-width: 480px) {
+    .trust-hud { max-width: 46%; padding: 8px 10px; }
+    .trust-hud .trust-name { font-size: 12.5px; }
+    .trust-hud .trust-hint { font-size: 10px; opacity: .85; line-height: 1.35; }
+  }
+
   /* ---- First-run consent + About + backup nudge ---- */
   .consent-overlay { z-index: 300; }
   .consent-modal { max-width: 520px; }
@@ -3840,6 +3867,16 @@ window.addEventListener("unhandledrejection", (e) => {
     route: location.hash,
   });
 });
+
+// Touch-first detection shared by the classic shell (the 3D module has its
+// own IS_COARSE_POINTER with the same semantics + the same dev override:
+// localStorage fobia.forceTouch = "1").
+function isCoarsePointer() {
+  const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  let forced = false;
+  try { forced = localStorage.getItem("fobia.forceTouch") === "1"; } catch {}
+  return !!(coarse || forced);
+}
 
 const PhobiaAudio = (() => {
   let ctx = null, master = null, creatureBus = null, muted = false;
@@ -9927,6 +9964,18 @@ function viewExposure(phobiaKey, levelIdx) {
       </div>
     `;
   }
+  // Touch-first devices: the command bar IS the interface — there is no
+  // keyboard, no hover, no right-click. Start it OPEN (hiding every action
+  // behind "Show controls" made scenes feel dead on phones) and strip the
+  // key-letter suffixes, which read as noise when no keyboard exists.
+  if (cmdBar && isCoarsePointer()) {
+    cmdBar = cmdBar.replace(/ \((?:E|B|T|C|S|Space)\)<\/span>/g, "</span>");
+    // Only auto-open compact bars: with the phone-size buttons, 4 actions fit
+    // beside the joystick lane; heights' 6-button bar would swallow the stage
+    // (it stays behind "Show controls" — that scene is walk-driven anyway).
+    const nBtns = (cmdBar.match(/cmd-btn/g) || []).length;
+    if (nBtns <= 4) cmdBar = cmdBar.replace('class="scene-cmd-bar collapsed"', 'class="scene-cmd-bar"');
+  }
   return `
     <div class="panel exposure-panel">
       <div class="exposure-header">
@@ -12065,12 +12114,19 @@ function runTutorialTour(stage, phobiaKey) {
   // user re-enters a scene without finishing, they don't see it again — the
   // tour is a one-time orientation, not a per-scene popup.
   try { localStorage.setItem("fobia.tutorialSeen", "1"); } catch {}
-  const isTouch = "ontouchstart" in window;
+  const isTouch = IS_COARSE_POINTER || ("ontouchstart" in window);
   // What the user actually DOES in this specific scene — keyed off the phobia
   // so the orientation never teaches the wrong mental model (the old tour told
   // dog users to "grip the rail / splash the water"). Character-driven scenes
-  // are walk-up-and-interact; the button bar is a secondary affordance.
-  const interactCopy = {
+  // are walk-up-and-interact; the button bar is a secondary affordance on
+  // desktop and the PRIMARY one on touch, so the copy differs per input.
+  const interactCopy = isTouch ? {
+    dogs: "Walk up with the joystick, then tap the dog to pet it. The buttons below the scene throw a ball, share a treat, or call it over.",
+    heights: "Walk to the edge with the joystick and look down when you're ready. Tap things in the world to interact.",
+    spiders: "Walk a little closer at your own pace. Tap the spider to lower a glass jar over it.",
+    snakes: "Walk toward the snake slowly. The buttons below help you hold still or extend a hand.",
+    water: "Wade in step by step. Look down and splash when you feel ready.",
+  } : {
     dogs: "Walk up to the dog, then click it to pet. Click the floor to throw a ball (shift-click for a treat) — the “Show controls” pill reveals buttons too.",
     heights: "Walk to the edge and look down when you're ready. Click things in the world to interact.",
     spiders: "Walk a little closer at your own pace. Click the spider to lower a glass jar over it.",
@@ -12078,7 +12134,9 @@ function runTutorialTour(stage, phobiaKey) {
     water: "Wade in step by step. Look down and splash when you feel ready.",
   };
   const sceneAction = interactCopy[phobiaKey]
-    || "Use the action buttons under the scene to interact, and stay as long as you can.";
+    || (isTouch
+      ? "Use the buttons under the scene to interact, and stay as long as you can."
+      : "Use the action buttons under the scene to interact, and stay as long as you can.");
   const steps = [
     {
       target: () => stage.querySelector("canvas") || stage,
@@ -12510,8 +12568,11 @@ const IS_TOUCH = (typeof window !== "undefined") && (("ontouchstart" in window) 
 // A genuinely touch-FIRST device (phone/tablet) — distinct from a touch-capable
 // laptop with a trackpad+mouse. Only these get the on-screen joystick; a touch
 // laptop keeps mouse-look + WASD.
-const IS_COARSE_POINTER = (typeof window !== "undefined") && window.matchMedia
-  && window.matchMedia("(pointer: coarse)").matches;
+const IS_COARSE_POINTER = ((typeof window !== "undefined") && window.matchMedia
+  && window.matchMedia("(pointer: coarse)").matches)
+  // Dev override so the touch UI can be exercised on a desktop browser:
+  // localStorage.setItem("fobia.forceTouch", "1") + reload.
+  || (() => { try { return localStorage.getItem("fobia.forceTouch") === "1"; } catch { return false; } })();
 const IS_MOBILE = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent || "");
 const AUTO_LOW_POWER = IS_MOBILE || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4);
 
@@ -16320,7 +16381,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // Always include a panic-stop reminder. Esc → grounding mode (5-4-3-2-1)
       // is the user's ethical exit at any moment. We bake it into every
       // approach scene's intro so users know it's there before they need it.
-      const escNote = IS_TOUCH
+      const escNote = (IS_TOUCH || IS_COARSE_POINTER)
     ? " &nbsp;·&nbsp; <span style=\"opacity:.75\">Tap <b>🛟</b> any time to ground yourself.</span>"
     : " &nbsp;·&nbsp; <span style=\"opacity:.75\">Press <b>Esc</b> any time to ground yourself.</span>";
       // Movement wording follows IS_COARSE_POINTER (where the on-screen joystick
@@ -16757,16 +16818,20 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // prefer explicit controls. Lives in the bottom-right of the stage.
   let cmdToggle = null;
   setTimeout(() => {
-    const cmdBarEl = document.querySelector('.scene-cmd-bar.collapsed');
+    // Bar may start collapsed (desktop) or open (touch, where the buttons are
+    // the primary interface) — the toggle serves both, labelled from state.
+    const cmdBarEl = document.querySelector('.scene-cmd-bar');
     if (!cmdBarEl) return;
+    const startCollapsed = cmdBarEl.classList.contains("collapsed");
     cmdToggle = document.createElement("button");
     cmdToggle.className = "cmd-toggle";
-    cmdToggle.textContent = "Show controls";
+    cmdToggle.textContent = startCollapsed ? "Show controls" : "Hide controls";
+    container.classList.toggle("cmds-open", !startCollapsed);
     cmdToggle.addEventListener("click", (e) => {
       e.stopPropagation();
       const collapsed = cmdBarEl.classList.toggle("collapsed");
       cmdToggle.textContent = collapsed ? "Show controls" : "Hide controls";
-      // The bar now floats INSIDE the frame — flag the stage so the caption /
+      // The bar floats INSIDE the frame — flag the stage so the caption /
       // prompt stack slides up out of its way while it's open.
       container.classList.toggle("cmds-open", !collapsed);
     });
@@ -23136,8 +23201,8 @@ function setupDogs(scene, camera, level, levelIdx) {
           </div>
           <div class="trust-bar"><div class="trust-bar-fill"></div></div>
           <div class="trust-hint">${B.follow === false && intensity === "calm"
-            ? `Call ${dogName} (C) · it approaches when invited`
-            : "Pet · throw a ball · share a treat"}</div>
+            ? (IS_COARSE_POINTER ? `Tap 👋 Call below · it approaches when invited` : `Call ${dogName} (C) · it approaches when invited`)
+            : (IS_COARSE_POINTER ? "Tap the dog to pet · use the buttons below" : "Pet · throw a ball · share a treat")}</div>
         `;
       }
       stage.appendChild(hud);
