@@ -13975,6 +13975,10 @@ function buildHeadShell(headPoint, mat, opts = {}) {
   const off = opts.offset || 0;      // outward thickness (hair / beard shells)
   const mask = opts.mask || null;    // (theta, phi, p) -> 0..1 keep factor
   const tint = opts.tint || null;    // (p) -> [r,g,b] multiplier, for lips/sockets
+  // `fade` writes a vec4 vertex colour whose ALPHA follows the mask, so a
+  // masked shell dissolves into the skin instead of ending on a polygon edge.
+  // A mask boundary always steps along grid lines; no resolution fixes that.
+  const fade = !!opts.fade;
   const cached = opts.cacheKey ? _headGeoCache.get(opts.cacheKey) : null;
   if (cached) {
     const g = new THREE.BufferGeometry();
@@ -13988,6 +13992,8 @@ function buildHeadShell(headPoint, mat, opts = {}) {
         c[i] = t[0]; c[i + 1] = t[1]; c[i + 2] = t[2];
       }
       g.setAttribute("color", new THREE.Float32BufferAttribute(c, 3));
+    } else if (cached.col) {
+      g.setAttribute("color", new THREE.Float32BufferAttribute(cached.col.slice(), 4));
     }
     g.setIndex(new THREE.BufferAttribute(cached.idx.slice(), 1));
     const m = new THREE.Mesh(g, mat);
@@ -14015,7 +14021,10 @@ function buildHeadShell(headPoint, mat, opts = {}) {
       if (mask) keep = mask(theta, phi, P, n);
       row.push({ p: P.clone(), n: n.clone(), keep });
       if (keep > 0 || !mask) {
-        const o = off * (mask ? Math.min(1, keep * 1.6) : 1);
+        // Fading shells keep a floor under the offset: collapsing onto the
+        // skull at the edge would z-fight with it.
+        const o = off * (mask ? (fade ? 0.32 + 0.68 * keep : Math.min(1, keep * 1.6)) : 1);
+        if (fade) { const A = keep * keep * (3 - 2 * keep); col.push(1, 1, 1, A); }
         pos.push(P.x + n.x * o, P.y + n.y * o, P.z + n.z * o);
         uv.push(i / NU, 1 - j / NV);
         tintPts.push(P.x, P.y, P.z);
@@ -14042,6 +14051,7 @@ function buildHeadShell(headPoint, mat, opts = {}) {
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
   if (tint) g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  else if (fade) g.setAttribute("color", new THREE.Float32BufferAttribute(col, 4));
   g.setIndex(idx);
   g.computeVertexNormals();
   const m = new THREE.Mesh(g, mat);
@@ -14051,6 +14061,7 @@ function buildHeadShell(headPoint, mat, opts = {}) {
       pos: g.attributes.position.array, nor: g.attributes.normal.array,
       uv: g.attributes.uv.array, idx: g.index.array,
       tintPts: new Float32Array(tintPts),
+      col: (!tint && fade && g.attributes.color) ? g.attributes.color.array : null,
     });
   }
   return m;
@@ -14102,7 +14113,7 @@ function buildHead(o) {
     reach -= 0.10 * side * _hsat(fw);                  // temples dip a touch further
     reach += 0.16 * _hsat(-fw);                        // nape a bit lower
     reach += 0.085 * Math.exp(-Math.pow(theta > Math.PI ? (theta - Math.PI * 2) / 0.32 : theta / 0.32, 2));
-    return _sstep(reach + 0.10, reach - 0.06, phi);
+    return _sstep(reach + 0.13, reach - 0.09, phi);
   }
   // Beard region: a cheek line running from the sideburn down to the corner of
   // the mouth, with the lips kept clear.
@@ -14328,9 +14339,13 @@ function buildHead(o) {
   let hairFlutter = null;
   if (style !== "bald") {
     const thick = style === "buzz" ? 0.0035 : (style === "curly" ? 0.010 : 0.0085);
-    const cap = buildHeadShell(headPoint, hairM, {
-      nu: o.lowDetail ? 56 : 84, nv: o.lowDetail ? 42 : 62, offset: thick,
-      cacheKey: "hair|" + shape + "|" + style + "|" + thick,
+    const hairShellM = hairM.clone();
+    hairShellM.transparent = true;
+    hairShellM.vertexColors = true;
+    hairShellM.depthWrite = true;
+    const cap = buildHeadShell(headPoint, hairShellM, {
+      nu: o.lowDetail ? 56 : 84, nv: o.lowDetail ? 42 : 62, offset: thick, fade: true,
+      cacheKey: "hairF|" + shape + "|" + style + "|" + thick,
       mask: (th, ph) => hairlineMask(th, ph),
     });
     if (cap) hairGroup.add(cap);
@@ -14400,10 +14415,14 @@ function buildHead(o) {
     });
     if (fh === "beard" || fh === "stubble") {
       // Jaw-and-chin mask: everything below the mouth line and forward of the ears.
-      const beard = buildHeadShell(headPoint, fhM, {
+      const beardM = fhM.clone();
+      beardM.transparent = true;
+      beardM.vertexColors = true;
+      beardM.depthWrite = true;
+      const beard = buildHeadShell(headPoint, beardM, {
         nu: o.lowDetail ? 52 : 76, nv: o.lowDetail ? 40 : 56,
-        offset: fh === "stubble" ? 0.0016 : 0.0055,
-        cacheKey: "beard|" + shape + "|" + fh,
+        offset: fh === "stubble" ? 0.0016 : 0.0055, fade: true,
+        cacheKey: "beardF|" + shape + "|" + fh,
         // Slightly tighter than the tinted zone so the shell's polygon edge
         // always lands on skin that is already beard-coloured.
         mask: (th, ph, p) => { const v = beardMask(p); return v > 0.30 ? (v - 0.30) / 0.70 : 0; },
@@ -15466,10 +15485,15 @@ class Body {
         if (leg._plantS == null || s < leg._plantS) {     // a fresh footfall
           leg._plantF = 0; leg._plantSd = 0;
           leg._dirF = gaitFwd; leg._dirS = gaitSide;
+          leg._anchor = null;                              // re-anchor below
         }
         leg._plantS = s;
-        leg._plantF  += this._stepFwd;
-        leg._plantSd += this._stepSide;
+        // Measured hip travel, not body travel. The body origin and the hip
+        // joint do NOT move together: pelvis yaw swings each hip fore and aft
+        // by ~1.7 cm per step, roll lifts it, the reach hinge carries it
+        // forward. Cancelling the body's motion leaves all of that as drift.
+        leg._plantF  += (leg._hipStepF != null ? leg._hipStepF : this._stepFwd);
+        leg._plantSd += (leg._hipStepS != null ? leg._hipStepS : this._stepSide);
         alongF = half * leg._dirF - leg._plantF;
         alongS = half * leg._dirS * 0.55 - leg._plantSd;
         kneeSwing = 0;
@@ -15625,6 +15649,42 @@ class Body {
       for (const leg of this.legs) {
         leg.foot.getWorldPosition(_bV1);
         if (_bV1.y < lowest) lowest = _bV1.y;
+      }
+      // While the world matrices are fresh, record how far each hip joint moved
+      // along the body's axes. The leg solve consumes this next frame (a single
+      // frame of lag, ~0.15% of a step) to keep its planted foot exactly still.
+      {
+        const yawB = this.group.rotation.y;
+        const fx = Math.sin(yawB), fz = Math.cos(yawB);
+        const rx = Math.cos(yawB), rz = -Math.sin(yawB);
+        for (const leg of this.legs) {
+          leg.hip.getWorldPosition(_bV2);
+          if (leg._hipPrev) {
+            const dx = _bV2.x - leg._hipPrev.x, dz = _bV2.z - leg._hipPrev.z;
+            leg._hipStepF = dx * fx + dz * fz;
+            leg._hipStepS = dx * rx + dz * rz;
+          } else {
+            leg._hipPrev = new THREE.Vector3();
+            leg._hipStepF = 0; leg._hipStepS = 0;
+          }
+          leg._hipPrev.copy(_bV2);
+          // Servo the planted foot to where it landed. Feeding hip travel
+          // forward gets most of the way, but any unmodelled millimetre still
+          // accumulates over a whole stance; measuring the ACTUAL world error
+          // and handing it back closes the loop without having to enumerate
+          // every source.
+          if (leg._plantS != null) {
+            leg.foot.getWorldPosition(_bV3);
+            if (!leg._anchor) leg._anchor = _bV3.clone();
+            else {
+              const ex = _bV3.x - leg._anchor.x, ez = _bV3.z - leg._anchor.z;
+              leg._plantF  += ex * fx + ez * fz;
+              leg._plantSd += ex * rx + ez * rz;
+            }
+          } else {
+            leg._anchor = null;
+          }
+        }
       }
       const clampDy = (floorY + this.opts.ankleY) - lowest;
       this.group.position.y += clampDy;
