@@ -13965,12 +13965,36 @@ function surfaceRibbon(headPoint, path, half, lift, mat, segs = 26) {
 
 // Build the sculpted skull mesh plus a matching mask-driven shell generator
 // (used for hair and beards, so they conform exactly to this head).
+// Sculpted head geometry depends only on SHAPE and STYLE, never on colour —
+// but the character creator rebuilds the whole figure on every swatch click.
+// Caching the vertex arrays turns a ~77 ms hitch into a copy; the colour
+// attribute is still recomputed each time, which is the cheap half.
+const _headGeoCache = new Map();
 function buildHeadShell(headPoint, mat, opts = {}) {
   const NU = opts.nu || 56, NV = opts.nv || 40;
   const off = opts.offset || 0;      // outward thickness (hair / beard shells)
   const mask = opts.mask || null;    // (theta, phi, p) -> 0..1 keep factor
   const tint = opts.tint || null;    // (p) -> [r,g,b] multiplier, for lips/sockets
-  const pos = [], uv = [], col = [], idx = [];
+  const cached = opts.cacheKey ? _headGeoCache.get(opts.cacheKey) : null;
+  if (cached) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(cached.pos.slice(), 3));
+    g.setAttribute("normal", new THREE.Float32BufferAttribute(cached.nor.slice(), 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(cached.uv.slice(), 2));
+    if (tint) {
+      const c = new Float32Array(cached.tintPts.length);
+      for (let i = 0; i < cached.tintPts.length; i += 3) {
+        const t = tint(_hsP.set(cached.tintPts[i], cached.tintPts[i + 1], cached.tintPts[i + 2]));
+        c[i] = t[0]; c[i + 1] = t[1]; c[i + 2] = t[2];
+      }
+      g.setAttribute("color", new THREE.Float32BufferAttribute(c, 3));
+    }
+    g.setIndex(new THREE.BufferAttribute(cached.idx.slice(), 1));
+    const m = new THREE.Mesh(g, mat);
+    m.castShadow = true;
+    return m;
+  }
+  const pos = [], uv = [], col = [], idx = [], tintPts = [];
   const grid = [];
   const P = new THREE.Vector3(), n = new THREE.Vector3();
   let count = 0;
@@ -13994,6 +14018,7 @@ function buildHeadShell(headPoint, mat, opts = {}) {
         const o = off * (mask ? Math.min(1, keep * 1.6) : 1);
         pos.push(P.x + n.x * o, P.y + n.y * o, P.z + n.z * o);
         uv.push(i / NU, 1 - j / NV);
+        tintPts.push(P.x, P.y, P.z);
         if (tint) { const c = tint(P); col.push(c[0], c[1], c[2]); }
         row[row.length - 1].idx = count++;
       } else {
@@ -14021,8 +14046,16 @@ function buildHeadShell(headPoint, mat, opts = {}) {
   g.computeVertexNormals();
   const m = new THREE.Mesh(g, mat);
   m.castShadow = true;
+  if (opts.cacheKey) {
+    _headGeoCache.set(opts.cacheKey, {
+      pos: g.attributes.position.array, nor: g.attributes.normal.array,
+      uv: g.attributes.uv.array, idx: g.index.array,
+      tintPts: new Float32Array(tintPts),
+    });
+  }
   return m;
 }
+const _hsP = new THREE.Vector3();
 
 // ---- the head assembly (skull + eyes + brows + ears + hair + extras) -----
 // Returns a Group whose local origin is the head JOINT (base of the skull),
@@ -14097,7 +14130,7 @@ function buildHead(o) {
   });
   const lipTone = [1.02, 0.545, 0.515];
   const skull = buildHeadShell(headPoint, faceM, {
-    nu: dense.nu, nv: dense.nv,
+    nu: dense.nu, nv: dense.nv, cacheKey: "skull|" + shape + "|" + dense.nu,
     tint: (p) => {
       let r = 1, g = 1, b = 1;
       const ax = Math.abs(p.x);
@@ -14199,6 +14232,16 @@ function buildHead(o) {
       g.rotateX(Math.PI / 2);          // face +Z
       return g;
     };
+    // Limbal ring: the dark band where iris meets sclera. It is the single
+    // cheapest thing that stops an eye reading as a painted bead — real irises
+    // are never a flat disc of colour with a hard edge.
+    const limbal = new THREE.Mesh(
+      cap(FACE.eyeR * 1.0005, 0.545),
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color(o.eyeColor).multiplyScalar(0.28), roughness: 0.3,
+      })
+    );
+    globe.add(limbal);
     const iris = new THREE.Mesh(cap(FACE.eyeR * 1.002, 0.50), irisM);
     globe.add(iris);
     const pupil = new THREE.Mesh(cap(FACE.eyeR * 1.010, 0.215), pupilM);
@@ -14283,6 +14326,7 @@ function buildHead(o) {
     const thick = style === "buzz" ? 0.0035 : (style === "curly" ? 0.010 : 0.0085);
     const cap = buildHeadShell(headPoint, hairM, {
       nu: o.lowDetail ? 56 : 84, nv: o.lowDetail ? 42 : 62, offset: thick,
+      cacheKey: "hair|" + shape + "|" + style + "|" + thick,
       mask: (th, ph) => hairlineMask(th, ph),
     });
     if (cap) hairGroup.add(cap);
@@ -14355,6 +14399,7 @@ function buildHead(o) {
       const beard = buildHeadShell(headPoint, fhM, {
         nu: o.lowDetail ? 52 : 76, nv: o.lowDetail ? 40 : 56,
         offset: fh === "stubble" ? 0.0016 : 0.0055,
+        cacheKey: "beard|" + shape + "|" + fh,
         // Slightly tighter than the tinted zone so the shell's polygon edge
         // always lands on skin that is already beard-coloured.
         mask: (th, ph, p) => { const v = beardMask(p); return v > 0.30 ? (v - 0.30) / 0.70 : 0; },
@@ -14376,7 +14421,7 @@ function buildHead(o) {
     const bandM = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor).multiplyScalar(0.78), roughness: 0.94 });
     if (hw === "beanie") {
       const dome = buildHeadShell(headPoint, hwM, {
-        nu: 44, nv: 32, offset: 0.014,
+        nu: 44, nv: 32, offset: 0.014, cacheKey: "beanie|" + shape,
         mask: (th, ph) => _sstep(1.28, 1.12, ph),
       });
       if (dome) { dome.position.copy(skull.position); grp.add(dome); }
@@ -14390,7 +14435,7 @@ function buildHead(o) {
       grp.add(pom);
     } else {
       const dome = buildHeadShell(headPoint, hwM, {
-        nu: 44, nv: 32, offset: 0.011,
+        nu: 44, nv: 32, offset: 0.011, cacheKey: "cap|" + shape,
         mask: (th, ph) => _sstep(1.24, 1.08, ph),
       });
       if (dome) { dome.position.copy(skull.position); grp.add(dome); }
