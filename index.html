@@ -3154,6 +3154,15 @@ if ("serviceWorker" in navigator) {
   }
   .story-realm:hover:not(:disabled) { transform: translateY(-4px); border-color: var(--accent); }
   .story-realm:disabled { opacity: .55; cursor: default; }
+  /* A gated button with no gated LOOK reads as a broken one. The rate screen
+     keeps Save disabled until the slider is moved (so the SUDS reading is
+     self-generated, not a confirmed default) — but with no styling it looked
+     live, and clicking it did nothing with no explanation. */
+  button:disabled, .btn-primary:disabled, .btn-ghost:disabled, .btn-warn:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+    filter: saturate(.55);
+  }
   .story-realm-thumb { width: 104px; height: 62px; border-radius: 9px; overflow: hidden; display: block; }
   .story-realm-thumb svg { width: 100%; height: 100%; display: block; }
   .story-realm-name { font-size: 12.5px; font-weight: 700; color: var(--text); line-height: 1.2; }
@@ -7436,7 +7445,8 @@ function markCompleted(phobiaKey, levelIdx, suds, predicted, peak, outcome) {
   // generalises, so it belongs in the record next to the numbers.
   let ctxLabel = null, ctxKey = null;
   try {
-    const c = window.Scene3D && window.Scene3D.currentContext && window.Scene3D.currentContext();
+    const c = window.Scene3D && window.Scene3D.currentContext
+      && window.Scene3D.currentContext(phobiaKey, levelIdx);
     if (c) { ctxLabel = c.label; ctxKey = c.hour + "/" + c.weather; }
   } catch {}
   state.log.push({
@@ -12582,6 +12592,9 @@ function buildCreature(url, opts = {}) {
 }
 
 let active = null;
+// The context of the most recently mounted exposure. Outlives `active` on
+// purpose — the rating happens after the scene is gone.
+let lastSceneCtx = null;
 
 function disposeObject(root) {
   root.traverse((child) => {
@@ -17391,6 +17404,12 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     if (window.PhobiaFear) window.PhobiaFear.setScene(phobiaKey, levelIdx);
     // One context per mount — the hour, weather and dressing this visit gets.
     sceneCtx = sceneContext(phobiaKey, levelIdx, true);
+    // Survives unmount so the rate view can still record it (see currentContext).
+    lastSceneCtx = {
+      phobia: phobiaKey, level: levelIdx | 0,
+      hour: sceneCtx.hour.id, weather: sceneCtx.weather.id,
+      label: sceneCtx.label, visit: sceneCtx.visit,
+    };
     result = setup(scene, camera, level, levelIdx, sceneCtx);
     updateFn = result && result.update;
     if (result && result.controls) {
@@ -33504,12 +33523,17 @@ function prefetch() {
 // ---------- Expose to the classic script ----------
 window.Scene3D = {
   ready: true, mount, unmount, prefetch,
-  // Which conditions the CURRENT scene is running in. The shell logs this with
-  // the completed rung so the report can show how varied the practice was —
-  // generalising across contexts is the point of varying them.
-  currentContext() {
-    const c = active && active.sceneCtx;
-    return c ? { hour: c.hour.id, weather: c.weather.id, label: c.label, visit: c.visit } : null;
+  // Which conditions a rung was practised in. Reads the LAST MOUNTED scene, not
+  // the live one: the player rates a rung from the rate view, by which point the
+  // scene has already been unmounted and `active` is null. Reading `active` here
+  // meant every real session logged no conditions at all — it only ever worked
+  // against seeded test data. Caller passes the phobia and rung so a stale
+  // context can never be attributed to a different exposure.
+  currentContext(phobiaKey, levelIdx) {
+    const c = lastSceneCtx;
+    if (!c) return null;
+    if (phobiaKey != null && (c.phobia !== phobiaKey || c.level !== (levelIdx | 0))) return null;
+    return { hour: c.hour, weather: c.weather, label: c.label, visit: c.visit };
   },
 };
 window.dispatchEvent(new Event("scene3d-ready"));
