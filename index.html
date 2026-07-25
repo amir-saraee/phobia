@@ -810,6 +810,12 @@ if ("serviceWorker" in navigator) {
     font-variant-numeric: tabular-nums;
     color: var(--accent);
   }
+  /* Temperament read. The dog behaves a little differently each visit; saying so
+     turns that from "the app is inconsistent" into "this is a real animal". */
+  .stage .trust-hud .trust-mood {
+    font-size: 11px; color: #94a3b8; margin: 5px 0 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .stage .trust-hud .trust-bar {
     width: 100%; height: 6px;
     background: rgba(255,255,255,.10);
@@ -23274,10 +23280,26 @@ function _hexMix(a, b, t) {
   return ((ar + (br - ar) * t) << 16 | (ag + (bg - ag) * t) << 8 | (ab + (bb - ab) * t)) & 0xffffff;
 }
 
+// A dog is not the same dog every day. Temperament modulates the CHARACTER of
+// the encounter — how soon it takes an interest, how much it putters, how it
+// paces its barking — without moving the difficulty out of the rung's band.
+//
+// Everything here is a multiplier bounded to roughly ±20%, and the fields that
+// ARE the difficulty are deliberately absent: personalSpace (rung 5's safety
+// line), followRadius and barkDist (proximity), inZoneDist (how much hold
+// credit you earn), and `follow` itself (a rung's identity). Vary those and
+// rung 3 stops being rung 3.
+const DOG_TEMPERAMENTS = [
+  { id: "sleepy",  label: "sleepy",     interest: 0.82, restless: 0.72, barkMul: 1.22, approachMul: 1.14, settleMul: 0.84 },
+  { id: "curious", label: "curious",    interest: 1.18, restless: 1.02, barkMul: 1.00, approachMul: 0.88, settleMul: 1.00 },
+  { id: "busy",    label: "distracted", interest: 0.90, restless: 1.24, barkMul: 1.10, approachMul: 1.06, settleMul: 0.92 },
+  { id: "keen",    label: "bright-eyed",interest: 1.10, restless: 0.92, barkMul: 0.86, approachMul: 0.92, settleMul: 1.08 },
+];
+
 function setupDogs(scene, camera, level, levelIdx, ctx) {
   const size = level.size;
   const intensity = level.intensity; // calm | alert | barking
-  const B = level.behavior || {};    // per-rung behavior params (see level defs)
+  const baseB = level.behavior || {};   // per-rung behavior params (see level defs)
 
   // Per-rung MOOD: the same room, but the day drifts subtly darker and colder
   // toward rung 5 — sun angle drops, sky cools, fills drain — so the five
@@ -23305,6 +23327,23 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   // ladder in a different room — which is the point: exposure that always
   // happens in identical conditions only teaches you about those conditions.
   const V = ctx || sceneContext("dogs", levelIdx, false);
+  // Today's temperament. Applied as a derived `B` so every downstream consumer
+  // picks it up without each one needing to know about it.
+  const temper = V.pick(DOG_TEMPERAMENTS);
+  const B = (() => {
+    const b = Object.assign({}, baseB);
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    if (b.autoApproachTrust != null) b.autoApproachTrust = clamp(b.autoApproachTrust * temper.approachMul, 0.30, 0.95);
+    if (b.followDelay != null) b.followDelay = clamp(b.followDelay / temper.interest, 2, 14);
+    if (b.firstBarkAt != null) b.firstBarkAt = clamp(b.firstBarkAt * temper.barkMul, 6, 30);
+    if (Array.isArray(b.barkEvery)) b.barkEvery = b.barkEvery.map(x => x * temper.barkMul);
+    if (b.standAt != null) b.standAt = clamp(b.standAt / temper.interest, 8, 32);
+    if (b.settleAfter != null) b.settleAfter = clamp(b.settleAfter / temper.settleMul, 20, 70);
+    // Puttering room, capped so a restless dog can never wander past rung 5's
+    // safety line or out of the room.
+    if (b.homeRadius != null) b.homeRadius = clamp(b.homeRadius * temper.restless, 0.4, 3.2);
+    return b;
+  })();
   // Compress the brightness swing. Colour, sun angle and beam strength carry
   // almost all of the perceptual difference between hours; raw intensity mostly
   // just decides whether you can SEE the dog, and a room you can't work in is a
@@ -24484,6 +24523,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
             <div class="trust-pct">0%</div>
           </div>
           <div class="trust-bar"><div class="trust-bar-fill"></div></div>
+          <div class="trust-mood">${dogName} seems ${temper.label} today</div>
           <div class="trust-hint">${B.follow === false && intensity === "calm"
             ? (IS_COARSE_POINTER ? `Tap 👋 Call below · it approaches when invited` : `Call ${dogName} (C) · it approaches when invited`)
             : (IS_COARSE_POINTER ? "Tap the dog to pet · use the buttons below" : "Pet · throw a ball · share a treat")}</div>
