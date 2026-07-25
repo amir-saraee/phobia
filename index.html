@@ -13245,6 +13245,7 @@ class FPControls {
       // scales the leg swing to match, so the feet still don't slide).
       const creepK = 0.55 + 0.45 * (this._speedNorm == null ? 1 : this._speedNorm);
       const stride = (this._fearGaitOn ? 0.62 * (1 - 0.25 * this._fearRampSm) : 0.62) * creepK;
+      this._strideLen = stride;
       this._walkPhase += (_movedDist / stride) * Math.PI;   // distance-driven stride
       const inv = 1 / _movedDist;
       const wx = _mdx * inv, wz = _mdz * inv;
@@ -13507,6 +13508,10 @@ class FPControls {
       side: this._moveSide || 0,
       shuffle: this._shuffleAmt || 0,
       speedNorm: this._speedNorm == null ? 1 : this._speedNorm,
+      // Metres of ground covered per step. The gait engine sizes its leg swing
+      // to this — a swing amplitude picked independently is exactly how feet
+      // end up skating over the floor.
+      stride: this._strideLen == null ? 0.62 : this._strideLen,
     };
   }
   // Scene-driven crouch eye-drop in metres (0..0.7). The FP camera dips toward
@@ -15221,7 +15226,6 @@ class Body {
     const idleFactor = 1 - (walkAmt || 0);
     // Subtle breath (always-on idle motion).
     const breathPhase = Math.sin(t * 1.4);
-    this.group.position.y += breathPhase * (0.005 + idleFactor * 0.003);
     // Visible rib expansion. The `breath` bone has no children, so scaling it
     // inflates the ribcage WITHOUT dragging the neck, head or arms with it.
     if (this.rig.breath) {
@@ -15244,6 +15248,9 @@ class Body {
       gaitSide = ws.side;
       speedNorm = ws.speedNorm == null ? 1 : ws.speedNorm;
       strideK = 0.55 + 0.45 * speedNorm;
+      // Metres per step, straight from the phase engine — the gait sizes its
+      // leg swing to this so the planted foot matches the ground.
+      if (ws.stride) this._strideLen = ws.stride;
       const off = this._travelOff || 0;
       if (Math.abs(off) > 0.001) {
         const c = Math.cos(off), s = Math.sin(off);
@@ -15253,33 +15260,92 @@ class Body {
       if (ws.amount > walkAmt) walkAmt = ws.amount;
     }
     const fwdShare = Math.abs(gaitFwd);
+    // Body-local travel this frame: how far forward and how far sideways the
+    // character actually moved along its own axes. The planted foot gives back
+    // exactly this, which is what makes sliding impossible rather than merely
+    // unlikely.
+    {
+      const yawB = this.group.rotation.y;      // already includes the +Z facing flip
+      const fx = Math.sin(yawB), fz = Math.cos(yawB);
+      if (this._prevPos == null) this._prevPos = { x: ax, z: az };
+      const dx = ax - this._prevPos.x, dz = az - this._prevPos.z;
+      this._stepFwd  = dx * fx + dz * fz;
+      this._stepSide = dx * Math.cos(yawB) - dz * Math.sin(yawB);
+      this._prevPos.x = ax; this._prevPos.z = az;
+    }
+
+    // ---- stride-locked legs ----
+    // Amplitude comes from the stride the phase engine is integrating, never a
+    // magic constant. Stance is CLOSED-LOOP: the foot is placed by subtracting
+    // measured travel, so no accumulation of small modelling errors (knee
+    // yield, pelvis yaw, a smoothed direction estimate) can make it skate.
+    const legLen = (this.opts.hipY - this.opts.ankleY);
+    const strideLen = this._strideLen || 0.62 * strideK;
+    const STANCE = 0.62;                         // duty factor — 62% of the cycle
+    // Half the fore-aft sweep of a planted foot. NOT half a stride: the body
+    // covers two strides per gait cycle, so during one foot's 62% stance it
+    // travels 1.24 strides — and the foot has to give back exactly that.
+    const half = Math.min(legLen * 0.85, STANCE * strideLen) * walkAmt;
+    const A = this._thighLen, Bl = this._shinLen;
     for (const leg of this.legs) {
       const th = walkPhase + (leg.side > 0 ? 0 : Math.PI);
-      const swing = Math.sin(th) * 0.50 * walkAmt * strideK;
-      const kneeFlex = (Math.max(0, Math.cos(th)) * (0.30 + 0.65 * fwdShare) + 0.04) * walkAmt;
+      // s: 0 at heel strike (foot furthest forward), rising through stance.
+      let s = ((th - Math.PI / 2) / (Math.PI * 2)) % 1;
+      if (s < 0) s += 1;
+      let alongF, alongS, kneeSwing, swingT = 0;
+      if (s < STANCE) {
+        if (leg._plantS == null || s < leg._plantS) {     // a fresh footfall
+          leg._plantF = 0; leg._plantSd = 0;
+          leg._dirF = gaitFwd; leg._dirS = gaitSide;
+        }
+        leg._plantS = s;
+        leg._plantF  += this._stepFwd;
+        leg._plantSd += this._stepSide;
+        alongF = half * leg._dirF - leg._plantF;
+        alongS = half * leg._dirS * 0.55 - leg._plantSd;
+        kneeSwing = 0;
+      } else {
+        leg._plantS = null;
+        swingT = (s - STANCE) / (1 - STANCE);             // 0..1
+        const e = 0.5 - 0.5 * Math.cos(Math.PI * swingT);
+        alongF = (-half + 2 * half * e) * gaitFwd;
+        alongS = (-half + 2 * half * e) * gaitSide * 0.55;
+        kneeSwing = Math.sin(Math.PI * swingT);
+      }
+      // Knee clears the ground at mid-swing; sidesteps use a smaller lift
+      // (nobody folds a knee to shuffle).
+      const kneeFlex = (kneeSwing * (0.28 + 0.62 * fwdShare) + 0.04) * walkAmt;
       // Stance-phase knee YIELD: a real knee never locks straight under load —
       // it gives ~8° as the body's weight rolls over the planted leg.
-      const stanceYield = Math.pow(Math.max(0, Math.sin(th - Math.PI / 2)), 1.5)
-        * 0.14 * walkAmt * fwdShare;
-      leg.hip.rotation.x = -swing * gaitFwd;
-      leg.hip.rotation.z = swing * gaitSide * 0.55;
+      const stanceYield = (s < STANCE
+        ? Math.sin(Math.PI * (s / STANCE)) : 0) * 0.13 * walkAmt * fwdShare;
+      const kx = kneeFlex + stanceYield;
+      // Solve the hip from the FULL two-segment chain, not from the leg length:
+      // a bent knee shortens the leg, and treating it as straight injects a few
+      // centimetres of forward drift exactly when the knee yields under load.
+      const R = Math.hypot(A + Bl * Math.cos(kx), Bl * Math.sin(kx));
+      const psi = Math.atan2(Bl * Math.sin(kx), A + Bl * Math.cos(kx));
+      leg.hip.rotation.x =
+        Math.asin(Math.max(-0.97, Math.min(0.97, -alongF / Math.max(1e-4, R)))) - psi;
+      leg.hip.rotation.z =
+        Math.asin(Math.max(-0.85, Math.min(0.85, alongS / legLen)));
       leg.hip.rotation.y = 0;
-      leg.knee.rotation.x = kneeFlex + stanceYield;
+      leg.knee.rotation.x = kx;
       // Foot: level the sole against the leg rotation, then add a heel-toe
-      // roll — toe up as the foot reaches forward, heel peel at push-off.
+      // roll — toe up as it reaches forward, heel peel as it pushes off behind.
       leg.foot.rotation.x = -(leg.hip.rotation.x + leg.knee.rotation.x) * 0.82
-        + Math.sin(th) * 0.22 * walkAmt * Math.max(0, gaitFwd);
+        + (s < STANCE
+            ? (0.16 - 0.34 * (s / STANCE))                // heel down → toe off
+            : 0.20 * Math.sin(Math.PI * swingT))          // toe lifted in swing
+          * walkAmt * Math.max(0, gaitFwd);
       leg.foot.rotation.z = -leg.hip.rotation.z * 0.8;
     }
-    // Pelvis dynamics: step bob (highest at mid-stance, dipping into each heel
-    // strike) plus the lateral weight shift over the planted foot.
-    const stepBob = (Math.abs(Math.sin(walkPhase)) - 0.64) * 0.034 * walkAmt * strideK;
-    this.group.position.y += stepBob;
-    const yawNow = this.group.rotation.y;
-    const weightShift = Math.sin(walkPhase) * 0.022 * walkAmt * this.bt.sway
-      + Math.sin(t * 0.45) * 0.013 * idleFactor;
-    this.group.position.x += Math.cos(yawNow) * weightShift;
-    this.group.position.z += -Math.sin(yawNow) * weightShift;
+    // Lateral weight shift over the planted foot, expressed as a ROLL of the
+    // pelvis and spine rather than a translation of the whole body. Sliding the
+    // body sideways drags the planted foot with it; leaning over it is both what
+    // a person actually does and what leaves the foot where it was.
+    const weightRoll = Math.sin(walkPhase) * walkAmt * this.bt.sway
+      + Math.sin(t * 0.45) * 0.55 * idleFactor;
 
     // ---------- Posture (smoothed lerp toward the scene's targets) ----------
     const ps = this._postureSm;
@@ -15346,10 +15412,10 @@ class Body {
     const hipTwistTarget = Math.sin(walkPhase) * walkAmt * fwdShare;
     this._hipTwist += (hipTwistTarget - this._hipTwist) * Math.min(1, dtB * 15);
     const pelvisYaw = -this._hipTwist * 0.085;
-    const gaitRoll = Math.sin(walkPhase) * walkAmt * this.bt.sway;
-    this.hips.rotation.set(hinge * 0.45, pelvisYaw, gaitRoll * 0.055);
-    this.spine.rotation.set(totalLean * 0.35 + hinge * 0.35, -pelvisYaw * 0.9, -gaitRoll * 0.020);
-    this.chest.rotation.set(totalLean * 0.65 + hinge * 0.20, -pelvisYaw * 1.15, -gaitRoll * 0.035);
+    const gaitRoll = weightRoll;
+    this.hips.rotation.set(hinge * 0.45, pelvisYaw, gaitRoll * 0.070);
+    this.spine.rotation.set(totalLean * 0.35 + hinge * 0.35, -pelvisYaw * 0.9, -gaitRoll * 0.026);
+    this.chest.rotation.set(totalLean * 0.65 + hinge * 0.20, -pelvisYaw * 1.15, -gaitRoll * 0.042);
 
     // Crouch — bent KNEES, not a shrunken torso: the thigh pitches forward,
     // the shin folds back, and the whole body drops by exactly the geometric
@@ -15371,9 +15437,32 @@ class Body {
       // crouch is a pose no balanced human holds.
       this.spine.rotation.x += c * 0.24;
       this.chest.rotation.x += c * 0.26;
-      const drop = this._thighLen * (1 - Math.cos(hipBend))
-        + this._shinLen * (1 - Math.cos(kneeBend - hipBend));
-      this.group.position.y -= drop;
+    }
+
+    // ---------- ground clamp ----------
+    // Whatever the legs are doing — striding, crouching, strafing — the pelvis
+    // sits at the height that puts the LOWEST foot exactly on the floor. This
+    // is one rule replacing two fudges (a hand-tuned step bob and a separate
+    // crouch drop), and it is what stops feet floating above the ground at the
+    // ends of a stride or sinking into it in a squat.
+    {
+      // Measure, don't predict. Asking the scene graph where the lowest ankle
+      // actually ended up absorbs everything that moves a hip joint — pelvis
+      // roll, hip twist, the spine hinge — which a closed-form guess misses,
+      // and those misses are exactly what makes a planted foot drift.
+      const floorY = this.group.position.y;
+      this.group.updateMatrixWorld(true);
+      let lowest = Infinity;
+      for (const leg of this.legs) {
+        leg.foot.getWorldPosition(_bV1);
+        if (_bV1.y < lowest) lowest = _bV1.y;
+      }
+      const clampDy = (floorY + this.opts.ankleY) - lowest;
+      this.group.position.y += clampDy;
+      // The clamp moves the group ORIGIN below the floor as the legs fold (the
+      // feet are what stay put), so the contact shadow has to be pushed back up
+      // or it sinks through the ground in a crouch.
+      if (this.shadow) this.shadow.position.y = 0.005 - clampDy;
     }
 
     // ---------- Head + gaze ----------
