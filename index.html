@@ -12504,6 +12504,9 @@ function buildCreature(url, opts = {}) {
         o.frustumCulled = false;
       }
     });
+    // Per-traveller colouring, if the caller asked for one. Materials are
+    // already cloned above, so this never touches the shared cache.
+    if (opts.coat) applyCoatTint(model, opts.coat);
     if (opts.yaw) model.rotation.y = opts.yaw;
     // Measure from the actual MESH geometry (bind pose), not setFromObject() of
     // the whole model — these rigs carry IK pole-target bones positioned far
@@ -22051,9 +22054,8 @@ const DOG_COATS = {
 // is "the same small dog, closer now", and an animal that changes colour
 // between visits breaks that (and the per-breed trust model built on it). So
 // the coat is drawn once per breed per traveller and then kept.
-function dogCoatFor(breed) {
-  const pool = DOG_COATS[breed] || DOG_COATS.shiba;
-  const key = "fobia.dogCoat." + breed;
+function coatFor(kind, pool) {
+  const key = "fobia.coat." + kind;
   try {
     const saved = localStorage.getItem(key);
     const hit = pool.find(c => c.id === saved);
@@ -22064,7 +22066,7 @@ function dogCoatFor(breed) {
   } catch { return pool[0]; }
 }
 const _coatHSL = { h: 0, s: 0, l: 0 };
-function applyDogCoat(model, coat) {
+function applyCoatTint(model, coat) {
   if (!coat) return;
   model.traverse((o) => {
     if (!o.isMesh || !o.material) return;
@@ -22120,7 +22122,7 @@ function buildDog(opts = {}) {
     });
     // Coat first: the fur pass below darkens by measured luminance, so it has
     // to see the final colours or a dark coat gets crushed twice.
-    applyDogCoat(model, opts.coat);
+    applyCoatTint(model, opts.coat);
 
     // Add procedural fur micro-detail so the flat-shaded coat catches light like
     // real fur instead of smooth plastic. We apply only the strand NORMAL +
@@ -23280,6 +23282,22 @@ function _hexMix(a, b, t) {
   return ((ar + (br - ar) * t) << 16 | (ag + (bg - ag) * t) << 8 | (ab + (bb - ab) * t)) & 0xffffff;
 }
 
+// House-spider and grass-snake colourings. Same rule as the dog's coat: the
+// creature you meet on rung 4 is the one you met on rung 1, so this is drawn
+// once per traveller and kept — only its mood and where it sits change.
+const SPIDER_COATS = [
+  { id: "umber",  h: 0.075, s: 0.34, lMul: 0.78 },
+  { id: "sable",  h: 0.070, s: 0.16, lMul: 0.58 },
+  { id: "tawny",  h: 0.090, s: 0.44, lMul: 0.92 },
+  { id: "ash",    h: 0.085, s: 0.10, lMul: 0.86 },
+];
+const SNAKE_COATS = [
+  { id: "olive",  h: 0.22,  s: 0.32, lMul: 0.90 },
+  { id: "bronze", h: 0.085, s: 0.42, lMul: 0.94 },
+  { id: "slate",  h: 0.58,  s: 0.12, lMul: 0.80 },
+  { id: "sand",   h: 0.115, s: 0.30, lMul: 1.06 },
+];
+
 // A dog is not the same dog every day. Temperament modulates the CHARACTER of
 // the encounter — how soon it takes an interest, how much it putters, how it
 // paces its barking — without moving the difficulty out of the rung's band.
@@ -23920,7 +23938,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     : 1.5 + (1 - size) * 2.5;               // 1.5 (head-on) → 3.4 (far)
   // Coat is this traveller's dog, kept across visits. Where it happens to be
   // standing when you walk in is the part that varies.
-  const coat = dogCoatFor(breed);
+  const coat = coatFor("dog." + breed, DOG_COATS[breed] || DOG_COATS.shiba);
   const dog = buildDog({ breed, targetHeight: dogHeight, coat });
   // The model drops its own feet onto the Group origin, so we just stand the
   // Group on the floor (the floor plane sits at y = -1).
@@ -26368,10 +26386,31 @@ class SpiderController {
 }
 
 // ---------- Spiders ----------
-function setupSpiders(scene, camera, level, levelIdx) {
+// Spider temperaments. Bounded the same way the dog's are, and the same fields
+// are off limits: guardDist, inZoneDist, fearMul, approachBias, skitterSpeed and
+// every pounce parameter ARE the rung's threat level.
+const SPIDER_TEMPERAMENTS = [
+  { id: "still",    startMul: 1.25, cadenceMul: 1.22, roamMul: 0.75, settleMul: 0.86 },
+  { id: "restless", startMul: 0.85, cadenceMul: 0.86, roamMul: 1.22, settleMul: 1.06 },
+  { id: "wary",     startMul: 1.10, cadenceMul: 1.05, roamMul: 0.88, settleMul: 0.94 },
+  { id: "busy",     startMul: 0.92, cadenceMul: 0.94, roamMul: 1.10, settleMul: 1.00 },
+];
+
+function setupSpiders(scene, camera, level, levelIdx, ctx) {
   const size = level.size;
   const intensity = level.intensity || "calm";
-  const B = level.behavior || {};
+  const baseB = level.behavior || {};
+  const V = ctx || sceneContext("spiders", levelIdx, false);
+  const temper = V.pick(SPIDER_TEMPERAMENTS);
+  const B = (() => {
+    const b = Object.assign({}, baseB);
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    if (b.firstSkitterAt != null) b.firstSkitterAt = clamp(b.firstSkitterAt * temper.startMul, 1.5, 14);
+    if (Array.isArray(b.skitterEvery)) b.skitterEvery = b.skitterEvery.map(x => x * temper.cadenceMul);
+    if (b.homeRadius != null) b.homeRadius = clamp(b.homeRadius * temper.roamMul, 0.35, 3.4);
+    if (b.settleAfter != null) b.settleAfter = clamp(b.settleAfter / temper.settleMul, 25, 70);
+    return b;
+  })();
   const rung = Math.max(0, Math.min(4, levelIdx || 0));
   const clamp01 = (x) => Math.max(0, Math.min(1, x));
   // Teardown registries + shell tracking (this scene had NO dispose before).
@@ -26387,7 +26426,16 @@ function setupSpiders(scene, camera, level, levelIdx) {
     { bg: 0x07080b, bulbC: 0xecd6b2, bulbI: 0.88, bulbY: 1.20, fillC: 0x18222d, fillI: 0.22, keyC: 0xb8c4d2, keyI: 0.80, keyPos: [1.8, 2.7, 0.4] },
     { bg: 0x050608, bulbC: 0xe6cca6, bulbI: 0.80, bulbY: 1.15, fillC: 0x141d27, fillI: 0.18, keyC: 0xb0bccb, keyI: 0.85, keyPos: [1.6, 2.5, 0.2] },
   ];
-  const mood = MOODS[rung];
+  const baseMood = MOODS[rung];
+  // A cellar has no sky, so its context is the BULB: colour temperature and
+  // brightness drift between visits the way a swapped or dirtier bulb would.
+  // Kept narrow — the rung's own ramp still has to read through it.
+  const mood = Object.assign({}, baseMood, {
+    bulbC: _hexMix(baseMood.bulbC, V.rng() < 0.5 ? 0xfff0d2 : 0xdfe6f0, V.range(0.15, 0.45)),
+    bulbI: baseMood.bulbI * V.range(0.86, 1.14),
+    bulbY: baseMood.bulbY + V.range(-0.08, 0.08),
+    fillI: baseMood.fillI * V.range(0.88, 1.12),
+  });
   scene.background = new THREE.Color(mood.bg);
   // No fog — a real enclosed cellar shell; cameraFar tightens depth precision.
   const _coolKey = new THREE.Color(0x8fa4bd);
@@ -26572,6 +26620,7 @@ function setupSpiders(scene, camera, level, levelIdx) {
   const spider = buildCreature(CREATURE_MODELS.spider, {
     targetSize: 0.75 + size * 0.95,
     axis: "max",
+    coat: coatFor("spider", SPIDER_COATS),
   });
   const GROUND_NUDGE = 0.03;
   const onWall = !!B.onWall;
@@ -26592,7 +26641,10 @@ function setupSpiders(scene, camera, level, levelIdx) {
     spider.rotation.z = -Math.PI / 2;   // roll so "down" is into the surface
     spider.rotation.y = 0;
   } else {
-    spider.position.set(0, -1, -distance);
+    // Somewhere else on the floor each visit. Radial distance still belongs to
+    // the rung; only the lateral placement and a small depth jitter move. The
+    // wall rung is exempt — it has to stay on its pillar.
+    spider.position.set(V.range(-1.4, 1.4), -1, -distance + V.range(-0.4, 0.4));
   }
   const spiderCtrl = new SpiderController(spider, scene, camera);
   spider.userData.ctrl = spiderCtrl;   // observability for scene-verification hooks
@@ -29129,10 +29181,33 @@ class SnakeController {
 }
 
 // ---------- Snakes ----------
-function setupSnakes(scene, camera, level, levelIdx) {
+// Snake temperaments. strikeDist / strikeApproach / strikeCooldown / watchDist /
+// rearDist / wanderSpeed / fearMul / inZoneDist are ALL absent on purpose — the
+// strike is the rung's threat and is approach-speed gated; nothing here may
+// touch it.
+const SNAKE_TEMPERAMENTS = [
+  { id: "basking",  baskMul: 1.24, tongueMul: 1.18, roamMul: 0.80, hissMul: 1.20, crossMul: 0.80 },
+  { id: "watchful", baskMul: 0.92, tongueMul: 0.86, roamMul: 1.00, hissMul: 0.88, crossMul: 1.00 },
+  { id: "roaming",  baskMul: 0.82, tongueMul: 0.96, roamMul: 1.22, hissMul: 1.00, crossMul: 1.18 },
+  { id: "settled",  baskMul: 1.14, tongueMul: 1.08, roamMul: 0.88, hissMul: 1.10, crossMul: 0.90 },
+];
+
+function setupSnakes(scene, camera, level, levelIdx, ctx) {
   const size = level.size;
   const intensity = level.intensity || (size >= 0.9 ? "apex" : size >= 0.55 ? "alert" : "calm");
-  const B = level.behavior || {};
+  const baseB = level.behavior || {};
+  const V = ctx || sceneContext("snakes", levelIdx, false);
+  const temper = V.pick(SNAKE_TEMPERAMENTS);
+  const B = (() => {
+    const b = Object.assign({}, baseB);
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    if (Array.isArray(b.baskDur)) b.baskDur = b.baskDur.map(x => x * temper.baskMul);
+    if (Array.isArray(b.tongueEvery)) b.tongueEvery = b.tongueEvery.map(x => x * temper.tongueMul);
+    if (b.homeRadius != null) b.homeRadius = clamp(b.homeRadius * temper.roamMul, 0.4, 2.8);
+    if (b.warnHissEvery != null) b.warnHissEvery = clamp(b.warnHissEvery * temper.hissMul, 4, 14);
+    if (b.crossChance != null) b.crossChance = clamp(b.crossChance * temper.crossMul, 0.15, 0.75);
+    return b;
+  })();
   const rung = Math.max(0, Math.min(4, levelIdx || 0));
   const clamp01 = (x) => Math.max(0, Math.min(1, x));
   // Teardown registries + shell tracking (extends the existing dispose).
@@ -29300,8 +29375,10 @@ function setupSnakes(scene, camera, level, levelIdx) {
   const snake = buildCreature(CREATURE_MODELS.snake, {
     targetSize: 0.5 + size * 0.55,   // reared height in world units (~0.6 -> ~1.05)
     axis: "y",
+    coat: coatFor("snake", SNAKE_COATS),
   });
-  snake.position.set(0, -1, -distance);   // coil on the floor (floor at y = -1)
+  // Lying somewhere else on the path each visit. Radial distance is the rung's.
+  snake.position.set(V.range(-1.1, 1.1), -1, -distance + V.range(-0.35, 0.35));
   // Head anchor near the raised head, for the hand-extend proximity check.
   const headAnchor = new THREE.Group();
   snake.add(headAnchor);
