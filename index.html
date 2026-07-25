@@ -810,8 +810,10 @@ if ("serviceWorker" in navigator) {
     font-variant-numeric: tabular-nums;
     color: var(--accent);
   }
-  /* Temperament read. The dog behaves a little differently each visit; saying so
-     turns that from "the app is inconsistent" into "this is a real animal". */
+  /* Standalone mood chip for scenes with no trust bar of their own. */
+  .stage .trust-hud.mood-chip { padding: 8px 12px; }
+  /* Temperament read. The creature behaves a little differently each visit;
+     saying so turns that from "the app is inconsistent" into "it's alive". */
   .stage .trust-hud .trust-mood {
     font-size: 11px; color: #94a3b8; margin: 5px 0 2px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -17220,6 +17222,18 @@ const CTX_DAYLIGHT = {
   driving: 0.55,
 };
 
+// A one-line "how it seems today" chip, styled off the creature trust HUD.
+// Returns a teardown the scene pushes onto its own timer/overlay registry.
+function mountMoodChip(text) {
+  const stage = document.getElementById("stage");
+  if (!stage) return () => {};
+  const el = document.createElement("div");
+  el.className = "trust-hud mood-chip";
+  el.innerHTML = `<div class="trust-mood" style="margin:0">${text}</div>`;
+  stage.appendChild(el);
+  return () => { try { el.remove(); } catch {} };
+}
+
 // Generic light re-grade for scenes that opt in with `vary: { daylight: true }`.
 // Deliberately conservative — it nudges what the scene already built rather
 // than replacing a rig it knows nothing about, so it cannot wreck a carefully
@@ -26390,7 +26404,7 @@ class SpiderController {
 // are off limits: guardDist, inZoneDist, fearMul, approachBias, skitterSpeed and
 // every pounce parameter ARE the rung's threat level.
 const SPIDER_TEMPERAMENTS = [
-  { id: "still",    startMul: 1.25, cadenceMul: 1.22, roamMul: 0.75, settleMul: 0.86 },
+  { id: "settled",  startMul: 1.25, cadenceMul: 1.22, roamMul: 0.75, settleMul: 0.86 },
   { id: "restless", startMul: 0.85, cadenceMul: 0.86, roamMul: 1.22, settleMul: 1.06 },
   { id: "wary",     startMul: 1.10, cadenceMul: 1.05, roamMul: 0.88, settleMul: 0.94 },
   { id: "busy",     startMul: 0.92, cadenceMul: 0.94, roamMul: 1.10, settleMul: 1.00 },
@@ -26646,6 +26660,11 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     // wall rung is exempt — it has to stay on its pillar.
     spider.position.set(V.range(-1.4, 1.4), -1, -distance + V.range(-0.4, 0.4));
   }
+  // Say which mood you got, the way the dog scene does.
+  let moodChipOff = null;
+  sceneTimers.push(setTimeout(() => {
+    moodChipOff = mountMoodChip("It seems " + (temper.label || temper.id) + " today");
+  }, 900));
   const spiderCtrl = new SpiderController(spider, scene, camera);
   spider.userData.ctrl = spiderCtrl;   // observability for scene-verification hooks
   spiderCtrl.suspend = true;   // stays suspended until the model is ready
@@ -27287,6 +27306,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     },
     dispose() {
       try { sceneTimers.forEach(id => { clearTimeout(id); clearInterval(id); }); } catch {}
+      try { if (moodChipOff) moodChipOff(); } catch {}
       try { if (spCanvasDom) { spCanvasDom.removeEventListener("pointerdown", onSpDown); spCanvasDom.removeEventListener("pointerup", onSpUp); } } catch {}
       try { spider.userData.disposed = true; if (spider.userData.parts && spider.userData.parts.mixer) spider.userData.parts.mixer.stopAllAction(); } catch {}
       try { window.__holdCelebrationGate = null; window.__rungHoldComplete = false; } catch {}
@@ -27312,8 +27332,14 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
 }
 
 // ---------- Enclosed ----------
-function setupEnclosed(scene, camera, level) {
+function setupEnclosed(scene, camera, level, levelIdx, ctx) {
   const size = level.size; // 1.0 = spacious, 0.15 = MRI-tight
+  // A sealed room has no sky to vary, so its context is the FITTINGS: a warmer
+  // or cooler lamp, walls a shade different. Narrow on purpose — the rung's own
+  // tightening is the thing that has to read.
+  const V = ctx || sceneContext("enclosed", levelIdx || 0, false);
+  const lampWarm = V.range(0, 1);              // 0 = cool fluorescent, 1 = warm bulb
+  const lampC = _hexMix(0xdfeaff, 0xffe0a0, lampWarm);
 
   scene.background = new THREE.Color(0x07070b);
 
@@ -27324,16 +27350,26 @@ function setupEnclosed(scene, camera, level) {
   // The light sits close to the surfaces in tight rungs (it's near the player's
   // head in the MRI tube), so with physical 1/d² falloff a fixed intensity blows
   // the walls to white. Scale it down as the space tightens.
-  const main = new THREE.PointLight(0xffe0a0, 0.6 + size * 1.0, 22, 2);
+  const main = new THREE.PointLight(lampC, (0.6 + size * 1.0) * V.range(0.88, 1.12), 22, 2);
   main.position.set(0, roomH / 2 - 0.2, 0);
   main.castShadow = true;
   main.shadow.mapSize.set(1024, 1024);
   scene.add(main);
-  scene.add(new THREE.AmbientLight(0x2a2a33, 0.45));
+  scene.add(new THREE.AmbientLight(_hexMix(0x2a2a33, 0x33302a, lampWarm), 0.45));
 
-  const wallMat = new THREE.MeshStandardMaterial({ map: makeWallTexture(), color: 0x6a6a70, roughness: 0.95 });
-  const floorMat = new THREE.MeshStandardMaterial({ color: 0x3a3a3f, roughness: 0.85 });
-  const ceilMat = new THREE.MeshStandardMaterial({ color: 0x4a4a52, roughness: 0.9 });
+  // Surfaces drift with the fittings — a room repainted between visits. Hue
+  // stays in the institutional band; only its temperature and value move.
+  const surfHue = V.range(0.55, 0.10 + 1);     // wraps through blue-grey → warm grey
+  const tintSurface = (hex, lJit) => {
+    const c = new THREE.Color(hex);
+    const hsl = { h: 0, s: 0, l: 0 };
+    c.getHSL(hsl);
+    c.setHSL(surfHue % 1, Math.min(0.14, hsl.s + V.range(0, 0.05)), hsl.l * lJit);
+    return c;
+  };
+  const wallMat = new THREE.MeshStandardMaterial({ map: makeWallTexture(), color: tintSurface(0x6a6a70, V.range(0.88, 1.14)), roughness: 0.95 });
+  const floorMat = new THREE.MeshStandardMaterial({ color: tintSurface(0x3a3a3f, V.range(0.85, 1.18)), roughness: 0.85 });
+  const ceilMat = new THREE.MeshStandardMaterial({ color: tintSurface(0x4a4a52, V.range(0.90, 1.10)), roughness: 0.9 });
 
   // Build room
   const room = new THREE.Group();
@@ -29186,10 +29222,10 @@ class SnakeController {
 // strike is the rung's threat and is approach-speed gated; nothing here may
 // touch it.
 const SNAKE_TEMPERAMENTS = [
-  { id: "basking",  baskMul: 1.24, tongueMul: 1.18, roamMul: 0.80, hissMul: 1.20, crossMul: 0.80 },
-  { id: "watchful", baskMul: 0.92, tongueMul: 0.86, roamMul: 1.00, hissMul: 0.88, crossMul: 1.00 },
-  { id: "roaming",  baskMul: 0.82, tongueMul: 0.96, roamMul: 1.22, hissMul: 1.00, crossMul: 1.18 },
-  { id: "settled",  baskMul: 1.14, tongueMul: 1.08, roamMul: 0.88, hissMul: 1.10, crossMul: 0.90 },
+  { id: "basking",  label: "sluggish", baskMul: 1.24, tongueMul: 1.18, roamMul: 0.80, hissMul: 1.20, crossMul: 0.80 },
+  { id: "watchful", label: "watchful", baskMul: 0.92, tongueMul: 0.86, roamMul: 1.00, hissMul: 0.88, crossMul: 1.00 },
+  { id: "roaming",  label: "restless", baskMul: 0.82, tongueMul: 0.96, roamMul: 1.22, hissMul: 1.00, crossMul: 1.18 },
+  { id: "settled",  label: "settled",  baskMul: 1.14, tongueMul: 1.08, roamMul: 0.88, hissMul: 1.10, crossMul: 0.90 },
 ];
 
 function setupSnakes(scene, camera, level, levelIdx, ctx) {
@@ -29379,6 +29415,10 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   });
   // Lying somewhere else on the path each visit. Radial distance is the rung's.
   snake.position.set(V.range(-1.1, 1.1), -1, -distance + V.range(-0.35, 0.35));
+  let moodChipOff = null;
+  sceneTimers.push(setTimeout(() => {
+    moodChipOff = mountMoodChip("It seems " + (temper.label || temper.id) + " today");
+  }, 900));
   // Head anchor near the raised head, for the hand-extend proximity check.
   const headAnchor = new THREE.Group();
   snake.add(headAnchor);
@@ -30137,6 +30177,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     },
     dispose() {
       try { sceneTimers.forEach(id => { clearTimeout(id); clearInterval(id); }); } catch {}
+      try { if (moodChipOff) moodChipOff(); } catch {}
       try { liveAudio.forEach(h => h && h.stop && h.stop()); } catch {}
       try { window.__holdCelebrationGate = null; window.__rungHoldComplete = false; } catch {}
       try { const bar = document.querySelector('.scene-cmd-bar[data-scene="snakes"]'); if (bar) bar.dataset.wired = ""; } catch {}
