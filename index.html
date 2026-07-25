@@ -22024,6 +22024,60 @@ function ensureBoxUV(geom, scaleRef) {
 // Forward convention: the dog Group's +Z is "forward" (the snout). The source
 // model already faces +Z, so no extra rotation is needed. This matches the
 // locomotion math used in setupDogs (yaw = atan2(dx, dz); forward = (sinθ, cosθ)).
+// Real coat colours for each breed. Applied as a hue/saturation shift that
+// PRESERVES each material's lightness, so the nose stays black and the teeth
+// stay white while the fur changes — a blanket tint turns the eyes brown.
+const DOG_COATS = {
+  shiba: [
+    { id: "red",     label: "red",        h: 0.055, s: 0.62, lMul: 1.00 },
+    { id: "cream",   label: "cream",      h: 0.095, s: 0.26, lMul: 1.10 },
+    { id: "sesame",  label: "sesame",     h: 0.065, s: 0.45, lMul: 0.86 },
+    { id: "blacktan",label: "black-and-tan", h: 0.075, s: 0.30, lMul: 0.62 },
+  ],
+  husky: [
+    { id: "grey",    label: "grey",       h: 0.60,  s: 0.06, lMul: 0.96 },
+    { id: "black",   label: "black-and-white", h: 0.62, s: 0.03, lMul: 0.74 },
+    { id: "copper",  label: "copper",     h: 0.048, s: 0.42, lMul: 0.94 },
+    { id: "agouti",  label: "agouti",     h: 0.085, s: 0.24, lMul: 0.80 },
+  ],
+};
+// A dog's coat is IDENTITY, not context — the ladder's fiction is that rung 2
+// is "the same small dog, closer now", and an animal that changes colour
+// between visits breaks that (and the per-breed trust model built on it). So
+// the coat is drawn once per breed per traveller and then kept.
+function dogCoatFor(breed) {
+  const pool = DOG_COATS[breed] || DOG_COATS.shiba;
+  const key = "fobia.dogCoat." + breed;
+  try {
+    const saved = localStorage.getItem(key);
+    const hit = pool.find(c => c.id === saved);
+    if (hit) return hit;
+    const chosen = pool[Math.floor(Math.random() * pool.length)];
+    localStorage.setItem(key, chosen.id);
+    return chosen;
+  } catch { return pool[0]; }
+}
+const _coatHSL = { h: 0, s: 0, l: 0 };
+function applyDogCoat(model, coat) {
+  if (!coat) return;
+  model.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    mats.forEach((m) => {
+      if (!m || !m.color) return;
+      m.color.getHSL(_coatHSL);
+      // Leave the near-black (nose, eyes, pads) and the near-white (teeth,
+      // eye-whites) alone — those are features, not fur.
+      if (_coatHSL.l < 0.14 || _coatHSL.l > 0.90) return;
+      m.color.setHSL(
+        coat.h,
+        _coatHSL.s + (coat.s - _coatHSL.s) * 0.80,
+        Math.max(0.05, Math.min(0.95, _coatHSL.l * coat.lMul))
+      );
+    });
+  });
+}
+
 function buildDog(opts = {}) {
   const breed = opts.breed || "shiba";
   const targetHeight = opts.targetHeight || 0.7;   // world height, feet→ears
@@ -22058,6 +22112,9 @@ function buildDog(opts = {}) {
         o.frustumCulled = false;     // skinned bounds are unreliable once posed
       }
     });
+    // Coat first: the fur pass below darkens by measured luminance, so it has
+    // to see the final colours or a dark coat gets crushed twice.
+    applyDogCoat(model, opts.coat);
 
     // Add procedural fur micro-detail so the flat-shaded coat catches light like
     // real fur instead of smooth plastic. We apply only the strand NORMAL +
@@ -23822,19 +23879,27 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   const distance = intensity === "barking"
     ? Math.max(4.2, PERSONAL_SPACE + 1.4)
     : 1.5 + (1 - size) * 2.5;               // 1.5 (head-on) → 3.4 (far)
-  const dog = buildDog({ breed, targetHeight: dogHeight });
+  // Coat is this traveller's dog, kept across visits. Where it happens to be
+  // standing when you walk in is the part that varies.
+  const coat = dogCoatFor(breed);
+  const dog = buildDog({ breed, targetHeight: dogHeight, coat });
   // The model drops its own feet onto the Group origin, so we just stand the
   // Group on the floor (the floor plane sits at y = -1).
-  const dogStartX = (intensity === "barking") ? 0 : (Math.random() < 0.5 ? -0.8 : 0.8);
-  dog.position.set(dogStartX, -1, -distance);
+  // Same dog, different day: it is somewhere else in the room each visit, and
+  // sometimes a little nearer or further within the rung's band. The RADIAL
+  // distance still belongs to the rung — that is the difficulty — so only the
+  // lateral placement and a small depth jitter move.
+  const dogStartX = (intensity === "barking") ? V.range(-0.6, 0.6) : V.range(-1.9, 1.9);
+  const dogStartZ = -distance + V.range(-0.35, 0.35);
+  dog.position.set(dogStartX, -1, dogStartZ);
   // Home zone: rungs with homeRadius wander around their SPAWN spot, keeping
   // the rung's distance premise true for the whole hold.
-  const homeAnchor = { x: dogStartX, z: -distance };
+  const homeAnchor = { x: dogStartX, z: dogStartZ };
   // Facing: forward is +Z. The barking rung faces the player head-on (it's
   // worked up). Calmer rungs start the dog turned away — busy with its own
   // thing — so the user has to approach and let the dog notice them; the
   // DogController then turns the dog to watch the player within ~5 m.
-  const facePlayer = Math.atan2(camera.position.x - dogStartX, camera.position.z - (-distance));
+  const facePlayer = Math.atan2(camera.position.x - dogStartX, camera.position.z - dogStartZ);
   dog.rotation.y = (intensity === "barking")
     ? facePlayer
     : facePlayer + Math.PI + (Math.random() - 0.5) * 1.2;
