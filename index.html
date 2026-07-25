@@ -14279,6 +14279,7 @@ function buildHead(o) {
   // Cut from the SAME sculpted surface as the skull and offset a hair's width
   // outward, so a brow can never float off the brow ridge or poke through the
   // temple — which is exactly what a swept tube did.
+  const brows = [];
   for (const sx of [-1, 1]) {
     const brow = surfaceRibbon(
       headPoint,
@@ -14289,7 +14290,10 @@ function buildHead(o) {
       0.0026, browM, 24
     );
     brow.position.copy(skull.position);
+    brow.userData.baseY = brow.position.y;
+    brow.userData.side = sx;
     grp.add(brow);
+    brows.push(brow);
   }
 
   // --- ears ----------------------------------------------------------------
@@ -14518,7 +14522,22 @@ function buildHead(o) {
       );
     },
     setWide(k) { this.wide = k; this.setBlink(this.blink); },
+    // Fear, on the face. The whole game is about arousal going up and coming
+    // back down, and the character used to walk up to a barking dog wearing the
+    // same expression it has on the title screen. 0..1.
+    setFear(k) {
+      this.fear = k;
+      this.setWide(k * 0.95);
+      for (const b of brows) {
+        // Inner ends lift and pull together — the distress shape. Rotating the
+        // ribbon about the head's centre raises whichever end is further out,
+        // so the sign flips per side to lift the INNER end.
+        b.rotation.z = -b.userData.side * k * 0.30;
+        b.position.y = b.userData.baseY + k * 0.010;
+      }
+    },
   };
+  grp.userData.brows = brows;
   grp.userData.face.setBlink(0);
   grp.userData.hairFlutter = hairFlutter;
   grp.userData.eyes = eyes;
@@ -14607,6 +14626,19 @@ function buildHand(side, skinM, sleeveM, opts = {}) {
       parent = pivot;
     }
     thumbSeg[0].rotation.x = 0.18; thumbSeg[1].rotation.x = 0.22;
+  }
+  // Optional forearm stub, running back up +Y. First-person needs the arm to
+  // come from somewhere; the in-scene rig gets its forearm from the skinned
+  // body instead.
+  if (opts.forearm) {
+    const fa = new THREE.Mesh(new THREE.CylinderGeometry(0.040, 0.030, 0.26, 16), sleeveM || skinM);
+    fa.position.y = 0.135;
+    fa.scale.z = 0.9;
+    hand.add(fa);
+    const wristBall = new THREE.Mesh(new THREE.SphereGeometry(0.0295, 14, 10), skinM);
+    wristBall.scale.set(1.15, 0.95, 0.80);
+    wristBall.position.y = 0.010;
+    hand.add(wristBall);
   }
   // Optional cuff — hides the wrist seam for long-sleeved outfits.
   if (opts.cuff && sleeveM) {
@@ -14863,6 +14895,82 @@ function buildHumanRig(o = {}) {
   mesh.add(pelvis);
   const skeleton = new THREE.Skeleton(bones);
   mesh.bind(skeleton);
+
+  // ---------- outfit detailing ----------
+  // Hoodie and jacket used to be visually identical after the rig rewrite —
+  // both were just "long sleeves". These are the details that actually tell
+  // the two styles apart in the creator and in scene.
+  if (o.topStyle === "hoodie" || o.topStyle === "jacket") {
+    const foldM = new THREE.MeshPhysicalMaterial({
+      color: shirtCol.clone().multiplyScalar(0.76), roughness: 0.94,
+      sheen: 0.4, sheenRoughness: 0.9,
+    });
+    // Front surface depth at a given station height, so trims sit ON the chest
+    // instead of floating off it or sinking inside.
+    const frontZ = (y) => {
+      let lo = torso[torso.length - 1], hi = torso[0];
+      for (let i = 0; i < torso.length - 1; i++) {
+        if (y <= torso[i].y && y >= torso[i + 1].y) { hi = torso[i]; lo = torso[i + 1]; break; }
+      }
+      const f = (y - lo.y) / Math.max(1e-4, hi.y - lo.y);
+      return (lo.rz + (hi.rz - lo.rz) * f) * (0.94 + 0.06 * SW) * bt.chestZ;
+    };
+    const cl = (y) => y * H - chestY;                 // station height → chest-local
+    if (o.topStyle === "hoodie") {
+      const cowl = new THREE.Mesh(new THREE.TorusGeometry(0.098 * SW, 0.030, 12, 26), foldM);
+      cowl.rotation.x = Math.PI / 2;
+      cowl.scale.set(1.18, 1.0, 0.92);
+      cowl.position.set(0, cl(1.330), -0.004 * H);
+      cowl.castShadow = true;
+      chest.add(cowl);
+      const hood = new THREE.Mesh(
+        new THREE.SphereGeometry(0.115 * SW, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62), foldM);
+      hood.scale.set(1.05, 0.95, 0.70);
+      hood.rotation.x = -0.35;
+      hood.position.set(0, cl(1.336), -0.085 * H);
+      hood.castShadow = true;
+      chest.add(hood);
+      const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.21 * SW, 0.105, 0.035), foldM);
+      pocket.position.set(0, 0.978 * H - L.waistY, frontZ(0.978) * 0.92);
+      spine.add(pocket);
+      // Drawstrings
+      for (const sx of [-1, 1]) {
+        const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.13, 6), foldM);
+        cord.position.set(sx * 0.030, cl(1.285), frontZ(1.300) * 0.96);
+        cord.rotation.x = -0.12;
+        chest.add(cord);
+      }
+    } else {
+      const zipM = new THREE.MeshPhysicalMaterial({
+        color: shirtCol.clone().multiplyScalar(1.25), roughness: 0.42, metalness: 0.45,
+      });
+      // The zip follows the chest's changing depth in short segments; one long
+      // straight box would sink into the sternum and poke out at the collar.
+      const zy = [1.318, 1.250, 1.170, 1.090, 1.010, 0.940];
+      for (let i = 0; i < zy.length - 1; i++) {
+        const yMid = (zy[i] + zy[i + 1]) / 2;
+        const seg = new THREE.Mesh(
+          new THREE.BoxGeometry(0.020, (zy[i] - zy[i + 1]) * H + 0.004, 0.014), zipM);
+        seg.position.set(0, cl(yMid), frontZ(yMid) * H + 0.004);
+        chest.add(seg);
+      }
+      // Lapels: two angled panels folding back off the collar.
+      for (const sx of [-1, 1]) {
+        const lap = new THREE.Mesh(new THREE.BoxGeometry(0.080 * SW, 0.20 * H, 0.016), foldM);
+        lap.position.set(sx * 0.062 * SW, cl(1.238), frontZ(1.240) * H - 0.004);
+        lap.rotation.z = sx * 0.42;
+        lap.rotation.y = sx * -0.20;
+        lap.castShadow = true;
+        chest.add(lap);
+      }
+      const collar = new THREE.Mesh(new THREE.TorusGeometry(0.088 * SW, 0.020, 10, 22, Math.PI * 1.25), foldM);
+      collar.rotation.x = Math.PI / 2;
+      collar.rotation.z = Math.PI * 0.375;
+      collar.scale.set(1.15, 1.0, 0.95);
+      collar.position.set(0, cl(1.328), -0.006 * H);
+      chest.add(collar);
+    }
+  }
 
   // ---------- neck ----------
   // A lathe on the neck bone rather than part of the skinned torso: it belongs
@@ -15269,12 +15377,28 @@ class Body {
     }
 
     const idleFactor = 1 - (walkAmt || 0);
-    // Subtle breath (always-on idle motion).
-    const breathPhase = Math.sin(t * 1.4);
+    // ---- fear on the face ----
+    // PhobiaFear is the same 0..100 signal the narration, audio and grade all
+    // read; the character has no business being the only thing in the scene
+    // that doesn't react to it.
+    {
+      let fearRaw = 0;
+      try {
+        if (window.PhobiaFear && window.PhobiaFear.get) fearRaw = window.PhobiaFear.get() / 100;
+      } catch {}
+      if (this._fearSm == null) this._fearSm = 0;
+      this._fearSm += (Math.max(0, Math.min(1, fearRaw)) - this._fearSm) * Math.min(1, dtB * 1.6);
+      if (this.face && this.face.setFear) this.face.setFear(this._fearSm);
+    }
+    const fearK = this._fearSm || 0;
+    // Breathing quickens and shallows with arousal — the oldest tell there is.
+    const breathRate = 1.4 + fearK * 1.5;
+    this._breathPh = (this._breathPh || 0) + dtB * breathRate;
+    const breathPhase = Math.sin(this._breathPh);
     // Visible rib expansion. The `breath` bone has no children, so scaling it
     // inflates the ribcage WITHOUT dragging the neck, head or arms with it.
     if (this.rig.breath) {
-      const strength = 0.6 + idleFactor * 0.4;
+      const strength = (0.6 + idleFactor * 0.4) * (1 - fearK * 0.35);
       this.rig.breath.scale.set(
         1 + breathPhase * 0.020 * strength,
         1 + breathPhase * 0.014 * strength,
@@ -15533,6 +15657,12 @@ class Body {
         + Math.sin(t * 0.7) * 0.02
         + (Math.abs(Math.sin(walkPhase)) - 0.6) * 0.035 * walkAmt;
       this.head.rotation.z = Math.sin(t * 0.53) * 0.012 - gaitRoll * 0.02;
+      // Fine tremor at high arousal — small enough to feel rather than see.
+      if (fearK > 0.25) {
+        const tr = (fearK - 0.25) * 0.0075;
+        this.head.rotation.y += Math.sin(t * 23.0) * tr;
+        this.head.rotation.x += Math.sin(t * 19.7 + 1.3) * tr * 0.7;
+      }
     }
     // Eyes lead the head: the pupils flick toward whatever the character is
     // reaching for / walking toward slightly before the head follows.
@@ -15734,7 +15864,9 @@ class Body {
       this._blinkTimer -= dtB;
       if (this._blinkTimer < 0 && this._blinkPhase <= 0) {
         this._blinkPhase = 1;
-        this._blinkTimer = 2.5 + Math.random() * 4;
+        // ~12 blinks/min at rest, roughly doubling under high arousal.
+        const calm = 2.5 + Math.random() * 4;
+        this._blinkTimer = calm * (1 - fearK * 0.55);
       }
       if (this._blinkPhase > 0) {
         this._blinkPhase -= dtB / 0.16;
@@ -16391,87 +16523,33 @@ class Hands {
   }
 
   _buildHand(skin, sleeve, side) {
-    const hand = new THREE.Group();
-
-    // Forearm / sleeve — gently TAPERED (narrower at the wrist, wider toward the
-    // elbow) and slimmer than before, so it reads as an arm rather than a fat
-    // blue tube. Rounded cuff at the wrist.
-    const sleeveMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.031, 0.043, 0.22, 18), sleeve
-    );
-    sleeveMesh.rotation.x = Math.PI / 2;
-    sleeveMesh.position.set(0, 0, 0.11);
-    hand.add(sleeveMesh);
-    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.022, 18), sleeve);
-    cuff.rotation.x = Math.PI / 2;
-    cuff.position.set(0, 0, 0.005);
-    hand.add(cuff);
-
-    // Wrist — slightly flattened (hands are wider than thick)
-    const wrist = new THREE.Mesh(new THREE.SphereGeometry(0.033, 16, 12), skin);
-    wrist.position.set(0, 0, -0.022);
-    wrist.scale.set(1.2, 0.72, 1.0);
-    hand.add(wrist);
-
-    // Palm — back of the hand: a rounded, wider-than-thick slab that tapers a
-    // touch toward the fingers. CapsuleGeometry gives soft edges (no hard box).
-    const palm = new THREE.Mesh(new THREE.CapsuleGeometry(0.04, 0.05, 6, 16), skin);
-    palm.rotation.x = Math.PI / 2;
-    palm.scale.set(1.0, 0.5, 1.0);          // flatten in Y → palm thickness
-    palm.position.set(0, 0, -0.075);
-    hand.add(palm);
-
-    // Fingers (4) — natural varying lengths (middle longest, pinky shortest),
-    // gently fanned, each two tapered capsule phalanges with rounded tips.
-    const fingers = [];
-    const fLen = [0.96, 1.06, 0.98, 0.78];   // index · middle · ring · pinky
-    for (let i = 0; i < 4; i++) {
-      const finger = new THREE.Group();
-      const x = (i - 1.5) * 0.0195;
-      finger.position.set(x, 0.001, -0.12);
-      finger.rotation.y = (i - 1.5) * 0.05;  // slight fan
-      const L = fLen[i];
-      const proximal = new THREE.Mesh(new THREE.CapsuleGeometry(0.0092, 0.026 * L, 5, 10), skin);
-      proximal.rotation.x = Math.PI / 2;
-      proximal.position.set(0, 0, -0.018 * L);
-      finger.add(proximal);
-      const distal = new THREE.Group();
-      distal.position.set(0, 0, -0.04 * L);
-      const distalMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.0078, 0.022 * L, 5, 10), skin);
-      distalMesh.rotation.x = Math.PI / 2;
-      distalMesh.position.set(0, 0, -0.015 * L);
-      distal.add(distalMesh);
-      finger.add(distal);
-      finger.userData = { distal };
-      fingers.push(finger);
-      hand.add(finger);
-    }
-
-    // Thumb — thicker, set to the side and angled across (opposable), 2 joints.
-    const thumb = new THREE.Group();
-    thumb.position.set(side * 0.04, -0.003, -0.052);
-    thumb.rotation.z = side * 0.75;
-    thumb.rotation.y = side * 0.45;
-    const thumbProx = new THREE.Mesh(new THREE.CapsuleGeometry(0.0115, 0.024, 5, 10), skin);
-    thumbProx.rotation.x = Math.PI / 2;
-    thumbProx.position.set(0, 0, -0.016);
-    thumb.add(thumbProx);
-    const thumbDistal = new THREE.Mesh(new THREE.CapsuleGeometry(0.0098, 0.018, 5, 10), skin);
-    thumbDistal.rotation.x = Math.PI / 2;
-    thumbDistal.position.set(0, 0, -0.038);
-    thumb.add(thumbDistal);
-    hand.add(thumb);
-
-    // Position the whole hand at the lower edge of the view
-    // (camera-space coords; -Z is forward, -Y is down). The REST pose is not
-    // flat-palms-down fingers-dead-ahead (mannequin): real relaxed hands sit
-    // a little lower and wider, droop at the wrist, turn slightly inward,
-    // and roll a few degrees toward thumbs-up.
-    hand.position.set(side * 0.17, -0.165, -0.32);
-    hand.rotation.set(0.24, side * -0.10, side * -0.24);
-    hand.scale.setScalar(0.72);
-    hand.userData = { side, basePos: hand.position.clone(), baseRot: hand.rotation.clone(), fingers, thumb };
-    return hand;
+    // The SAME hand the third-person rig uses, so the pair you see in first
+    // person and the pair on your character are one asset. They used to be two
+    // separate builds that had quietly drifted apart.
+    const hand = buildHand(side, skin, sleeve, { scale: 0.76, forearm: true });
+    // Rig hands hang along −Y with the palm facing −Z. First person wants
+    // fingers pointing away from the camera (−Z) with the palm DOWN (−Y): a
+    // 180° turn about the Y+Z diagonal swaps those two axes, which is a proper
+    // rotation (it also mirrors X, putting the thumb inboard where it belongs).
+    const holder = new THREE.Group();
+    holder.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 1).normalize(), Math.PI);
+    holder.add(hand);
+    const root = new THREE.Group();
+    root.add(holder);
+    // Rest pose in camera space (−Z forward, −Y down). Not flat-palms-down
+    // fingers-dead-ahead: real relaxed hands sit lower and wider, droop at the
+    // wrist, turn slightly inward and roll a few degrees toward thumbs-up.
+    root.position.set(side * 0.175, -0.185, -0.31);
+    root.rotation.set(0.24, side * -0.10, side * -0.24);
+    root.userData = {
+      side,
+      basePos: root.position.clone(),
+      baseRot: root.rotation.clone(),
+      setCurl: hand.userData.setCurl,
+      fingers: hand.userData.fingers,
+      thumb: hand.userData.thumb,
+    };
+    return root;
   }
 
   setGesture(type) {
@@ -16692,14 +16770,12 @@ class Hands {
       // tell in first person. Fades out as a gesture/reach takes the hand.
       const restCurl = (0.16 + Math.sin(t * 0.8 + side * 1.7) * 0.035)
         * (1 - this.gestureStrength) * (1 - this._reachStrength);
-      const curl = restCurl + (fingerCurl * this.gestureStrength) + pulseCurl;
-      hand.userData.fingers.forEach((finger, fi) => {
-        const distal = finger.userData.distal;
-        const microFlex = Math.sin(t * 0.9 + fi * 1.25 + side * 3.1) * 0.03
-          * (1 - this.gestureStrength) * (1 - this._reachStrength);
-        finger.rotation.x = curl * (1.2 + fi * 0.05) + microFlex;
-        if (distal) distal.rotation.x = curl * 1.4 + microFlex * 0.8;
-      });
+      // Curl is accumulated here and APPLIED once at the end of this hand's
+      // pass, after any reach has had its say — the shared hand drives all three
+      // phalanges plus the thumb from one call, so it can't be set twice.
+      hand.userData._curl = restCurl + (fingerCurl * this.gestureStrength) + pulseCurl;
+      hand.userData._spread = 0;
+      hand.userData._thumb = null;
       // Universal pulse: hand jiggles up slightly with the squeeze so
       // even idle hands react visibly to a click.
       hand.position.y += this.actionPulse * 0.018 * (side === 1 ? 1 : 0.5);
@@ -16756,13 +16832,25 @@ class Hands {
         // closing as contact is made.
         const baseCurl = reach.curl != null ? reach.curl : (reach.grip === "wrap" ? 1.25 : 0.20);
         const reachCurl = baseCurl * (0.4 + 0.6 * contactK);
-        for (const finger of hand.userData.fingers) {
-          finger.rotation.x += (reachCurl * 1.2 - finger.rotation.x) * rk;
-          const distal = finger.userData.distal;
-          if (distal) distal.rotation.x += (reachCurl * 1.4 - distal.rotation.x) * rk;
-        }
-        if (hand.userData.thumb && reach.grip === "wrap") {
-          hand.userData.thumb.rotation.x += (reachCurl * 0.7 - hand.userData.thumb.rotation.x) * rk;
+        const u = hand.userData;
+        u._curl += (reachCurl - u._curl) * rk;
+        // A flat palm laid on a surface splays; a grip does not.
+        u._spread += ((reach.grip === "flat" ? 0.6 : 0) - u._spread) * rk;
+        if (reach.grip === "wrap") u._thumb = reachCurl * 0.8;
+      }
+      // ---- apply this hand's finger pose ----
+      const u2 = hand.userData;
+      if (u2.setCurl) {
+        u2.setCurl(u2._curl || 0, u2._spread || 0, u2._thumb);
+        // Per-finger micro-flex on its own phase: fingers that move in perfect
+        // lockstep are the loudest mannequin tell at first-person range.
+        const idleK = (1 - this.gestureStrength) * (1 - this._reachStrength);
+        if (idleK > 0.01 && u2.fingers) {
+          for (let fi = 0; fi < u2.fingers.length; fi++) {
+            const m = Math.sin(t * 0.9 + fi * 1.25 + side * 3.1) * 0.035 * idleK;
+            u2.fingers[fi].seg[0].rotation.x += m;
+            u2.fingers[fi].seg[1].rotation.x += m * 0.8;
+          }
         }
       }
     });
