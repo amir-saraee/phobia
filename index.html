@@ -12114,7 +12114,10 @@ function runTutorialTour(stage, phobiaKey) {
   // user re-enters a scene without finishing, they don't see it again — the
   // tour is a one-time orientation, not a per-scene popup.
   try { localStorage.setItem("fobia.tutorialSeen", "1"); } catch {}
-  const isTouch = IS_COARSE_POINTER || ("ontouchstart" in window);
+  // isCoarsePointer() is this (classic) script's helper. IS_COARSE_POINTER is a
+  // const inside the 3D module's scope and is NOT visible here — referencing it
+  // threw on every first run and killed the tour before it rendered.
+  const isTouch = isCoarsePointer() || ("ontouchstart" in window);
   // What the user actually DOES in this specific scene — keyed off the phobia
   // so the orientation never teaches the wrong mental model (the old tour told
   // dog users to "grip the rail / splash the water"). Character-driven scenes
@@ -13632,11 +13635,1255 @@ class FPControls {
   }
 }
 
+// =============================================================================
+// ---------- Humanoid: skeleton, skinned body, sculpted face ----------
+// =============================================================================
+// One character builder, used by BOTH the in-scene third-person body and the
+// character-creator / title-screen preview — so the person you design is
+// literally the person you play.
+//
+// Why this exists: the avatar used to be a pile of separate primitives (a
+// sphere skull with sphere eyes glued on, capsule arms pivoting inside sphere
+// shoulders, box feet). Every joint showed a seam, every rotation opened a gap,
+// and the face read as a mannequin. Here the body is ONE continuous
+// SkinnedMesh over a real bone hierarchy — shoulders, elbows, hips and knees
+// deform instead of separating — and the head is a genuinely sculpted surface
+// (brow ridge, eye sockets, nose bridge, lips, jaw, chin) rather than parts
+// stuck to a ball.
+//
+// Bone local frames are chosen to match the OLD group hierarchy exactly
+// (limbs hang along local -Y, +Z is forward), so all the tuned gait / posture /
+// reach maths keeps working against `arms[].root/elbow` and `legs[].hip/knee/foot`.
+
+// ---- small maths helpers -----------------------------------------------
+const _hsat = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
+// smoothstep that also works with a > b (descending edges)
+function _sstep(a, b, x) {
+  const t = _hsat((x - a) / (b - a || 1e-6));
+  return t * t * (3 - 2 * t);
+}
+// Anisotropic gaussian falloff — the workhorse for face sculpting.
+function _falloff(dx, dy, dz, rx, ry, rz) {
+  const a = dx / rx, b = dy / ry, c = dz / rz;
+  const d2 = a * a + b * b + c * c;
+  return d2 > 9 ? 0 : Math.exp(-d2);
+}
+
+// ---- skinned geometry accumulator --------------------------------------
+// Collects vertices (position / uv / skinIndex / skinWeight) and triangles
+// grouped by material slot, then bakes one indexed BufferGeometry with the
+// material groups laid out contiguously.
+class SkinGeom {
+  constructor() {
+    this.pos = []; this.uv = []; this.si = []; this.sw = [];
+    this.tris = new Map();          // materialIndex -> flat index array
+  }
+  // w: array of [boneIndex, weight]; normalised here so callers can be sloppy.
+  vert(x, y, z, u, v, w) {
+    this.pos.push(x, y, z);
+    this.uv.push(u, v);
+    let tot = 0;
+    for (let i = 0; i < w.length; i++) tot += w[i][1];
+    if (tot <= 0) tot = 1;
+    const si = [0, 0, 0, 0], sw = [0, 0, 0, 0];
+    for (let i = 0; i < 4 && i < w.length; i++) { si[i] = w[i][0]; sw[i] = w[i][1] / tot; }
+    this.si.push(si[0], si[1], si[2], si[3]);
+    this.sw.push(sw[0], sw[1], sw[2], sw[3]);
+    return (this.pos.length / 3) - 1;
+  }
+  tri(a, b, c, m) {
+    let arr = this.tris.get(m);
+    if (!arr) { arr = []; this.tris.set(m, arr); }
+    arr.push(a, b, c);
+  }
+  quad(a, b, c, d, m) { this.tri(a, b, c, m); this.tri(a, c, d, m); }
+  toGeometry() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(this.pos, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(this.uv, 2));
+    g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(this.si, 4));
+    g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(this.sw, 4));
+    const slots = [...this.tris.keys()].sort((a, b) => a - b);
+    let total = 0;
+    for (const m of slots) total += this.tris.get(m).length;
+    const idx = new Uint32Array(total);
+    let at = 0;
+    for (const m of slots) {
+      const arr = this.tris.get(m);
+      g.addGroup(at, arr.length, m);
+      for (let i = 0; i < arr.length; i++) idx[at + i] = arr[i];
+      at += arr.length;
+    }
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
+    g.computeVertexNormals();
+    return g;
+  }
+}
+
+// ---- limb sweep ---------------------------------------------------------
+// Sweeps a (possibly elliptical, possibly squared-off) cross-section along a
+// polyline of stations. ALL paths are authored top → bottom so the tangent is
+// ~(0,-1,0) and the generated winding stays consistent.
+//
+// station: { p:[x,y,z], rx, rz, w:[[bone,weight],…], mat, sq?, cap? }
+//   sq   — superellipse exponent (<1 squares the section off; torso uses it)
+//   cap  — "start" / "end" closes that end with a rounded pole
+function _sweep(sg, stations, radial) {
+  const N = radial;
+  const rings = [];
+  const T = new THREE.Vector3(), X = new THREE.Vector3(), Z = new THREE.Vector3(), R = new THREE.Vector3();
+  for (let i = 0; i < stations.length; i++) {
+    const s = stations[i];
+    const a = stations[Math.max(0, i - 1)].p, b = stations[Math.min(stations.length - 1, i + 1)].p;
+    T.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    if (T.lengthSq() < 1e-10) T.set(0, -1, 0);
+    T.normalize();
+    R.set(0, 0, 1);
+    if (Math.abs(T.z) > 0.9) R.set(1, 0, 0);
+    X.crossVectors(R, T).normalize();
+    Z.crossVectors(T, X).normalize();
+    const ring = [];
+    const sq = s.sq || 1;
+    for (let k = 0; k < N; k++) {
+      const ang = (k / N) * Math.PI * 2;
+      let cx = Math.cos(ang), cz = Math.sin(ang);
+      if (sq !== 1) {
+        cx = Math.sign(cx) * Math.pow(Math.abs(cx), sq);
+        cz = Math.sign(cz) * Math.pow(Math.abs(cz), sq);
+      }
+      const ox = X.x * s.rx * cx + Z.x * s.rz * cz;
+      const oy = X.y * s.rx * cx + Z.y * s.rz * cz;
+      const oz = X.z * s.rx * cx + Z.z * s.rz * cz;
+      ring.push(sg.vert(s.p[0] + ox, s.p[1] + oy, s.p[2] + oz, k / N, i / (stations.length - 1), s.w));
+    }
+    rings.push(ring);
+  }
+  for (let i = 0; i < stations.length - 1; i++) {
+    const m = stations[i].mat;
+    for (let k = 0; k < N; k++) {
+      const k2 = (k + 1) % N;
+      sg.quad(rings[i][k], rings[i][k2], rings[i + 1][k2], rings[i + 1][k], m);
+    }
+  }
+  // Rounded end caps: a single pole vertex pushed along the tangent.
+  const capEnd = (si, dir) => {
+    const s = stations[si];
+    const rr = (s.rx + s.rz) * 0.5;
+    const a = stations[Math.max(0, si - 1)].p, b = stations[Math.min(stations.length - 1, si + 1)].p;
+    T.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    if (T.lengthSq() < 1e-10) T.set(0, -1, 0);
+    T.normalize().multiplyScalar(dir * rr * 0.85);
+    const pole = sg.vert(s.p[0] + T.x, s.p[1] + T.y, s.p[2] + T.z, 0.5, dir > 0 ? 1 : 0, s.w);
+    const ring = rings[si];
+    for (let k = 0; k < N; k++) {
+      const k2 = (k + 1) % N;
+      if (dir > 0) sg.tri(ring[k], pole, ring[k2], s.mat);
+      else sg.tri(ring[k], ring[k2], pole, s.mat);
+    }
+  };
+  if (stations[0].cap) capEnd(0, -1);
+  if (stations[stations.length - 1].cap) capEnd(stations.length - 1, 1);
+}
+
+// ---- body-type proportion table ----------------------------------------
+// Height, shoulder width, hip width, head ratio, gait sway personality, plus
+// the softer/rounder shaping that separates the presets at silhouette range.
+const BODY_TYPES_3D = {
+  man:   { h: 1.00, shoulder: 1.00, hip: 1.00, head: 1.00, sway: 1.0, chestZ: 1.00, waist: 1.00, limb: 1.00, seat: 1.00 },
+  woman: { h: 0.95, shoulder: 0.85, hip: 1.14, head: 0.96, sway: 1.35, chestZ: 1.06, waist: 0.86, limb: 0.92, seat: 1.10 },
+  boy:   { h: 0.80, shoulder: 0.80, hip: 0.96, head: 1.16, sway: 0.9,  chestZ: 0.94, waist: 0.96, limb: 0.90, seat: 0.96 },
+  girl:  { h: 0.78, shoulder: 0.76, hip: 1.02, head: 1.18, sway: 1.15, chestZ: 0.96, waist: 0.90, limb: 0.88, seat: 1.02 },
+};
+
+// ---- sculpted head surface ---------------------------------------------
+// Returns a function (theta, phi) -> THREE.Vector3 giving a point on a REAL
+// head: an ellipsoid pushed and pulled by anatomical fields. Nothing here is
+// a separate glued-on mesh — the brow ridge, eye sockets, nose, lips, jaw and
+// chin are all one continuous surface, which is the whole reason the face
+// finally reads as a face instead of a bowling ball with beads on it.
+//
+// Head-local space: origin at the middle of the skull, +Z is forward (the
+// face), +Y up. Canonical head height ≈ 0.232 m (crown +0.116, chin −0.116).
+// Vertical landmarks follow the classical head canon: pupils on the head's
+// horizontal midline, nose base halfway from brow to chin, lip seam a third
+// of the way down from nose base to chin.
+const FACE = {
+  eyeY:      0.0045,  // pupil line — a real head's eyes sit at its vertical middle
+  eyeX:      0.0325,  // pupil separation / 2
+  eyeZ:      0.0615,  // eyeball CENTRE depth (the cornea pokes out past this)
+  eyeR:      0.0125,  // eyeball radius
+  browY:     0.0215,
+  noseTipY: -0.0345,
+  noseBaseY:-0.0455,
+  mouthY:   -0.0645,  // the lip seam
+  chinY:    -0.0930,
+  earY:     -0.0080,
+};
+
+function makeHeadSurface(shape) {
+  // shape: 0 = softer/rounder (woman/child), 1 = squarer/heavier (man)
+  const sq = shape;
+  const SX = 0.0800, SY = 0.1095, SZ = 0.0920;   // base ellipsoid half-axes
+  return function headPoint(theta, phi) {
+    const sp = Math.sin(phi), cp = Math.cos(phi);
+    let x = SX * sp * Math.sin(theta);
+    let y = SY * cp;
+    let z = SZ * sp * Math.cos(theta);
+
+    // --- gross skull shaping -------------------------------------------
+    // Jaw taper: the mandible is narrower than the cranium and its back edge
+    // cuts forward toward the chin. Overdoing this is what turns a head into
+    // an alien, so it stays modest and only bites below the cheekbones.
+    const jt = _sstep(-0.010, -0.098, y);
+    x *= 1 - 0.20 * jt * (0.85 + 0.3 * sq);
+    if (z < 0) z *= 1 - 0.40 * jt;
+    // Mandible. The base ellipsoid tapers to nothing at its south pole, so a
+    // chin placed there ends up folded onto the UNDERSIDE of the head — which
+    // is why the mouth and chin used to be invisible from the front. Push the
+    // lower face forward onto a real jaw plane and widen it, fading out near
+    // the pole so the bottom vertex stays a single point (no hole).
+    {
+      const drop = _sstep(-0.052, -0.098, y);
+      const poleFade = _sstep(1.00, 0.88, phi / Math.PI);
+      const front = Math.max(0, Math.cos(theta));
+      z += 0.078 * drop * Math.pow(front, 1.5) * poleFade;
+      x += 0.019 * Math.sign(x || 1) * drop * Math.abs(Math.sin(theta)) * poleFade;
+    }
+    // A flat-ish underside, applied only at the very bottom so it shapes the
+    // throat without eating the chin.
+    y += _sstep(-0.086, -0.112, y) * 0.013;
+    // Face plane: the front of a head is flat-ish, not spherical — pull the
+    // outer edges of the face back toward the cheeks.
+    if (z > 0) {
+      const across = Math.min(1, Math.abs(x) / SX);
+      z *= 1 - 0.19 * across * across * _sstep(-0.095, -0.015, y) * _sstep(0.085, 0.025, y);
+    }
+    // Forehead slopes back; occiput bulges.
+    if (z > 0) z *= 1 - 0.13 * _sstep(0.028, 0.104, y);
+    if (z < 0) z *= 1 + 0.07 * _sstep(0.072, -0.018, y);
+    // Slight cranium flattening at the temples.
+    x *= 1 - 0.060 * _falloff(Math.abs(x) - SX, y - 0.030, z - 0.020, 0.030, 0.045, 0.055);
+
+    // --- additive anatomy ----------------------------------------------
+    // Each entry pushes the surface along one axis with a soft, anisotropic
+    // falloff. Sign conventions: +z outward from the face, −z into it.
+    // Amplitudes are deliberately generous: at head scale a 5 mm feature
+    // vanishes under any soft light, and a face with no shadows under the
+    // brow, nose and lip reads as a mask.
+    const ax = Math.abs(x);
+    // Brow ridge + glabella
+    z += 0.0130 * _falloff(ax - 0.0305, y - FACE.browY, z - 0.070, 0.029, 0.013, 0.055) * (0.72 + 0.5 * sq);
+    z += 0.0060 * _falloff(x, y - FACE.browY - 0.002, z - 0.074, 0.014, 0.011, 0.050);
+    // Eye sockets, recessed so the eyeballs sit IN the skull rather than on it
+    z -= 0.0105 * _falloff(ax - FACE.eyeX, y - FACE.eyeY - 0.001, z - 0.064, 0.026, 0.017, 0.050);
+    z -= 0.0075 * _falloff(ax - FACE.eyeX, y - FACE.eyeY, z - 0.066, 0.0175, 0.0080, 0.040);
+    // Cheekbone, then the hollow under it
+    z += 0.0105 * _falloff(ax - 0.0545, y + 0.0075, z - 0.046, 0.026, 0.019, 0.048);
+    x += 0.0060 * Math.sign(x || 1) * _falloff(ax - 0.0600, y + 0.0075, z - 0.030, 0.024, 0.021, 0.045);
+    z -= 0.0070 * _falloff(ax - 0.0455, y + 0.0395, z - 0.048, 0.021, 0.018, 0.042) * (0.6 + 0.6 * sq);
+    // Nose: bridge ridge → tip bulb → wings → the shadow under the septum
+    {
+      const t = _hsat((0.0245 - y) / 0.0590);                    // 0 at bridge top, 1 at tip
+      const ridgeY = 0.0245 - t * 0.0590;
+      const ridgeZ = 0.0760 + t * 0.0170;
+      z += (0.0080 + 0.0075 * t) * _falloff(x, y - ridgeY, z - ridgeZ, 0.0120 + 0.006 * t, 0.034, 0.045);
+    }
+    z += 0.0255 * _falloff(x, y - FACE.noseTipY, z - 0.0880, 0.0150, 0.0125, 0.030);
+    z += 0.0125 * _falloff(ax - 0.0160, y + 0.0400, z - 0.0820, 0.0105, 0.0110, 0.028);
+    x += 0.0075 * Math.sign(x || 1) * _falloff(ax - 0.0170, y + 0.0405, z - 0.0790, 0.0100, 0.0110, 0.028);
+    z -= 0.0125 * _falloff(x, y - FACE.noseBaseY, z - 0.0870, 0.0165, 0.0068, 0.026);
+    // Philtrum groove
+    z -= 0.0040 * _falloff(x, y + 0.0530, z - 0.0850, 0.0060, 0.0070, 0.020);
+    // Lips: the upper is thinner and sits slightly behind the lower
+    z += 0.0135 * _falloff(x, y + 0.0590, z - 0.0830, 0.0235, 0.0070, 0.024);
+    z -= 0.0125 * _falloff(x, y - FACE.mouthY, z - 0.0850, 0.0225, 0.0042, 0.022);
+    z += 0.0150 * _falloff(x, y + 0.0730, z - 0.0815, 0.0205, 0.0090, 0.024);
+    // Mouth corners tuck in
+    z -= 0.0080 * _falloff(ax - 0.0240, y - FACE.mouthY, z - 0.0740, 0.0085, 0.0105, 0.030);
+    // Mentolabial crease, then the chin itself
+    z -= 0.0075 * _falloff(x, y + 0.0820, z - 0.0790, 0.0205, 0.0075, 0.024);
+    z += 0.0145 * _falloff(x, y - FACE.chinY, z - 0.0740, 0.0235 + 0.006 * sq, 0.0165, 0.030);
+    // Jaw corner (gonion) — the square-jaw cue, dialled by `shape`
+    x += (0.0040 + 0.0055 * sq) * Math.sign(x || 1)
+       * _falloff(ax - 0.0555, y + 0.0500, z + 0.0060, 0.0225, 0.0225, 0.0330);
+    // Tuck the underside in behind the jaw so the head reads as sitting ON a
+    // neck rather than floating above one.
+    y -= 0.0090 * _falloff(x, y + 0.0930, z + 0.0400, 0.0500, 0.0250, 0.0350);
+    return new THREE.Vector3(x, y, z);
+  };
+}
+
+// A thin ribbon laid along the head's surface. `path(t)` returns [theta, phi];
+// `half(t)` is the ribbon's half-width in radians of phi. Used for eyebrows —
+// a mask-thresholded shell gives staircase edges, and a swept tube floats.
+function surfaceRibbon(headPoint, path, half, lift, mat, segs = 26) {
+  const pos = [], uv = [], idx = [];
+  const A = new THREE.Vector3(), Bv = new THREE.Vector3(), C = new THREE.Vector3();
+  const n = new THREE.Vector3(), du = new THREE.Vector3(), dv = new THREE.Vector3();
+  const ACROSS = 4;
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    const [th, ph] = path(t);
+    const h = half(t);
+    for (let k = 0; k <= ACROSS; k++) {
+      const w = (k / ACROSS - 0.5) * 2;                 // −1 … +1
+      const phk = ph + w * h;
+      A.copy(headPoint(th, phk));
+      Bv.copy(headPoint(th + 0.012, phk));
+      C.copy(headPoint(th, phk + 0.012));
+      du.subVectors(Bv, A); dv.subVectors(C, A);
+      n.crossVectors(dv, du).normalize();
+      if (!isFinite(n.x)) n.copy(A).normalize();
+      // Taper to nothing at both ends so the brow has a head and a tail.
+      const taper = Math.sin(Math.PI * Math.min(1, Math.max(0, t))) ** 0.35;
+      const off = lift * (1 - w * w * 0.55) * taper;
+      pos.push(A.x + n.x * off, A.y + n.y * off, A.z + n.z * off);
+      uv.push(t, k / ACROSS);
+    }
+  }
+  const row = ACROSS + 1;
+  for (let i = 0; i < segs; i++) {
+    for (let k = 0; k < ACROSS; k++) {
+      const a = i * row + k, b = a + 1, c = (i + 1) * row + k + 1, d = (i + 1) * row + k;
+      idx.push(a, c, b, a, d, c);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat);
+  m.castShadow = false;
+  return m;
+}
+
+// Build the sculpted skull mesh plus a matching mask-driven shell generator
+// (used for hair and beards, so they conform exactly to this head).
+function buildHeadShell(headPoint, mat, opts = {}) {
+  const NU = opts.nu || 56, NV = opts.nv || 40;
+  const off = opts.offset || 0;      // outward thickness (hair / beard shells)
+  const mask = opts.mask || null;    // (theta, phi, p) -> 0..1 keep factor
+  const tint = opts.tint || null;    // (p) -> [r,g,b] multiplier, for lips/sockets
+  const pos = [], uv = [], col = [], idx = [];
+  const grid = [];
+  const P = new THREE.Vector3(), n = new THREE.Vector3();
+  let count = 0;
+  for (let j = 0; j <= NV; j++) {
+    const phi = (j / NV) * Math.PI;
+    const row = [];
+    for (let i = 0; i <= NU; i++) {
+      // Offset by π so the wrap seam sits on the back of the skull, never
+      // down the middle of the face.
+      const theta = ((i / NU) * Math.PI * 2 + Math.PI) % (Math.PI * 2);
+      P.copy(headPoint(theta, Math.max(1e-3, Math.min(Math.PI - 1e-3, phi))));
+      // Radial approximation is only used to push masked shells (hair, beard)
+      // outward; the shading normals come from computeVertexNormals() below.
+      // Sampling the sculpt three times per vertex for an analytic normal
+      // tripled build cost for no visible gain on a grid this dense.
+      n.copy(P).normalize();
+      let keep = 1;
+      if (mask) keep = mask(theta, phi, P, n);
+      row.push({ p: P.clone(), n: n.clone(), keep });
+      if (keep > 0 || !mask) {
+        const o = off * (mask ? Math.min(1, keep * 1.6) : 1);
+        pos.push(P.x + n.x * o, P.y + n.y * o, P.z + n.z * o);
+        uv.push(i / NU, 1 - j / NV);
+        if (tint) { const c = tint(P); col.push(c[0], c[1], c[2]); }
+        row[row.length - 1].idx = count++;
+      } else {
+        row[row.length - 1].idx = -1;
+      }
+    }
+    grid.push(row);
+  }
+  for (let j = 0; j < NV; j++) {
+    for (let i = 0; i < NU; i++) {
+      const a = grid[j][i], b = grid[j][i + 1], c = grid[j + 1][i + 1], d = grid[j + 1][i];
+      if (a.idx < 0 || b.idx < 0 || c.idx < 0 || d.idx < 0) continue;
+      if (mask && Math.min(a.keep, b.keep, c.keep, d.keep) <= 0) continue;
+      // (a,c,b)/(a,d,c) — this winding puts the face normal OUTWARD for the
+      // theta/phi parameterisation used here; the naive order renders inside-out.
+      idx.push(a.idx, c.idx, b.idx, a.idx, d.idx, c.idx);
+    }
+  }
+  if (idx.length === 0) return null;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  if (tint) g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat);
+  m.castShadow = true;
+  return m;
+}
+
+// ---- the head assembly (skull + eyes + brows + ears + hair + extras) -----
+// Returns a Group whose local origin is the head JOINT (base of the skull),
+// so it can be parented straight onto the head bone.
+// Distance from the head JOINT up to the centre of the skull. Chosen so the
+// pupils land on FACE.eyeY above the head bone, i.e. exactly at the camera's
+// eye height — the first-person / third-person camera contract.
+const HEAD_LIFT = 0.0555;
+
+function buildHead(o) {
+  const grp = new THREE.Group();
+  const shape = (o.bodyType === "man") ? 1.0 : (o.bodyType === "woman" ? 0.25 : 0.5);
+  const headPoint = makeHeadSurface(shape);
+  grp.userData.headPoint = headPoint;
+
+  const skinCol = new THREE.Color(o.skinColor);
+  const hairCol = new THREE.Color(o.hairColor);
+  // Skin: a little translucency-ish warmth in the shadows via sheen instead of
+  // a flat diffuse — the cheapest thing that stops skin reading as painted clay.
+  const skinM = new THREE.MeshPhysicalMaterial({
+    color: skinCol, roughness: 0.58, metalness: 0.0,
+    sheen: 0.35, sheenRoughness: 0.85,
+    sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.55),
+    envMapIntensity: 0.45,
+  });
+  const hairM = new THREE.MeshStandardMaterial({
+    color: hairCol, roughness: 0.72, metalness: 0.08, envMapIntensity: 0.6,
+  });
+  const browM = new THREE.MeshStandardMaterial({
+    color: hairCol.clone().multiplyScalar(0.8), roughness: 0.95,
+    side: THREE.DoubleSide,   // the ribbon winds the other way on the −X side
+  });
+
+  // --- skull ---------------------------------------------------------------
+  const fhKind = o.facialHair || "none";
+  const hairStyleKind = o.hairStyle || "short";
+  // Hairline: front is high (forehead shows), temples dip, sides run to the ear
+  // tops, the back drops to the nape. `phi` is polar from the crown.
+  function hairlineMask(theta, phi) {
+    const fw = Math.cos(theta);
+    const side = Math.abs(Math.sin(theta));
+    let reach = 1.52;                                  // back of the head — down to the nape
+    reach -= 0.44 * _hsat(fw) * _hsat(fw);             // forehead: pull the line up
+    reach -= 0.10 * side * _hsat(fw);                  // temples dip a touch further
+    reach += 0.16 * _hsat(-fw);                        // nape a bit lower
+    reach += 0.085 * Math.exp(-Math.pow(theta > Math.PI ? (theta - Math.PI * 2) / 0.32 : theta / 0.32, 2));
+    return _sstep(reach + 0.10, reach - 0.06, phi);
+  }
+  // Beard region: a cheek line running from the sideburn down to the corner of
+  // the mouth, with the lips kept clear.
+  function beardMask(p) {
+    const ax = Math.abs(p.x);
+    const cheekLine = -0.080 + _hsat(ax / 0.070) * 0.046;
+    let v = _sstep(cheekLine + 0.012, cheekLine - 0.014, p.y);
+    if (v <= 0) return 0;
+    v *= 1 - _falloff(p.x, p.y - FACE.mouthY, p.z - 0.086, 0.029, 0.015, 0.030);
+    v *= _sstep(-0.030, 0.005, p.z);
+    return v;
+  }
+
+  // Resolution matters more here than anywhere else in the app: a lip seam is
+  // ~5 mm on a 22 cm head, so a coarse grid literally cannot represent the
+  // mouth — the old head looked blank because its cells were bigger than its
+  // features. Tinting does the other half of the work: skin is not one flat
+  // colour, and lips/sockets/brows carry most of a face's readability.
+  const dense = o.lowDetail ? { nu: 72, nv: 54 } : { nu: 112, nv: 86 };
+  const faceM = new THREE.MeshPhysicalMaterial({
+    color: skinCol, roughness: 0.55, metalness: 0.0,
+    sheen: 0.35, sheenRoughness: 0.85,
+    sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.55),
+    envMapIntensity: 0.45, vertexColors: true,
+  });
+  const lipTone = [1.02, 0.545, 0.515];
+  const skull = buildHeadShell(headPoint, faceM, {
+    nu: dense.nu, nv: dense.nv,
+    tint: (p) => {
+      let r = 1, g = 1, b = 1;
+      const ax = Math.abs(p.x);
+      // Lips
+      const lip = Math.min(1, _falloff(p.x, p.y + 0.0590, p.z - 0.083, 0.0260, 0.0105, 0.032)
+                            + _falloff(p.x, p.y + 0.0730, p.z - 0.081, 0.0235, 0.0120, 0.032));
+      r *= 1 + (lipTone[0] - 1) * lip; g *= 1 + (lipTone[1] - 1) * lip; b *= 1 + (lipTone[2] - 1) * lip;
+      // Lip seam — the dark line that makes a mouth a mouth
+      const seam = _falloff(p.x, p.y - FACE.mouthY, p.z - 0.084, 0.0245, 0.0038, 0.032);
+      const sk = 1 - 0.68 * seam; r *= sk; g *= sk * 0.86; b *= sk * 0.88;
+      // Eye sockets / upper-lid shadow
+      const sock = _falloff(ax - FACE.eyeX, p.y - FACE.eyeY - 0.006, p.z - 0.066, 0.029, 0.015, 0.040);
+      r *= 1 - 0.22 * sock; g *= 1 - 0.27 * sock; b *= 1 - 0.24 * sock;
+      // Nostril openings
+      const nos = _falloff(ax - 0.0110, p.y + 0.0440, p.z - 0.0860, 0.0075, 0.0058, 0.020);
+      const nk = 1 - 0.78 * nos; r *= nk; g *= nk; b *= nk;
+      // Cheek warmth + a cooler jaw/beard shadow, the two tones that keep a
+      // face from looking plastic.
+      const cheek = _falloff(ax - 0.0500, p.y + 0.0230, p.z - 0.052, 0.030, 0.024, 0.045);
+      r *= 1 + 0.055 * cheek; g *= 1 - 0.010 * cheek; b *= 1 - 0.020 * cheek;
+      const jaw = _sstep(-0.040, -0.075, p.y) * Math.max(0, p.z) * 12;
+      const jk = 1 - 0.05 * Math.min(1, jaw); r *= jk; g *= jk * 0.995; b *= 1 - 0.02 * Math.min(1, jaw);
+      // Brow hair root shading
+      const brow = _falloff(ax - 0.0330, p.y - FACE.browY - 0.001, p.z - 0.074, 0.026, 0.0060, 0.030);
+      const bk = 1 - 0.20 * brow; r *= bk; g *= bk * 0.96; b *= bk * 0.94;
+      // Shade the scalp under the hair and the jaw under a beard toward the
+      // hair colour, so the shells' polygon edges land on matching skin.
+      const toHair = (amt) => {
+        if (amt <= 0) return;
+        const hr = hairCol.r / Math.max(0.02, skinCol.r);
+        const hg = hairCol.g / Math.max(0.02, skinCol.g);
+        const hb = hairCol.b / Math.max(0.02, skinCol.b);
+        r += (hr - r) * amt; g += (hg - g) * amt; b += (hb - b) * amt;
+      };
+      if (hairStyleKind !== "bald") {
+        const dir = Math.atan2(p.x, p.z);
+        const th2 = dir < 0 ? dir + Math.PI * 2 : dir;
+        const ph2 = Math.acos(Math.max(-1, Math.min(1, p.y / Math.max(1e-4, p.length()))));
+        toHair(hairlineMask(th2, ph2) * (hairStyleKind === "buzz" ? 0.75 : 0.95));
+      }
+      if (fhKind === "beard") toHair(beardMask(p) * 0.92);
+      else if (fhKind === "stubble") toHair(beardMask(p) * 0.45);
+      return [r, g, b];
+    },
+  });
+  skull.position.y = HEAD_LIFT;
+  grp.add(skull);
+  const face = new THREE.Group();
+  face.position.copy(skull.position);
+  grp.add(face);                                      // everything else shares the skull's frame
+
+  // --- eyes ----------------------------------------------------------------
+  // A real eyeball in a real socket, with lids that ROTATE shut. (Squashing a
+  // lid's scale.y was the old blink and it looked like a shutter.)
+  const scleraM = new THREE.MeshPhysicalMaterial({
+    color: 0xe9ded2, roughness: 0.14, clearcoat: 1.0, clearcoatRoughness: 0.05,
+  });
+  const irisM = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(o.eyeColor), roughness: 0.14, metalness: 0.15,
+    clearcoat: 1.0, clearcoatRoughness: 0.04,
+    emissive: new THREE.Color(o.eyeColor).multiplyScalar(0.12),
+  });
+  const pupilM = new THREE.MeshBasicMaterial({ color: 0x07060a });
+  const lashM  = new THREE.MeshStandardMaterial({
+    color: hairCol.clone().multiplyScalar(0.35), roughness: 1.0,
+  });
+  // Where does the skin actually sit at the pupil? Sample the sculpted surface
+  // rather than trusting a constant — this is what keeps the cornea proud of
+  // the socket floor no matter how the face is retuned.
+  const eyeSurfZ = (() => {
+    let best = FACE.eyeZ + FACE.eyeR, bd = Infinity;
+    for (let i = 0; i <= 72; i++) {
+      const th = -0.95 + (i / 72) * 1.9;
+      for (let j = 0; j <= 72; j++) {
+        const ph = 1.05 + (j / 72) * 1.0;
+        const q = headPoint(th, ph);
+        if (q.z <= 0) continue;
+        const d = Math.pow(Math.abs(q.x) - FACE.eyeX, 2) + Math.pow(q.y - FACE.eyeY, 2);
+        if (d < bd) { bd = d; best = q.z; }
+      }
+    }
+    return best;
+  })();
+  const eyeCz = eyeSurfZ + 0.0038 - FACE.eyeR;    // cornea apex ≈ flush with the lids
+  const eyes = [];
+  for (const sx of [-1, 1]) {
+    const socket = new THREE.Group();
+    socket.position.set(sx * FACE.eyeX, FACE.eyeY, eyeCz);
+    face.add(socket);
+    // Eyeball — the globe; only the front cap is ever visible.
+    const globe = new THREE.Group();
+    socket.add(globe);
+    const sclera = new THREE.Mesh(new THREE.SphereGeometry(FACE.eyeR, 24, 18), scleraM);
+    globe.add(sclera);
+    // Iris / pupil / catchlight are spherical CAPS on the globe's front — a flat
+    // disc at any depth is either swallowed by the sphere or floats off it.
+    const cap = (rad, ang) => {
+      const g = new THREE.SphereGeometry(rad, 24, 14, 0, Math.PI * 2, 0, ang);
+      g.rotateX(Math.PI / 2);          // face +Z
+      return g;
+    };
+    const iris = new THREE.Mesh(cap(FACE.eyeR * 1.002, 0.50), irisM);
+    globe.add(iris);
+    const pupil = new THREE.Mesh(cap(FACE.eyeR * 1.010, 0.215), pupilM);
+    globe.add(pupil);
+    const glint = new THREE.Mesh(
+      cap(FACE.eyeR * 1.020, 0.115),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.92 })
+    );
+    glint.rotation.set(-0.42, 0.38, 0);
+    globe.add(glint);
+
+    // Lids — spherical caps slightly larger than the globe, hinged at its centre.
+    const lidGeo = (from, to) => new THREE.SphereGeometry(
+      FACE.eyeR * 1.06, 20, 10, 0, Math.PI * 2, from, to - from
+    );
+    const upper = new THREE.Mesh(lidGeo(0, Math.PI * 0.47), skinM);
+    upper.rotation.x = -0.155;                       // open: covers the top of the iris
+    socket.add(upper);
+    const lower = new THREE.Mesh(lidGeo(Math.PI * 0.55, Math.PI), skinM);
+    lower.rotation.x = 0.170;                        // open: sits just under the iris
+    socket.add(lower);
+    // Lash line — a dark rim at the upper lid margin. Tiny mesh, huge payoff:
+    // it's what stops the eye reading as a bead pressed into dough.
+    const lash = new THREE.Mesh(
+      new THREE.TorusGeometry(FACE.eyeR * 0.99, FACE.eyeR * 0.070, 6, 20, Math.PI),
+      lashM
+    );
+    lash.rotation.x = Math.PI / 2;              // lies IN the lid-margin plane
+    lash.position.y = FACE.eyeR * 0.19;         // the margin circle's height on the globe
+    upper.add(lash);
+    eyes.push({ group: socket, globe, upper, lower, iris, pupil, side: sx });
+  }
+
+  // --- eyebrows ------------------------------------------------------------
+  // Cut from the SAME sculpted surface as the skull and offset a hair's width
+  // outward, so a brow can never float off the brow ridge or poke through the
+  // temple — which is exactly what a swept tube did.
+  for (const sx of [-1, 1]) {
+    const brow = surfaceRibbon(
+      headPoint,
+      // Head-on it runs from just inside the eye to past its outer corner,
+      // arching over the middle and dipping at the tail.
+      (t) => [sx * (0.155 + t * 0.545), Math.PI * 0.5 - (0.150 + Math.sin(t * Math.PI) * 0.045 - t * 0.030)],
+      (t) => 0.030 + Math.sin(t * Math.PI) * 0.016,
+      0.0026, browM, 24
+    );
+    brow.position.copy(skull.position);
+    grp.add(brow);
+  }
+
+  // --- ears ----------------------------------------------------------------
+  for (const sx of [-1, 1]) {
+    const ear = new THREE.Group();
+    ear.position.set(sx * 0.0680, FACE.earY, -0.012);
+    ear.rotation.y = sx * 0.30;
+    ear.rotation.z = sx * -0.12;
+    face.add(ear);
+    const helix = new THREE.Mesh(new THREE.TorusGeometry(0.0175, 0.0048, 8, 18, Math.PI * 1.55), skinM);
+    helix.rotation.y = Math.PI / 2;
+    helix.rotation.z = -0.5;
+    helix.scale.set(1, 1.30, 1);
+    ear.add(helix);
+    const concha = new THREE.Mesh(new THREE.SphereGeometry(0.0135, 12, 10), skinM);
+    concha.scale.set(0.34, 1.15, 0.85);
+    ear.add(concha);
+    const lobe = new THREE.Mesh(new THREE.SphereGeometry(0.0072, 10, 8), skinM);
+    lobe.scale.set(0.55, 1.1, 0.9);
+    lobe.position.set(0, -0.0195, 0.0025);
+    ear.add(lobe);
+  }
+
+  // --- hair ----------------------------------------------------------------
+  // Every style is a SHELL of the sculpted skull, cut by a hairline mask, so it
+  // sits on the head like hair instead of a helmet — and, critically, the
+  // hairline stops above the brow instead of curtaining over the face.
+  const style = hairStyleKind;
+  const hairGroup = new THREE.Group();
+  hairGroup.position.copy(skull.position);
+  grp.add(hairGroup);
+  let hairFlutter = null;
+  if (style !== "bald") {
+    const thick = style === "buzz" ? 0.0035 : (style === "curly" ? 0.010 : 0.0085);
+    const cap = buildHeadShell(headPoint, hairM, {
+      nu: o.lowDetail ? 56 : 84, nv: o.lowDetail ? 42 : 62, offset: thick,
+      mask: (th, ph) => hairlineMask(th, ph),
+    });
+    if (cap) hairGroup.add(cap);
+  }
+  if (style === "curly") {
+    // Curl cluster riding the cap, biased to the upper-back of the skull.
+    for (let i = 0; i < 26; i++) {
+      const th = (i / 26) * Math.PI * 2 + (i % 3) * 0.4;
+      const ph = 0.35 + ((i * 7) % 11) / 11 * 0.75;
+      if (hairlineMask(th, ph) <= 0.2) continue;
+      const p = headPoint(th, ph);
+      const curl = new THREE.Mesh(new THREE.SphereGeometry(0.019 + (i % 4) * 0.004, 10, 8), hairM);
+      curl.position.copy(p).multiplyScalar(1.055);
+      hairGroup.add(curl);
+    }
+  } else if (style === "long") {
+    // Two front locks that FRAME the face (in front of the ears, clear of the
+    // eyes) plus a back sheet that flutters.
+    for (const sx of [-1, 1]) {
+      // Beside the ear, NOT over the cheek: front locks that cross the face
+      // hide the very thing the creator is for.
+      const lock = new THREE.Mesh(new THREE.CapsuleGeometry(0.023, 0.15, 6, 10), hairM);
+      lock.scale.set(0.95, 1, 0.72);
+      lock.position.set(sx * 0.0755, -0.055, -0.010);
+      lock.rotation.z = sx * 0.10;
+      hairGroup.add(lock);
+    }
+    const back = new THREE.Group();
+    back.position.set(0, 0.020, -0.040);
+    hairGroup.add(back);
+    const sheet = new THREE.Mesh(new THREE.CapsuleGeometry(0.062, 0.20, 6, 14), hairM);
+    sheet.scale.set(1.05, 1, 0.52);
+    sheet.position.set(0, -0.135, -0.010);
+    back.add(sheet);
+    hairFlutter = back;
+  } else if (style === "pony") {
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.030, -0.072);
+    hairGroup.add(tail);
+    const tie = new THREE.Mesh(
+      new THREE.TorusGeometry(0.019, 0.0055, 8, 14),
+      new THREE.MeshStandardMaterial({ color: 0x2a2f3d, roughness: 0.8 })
+    );
+    tie.rotation.x = Math.PI / 2;
+    tail.add(tie);
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.026, 0.15, 6, 12), hairM);
+    body.position.set(0, -0.095, -0.020);
+    body.rotation.x = -0.22;
+    tail.add(body);
+    hairFlutter = tail;
+  } else if (style === "short") {
+    // A soft fringe sweeping across the forehead — the cue that reads "styled"
+    // rather than "shaved cap".
+    const fringe = new THREE.Mesh(new THREE.SphereGeometry(0.040, 14, 10), hairM);
+    fringe.scale.set(1.55, 0.42, 0.60);
+    fringe.position.set(0.008, 0.062, 0.062);
+    fringe.rotation.z = 0.12;
+    hairGroup.add(fringe);
+  }
+
+  // --- facial hair ---------------------------------------------------------
+  const fh = fhKind;
+  if (fh !== "none") {
+    const fhM = new THREE.MeshStandardMaterial({
+      color: hairCol.clone().multiplyScalar(0.82), roughness: 0.98,
+      transparent: fh === "stubble", opacity: fh === "stubble" ? 0.55 : 1,
+    });
+    if (fh === "beard" || fh === "stubble") {
+      // Jaw-and-chin mask: everything below the mouth line and forward of the ears.
+      const beard = buildHeadShell(headPoint, fhM, {
+        nu: o.lowDetail ? 52 : 76, nv: o.lowDetail ? 40 : 56,
+        offset: fh === "stubble" ? 0.0016 : 0.0055,
+        // Slightly tighter than the tinted zone so the shell's polygon edge
+        // always lands on skin that is already beard-coloured.
+        mask: (th, ph, p) => { const v = beardMask(p); return v > 0.30 ? (v - 0.30) / 0.70 : 0; },
+      });
+      if (beard) { beard.position.copy(skull.position); grp.add(beard); }
+    }
+    if (fh === "beard" || fh === "moustache") {
+      const stache = new THREE.Mesh(new THREE.SphereGeometry(0.020, 14, 10), fhM);
+      stache.scale.set(1.55, 0.42, 0.62);
+      stache.position.set(0, -0.0530, 0.0810);
+      face.add(stache);
+    }
+  }
+
+  // --- headwear ------------------------------------------------------------
+  const hw = o.headwear || "none";
+  if (hw === "beanie" || hw === "cap") {
+    const hwM = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor), roughness: 0.94 });
+    const bandM = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor).multiplyScalar(0.78), roughness: 0.94 });
+    if (hw === "beanie") {
+      const dome = buildHeadShell(headPoint, hwM, {
+        nu: 44, nv: 32, offset: 0.014,
+        mask: (th, ph) => _sstep(1.28, 1.12, ph),
+      });
+      if (dome) { dome.position.copy(skull.position); grp.add(dome); }
+      const band = new THREE.Mesh(new THREE.TorusGeometry(0.077, 0.014, 10, 26), bandM);
+      band.rotation.x = Math.PI / 2;
+      band.scale.set(1.02, 1.0, 1.14);
+      band.position.set(0, HEAD_LIFT + 0.036, 0);
+      grp.add(band);
+      const pom = new THREE.Mesh(new THREE.SphereGeometry(0.019, 12, 10), bandM);
+      pom.position.set(0, HEAD_LIFT + 0.128, 0);
+      grp.add(pom);
+    } else {
+      const dome = buildHeadShell(headPoint, hwM, {
+        nu: 44, nv: 32, offset: 0.011,
+        mask: (th, ph) => _sstep(1.24, 1.08, ph),
+      });
+      if (dome) { dome.position.copy(skull.position); grp.add(dome); }
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.008, 20, 1, false, 0, Math.PI), bandM);
+      brim.scale.set(1.15, 1, 1.30);
+      brim.rotation.y = Math.PI / 2;
+      brim.position.set(0, HEAD_LIFT + 0.040, 0.030);
+      brim.rotation.x = -0.12;
+      grp.add(brim);
+    }
+  }
+
+  // --- glasses -------------------------------------------------------------
+  if (o.glasses === "round" || o.glasses === "square") {
+    const fr = new THREE.MeshPhysicalMaterial({
+      color: 0x14100f, roughness: 0.28, metalness: 0.55, clearcoat: 0.6,
+    });
+    const lensM = new THREE.MeshPhysicalMaterial({
+      color: 0xbfd6e6, roughness: 0.05, metalness: 0.1, transparent: true,
+      opacity: 0.15, depthWrite: false, clearcoat: 1.0, clearcoatRoughness: 0.02,
+    });
+    const zFront = eyeSurfZ + 0.0135;
+    for (const sx of [-1, 1]) {
+      const rim = new THREE.Mesh(
+        o.glasses === "round"
+          ? new THREE.TorusGeometry(0.0196, 0.0017, 8, 26)
+          : new THREE.TorusGeometry(0.0206, 0.0017, 4, 4),
+        fr
+      );
+      if (o.glasses === "square") { rim.rotation.z = Math.PI / 4; rim.scale.set(1.0, 0.82, 1); }
+      rim.position.set(sx * FACE.eyeX, FACE.eyeY, zFront);
+      face.add(rim);
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.0193, 20), lensM);
+      lens.position.copy(rim.position);
+      lens.position.z -= 0.0008;
+      if (o.glasses === "square") lens.scale.set(1.0, 0.82, 1);
+      face.add(lens);
+      // Temple arm, angled back to the ear.
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.0026, 0.0026), fr);
+      arm.position.set(sx * 0.052, FACE.eyeY + 0.004, zFront - 0.030);
+      arm.rotation.y = sx * 0.72;
+      face.add(arm);
+    }
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.0024, 0.0024), fr);
+    bridge.position.set(0, FACE.eyeY + 0.004, zFront);
+    face.add(bridge);
+  }
+
+  // --- expression + gaze driver -------------------------------------------
+  // Blinks close by ROTATING the lids (real eyelids sweep across the globe),
+  // gaze swivels the eyeballs, and fear widens the eyes + lifts the brows.
+  const _gz = new THREE.Vector3();
+  grp.userData.face = {
+    eyes,
+    blink: 0, gazeX: 0, gazeY: 0, wide: 0,
+    setBlink(k) {
+      this.blink = k;
+      for (const e of eyes) {
+        e.upper.rotation.x = -0.155 + (1.22 - this.wide * 0.10) * k - this.wide * 0.20;
+        e.lower.rotation.x = 0.170 - 0.16 * k + this.wide * 0.14;
+      }
+    },
+    // dir: unit-ish direction in HEAD-local space the eyes should follow.
+    setGaze(x, y) {
+      this.gazeX = x; this.gazeY = y;
+      for (const e of eyes) {
+        e.globe.rotation.y = x;
+        e.globe.rotation.x = y;
+      }
+    },
+    lookAtWorld(target, headObj) {
+      if (!target || !headObj) return;
+      headObj.updateMatrixWorld();
+      _gz.copy(target);
+      headObj.worldToLocal(_gz);
+      const d = Math.max(0.15, _gz.length());
+      this.setGaze(
+        Math.max(-0.42, Math.min(0.42, Math.atan2(_gz.x, Math.max(0.05, _gz.z)))),
+        Math.max(-0.30, Math.min(0.30, Math.asin(Math.max(-1, Math.min(1, _gz.y / d))) * -1))
+      );
+    },
+    setWide(k) { this.wide = k; this.setBlink(this.blink); },
+  };
+  grp.userData.face.setBlink(0);
+  grp.userData.hairFlutter = hairFlutter;
+  grp.userData.eyes = eyes;
+  grp.userData.materials = { skinM, hairM };
+  return grp;
+}
+
+// ---- hands --------------------------------------------------------------
+// Four fingers and a thumb, each with three real phalanges on nested pivots.
+// `setCurl()` is what makes contact read as contact: the fingers actually
+// close around a rail or splay flat on a dog's back instead of the hand
+// staying a frozen mitt that happens to be near the object.
+const FINGER_SPEC = [
+  { name: "index",  x: -0.0155, len: [0.0305, 0.0195, 0.0140], r: 0.0088, splay: -0.10 },
+  { name: "middle", x: -0.0052, len: [0.0335, 0.0215, 0.0150], r: 0.0092, splay: -0.02 },
+  { name: "ring",   x:  0.0052, len: [0.0300, 0.0200, 0.0140], r: 0.0086, splay:  0.05 },
+  { name: "pinky",  x:  0.0150, len: [0.0235, 0.0150, 0.0120], r: 0.0072, splay:  0.14 },
+];
+
+function buildHand(side, skinM, sleeveM, opts = {}) {
+  const hand = new THREE.Group();
+  const S = opts.scale || 1;
+  hand.scale.setScalar(S);
+  // Palm — flattened and slightly tapered, with a thenar (thumb-base) pad so
+  // the silhouette isn't a paddle.
+  const palm = new THREE.Mesh(new THREE.SphereGeometry(0.0295, 18, 14), skinM);
+  palm.scale.set(0.90, 1.08, 0.46);
+  palm.position.y = -0.0225;
+  palm.castShadow = true;
+  hand.add(palm);
+  const thenar = new THREE.Mesh(new THREE.SphereGeometry(0.0145, 12, 10), skinM);
+  thenar.scale.set(0.85, 1.15, 0.72);
+  thenar.position.set(side * 0.0165, -0.0215, 0.0045);
+  hand.add(thenar);
+  const knuckleRow = new THREE.Mesh(new THREE.SphereGeometry(0.0135, 14, 10), skinM);
+  knuckleRow.scale.set(1.85, 0.62, 0.60);
+  knuckleRow.position.set(0, -0.0435, 0.0015);
+  hand.add(knuckleRow);
+
+  const fingers = [];
+  for (const spec of FINGER_SPEC) {
+    const root = new THREE.Group();
+    root.position.set(side * -spec.x, -0.0455, 0.0015);
+    root.rotation.z = side * spec.splay;
+    hand.add(root);
+    const seg = [];
+    let parent = root;
+    for (let s = 0; s < 3; s++) {
+      const pivot = new THREE.Group();
+      if (s > 0) pivot.position.y = -spec.len[s - 1];
+      parent.add(pivot);
+      const r = spec.r * (1 - s * 0.17);
+      const bone = new THREE.Mesh(new THREE.CapsuleGeometry(r, spec.len[s] - r * 0.9, 5, 8), skinM);
+      bone.position.y = -spec.len[s] / 2;
+      bone.scale.z = 0.86;
+      bone.castShadow = true;
+      pivot.add(bone);
+      seg.push(pivot);
+      parent = pivot;
+    }
+    // A relaxed hand is never straight — this is the resting curl.
+    seg[0].rotation.x = 0.20; seg[1].rotation.x = 0.24; seg[2].rotation.x = 0.16;
+    fingers.push({ spec, seg });
+  }
+  // Thumb — rooted low on the side of the palm and rotated out of its plane.
+  const thumbRoot = new THREE.Group();
+  thumbRoot.position.set(side * 0.0215, -0.0175, 0.0055);
+  thumbRoot.rotation.z = side * 0.95;
+  thumbRoot.rotation.x = -0.42;
+  thumbRoot.rotation.y = side * -0.30;
+  hand.add(thumbRoot);
+  const thumbSeg = [];
+  {
+    let parent = thumbRoot;
+    const lens = [0.0230, 0.0175];
+    for (let s = 0; s < 2; s++) {
+      const pivot = new THREE.Group();
+      if (s > 0) pivot.position.y = -lens[s - 1];
+      parent.add(pivot);
+      const r = 0.0102 - s * 0.0014;
+      const bone = new THREE.Mesh(new THREE.CapsuleGeometry(r, lens[s] - r * 0.8, 5, 8), skinM);
+      bone.position.y = -lens[s] / 2;
+      bone.castShadow = true;
+      pivot.add(bone);
+      thumbSeg.push(pivot);
+      parent = pivot;
+    }
+    thumbSeg[0].rotation.x = 0.18; thumbSeg[1].rotation.x = 0.22;
+  }
+  // Optional cuff — hides the wrist seam for long-sleeved outfits.
+  if (opts.cuff && sleeveM) {
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.0295, 0.0275, 0.022, 14), sleeveM);
+    cuff.scale.set(1, 1, 0.86);
+    cuff.position.y = 0.010;
+    hand.add(cuff);
+  }
+
+  // curl 0 = open/relaxed, 1 = closed fist; spread pushes the fingers apart
+  // (a flat palm laid on a surface), tuck folds the thumb in.
+  hand.userData.setCurl = function (curl, spread = 0, thumb = null) {
+    const k = Math.max(0, Math.min(1.35, curl));
+    for (let i = 0; i < fingers.length; i++) {
+      const f = fingers[i];
+      // Ring and pinky lead a natural closing sequence.
+      const lead = 1 + (i >= 2 ? 0.12 : 0) - (i === 0 ? 0.06 : 0);
+      f.seg[0].rotation.x = 0.20 + k * 1.05 * lead - spread * 0.28;
+      f.seg[1].rotation.x = 0.24 + k * 1.30 * lead - spread * 0.22;
+      f.seg[2].rotation.x = 0.16 + k * 0.85 * lead - spread * 0.14;
+      f.seg[0].rotation.z = side * f.spec.splay * (1 + spread * 1.9);
+    }
+    const tk = thumb == null ? k : thumb;
+    thumbSeg[0].rotation.x = 0.18 + tk * 0.70;
+    thumbSeg[1].rotation.x = 0.22 + tk * 0.85;
+    thumbRoot.rotation.z = side * (0.95 - tk * 0.34 + spread * 0.22);
+  };
+  hand.userData.fingers = fingers;
+  hand.userData.thumb = thumbSeg;
+  return hand;
+}
+
+// ---- the rig ------------------------------------------------------------
+// Material slots inside the single body SkinnedMesh.
+const MAT = { SKIN: 0, SHIRT: 1, PANTS: 2, SHOE: 3, DARK: 4 };
+
+// Builds the whole character: skeleton, one continuous skinned body mesh,
+// sculpted head, articulated hands, optional scarf.
+//
+// `dims` carries the landmark heights the rest of the app already agrees on
+// (headY is the EYE height and a scene contract — never silently change it).
+function buildHumanRig(o = {}) {
+  const bt = BODY_TYPES_3D[o.bodyType] || BODY_TYPES_3D.man;
+  const L = {
+    headY: o.headY ?? 1.55, neckY: o.neckY ?? 1.40, chestTopY: o.chestTopY ?? 1.28,
+    waistY: o.waistY ?? 0.92, hipY: o.hipY ?? 0.82, kneeY: o.kneeY ?? 0.45,
+    ankleY: o.ankleY ?? 0.04, width: o.width ?? 0.18,
+  };
+  const H = L.headY / 1.55;                    // overall height factor
+  const SW = (L.width / 0.18);                 // shoulder width factor (already × bt.shoulder)
+  const HW = bt.hip;                           // hip width factor
+  const LW = bt.limb;                          // limb thickness factor
+
+  // ---------- bones ----------
+  const bones = [];
+  const B = {};
+  function bone(name, parent, x, y, z) {
+    const b = new THREE.Bone();
+    b.name = name;
+    b.position.set(x, y, z);
+    if (parent) parent.add(b); 
+    B[name] = b;
+    b.userData.index = bones.length;
+    bones.push(b);
+    return b;
+  }
+  const shoulderX = L.width * 1.16;
+  const armY      = L.chestTopY - 0.02;
+  const chestY    = L.waistY + (L.chestTopY - L.waistY) * 0.50;
+  const upperLen  = 0.268 * H, foreLen = 0.252 * H;
+  const legLen    = L.hipY - L.ankleY;
+  const thighLen  = legLen * 0.52, shinLen = legLen * 0.48;
+
+  const pelvis = bone("pelvis", null, 0, L.hipY, 0);
+  const spine  = bone("spine",  pelvis, 0, L.waistY - L.hipY, 0);
+  const chest  = bone("chest",  spine,  0, chestY - L.waistY, 0);
+  const breath = bone("breath", chest,  0, 0, 0);            // scale-only: rib expansion
+  const neck   = bone("neck",   chest,  0, L.neckY - chestY, 0);
+  const headB  = bone("head",   neck,   0, (L.headY - 0.06) - L.neckY, 0);
+  const armBones = [], legBones = [];
+  for (const sx of [-1, 1]) {
+    const tag = sx > 0 ? "R" : "L";
+    const sh = bone(tag + "_shoulder", chest, sx * shoulderX, armY - chestY, 0);
+    const el = bone(tag + "_elbow", sh, 0, -upperLen, 0);
+    const wr = bone(tag + "_wrist", el, 0, -foreLen, 0);
+    armBones.push({ sh, el, wr, side: sx });
+    const hp = bone(tag + "_hip", pelvis, sx * 0.10 * HW, 0, 0);
+    const kn = bone(tag + "_knee", hp, 0, -thighLen, 0);
+    const an = bone(tag + "_ankle", kn, 0, -shinLen, 0);
+    legBones.push({ hp, kn, an, side: sx });
+  }
+  const bi = (b) => b.userData.index;
+
+  // ---------- body mesh ----------
+  const sg = new SkinGeom();
+  const RAD_T = o.lowDetail ? 16 : 22;      // torso radial segments
+  const RAD_L = o.lowDetail ? 12 : 16;      // limb radial segments
+
+  // Torso + neck as ONE surface, so the collar/shoulder/neck junction is
+  // continuous rather than three primitives poking through each other.
+  const shirtTop = MAT.SHIRT;
+  const sqT = 0.86;
+  const torso = [
+    { y: 1.344, rx: .0655, rz: .0665, w: [[bi(neck), .45], [bi(chest), .55]], mat: shirtTop, sq: 1, cap: 1 },
+    { y: 1.330, rx: .0830, rz: .0775, w: [[bi(chest), 1]], mat: shirtTop, sq: .95 },
+    { y: 1.318, rx: .1210, rz: .0880, w: [[bi(chest), 1]], mat: shirtTop, sq: .92 },
+    { y: 1.300, rx: .1640, rz: .0975, w: [[bi(chest), 1]], mat: shirtTop, sq: sqT },
+    { y: 1.272, rx: .1880, rz: .1055, w: [[bi(chest), 1]], mat: shirtTop, sq: sqT },
+    { y: 1.212, rx: .1955, rz: .1160, w: [[bi(chest), .70], [bi(breath), .30]], mat: shirtTop, sq: sqT },
+    { y: 1.150, rx: .1805, rz: .1195, w: [[bi(breath), 1]], mat: shirtTop, sq: sqT },
+    { y: 1.078, rx: .1580, rz: .1090, w: [[bi(breath), .55], [bi(spine), .45]], mat: shirtTop, sq: sqT },
+    { y: 1.008, rx: .1415, rz: .0975, w: [[bi(spine), 1]], mat: shirtTop, sq: sqT },
+    { y: 0.952, rx: .1435, rz: .1005, w: [[bi(spine), .50], [bi(pelvis), .50]], mat: shirtTop, sq: sqT },
+    { y: 0.902, rx: .1580, rz: .1095, w: [[bi(pelvis), 1]], mat: shirtTop, sq: sqT },
+    { y: 0.862, rx: .1690, rz: .1165, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
+    { y: 0.826, rx: .1725, rz: .1195, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
+    { y: 0.790, rx: .1680, rz: .1200, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
+    { y: 0.758, rx: .1420, rz: .1070, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT, cap: 1 },
+  ];
+  // Chest / hip widths diverge by body type; `k` is 1 at the shoulders, 0 at
+  // the seat, so one lerp shapes the whole silhouette.
+  _sweep(sg, torso.map((s) => {
+    const k = _hsat((s.y - 0.80) / (1.29 - 0.80));
+    // Dampened: stacking the raw hip factor on top of the seat factor pushed a
+    // 36 cm hip out past 44 cm, which is what made the pelvis read as a block.
+    const wide = SW * k + (1 + (HW - 1) * 0.55) * (1 - k);
+    const waistPinch = 1 - (1 - bt.waist) * 0.75 * Math.exp(-Math.pow((s.y - 0.985) / 0.095, 2));
+    const seatK = 1 + (bt.seat - 1) * 0.5 * (1 - k) * (1 - k);
+    return {
+      p: [0, s.y * H, 0],
+      rx: s.rx * wide * waistPinch * seatK,
+      rz: s.rz * (0.94 + 0.06 * wide) * bt.chestZ * waistPinch * seatK,
+      w: s.w, mat: s.mat, sq: s.sq, cap: s.cap,
+    };
+  }), RAD_T);
+
+  // Arms. The deltoid's first rings are weighted to the CHEST, so the shoulder
+  // stays welded to the torso and stretches instead of hinging open.
+  const longSleeve = (o.topStyle === "hoodie" || o.topStyle === "jacket");
+  for (const a of armBones) {
+    const sx = a.side;
+    const U = bi(a.sh), F = bi(a.el), W = bi(a.wr), C = bi(chest);
+    const sleeveMat = longSleeve ? MAT.SHIRT : MAT.SKIN;
+    const arm = [
+      { y: 1.268, xr: 0.46, rx: .026, rz: .026, w: [[C, 1]], mat: MAT.SHIRT, cap: 1 },
+      { y: 1.288, xr: 0.68, rx: .046, rz: .045, w: [[C, .92], [U, .08]], mat: MAT.SHIRT },
+      { y: 1.286, xr: 0.88, rx: .058, rz: .056, w: [[C, .62], [U, .38]], mat: MAT.SHIRT },
+      { y: 1.262, xr: 1.00, rx: .064, rz: .062, w: [[C, .26], [U, .74]], mat: MAT.SHIRT },
+      { y: 1.218, xr: 1.045, rx: .062, rz: .060, w: [[U, 1]], mat: MAT.SHIRT },
+      { y: 1.150, xr: 1.050, rx: .056, rz: .054, w: [[U, 1]], mat: MAT.SHIRT },
+      { y: 1.082, xr: 1.050, rx: .0500, rz: .0490, w: [[U, 1]], mat: sleeveMat },
+      { y: 1.032, xr: 1.048, rx: .0458, rz: .0450, w: [[U, 1]], mat: sleeveMat },
+      { y: 1.014, xr: 1.046, rx: .0442, rz: .0435, w: [[U, .78], [F, .22]], mat: sleeveMat },
+      { y: 0.992, xr: 1.045, rx: .0430, rz: .0424, w: [[U, .50], [F, .50]], mat: sleeveMat },
+      { y: 0.968, xr: 1.044, rx: .0438, rz: .0430, w: [[U, .22], [F, .78]], mat: sleeveMat },
+      { y: 0.928, xr: 1.043, rx: .0460, rz: .0448, w: [[F, 1]], mat: sleeveMat },
+      { y: 0.855, xr: 1.042, rx: .0400, rz: .0386, w: [[F, 1]], mat: sleeveMat },
+      // A hoodie / jacket sleeve runs to the wrist; a tee already ended at the
+      // upper arm, so only the long-sleeve case changes here.
+      { y: 0.790, xr: 1.040, rx: .0320, rz: .0298, w: [[F, .55], [W, .45]], mat: longSleeve ? MAT.SHIRT : MAT.SKIN },
+      { y: 0.752, xr: 1.040, rx: .0270, rz: .0244, w: [[W, 1]], mat: MAT.SKIN },
+    ];
+    _sweep(sg, arm.map((s) => ({
+      p: [sx * s.xr * shoulderX, s.y * H, 0],
+      rx: s.rx * LW, rz: s.rz * LW, w: s.w, mat: s.mat, cap: s.cap,
+    })), RAD_L);
+  }
+
+  // Legs — a real calf (offset back), a knee that keeps its section through
+  // the bend, and a trouser hem that meets the shoe.
+  for (const g of legBones) {
+    const sx = g.side;
+    const P = bi(pelvis), T = bi(g.hp), S = bi(g.kn), A = bi(g.an);
+    const leg = [
+      { y: 0.888, z: 0, rx: .098, rz: .105, w: [[P, .62], [T, .38]], mat: MAT.PANTS, cap: 1 },
+      { y: 0.848, z: 0, rx: .103, rz: .111, w: [[P, .28], [T, .72]], mat: MAT.PANTS },
+      { y: 0.792, z: 0, rx: .0995, rz: .107, w: [[T, 1]], mat: MAT.PANTS },
+      { y: 0.692, z: 0, rx: .0920, rz: .099, w: [[T, 1]], mat: MAT.PANTS },
+      { y: 0.582, z: 0, rx: .0820, rz: .089, w: [[T, 1]], mat: MAT.PANTS },
+      { y: 0.492, z: .002, rx: .0730, rz: .079, w: [[T, 1]], mat: MAT.PANTS },
+      { y: 0.450, z: .003, rx: .0692, rz: .0752, w: [[T, .74], [S, .26]], mat: MAT.PANTS },
+      { y: 0.416, z: .003, rx: .0668, rz: .0725, w: [[T, .50], [S, .50]], mat: MAT.PANTS },
+      { y: 0.382, z: .001, rx: .0662, rz: .0735, w: [[T, .24], [S, .76]], mat: MAT.PANTS },
+      { y: 0.330, z: -.008, rx: .0662, rz: .0800, w: [[S, 1]], mat: MAT.PANTS },
+      { y: 0.268, z: -.006, rx: .0620, rz: .0725, w: [[S, 1]], mat: MAT.PANTS },
+      { y: 0.188, z: -.002, rx: .0500, rz: .0545, w: [[S, 1]], mat: MAT.PANTS },
+      { y: 0.128, z: 0, rx: .0420, rz: .0445, w: [[S, .60], [A, .40]], mat: MAT.SHOE },
+      { y: 0.086, z: 0, rx: .0392, rz: .0428, w: [[A, 1]], mat: MAT.SHOE },
+    ];
+    _sweep(sg, leg.map((s) => ({
+      p: [sx * 0.10 * HW, s.y * H, s.z * H],
+      rx: s.rx * LW * (0.66 + 0.34 * HW), rz: s.rz * LW * (0.66 + 0.34 * HW),
+      w: s.w, mat: s.mat, cap: s.cap,
+    })), RAD_L);
+
+    // Shoe — swept along +Z from heel to toe with a flat sole. Rigid to the
+    // ankle, with a natural few-degrees out-toe baked into the geometry
+    // (relaxed people don't stand with parallel feet).
+    const toe = sx * 0.09, ct = Math.cos(toe), st = Math.sin(toe);
+    const ax = sx * 0.10 * HW, az = 0;
+    const shoe = [
+      { z: -.082, r: .0270, wdt: .0270, cap: 1 },
+      { z: -.058, r: .0420, wdt: .0370 },
+      { z: -.020, r: .0400, wdt: .0415 },
+      { z:  .030, r: .0362, wdt: .0440 },
+      { z:  .088, r: .0322, wdt: .0432 },
+      { z:  .140, r: .0272, wdt: .0378 },
+      { z:  .174, r: .0210, wdt: .0245, cap: 1 },
+    ];
+    _sweep(sg, shoe.map((s) => {
+      const lz = s.z * H, lx = 0;
+      return {
+        p: [ax + (lx * ct + lz * st), (0.004 + s.r) * H, az + (-lx * st + lz * ct)],
+        rx: s.r * H, rz: s.wdt * H * (0.6 + 0.4 * LW),
+        w: [[bi(g.an), 1]], mat: MAT.SHOE, sq: 0.70, cap: s.cap,
+      };
+    }), RAD_L);
+  }
+
+  const geo = sg.toGeometry();
+  const skinCol = new THREE.Color(o.skinColor ?? 0xd4a07a);
+  const shirtCol = new THREE.Color(o.shirtColor ?? 0x2c9d96);
+  const pantsCol = new THREE.Color(o.pantsColor ?? 0x2c3a52);
+  const shoeCol = new THREE.Color(o.shoeColor ?? 0x18181c);
+  const mSkin = new THREE.MeshPhysicalMaterial({
+    color: skinCol, roughness: 0.60, metalness: 0,
+    sheen: 0.30, sheenRoughness: 0.85,
+    sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.5),
+    envMapIntensity: 0.45,
+  });
+  // Cloth reads as cloth when it has a little fuzz (sheen) and no metal.
+  const mShirt = new THREE.MeshPhysicalMaterial({
+    color: shirtCol, roughness: 0.92, metalness: 0,
+    sheen: 0.5, sheenRoughness: 0.9, sheenColor: shirtCol.clone().lerp(new THREE.Color(0xffffff), 0.35),
+    envMapIntensity: 0.35,
+  });
+  const mPants = new THREE.MeshPhysicalMaterial({
+    color: pantsCol, roughness: 0.95, metalness: 0,
+    sheen: 0.4, sheenRoughness: 0.95, sheenColor: pantsCol.clone().lerp(new THREE.Color(0xffffff), 0.25),
+    envMapIntensity: 0.3,
+  });
+  const mShoe = new THREE.MeshPhysicalMaterial({
+    color: shoeCol, roughness: 0.42, metalness: 0.08, clearcoat: 0.35, envMapIntensity: 0.7,
+  });
+  const mDark = new THREE.MeshStandardMaterial({ color: shirtCol.clone().multiplyScalar(0.74), roughness: 0.95 });
+  const mats = [mSkin, mShirt, mPants, mShoe, mDark];
+
+  const mesh = new THREE.SkinnedMesh(geo, mats);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.frustumCulled = false;                 // bones move well outside the bind bbox
+  const group = new THREE.Group();
+  group.add(mesh);
+  mesh.add(pelvis);
+  const skeleton = new THREE.Skeleton(bones);
+  mesh.bind(skeleton);
+
+  // ---------- neck ----------
+  // A lathe on the neck bone rather than part of the skinned torso: it belongs
+  // to the head visually and has to disappear with it in first person.
+  let neckPart = null;
+  {
+    const pts = [];
+    const prof = [
+      [1.452, .0400], [1.436, .0425], [1.412, .0455], [1.386, .0490],
+      [1.360, .0540], [1.340, .0620], [1.326, .0760],
+    ];
+    for (const [wy, r] of prof) pts.push(new THREE.Vector2(r * H * LW, wy * H - L.neckY));
+    const neckMesh = new THREE.Mesh(new THREE.LatheGeometry(pts, 20), mSkin);
+    neckMesh.castShadow = true;
+    neckMesh.position.z = -0.004 * H;
+    neck.add(neckMesh);
+    neckPart = neckMesh;
+  }
+
+  // ---------- head ----------
+  const head = buildHead({
+    skinColor: skinCol, hairColor: o.hairColor ?? 0x4a2c18, shirtColor: shirtCol,
+    eyeColor: o.eyeColor ?? 0x3a2410, hairStyle: o.hairStyle, glasses: o.glasses,
+    facialHair: o.facialHair, headwear: o.headwear, bodyType: o.bodyType,
+    lowDetail: o.lowDetail,
+  });
+  head.scale.setScalar(bt.head * H);
+  headB.add(head);
+  head.userData.neckPart = neckPart;
+
+  // ---------- hands ----------
+  const arms = [];
+  for (let i = 0; i < armBones.length; i++) {
+    const a = armBones[i];
+    const hand = buildHand(a.side, mSkin, mShirt, { scale: H * LW, cuff: longSleeve });
+    hand.position.set(0, -0.012 * H, 0);
+    hand.rotation.y = a.side * -0.30;
+    a.wr.add(hand);
+    arms.push({ root: a.sh, elbow: a.el, wrist: a.wr, hand, side: a.side });
+  }
+  const legs = legBones.map((g) => ({ hip: g.hp, knee: g.kn, foot: g.an, ankle: g.an, side: g.side }));
+
+  return {
+    group, mesh, skeleton, bones, materials: { mSkin, mShirt, mPants, mShoe, mDark },
+    pelvis, spine, chest, breath, neck, headBone: headB, head,
+    face: head.userData.face, hairFlutter: head.userData.hairFlutter,
+    eyes: head.userData.eyes,
+    arms, legs, bt,
+    dims: { upperLen, foreLen, thighLen, shinLen, H, shoulderX, armY, chestY, L },
+  };
+}
+
 // ---------- First-person body (world-anchored) ----------
 // A full visible body added to the SCENE (not the camera). Each frame the body
 // follows the camera's xz position + yaw, but NOT its pitch. The result: when
 // you look down you actually see your own chest + hips + legs + feet, instead
 // of a body that rotates out of view with your head.
+//
+// The mesh is the skinned humanoid built by buildHumanRig(): one continuous
+// surface over a real bone chain. Everything below drives BONES.
+//
+// Joint sign conventions (bones hang along local −Y, character faces +Z):
+//   shoulder / hip  .rotation.x < 0  → limb swings FORWARD
+//   elbow           .rotation.x < 0  → flexion (hand toward the shoulder)
+//   knee            .rotation.x > 0  → flexion (heel toward the seat)
+// The old rig flexed elbows backwards; `_elbowFlex()` keeps the sign in one
+// place so it can't drift again.
+const _bV1 = new THREE.Vector3(), _bV2 = new THREE.Vector3(), _bV3 = new THREE.Vector3();
+const _bV4 = new THREE.Vector3(), _bV5 = new THREE.Vector3();
+const _bM1 = new THREE.Matrix4(), _bQ1 = new THREE.Quaternion(), _bQ2 = new THREE.Quaternion();
+
 class Body {
   constructor(scene, camera, opts = {}) {
     this.scene = scene;
@@ -13653,10 +14900,10 @@ class Body {
       facialHair: "none",    // "none" | "stubble" | "beard" | "moustache"
       headwear:   "none",    // "none" | "beanie" | "cap"
       topStyle:   "tee",     // "tee" | "hoodie" | "jacket"
-      // Body part offsets in body-local space (foot at y=0, head at y≈1.55).
-      headY:      1.55,    // camera height = top of body
+      // Body part offsets in body-local space (foot at y=0, eye at y≈1.55).
+      headY:      1.55,    // camera height = eye line
       neckY:      1.40,
-      chestTopY:  1.28,    // lowered so the capsule's rounded top stays well below the camera
+      chestTopY:  1.28,
       waistY:     0.92,
       hipY:       0.82,
       kneeY:      0.45,
@@ -13668,16 +14915,7 @@ class Body {
       windExposure: 0.0,
     }, opts);
     // ---- Body type: proportions + gait personality ----
-    // One set of scale factors turns the single mannequin into a man /
-    // woman / boy / girl: vertical landmarks scale with height, shoulders
-    // and hips diverge, kids get the bigger head-to-body ratio that reads
-    // "child" at a glance, and the gait picks up a personality (hip sway).
-    const BT = {
-      man:   { h: 1.00, shoulder: 1.00, hip: 1.00, head: 1.00, sway: 1.0 },
-      woman: { h: 0.95, shoulder: 0.85, hip: 1.14, head: 0.96, sway: 1.35 },
-      boy:   { h: 0.80, shoulder: 0.80, hip: 0.96, head: 1.16, sway: 0.9 },
-      girl:  { h: 0.78, shoulder: 0.76, hip: 1.02, head: 1.18, sway: 1.15 },
-    };
+    const BT = BODY_TYPES_3D;
     this.bt = BT[this.opts.bodyType] || BT.man;
     for (const k of ["headY", "neckY", "chestTopY", "waistY", "hipY", "kneeY", "ankleY"]) {
       this.opts[k] *= this.bt.h;
@@ -13691,8 +14929,7 @@ class Body {
     // its environment: leaning forward over a railing, crouching to pet a
     // dog, holding arms out for balance in water. Each value is 0..1; the
     // body smoothly lerps toward the targets in update() so transitions
-    // are natural, not snappy. "reach" makes the hands extend forward as
-    // if grabbing a railing or reaching for an object.
+    // are natural, not snappy.
     this.posture = {
       lean: 0,             // forward chest tilt (0 upright → 1 fully leaning)
       crouch: 0,           // knee bend + body drop (0 standing → 1 squat)
@@ -13710,11 +14947,9 @@ class Body {
     scene.add(this.group);
     // ---- Character fill light (third-person only) ----
     // In a dim scene the avatar collapses into a dark silhouette and reads as a
-    // faceless blob — the "I can't tell where the character/face is" complaint.
-    // A soft, short-range warm light rides on the CAMERA side of the head each
-    // frame, so whatever face/side is turned toward the viewer stays clearly
-    // lit and the character's facing is legible. Short distance + decay confine
-    // it to the avatar, leaving the scene's mood untouched. Off in first-person.
+    // faceless blob. A soft, short-range warm light rides on the CAMERA side of
+    // the head each frame, so whatever face is turned toward the viewer stays
+    // clearly lit. Short distance + decay confine it to the avatar.
     this.fillLight = new THREE.PointLight(0xfff1dc, 0, 3.2, 2.0);
     this.fillLight.visible = false;
     scene.add(this.fillLight);
@@ -13722,31 +14957,39 @@ class Body {
 
   _build() {
     const o = this.opts;
-    // Body materials. Real cloth and skin don't emit light, so emissive is
-    // kept very low — just enough to keep the character readable in deep
-    // shadow without looking like they're glowing. Roughness tuned for
-    // each material: pants slightly rough, shoes shiny-but-leathery,
-    // shirt cotton-rough, skin sub-surface-ish.
-    const emissive = (hex, amt = 0.04) => new THREE.Color(hex).multiplyScalar(amt);
-    const pants = new THREE.MeshStandardMaterial({
-      color: o.pantsColor, roughness: 0.92, emissive: emissive(o.pantsColor, 0.03),
+    this.rig = buildHumanRig({
+      bodyType: o.bodyType,
+      skinColor: o.skinColor, shirtColor: o.shirtColor, pantsColor: o.pantsColor,
+      shoeColor: o.shoeColor, hairColor: o.hairColor, eyeColor: o.eyeColor,
+      hairStyle: o.hairStyle, glasses: o.glasses, facialHair: o.facialHair,
+      headwear: o.headwear, topStyle: o.topStyle,
+      headY: o.headY, neckY: o.neckY, chestTopY: o.chestTopY, waistY: o.waistY,
+      hipY: o.hipY, kneeY: o.kneeY, ankleY: o.ankleY, width: o.width,
+      lowDetail: (typeof QUALITY !== "undefined" && QUALITY === "low"),
     });
-    const shoes = new THREE.MeshStandardMaterial({
-      color: o.shoeColor, roughness: 0.50, metalness: 0.08, emissive: emissive(o.shoeColor, 0.02),
-    });
-    const shirt = new THREE.MeshStandardMaterial({
-      color: o.shirtColor, roughness: 0.88, emissive: emissive(o.shirtColor, 0.04),
-    });
-    const skin  = new THREE.MeshStandardMaterial({
-      color: o.skinColor, roughness: 0.62, emissive: emissive(o.skinColor, 0.05),
-    });
-    const shirtFold = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(o.shirtColor).multiplyScalar(0.78), roughness: 0.95
-    });
+    this.group.add(this.rig.group);
 
-    // Soft shadow blob under the feet — a flat dark disc on the ground.
-    // Grounds the character even in scenes where the lighting doesn't naturally
-    // produce a real shadow under the body.
+    // Public handles. These names are the contract the gait / gesture / reach
+    // code below (and one throw-animation call site) is written against.
+    this.arms = this.rig.arms;               // [{root, elbow, wrist, hand, side}]
+    this.legs = this.rig.legs;               // [{hip, knee, foot, side}]
+    this.chest = this.rig.chest;             // bone
+    this.hips = this.rig.pelvis;             // bone
+    this.spine = this.rig.spine;
+    this.neck = this.rig.neck;
+    this.head = this.rig.head;               // Group riding the head BONE
+    this.face = this.rig.face;
+    this.eyes = this.rig.eyes;
+    this.hairFlutter = this.rig.hairFlutter;
+    this._thighLen = this.rig.dims.thighLen;
+    this._shinLen = this.rig.dims.shinLen;
+    this._upperLen = this.rig.dims.upperLen;
+    this._foreLen = this.rig.dims.foreLen;
+    this.head.visible = false;               // FP default — camera is the head
+    if (this.head.userData.neckPart) this.head.userData.neckPart.visible = false;
+
+    // Soft shadow blob under the feet — grounds the character even where the
+    // scene's lighting produces no real shadow.
     const shadow = new THREE.Mesh(
       new THREE.CircleGeometry(0.42, 24),
       new THREE.MeshBasicMaterial({
@@ -13754,548 +14997,109 @@ class Body {
       })
     );
     shadow.rotation.x = -Math.PI / 2;
-    shadow.position.set(0, 0.005, 0);   // 5 mm above the ground
-    shadow.renderOrder = -1;            // draw before the body so it's behind
+    shadow.position.set(0, 0.005, 0);
+    shadow.renderOrder = -1;
     this.group.add(shadow);
     this.shadow = shadow;
 
-    // Build body relative to feet at y=0. The whole group is then anchored to
-    // (camera.xz, camera.y - height) every frame.
-    // Neck (skin) — sits between the chest top and the camera
-    const neck = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.07, 0.085, o.neckY - o.chestTopY, 14), skin
-    );
-    neck.position.set(0, (o.neckY + o.chestTopY) / 2, 0);
-    this.group.add(neck);
-
-    // Chest — slightly oblong capsule (wider than deep) to read as a torso,
-    // not a sphere. Slim in z so it doesn't poke into the camera. Stored
-    // as `this.chest` so update() can drive a visible breathing scale.
-    const chestH = o.chestTopY - o.waistY;
-    const chest = new THREE.Mesh(
-      new THREE.CapsuleGeometry(o.width, chestH - 0.10, 8, 14), shirt
-    );
-    chest.scale.set(1.24, 1, 0.58);   // wider in x, slimmer in z (less "balloon")
-    chest.position.set(0, (o.chestTopY + o.waistY) / 2, 0);
-    chest.castShadow = true;
-    this.group.add(chest);
-    this.chest = chest;
-    // Centre fold down the front of the shirt
-    const shirtCenter = new THREE.Mesh(
-      new THREE.BoxGeometry(0.04, chestH - 0.10, 0.005), shirtFold
-    );
-    shirtCenter.position.set(0, (o.chestTopY + o.waistY) / 2, o.width * 0.62);
-    this.group.add(shirtCenter);
-
-    // ===== OUTFIT STYLE ===== (hoodie / jacket detailing on the in-scene body)
-    if (o.topStyle === "hoodie" || o.topStyle === "jacket") {
-      const foldMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor).multiplyScalar(0.78), roughness: 0.92 });
-      const midY = (o.chestTopY + o.waistY) / 2;
-      if (o.topStyle === "hoodie") {
-        const cowl = new THREE.Mesh(new THREE.TorusGeometry(0.105, 0.035, 12, 24), foldMat);
-        cowl.rotation.x = Math.PI / 2; cowl.scale.set(1.25, 1.0, 0.9);
-        cowl.position.set(0, o.chestTopY - 0.01, -0.005); cowl.castShadow = true;
-        this.group.add(cowl);
-        const drape = new THREE.Mesh(new THREE.SphereGeometry(0.10, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.6), foldMat);
-        drape.scale.set(1.2, 0.85, 0.65); drape.position.set(0, o.chestTopY + 0.02, -0.08);
-        this.group.add(drape);
-        const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.085, 0.04), foldMat);
-        pocket.position.set(0, o.waistY + 0.10, o.width * 0.55);
-        this.group.add(pocket);
-      } else { // jacket
-        const zipMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor).multiplyScalar(1.18), roughness: 0.5, metalness: 0.3 });
-        const zip = new THREE.Mesh(new THREE.BoxGeometry(0.018, (o.chestTopY - o.waistY) + 0.06, 0.016), zipMat);
-        zip.position.set(0, midY, o.width * 0.6);
-        this.group.add(zip);
-        for (const sx of [-1, 1]) {
-          const lapel = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.17, 0.018), foldMat);
-          lapel.position.set(sx * 0.055, o.chestTopY - 0.10, o.width * 0.58);
-          lapel.rotation.z = sx * 0.5;
-          this.group.add(lapel);
-        }
-      }
-    }
-
-    // Shoulders — bumps at the top corners of the chest
-    this.shoulders = [];
-    for (const sx of [-1, 1]) {
-      const shoulder = new THREE.Mesh(
-        new THREE.SphereGeometry(0.088, 14, 12), shirt
-      );
-      shoulder.position.set(sx * (o.width * 1.15), o.chestTopY - 0.06, 0);
-      shoulder.castShadow = true;
-      this.group.add(shoulder);
-      this.shoulders.push({ mesh: shoulder, side: sx });
-    }
-
-    // Upper arm + elbow + forearm (two-segment articulated arm).
-    // Letting the elbow bend independently means reaching / petting / gripping
-    // gestures look anatomically correct rather than a single rigid capsule.
-    this.arms = [];
-    const upperLen = 0.28 * this.bt.h, foreLen = 0.26 * this.bt.h;
-    for (const sx of [-1, 1]) {
-      // armRoot rotates at the shoulder
-      const armRoot = new THREE.Group();
-      armRoot.position.set(sx * (o.width * 1.28), o.chestTopY - 0.10, 0);
-      this.group.add(armRoot);
-      // Upper arm hangs straight down from the shoulder by default
-      const upper = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.062, upperLen, 8, 12), shirt
-      );
-      upper.position.set(0, -upperLen / 2, 0);
-      upper.castShadow = true;
-      armRoot.add(upper);
-      // Elbow group at the bottom of the upper arm
-      const elbow = new THREE.Group();
-      elbow.position.set(0, -upperLen - 0.02, 0);
-      armRoot.add(elbow);
-      // Forearm hangs down from the elbow
-      const fore = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.05, foreLen, 8, 12), skin
-      );
-      fore.position.set(0, -foreLen / 2, 0);
-      fore.castShadow = true;
-      elbow.add(fore);
-      // Elbow joint cap — smooths the sleeve/forearm junction when the arm
-      // bends (the legs already had knee caps; the arms hinged on a visible
-      // gap).
-      const elbowCap = new THREE.Mesh(new THREE.SphereGeometry(0.058, 12, 10), skin);
-      elbowCap.scale.set(1, 0.85, 1);
-      elbow.add(elbowCap);
-      // HAND — same construction as the creator-preview figure: flattened
-      // palm, opposable thumb, and four INDIVIDUAL fingers on knuckle pivots
-      // with human length variation (index < middle > ring > pinky) and a
-      // relaxed rest curl. The old cupped mitt read as mannequin the moment
-      // the camera or a pet gesture brought a hand near the lens. Everything
-      // lives inside the same `hand` group, so the gait engine and every
-      // reach/pet gesture keep driving it unchanged.
-      const hand = new THREE.Group();
-      hand.position.set(0, -foreLen - 0.035, 0);
-      hand.rotation.y = sx * -0.35;        // palms turn toward the thighs at rest
-      const palm = new THREE.Mesh(new THREE.SphereGeometry(0.050, 12, 10), skin);
-      palm.scale.set(0.74, 1.0, 0.44);
-      palm.castShadow = true;
-      hand.add(palm);
-      const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.0125, 0.038, 6, 8), skin);
-      thumb.position.set(sx * 0.034, -0.008, 0.016);
-      thumb.rotation.z = -sx * 0.55;
-      thumb.rotation.x = 0.25;
-      hand.add(thumb);
-      const fingerLens = [0.040, 0.047, 0.042, 0.032];
-      for (let f = 0; f < 4; f++) {
-        const fl = fingerLens[f];
-        const knuckle = new THREE.Group();
-        knuckle.position.set(sx * (f - 1.5) * 0.0185, -0.044, 0.003);
-        knuckle.rotation.x = 0.30;                     // relaxed curl
-        knuckle.rotation.z = sx * (f - 1.5) * -0.05;   // slight natural splay
-        hand.add(knuckle);
-        const finger = new THREE.Mesh(new THREE.CapsuleGeometry(0.009, fl, 6, 8), skin);
-        finger.position.set(0, -fl / 2, 0);
-        finger.castShadow = true;
-        knuckle.add(finger);
-      }
-      elbow.add(hand);
-      this.arms.push({ root: armRoot, elbow, hand, side: sx });
-    }
-
-    // Hips — pants belt block (kept as a named ref so the gait engine can
-    // twist the pelvis against the chest each step)
-    const hips = new THREE.Mesh(
-      new THREE.BoxGeometry(o.width * 2.2 * (this.bt.hip / this.bt.shoulder), o.waistY - o.hipY, 0.26), pants
-    );
-    hips.position.set(0, (o.waistY + o.hipY) / 2, 0);
-    hips.castShadow = true;
-    this.group.add(hips);
-    this.hips = hips;
-
-    // Legs — articulated chains: hip pivot → thigh → knee pivot → shin + foot.
-    // The old single-cylinder legs swung from the hip like a toy soldier's;
-    // a visible KNEE that flexes during the swing phase is the single
-    // strongest "that's a person walking" cue a body can give.
-    const legLen = o.hipY - o.ankleY;          // 0.78 with default dims
-    const thighLen = legLen * 0.52;
-    const shinLen = legLen * 0.48;
-    this._thighLen = thighLen;
-    this._shinLen = shinLen;
-    this.legs = [];
-    for (const sx of [-1, 1]) {
-      const hip = new THREE.Group();
-      hip.position.set(sx * 0.10, o.hipY, 0);
-      this.group.add(hip);
-      const thigh = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.085, 0.072, thighLen - 0.015, 14), pants
-      );
-      thigh.position.y = -thighLen / 2;
-      thigh.castShadow = true;
-      hip.add(thigh);
-      const knee = new THREE.Group();
-      knee.position.y = -thighLen;
-      hip.add(knee);
-      // Knee cap — small sphere smoothing the joint when bent
-      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.072, 12, 10), pants);
-      cap.scale.set(1, 0.8, 1);
-      knee.add(cap);
-      const shin = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.066, 0.052, shinLen - 0.015, 14), pants
-      );
-      shin.position.y = -shinLen / 2;
-      shin.castShadow = true;
-      knee.add(shin);
-      // Foot rides the shin (ankle at the shin's bottom end). A slight
-      // out-toe (feet angle a few degrees outward) is how relaxed humans
-      // actually stand — parallel feet read as a toy soldier. The gait
-      // engine writes foot.rotation.x/z per frame, so the static out-toe
-      // lives on a wrapper group the walk math never touches.
-      const ankle = new THREE.Group();
-      ankle.position.set(0, -shinLen + 0.01, 0);
-      ankle.rotation.y = sx * 0.10;
-      knee.add(ankle);
-      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, 0.26), shoes);
-      foot.position.set(0, 0, 0.06);
-      foot.castShadow = true;
-      ankle.add(foot);
-      this.legs.push({ hip, knee, foot, side: sx });
-    }
-
-    // ---------- Head + face ----------
-    // The head sits where the camera sits in first-person, so its mesh is
-    // hidden by default. Switching to third-person camera mode reveals it,
-    // letting the user actually SEE themselves walking the platform / petting
-    // the dog. The face is anatomically simple but readable: skull, hair,
-    // eyes (with blink lids), eyebrows, mouth, nose, optional glasses, beard.
-    this.head = new THREE.Group();
-    // Slightly lower than the camera (eyes sit a few cm below the top of the
-    // head, and the camera approximates the eye position).
-    this.head.position.set(0, o.headY - 0.06, 0);
-    // Head-to-body ratio: kids' heads are proportionally bigger — the single
-    // strongest silhouette cue for "child" — while the woman preset trims a
-    // touch. Scales the whole face rig (eyes, hair, glasses) coherently.
-    this.head.scale.setScalar(this.bt.head);
-    this.head.visible = false;       // FP default — camera is the head
-    this.group.add(this.head);
-
-    // Skull
-    const skull = new THREE.Mesh(
-      new THREE.SphereGeometry(0.115, 28, 22),
-      new THREE.MeshStandardMaterial({
-        color: o.skinColor, roughness: 0.78, metalness: 0,
-        emissive: emissive(o.skinColor, 0.10),
-      })
-    );
-    skull.scale.set(1.0, 1.10, 0.95);
-    skull.castShadow = true;
-    this.head.add(skull);
-
-    // Cheek shading bumps (slightly darker subsurface tone)
-    const cheekMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(o.skinColor).multiplyScalar(0.86),
-      roughness: 0.95,
-      transparent: true, opacity: 0.55, depthWrite: false,
-    });
-    for (const sx of [-1, 1]) {
-      const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), cheekMat);
-      cheek.scale.set(1.1, 0.7, 0.4);
-      cheek.position.set(sx * 0.075, -0.005, 0.085);
-      this.head.add(cheek);
-    }
-
-    // Hair — layered on top of the skull, geometry varies by style.
-    const hairMat = new THREE.MeshStandardMaterial({
-      color: o.hairColor, roughness: 1.0,
-      emissive: new THREE.Color(o.hairColor).multiplyScalar(0.04),
-    });
-    // Pony-tail / long hair gets a separate "hair-back" group that flutters
-    // independently in the wind. Initialise to nothing for "bald".
-    this.hair = new THREE.Group();
-    this.head.add(this.hair);
-    // Headwear (beanie / cap) — coordinates with the shirt colour; rides on the
-    // head so it turns and sways with it. Added before the hair geometry so the
-    // hair shows beneath the brim/band.
-    if (o.headwear === "beanie" || o.headwear === "cap") {
-      const hwMat = new THREE.MeshStandardMaterial({ color: o.shirtColor, roughness: 0.92 });
-      const hwBandMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor).multiplyScalar(0.8), roughness: 0.92 });
-      if (o.headwear === "beanie") {
-        const dome = new THREE.Mesh(new THREE.SphereGeometry(0.125, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.6), hwMat);
-        dome.scale.set(1.02, 1.12, 1.0); dome.position.y = 0.035; dome.castShadow = true;
-        this.head.add(dome);
-        const band = new THREE.Mesh(new THREE.TorusGeometry(0.118, 0.02, 10, 24), hwBandMat);
-        band.rotation.x = Math.PI / 2; band.position.y = 0.045;
-        this.head.add(band);
-        const pom = new THREE.Mesh(new THREE.SphereGeometry(0.022, 10, 8), hwBandMat);
-        pom.position.y = 0.165; this.head.add(pom);
-      } else {
-        const dome = new THREE.Mesh(new THREE.SphereGeometry(0.122, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.56), hwMat);
-        dome.scale.set(1.02, 1.0, 1.0); dome.position.y = 0.045; dome.castShadow = true;
-        this.head.add(dome);
-        const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.095, 0.014, 18), hwBandMat);
-        brim.scale.set(1.0, 1.0, 0.82); brim.position.set(0, 0.02, 0.07);
-        this.head.add(brim);
-      }
-    }
-    this.hairFlutter = null;          // set below for long / pony / curly styles
-    if (o.hairStyle === "short") {
-      const cap = new THREE.Mesh(
-        new THREE.SphereGeometry(0.12, 24, 18, 0, Math.PI * 2, 0, Math.PI / 2.0),
-        hairMat
-      );
-      cap.scale.set(1.02, 1.02, 0.98);
-      cap.position.set(0, 0.018, 0);
-      this.hair.add(cap);
-      // Side-burn tufts that flick gently in the wind
-      for (const sx of [-1, 1]) {
-        const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), hairMat);
-        tuft.scale.set(0.7, 1.4, 0.6);
-        tuft.position.set(sx * 0.115, 0.005, 0.005);
-        this.hair.add(tuft);
-      }
-    } else if (o.hairStyle === "long") {
-      const cap = new THREE.Mesh(
-        new THREE.SphereGeometry(0.123, 24, 18, 0, Math.PI * 2, 0, Math.PI / 1.9),
-        hairMat
-      );
-      cap.position.set(0, 0.012, 0);
-      this.hair.add(cap);
-      // Long sheet down the back — flutters in wind via _windPhase
-      const back = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.34, 6, 8), hairMat);
-      back.position.set(0, -0.12, -0.075);
-      back.rotation.x = -0.10;
-      back.material.side = THREE.DoubleSide;
-      this.hair.add(back);
-      this.hairFlutter = back;
-    } else if (o.hairStyle === "buzz") {
-      const cap = new THREE.Mesh(
-        new THREE.SphereGeometry(0.116, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2.4),
-        new THREE.MeshStandardMaterial({
-          color: o.hairColor, roughness: 1.0, transparent: true, opacity: 0.85,
-        })
-      );
-      cap.position.set(0, 0.005, 0);
-      this.hair.add(cap);
-    } else if (o.hairStyle === "pony") {
-      const cap = new THREE.Mesh(
-        new THREE.SphereGeometry(0.12, 24, 18, 0, Math.PI * 2, 0, Math.PI / 2.0),
-        hairMat
-      );
-      cap.position.set(0, 0.015, 0);
-      this.hair.add(cap);
-      // Pony tail — a stretched ovoid down behind the head
-      const tail = new THREE.Mesh(new THREE.SphereGeometry(0.04, 12, 10), hairMat);
-      tail.scale.set(0.9, 2.4, 0.9);
-      tail.position.set(0, -0.06, -0.115);
-      this.hair.add(tail);
-      this.hairFlutter = tail;
-    } else if (o.hairStyle === "curly") {
-      // Cluster of small spheres
-      for (let i = 0; i < 14; i++) {
-        const a = (i / 14) * Math.PI * 2;
-        const r = 0.10 + Math.random() * 0.012;
-        const curl = new THREE.Mesh(new THREE.SphereGeometry(0.03 + Math.random() * 0.01, 10, 8), hairMat);
-        curl.position.set(Math.cos(a) * r, 0.04 + Math.random() * 0.04, Math.sin(a) * r * 0.85);
-        this.hair.add(curl);
-      }
-    } /* "bald" intentionally adds nothing */
-
-    // Eyes — full set per side: socket darken, white sclera, iris, pupil,
-    // catchlight highlight, eyelid for blinks. Real-time blink scale-y on
-    // the lid imitates the wettest "alive" cue.
-    const eyeWhiteMat = new THREE.MeshStandardMaterial({
-      color: 0xfdf3e6, roughness: 0.20, metalness: 0,
-      emissive: 0x161210, emissiveIntensity: 0.05,
-    });
-    const irisMat = new THREE.MeshStandardMaterial({
-      color: o.eyeColor, roughness: 0.18, metalness: 0.12,
-      emissive: new THREE.Color(o.eyeColor).multiplyScalar(0.25),
-    });
-    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x05030a });
-    const lidMat = new THREE.MeshStandardMaterial({
-      color: o.skinColor, roughness: 0.9,
-    });
-    this.eyes = [];
-    for (const sx of [-1, 1]) {
-      const eyeGroup = new THREE.Group();
-      eyeGroup.position.set(sx * 0.040, 0.005, 0.103);
-      this.head.add(eyeGroup);
-      const sclera = new THREE.Mesh(new THREE.SphereGeometry(0.022, 14, 12), eyeWhiteMat);
-      sclera.scale.set(1.0, 1.0, 0.55);
-      eyeGroup.add(sclera);
-      const iris = new THREE.Mesh(new THREE.SphereGeometry(0.014, 14, 12), irisMat);
-      iris.position.set(0, 0, 0.012);
-      iris.scale.set(1, 1, 0.6);
-      eyeGroup.add(iris);
-      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.0065, 10, 8), pupilMat);
-      pupil.position.set(0, 0, 0.020);
-      eyeGroup.add(pupil);
-      // Catchlight (white speck — single biggest "alive" cue)
-      const hl = new THREE.Mesh(
-        new THREE.SphereGeometry(0.004, 6, 4),
-        new THREE.MeshBasicMaterial({ color: 0xffffff })
-      );
-      hl.position.set(sx * 0.004, 0.006, 0.024);
-      eyeGroup.add(hl);
-      // Eyelid — half-sphere we scale on Y for blinks (0.05 open → 1.0 closed)
-      const lid = new THREE.Mesh(
-        new THREE.SphereGeometry(0.024, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2),
-        lidMat
-      );
-      lid.scale.set(1.0, 0.05, 0.55);
-      lid.position.set(0, 0.001, 0.001);
-      eyeGroup.add(lid);
-      // Eyebrow — short curved bar above the eye, in hair colour
-      const brow = new THREE.Mesh(
-        new THREE.BoxGeometry(0.040, 0.005, 0.012),
-        new THREE.MeshStandardMaterial({
-          color: new THREE.Color(o.hairColor).multiplyScalar(0.78), roughness: 1.0,
-        })
-      );
-      brow.position.set(sx * 0.001, 0.030, 0.015);
-      brow.rotation.z = sx * -0.10;
-      eyeGroup.add(brow);
-      this.eyes.push({ group: eyeGroup, lid });
-    }
-
-    // Nose — short rounded prism
-    const nose = new THREE.Mesh(
-      new THREE.SphereGeometry(0.016, 12, 10),
-      new THREE.MeshStandardMaterial({ color: o.skinColor, roughness: 0.85 })
-    );
-    nose.scale.set(0.9, 1.4, 1.1);
-    nose.position.set(0, -0.022, 0.110);
-    this.head.add(nose);
-
-    // Mouth — a faint smile arc (Torus partial). The arc parameter starts at
-    // the +X axis, so to get a smile (ends up, centre down) the mesh is spun
-    // so the arc spans the BOTTOM of the circle — rotating ±90° instead put
-    // a vertical C-curl beside the nose.
-    const mouth = new THREE.Mesh(
-      new THREE.TorusGeometry(0.024, 0.0035, 6, 16, Math.PI * 0.85),
-      new THREE.MeshBasicMaterial({ color: 0x6a3a30 })
-    );
-    mouth.rotation.z = Math.PI * 1.075;   // arc centred on the circle's bottom
-    mouth.rotation.x = -0.12;
-    mouth.position.set(0, -0.057, 0.107);
-    this.head.add(mouth);
-    this.mouth = mouth;
-
-    // Optional glasses
-    if (o.glasses === "round" || o.glasses === "square") {
-      const frameMat = new THREE.MeshStandardMaterial({
-        color: 0x1a1410, metalness: 0.5, roughness: 0.4,
-      });
-      const ringGeo = o.glasses === "round"
-        ? new THREE.TorusGeometry(0.024, 0.003, 8, 18)
-        : new THREE.TorusGeometry(0.024, 0.003, 4, 8);   // chunkier, square-ish
-      for (const sx of [-1, 1]) {
-        const ring = new THREE.Mesh(ringGeo, frameMat);
-        ring.position.set(sx * 0.040, 0.005, 0.118);
-        if (o.glasses === "square") ring.rotation.z = Math.PI / 4;
-        this.head.add(ring);
-      }
-      // Bridge between the two
-      const bridge = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.002, 0.002, 0.030, 8),
-        frameMat
-      );
-      bridge.rotation.z = Math.PI / 2;
-      bridge.position.set(0, 0.005, 0.118);
-      this.head.add(bridge);
-    }
-
-    // Optional facial hair
-    const facialMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(o.hairColor).multiplyScalar(0.85), roughness: 1.0,
-    });
-    if (o.facialHair === "stubble") {
-      const stubble = new THREE.Mesh(
-        new THREE.SphereGeometry(0.082, 18, 14, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.45),
-        new THREE.MeshStandardMaterial({
-          color: new THREE.Color(o.hairColor).multiplyScalar(0.6),
-          roughness: 1.0, transparent: true, opacity: 0.45,
-        })
-      );
-      stubble.position.set(0, -0.03, 0.025);
-      this.head.add(stubble);
-    } else if (o.facialHair === "beard") {
-      const beard = new THREE.Mesh(
-        new THREE.SphereGeometry(0.090, 20, 16, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.45),
-        facialMat
-      );
-      beard.position.set(0, -0.04, 0.02);
-      this.head.add(beard);
-    } else if (o.facialHair === "moustache") {
-      const stash = new THREE.Mesh(
-        new THREE.BoxGeometry(0.050, 0.008, 0.010),
-        facialMat
-      );
-      stash.position.set(0, -0.040, 0.110);
-      this.head.add(stash);
-    }
-
     // ---------- Optional scarf ----------
-    // A thin cloth strip around the neck that flutters when windExposure > 0.
-    // Heights / driving / flying scenes can light it up; calm rooms keep it
-    // still. Same colour as the shirt-fold so it looks like part of the outfit.
+    // Rides the chest bone so it moves with the torso. Only shown when the
+    // scene declares wind.
     const scarfMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(o.shirtColor).multiplyScalar(1.15),
-      roughness: 1.0,
-      side: THREE.DoubleSide,
+      roughness: 1.0, side: THREE.DoubleSide,
     });
     this.scarf = new THREE.Group();
-    this.scarf.position.set(0, o.neckY - 0.04, 0);
-    this.group.add(this.scarf);
-    // Wrap around the neck (a thin torus the same colour as the scarf)
-    const scarfWrap = new THREE.Mesh(
-      new THREE.TorusGeometry(0.085, 0.018, 8, 18),
-      scarfMat
-    );
+    this.scarf.position.set(0, o.neckY - this.rig.dims.chestY - 0.02, 0);
+    this.rig.chest.add(this.scarf);
+    const scarfWrap = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.016, 8, 18), scarfMat);
     scarfWrap.rotation.x = Math.PI / 2;
-    scarfWrap.scale.set(1, 0.7, 1);
+    scarfWrap.scale.set(1, 0.75, 1);
     this.scarf.add(scarfWrap);
-    // Tails of the scarf — long flat strips that flap. Two streamers so it
-    // reads like a real wrapped scarf, one slightly shorter.
     const scarfTails = [];
     for (let i = 0; i < 2; i++) {
-      const tail = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.05, 0.30 + i * 0.04, 1, 6),
-        scarfMat
-      );
-      tail.position.set((i ? -0.03 : 0.03), -0.18 - i * 0.02, 0.04);
+      const tail = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.28 + i * 0.04, 1, 6), scarfMat);
+      tail.position.set((i ? -0.03 : 0.03), -0.16 - i * 0.02, 0.05);
       tail.rotation.x = -0.10;
       this.scarf.add(tail);
       scarfTails.push(tail);
     }
     this.scarfTails = scarfTails;
-    // Hide the scarf when wind exposure is zero (most indoor scenes)
     this.scarf.visible = o.windExposure > 0;
 
     // Wind / blink phase trackers
     this._windPhase = 0;
     this._blinkTimer = 1 + Math.random() * 4;
     this._blinkStrength = 0;
+    this._blinkPhase = 0;
+    // Per-hand contact state (finger curl smoothing)
+    this._handK = [{ curl: 0, spread: 0 }, { curl: 0, spread: 0 }];
   }
 
-  // Toggle camera mode — when switched to "tp" we make the head/face visible
-  // so the user can SEE their character. In "fp" the head stays hidden so the
-  // camera (which is at the eye position) doesn't render INSIDE a sphere.
+  // Flexion helper — one place owns the elbow's sign so it can never invert.
+  _elbowFlex(arm, amount) { arm.elbow.rotation.x = -Math.max(0, amount); }
+
+  // Toggle camera mode — TP reveals the head so the user can SEE their
+  // character; FP hides it so the camera isn't inside a skull.
   setCameraMode(mode) {
     this.cameraMode = mode;
     if (this.head) this.head.visible = (mode === "tp");
+    // The neck rides its own bone (not the skinned torso) precisely so it can
+    // vanish with the head — otherwise looking down in first person shows the
+    // underside of your own throat.
+    const np = this.head && this.head.userData.neckPart;
+    if (np) np.visible = (mode === "tp");
     if (this.fillLight) {
       this.fillLight.visible = (mode === "tp");
       this.fillLight.intensity = (mode === "tp") ? 5.0 : 0;
     }
   }
 
-  // Each frame: anchor the body to the player position (controls.position when
-  // present, falling back to the camera position so the body still works for
-  // legacy callers). Yaw copies the user's facing direction so the body turns
-  // with the head. Walk-cycle, blink, hair / scarf flutter, and breath
-  // animations all run here.
+  // ---------- two-bone arm IK ----------
+  // Puts the WRIST on `targetLocal` (expressed in the chest bone's space) with
+  // the elbow swinging toward `pole`. Returns true when a solution was applied.
+  // This is what makes a reach land ON the thing instead of gesturing near it.
+  _armIK(arm, targetLocal, k) {
+    const A = this._upperLen, B = this._foreLen;
+    const s = arm.root.position;
+    const v = _bV2.subVectors(targetLocal, s);
+    let d = v.length();
+    if (d < 1e-4) return false;
+    const dmin = Math.abs(A - B) + 0.02, dmax = A + B - 0.012;
+    d = Math.max(dmin, Math.min(dmax, d));
+    v.normalize();
+    // Elbow flexion from the triangle (0 = straight arm).
+    const cosE = Math.max(-1, Math.min(1, (A * A + B * B - d * d) / (2 * A * B)));
+    const flex = Math.PI - Math.acos(cosE);
+    // How far the upper arm sits off the shoulder→target line.
+    const corr = Math.acos(Math.max(-1, Math.min(1, (A * A + d * d - B * B) / (2 * A * d))));
+    // Pole: a human elbow hangs down-and-back, and a little outboard.
+    const pole = _bV3.set(arm.side * 0.30, -0.55, -0.78).normalize();
+    // Component of the pole perpendicular to the aim direction.
+    const perp = _bV4.copy(pole).addScaledVector(v, -pole.dot(v));
+    if (perp.lengthSq() < 1e-6) perp.set(arm.side * 0.3, 0, -1).addScaledVector(v, 0).normalize();
+    perp.normalize();
+    // Upper-arm direction = aim rotated `corr` toward the elbow pole.
+    const upper = _bV5.copy(v).multiplyScalar(Math.cos(corr)).addScaledVector(perp, Math.sin(corr));
+    // Basis for the shoulder: local −Y along the upper arm, local +Z on the
+    // side the HAND swings toward (i.e. away from the elbow) so a negative
+    // elbow rotation is flexion — the same sign the pose code uses.
+    const yA = _bV1.copy(upper).multiplyScalar(-1).normalize();
+    const zA = perp.clone().multiplyScalar(-1);
+    zA.addScaledVector(yA, -zA.dot(yA)).normalize();
+    const xA = new THREE.Vector3().crossVectors(yA, zA).normalize();
+    _bM1.makeBasis(xA, yA, zA);
+    _bQ1.setFromRotationMatrix(_bM1);
+    arm.root.quaternion.slerp(_bQ1, k);
+    arm.elbow.rotation.x += (-flex - arm.elbow.rotation.x) * k;
+    return true;
+  }
+
+  // Each frame: anchor the body to the player position, then run the gait,
+  // posture, reach, breath and blink layers.
   update(t, walkPhase = 0, walkAmt = 0, controls = null, hands = null) {
     const cam = this.camera;
-    const height = this.opts.headY;     // body height in body-space
-    // Anchor: prefer controls.position (logical player) so the body doesn't
-    // bob with the camera in TP mode. Fall back to camera position in FP mode
-    // when no controls are passed in.
+    const height = this.opts.headY;
     let ax, ay, az;
     if (controls && controls.position) {
       ax = controls.position.x;
@@ -14306,30 +15110,21 @@ class Body {
       ay = cam.position.y - height;
       az = cam.position.z;
     }
-    // Feet pinned to the ACTUAL floor when the scene declares it. Deriving
+    // Feet pinned to the ACTUAL floor when the scene declares one — deriving
     // ground from "eye minus body height" floated or buried the feet in every
-    // scene whose eye height wasn't exactly 1.55 above its floor — which was
-    // most of them. The soles, not the eye, define where a person is.
+    // scene whose eye height wasn't exactly headY above its floor.
     if (this.opts.groundY != null) ay = this.opts.groundY;
     this.group.position.set(ax, ay, az);
-    // Ride the fill light on the camera-facing side of the head, a little above,
-    // so the side of the character the user is looking at never sinks into
-    // shadow. (Positioned in world space; the light is a scene child.)
     if (this.fillLight && this.fillLight.visible) {
       const hx = ax, hy = ay + this.opts.headY - 0.05, hz = az;
       let ldx = cam.position.x - hx, ldz = cam.position.z - hz;
       const ldl = Math.hypot(ldx, ldz) || 1;
       this.fillLight.position.set(hx + (ldx / ldl) * 0.75, hy + 0.5, hz + (ldz / ldl) * 0.75);
     }
-    // Frame delta for all dt-based smoothing below. MUST live at method
-    // scope: it was declared inside the yaw-follow block, so every later
-    // use threw a ReferenceError that the render loop's try/catch swallowed
-    // — posture, arm animation, footsteps, hip twist and blinking were all
-    // silently dead. (this._lastBodyT is written near the end of update().)
     const dtB = Math.min(0.05, Math.max(0.001, t - (this._lastBodyT || t)));
-    // Fade the body out when the TP camera is pulled right up against it
-    // (cornered against a wall): a chest filling the frame and clipping the
-    // near plane reads as a glitch — ghosting out is the genre-standard fix.
+
+    // Fade the body out when the TP camera is pulled right up against it, and
+    // when an FP eye-drop crouch sinks the camera into your own chest.
     {
       const fdx = cam.position.x - ax;
       const fdy = cam.position.y - (ay + this.opts.headY * 0.8);
@@ -14337,32 +15132,22 @@ class Body {
       const dCam = Math.hypot(fdx, fdy, fdz);
       let fadeTarget;
       if (this.cameraMode === "tp") {
-        fadeTarget = Math.max(0, Math.min(1, (dCam - 0.35) / 0.35));   // 0 at 0.35 m … 1 at 0.7 m
+        fadeTarget = Math.max(0, Math.min(1, (dCam - 0.35) / 0.35));
       } else {
-        // FP: the body stays visible for look-down embodiment, but when the
-        // eye-drop crouch sinks the camera toward the torso (petting a small
-        // dog), your own shirt/shoulders/arms fill the frame — ghost the body
-        // out as soon as the eye passes CHIN height, fully gone by the
-        // shoulders. (The first cut used the shoulder line as the START of
-        // the fade, so at chest height the body still blocked half the view.)
         const horiz = Math.hypot(fdx, fdz);
         const sink = (ay + this.opts.headY * 0.97) - cam.position.y;
         fadeTarget = horiz < 0.4 ? 1 - Math.max(0, Math.min(1, sink / 0.18)) : 1;
       }
       if (this._fadeK == null) this._fadeK = 1;
-      // dt-based (this._lastBodyT is still last frame's t here; it's updated
-      // later where dtB is computed) so the near-camera ghost fade doesn't
-      // flicker twice as fast on 120 Hz displays.
-      const _fdt = Math.min(0.05, Math.max(0.001, t - (this._lastBodyT || t)));
-      this._fadeK += (fadeTarget - this._fadeK) * Math.min(1, _fdt * 15);
+      this._fadeK += (fadeTarget - this._fadeK) * Math.min(1, dtB * 15);
       const k = this._fadeK;
       if (k < 0.995 || this._fadeApplied) {
         if (!this._fadeMats) {
           this._fadeMats = [];
           const seen = new Set();
-          this.group.traverse(o => {
-            if (!o.isMesh || !o.material) return;
-            const mats = Array.isArray(o.material) ? o.material : [o.material];
+          this.group.traverse(ob => {
+            if (!ob.isMesh || !ob.material) return;
+            const mats = Array.isArray(ob.material) ? ob.material : [ob.material];
             for (const m of mats) {
               if (seen.has(m)) continue;
               seen.add(m);
@@ -14378,17 +15163,13 @@ class Body {
         this.group.visible = k > 0.03;
       }
     }
-    // Yaw follows the camera's yaw so the body turns with the head. The mesh
-    // is authored with its face/chest on LOCAL +Z, while the camera looks
-    // toward -Z — without the π flip the third-person view showed the avatar
-    // permanently facing the camera (and moonwalking away from it), and
-    // looking down in first person put your toes pointing backwards.
+
+    // ---------- facing ----------
+    // The mesh faces LOCAL +Z while the camera looks toward −Z, hence the π.
+    let aimYaw = 0, aimPitch = 0;
     if (controls && typeof controls.yaw === "number") {
       // Third-person travel facing: a person walking left TURNS left and
-      // strides forward — only a camera-locked FP torso crab-walks. Yaw the
-      // body toward the direction of travel (smoothed, shortest-path); pure
-      // backpedal keeps facing forward (nobody snaps 180° for two steps
-      // back). FP keeps the offset at 0 so the head never fights the camera.
+      // strides forward — only a camera-locked FP torso crab-walks.
       let offTarget = 0;
       if (this.cameraMode === "tp" && controls.getWalkState) {
         const wsT = controls.getWalkState();
@@ -14397,10 +15178,8 @@ class Body {
           if (Math.abs(aT) > Math.PI / 2 + 0.05) aT = Math.atan2(-wsT.side, -wsT.fwd);
           offTarget = aT;
         } else if (hands && hands._reach && hands._reachStrength > 0.3 && hands._reachWorld) {
-          // Standing still with a live reach target (petting the dog,
-          // gripping the rail): square the body up to the thing being
-          // touched, even if the camera looks elsewhere — reaching sideways
-          // with a twisted arm read as a glitch, not an intention.
+          // Standing still with a live reach target: square the body up to the
+          // thing being touched, even if the camera looks elsewhere.
           const rdx = hands._reachWorld.x - this.group.position.x;
           const rdz = hands._reachWorld.z - this.group.position.z;
           if (rdx * rdx + rdz * rdz > 0.04) {
@@ -14416,10 +15195,6 @@ class Body {
       while (dOff > Math.PI) dOff -= Math.PI * 2;
       while (dOff < -Math.PI) dOff += Math.PI * 2;
       this._travelOff += dOff * Math.min(1, dtB * 7);
-      // In TP the body LAGS the camera yaw — a person turns with mass, not
-      // welded to the mouse. Faster follow while walking (you steer with
-      // your whole body), lazier when standing (head-first, body follows).
-      // FP stays instant so your own torso never fights where you look.
       if (this._camYawSm == null) this._camYawSm = controls.yaw;
       if (this.cameraMode === "tp") {
         let dYawC = controls.yaw - this._camYawSm;
@@ -14430,10 +15205,7 @@ class Body {
         this._camYawSm = controls.yaw;
       }
       this.group.rotation.y = this._camYawSm + Math.PI - this._travelOff;
-      // Head leads, body follows: in TP the head tracks the camera's aim
-      // (clamped to a natural neck range) while the body lags behind. This
-      // is the single strongest "someone is in there" cue the avatar has.
-      let aimYaw = 0, aimPitch = 0;
+      // Head leads, body follows.
       if (this.cameraMode === "tp") {
         aimYaw = (controls.yaw - this._camYawSm) + this._travelOff;
         while (aimYaw > Math.PI) aimYaw -= Math.PI * 2;
@@ -14445,236 +15217,222 @@ class Body {
       this._headAimYaw += (aimYaw - this._headAimYaw) * Math.min(1, dtB * 9);
       this._headAimPitch += (aimPitch - this._headAimPitch) * Math.min(1, dtB * 9);
     }
-    // Subtle breath (always-on idle motion). Bigger amplitude when standing
-    // still (idle), smaller when walking (overshadowed by step bob anyway).
+
     const idleFactor = 1 - (walkAmt || 0);
-    const breath = Math.sin(t * 1.4) * (0.006 + idleFactor * 0.003);
-    this.group.position.y += breath;
-    // Visible chest breathing — chest scale rises with each inhale. The
-    // rib-cage expansion is the strongest "alive person" cue you can give a
-    // procedural body. We modulate scale.y (vertical rib lift) and a small
-    // scale.x (lateral lung expansion).
-    if (this.chest) {
-      const breathPhase = Math.sin(t * 1.4);          // matches the y-bob
-      const breathStrength = 0.6 + idleFactor * 0.4;
-      // Preserve the authored torso width. Resetting x to 1.4 on frame one
-      // made every avatar abruptly broad-chested and the breath look rubbery.
-      this.chest.scale.y = 1.0 + breathPhase * 0.028 * breathStrength;
-      this.chest.scale.x = 1.24 * (1.0 + breathPhase * 0.018 * breathStrength);
-    }
-    // Idle head turns — every 6-12 s the head naturally turns slightly to
-    // either side as if scanning the environment. Only fires when not
-    // walking (so it doesn't fight the camera direction). Adds the "alive"
-    // signal to the body in third-person view.
-    this._nextHeadTurnAt = this._nextHeadTurnAt || (t + 4 + Math.random() * 6);
-    this._headTurnAmount = this._headTurnAmount || 0;
-    this._headTurnTarget = this._headTurnTarget || 0;
-    if (idleFactor > 0.7 && t > this._nextHeadTurnAt) {
-      this._headTurnTarget = (Math.random() - 0.5) * 0.6;
-      this._nextHeadTurnAt = t + 5 + Math.random() * 7;
-      // Schedule a return to neutral after ~1.5 s
-      setTimeout(() => { this._headTurnTarget = 0; }, 1500);
-    }
-    this._headTurnAmount += (this._headTurnTarget - this._headTurnAmount) * 0.04;
-    if (this.head) {
-      // Aim tracking dominates; the idle wander only shows through when the
-      // camera is near-centred (otherwise the head would fidget mid-aim).
-      const aimY = this._headAimYaw || 0;
-      const wanderK = Math.max(0, 1 - Math.abs(aimY) * 3);
-      this.head.rotation.y = this._headTurnAmount * wanderK + aimY;
-      // Tiny pitch wobble for life + a step-synced nod while walking: the
-      // head rides each footfall with a slight dip instead of floating
-      // gimbal-stabilised above a bobbing body.
-      this.head.rotation.x = Math.sin(t * 0.7) * 0.02
-        + (Math.abs(Math.sin(walkPhase)) - 0.6) * 0.035 * walkAmt;
+    // Subtle breath (always-on idle motion).
+    const breathPhase = Math.sin(t * 1.4);
+    this.group.position.y += breathPhase * (0.005 + idleFactor * 0.003);
+    // Visible rib expansion. The `breath` bone has no children, so scaling it
+    // inflates the ribcage WITHOUT dragging the neck, head or arms with it.
+    if (this.rig.breath) {
+      const strength = 0.6 + idleFactor * 0.4;
+      this.rig.breath.scale.set(
+        1 + breathPhase * 0.020 * strength,
+        1 + breathPhase * 0.014 * strength,
+        1 + breathPhase * 0.026 * strength
+      );
     }
 
     // ---------- Gait engine ----------
-    // A real human stride, not a metronome: the leg swings forward with the
-    // KNEE flexing to clear the ground (peak flex at mid-swing), lands almost
-    // straight, then stays near-straight through stance while the body
-    // vaults over it. Phase convention per leg (θ): sin(θ) > 0 and rising =
-    // swing-forward; θ ∈ (π/2, 3π/2) = stance. Knee flexion ≈ max(0, cosθ),
-    // which peaks exactly at mid-swing and vanishes through stance.
-    // Travel direction in body-local space — the stride must follow the way
-    // the BODY is actually moving, not always pretend it walks forward:
-    //   fwd  +1 → forward swing,  -1 → backpedal (reversed swing),
-    //   side ±1 → sidestep (legs scissor from the hip, soles kept flat),
-    //   diagonals blend both; turn-in-place shuffles with tiny steps.
-    let gaitFwd = 1, gaitSide = 0, strideK = 1;
+    // A real human stride: the leg swings forward with the KNEE flexing to
+    // clear the ground (peak flex at mid-swing), lands almost straight, then
+    // stays near-straight through stance while the body vaults over it.
+    let gaitFwd = 1, gaitSide = 0, strideK = 1, speedNorm = 1;
     if (controls && controls.getWalkState) {
       const ws = controls.getWalkState();
       gaitFwd = ws.fwd;
       gaitSide = ws.side;
-      // Match the visible step length to the (speed-shortened) stride the
-      // phase engine uses — slow creeps take small careful steps instead of
-      // full-length slow-motion swings.
-      strideK = 0.55 + 0.45 * (ws.speedNorm == null ? 1 : ws.speedNorm);
-      // The body may be yawed toward the travel direction (TP travel facing
-      // above) — express the stride in the TURNED body's frame, so a strafe
-      // becomes a forward walk once the body has rotated into it.
+      speedNorm = ws.speedNorm == null ? 1 : ws.speedNorm;
+      strideK = 0.55 + 0.45 * speedNorm;
       const off = this._travelOff || 0;
       if (Math.abs(off) > 0.001) {
         const c = Math.cos(off), s = Math.sin(off);
         gaitFwd = ws.fwd * c + ws.side * s;
         gaitSide = -ws.fwd * s + ws.side * c;
       }
-      if (ws.amount > walkAmt) walkAmt = ws.amount;   // shuffle feeds the gait
+      if (ws.amount > walkAmt) walkAmt = ws.amount;
     }
     const fwdShare = Math.abs(gaitFwd);
-    this.legs.forEach((leg) => {
-      const θ = walkPhase + (leg.side > 0 ? 0 : Math.PI);
-      const swing = Math.sin(θ) * 0.50 * walkAmt * strideK;
-      // Knee clears the ground at mid-swing for fore-aft strides; sidesteps
-      // use a smaller constant lift (you don't fold a knee to shuffle).
-      const kneeFlex = (Math.max(0, Math.cos(θ)) * (0.30 + 0.65 * fwdShare) + 0.04) * walkAmt;
-      // Stance-phase knee YIELD: a real knee never locks straight under
-      // load — it gives ~8° as the body's weight rolls over the planted leg
-      // (loading response), then re-extends toward toe-off. A dead-straight
-      // stance leg was the strongest remaining "compass walk" tell.
-      const stanceYield = Math.pow(Math.max(0, Math.sin(θ - Math.PI / 2)), 1.5)
+    for (const leg of this.legs) {
+      const th = walkPhase + (leg.side > 0 ? 0 : Math.PI);
+      const swing = Math.sin(th) * 0.50 * walkAmt * strideK;
+      const kneeFlex = (Math.max(0, Math.cos(th)) * (0.30 + 0.65 * fwdShare) + 0.04) * walkAmt;
+      // Stance-phase knee YIELD: a real knee never locks straight under load —
+      // it gives ~8° as the body's weight rolls over the planted leg.
+      const stanceYield = Math.pow(Math.max(0, Math.sin(th - Math.PI / 2)), 1.5)
         * 0.14 * walkAmt * fwdShare;
       leg.hip.rotation.x = -swing * gaitFwd;
       leg.hip.rotation.z = swing * gaitSide * 0.55;
+      leg.hip.rotation.y = 0;
       leg.knee.rotation.x = kneeFlex + stanceYield;
-      // Foot: level the sole against the combined leg rotation, then add a
-      // heel-toe roll — toe up as the foot reaches forward, heel peel as it
-      // pushes off behind. The roll belongs to FORWARD strides only; rolling
-      // the toes while backpedalling or strafing reads wrong.
-      leg.foot.rotation.x = -(leg.hip.rotation.x + leg.knee.rotation.x) * 0.75
-        + Math.sin(θ) * 0.22 * walkAmt * Math.max(0, gaitFwd);
-      // Counter the sidestep abduction so the soles stay parallel to the floor.
+      // Foot: level the sole against the leg rotation, then add a heel-toe
+      // roll — toe up as the foot reaches forward, heel peel at push-off.
+      leg.foot.rotation.x = -(leg.hip.rotation.x + leg.knee.rotation.x) * 0.82
+        + Math.sin(th) * 0.22 * walkAmt * Math.max(0, gaitFwd);
       leg.foot.rotation.z = -leg.hip.rotation.z * 0.8;
-    });
-    // Pelvis dynamics — the part stiff procedural walks always miss:
-    //  · step bob: the body vaults highest at mid-stance and dips into each
-    //    heel strike (|sin| of the per-step phase, zero-mean so standing
-    //    height is unchanged)
-    //  · weight shift: the torso rides laterally over whichever foot is
-    //    planted (full stride = one left + one right shift)
+    }
+    // Pelvis dynamics: step bob (highest at mid-stance, dipping into each heel
+    // strike) plus the lateral weight shift over the planted foot.
     const stepBob = (Math.abs(Math.sin(walkPhase)) - 0.64) * 0.034 * walkAmt * strideK;
     this.group.position.y += stepBob;
     const yawNow = this.group.rotation.y;
     const weightShift = Math.sin(walkPhase) * 0.022 * walkAmt * this.bt.sway
-      // Idle: slow side-to-side balance transfer — nobody stands frozen.
       + Math.sin(t * 0.45) * 0.013 * idleFactor;
     this.group.position.x += Math.cos(yawNow) * weightShift;
     this.group.position.z += -Math.sin(yawNow) * weightShift;
-    // ---------- Posture (smoothed lerp toward targets set by the scene) ----------
-    // The scene calls body.setPosture({ lean, crouch, armSpread, reach })
-    // each frame to make the character respond to context: lean over a
-    // railing, crouch to pet a dog, hold arms out for water balance.
+
+    // ---------- Posture (smoothed lerp toward the scene's targets) ----------
     const ps = this._postureSm;
     const pt = this.posture;
-    const lerpRate = Math.min(1, dtB * 4.5);    // ~4.5/s smoothing (dt-based; posture snapped 2x fast at 120 Hz)
+    const lerpRate = Math.min(1, dtB * 4.5);
     ps.lean       += (pt.lean       - ps.lean      ) * lerpRate;
     ps.crouch     += (pt.crouch     - ps.crouch    ) * lerpRate;
     ps.armSpread  += (pt.armSpread  - ps.armSpread ) * lerpRate;
     ps.reach      += (pt.reach      - ps.reach     ) * lerpRate;
     ps.reachHeight += (pt.reachHeight - ps.reachHeight) * lerpRate;
 
-    // Subtle forward body lean while walking (~3°) PLUS posture lean. Capped
-    // at ~17° so the chest doesn't visibly disconnect from the neck (we
-    // don't have a true upper-body skeleton to keep them rigid). Head tilts
-    // along with the chest so the silhouette reads as a real lean.
-    const walkLean = walkAmt * 0.05;
-    // Posture lean is THIRD-PERSON body language: in FP, tipping the torso
-    // forward swings your own chest and hanging arm up into the middle of
-    // the view (the eye-drop crouch already conveys leaning in first person).
-    const postureLean = (this.cameraMode === "tp" ? ps.lean : 0) * 0.30;   // capped — was 0.55
+    // ---------- World-anchored contact ----------
+    // Resolved BEFORE the spine and legs, because touching something is a
+    // whole-body act: the arm alone can't reach a dog's back, so the knees and
+    // the spine have to take part. Solving it after the crouch (as the old
+    // code did) is why a "pet" was an arm waving 25 cm short of the animal.
+    let contact = null;
+    if (this.cameraMode === "tp" && hands && hands._reach
+        && hands._reachStrength > 0.02 && hands._reachWorld) {
+      const r = hands._reach;
+      contact = {
+        k: hands._reachStrength,
+        side: r.hand === "left" ? -1 : (r.hand === "both" ? 0 : 1),
+        world: hands._reachWorld,
+        normal: r.normal || null,
+        grip: r.grip || "flat",
+        curl: r.curl != null ? r.curl : (r.grip === "wrap" ? 0.95 : 0.12),
+      };
+      // How far short is the arm? Measure shoulder → target and let the body
+      // make up the difference by bending, exactly like a person would.
+      const armLen = (this._upperLen + this._foreLen) * 0.94;
+      const shY = this.group.position.y + this.opts.chestTopY - 0.02;
+      const dxz = Math.hypot(contact.world.x - this.group.position.x,
+                             contact.world.z - this.group.position.z);
+      const need = Math.hypot(dxz, shY - contact.world.y);
+      const over = need - armLen;
+      // Below the shoulder → drop into a crouch; out in front → hinge forward.
+      const lowness = _hsat((shY - contact.world.y) / 0.75);
+      contact.autoCrouch = _hsat(over / 0.40) * lowness * contact.k;
+      contact.autoLean   = _hsat(over / 0.42) * (0.78 + 0.22 * (1 - lowness)) * contact.k;
+    }
+    if (this._reachAssist == null) this._reachAssist = { crouch: 0, lean: 0 };
+    const assistRate = Math.min(1, dtB * 5);
+    this._reachAssist.crouch += ((contact ? contact.autoCrouch : 0) - this._reachAssist.crouch) * assistRate;
+    this._reachAssist.lean   += ((contact ? contact.autoLean   : 0) - this._reachAssist.lean  ) * assistRate;
+    const assistCrouch = this._reachAssist.crouch;
+    const assistLean   = this._reachAssist.lean;
+
+    // ---------- Spine ----------
+    // With a real chain the lean is spread across pelvis→spine→chest, which is
+    // how a back actually bends; a single hinge at the chest reads as a doll
+    // folding at the sternum.
+    const walkLean = walkAmt * 0.055;
+    const postureLean = (this.cameraMode === "tp" ? ps.lean : 0) * 0.42;
     const totalLean = walkLean + postureLean;
-    if (this.chest) {
-      this.chest.rotation.x = totalLean;
-    }
-    // Head tilts WITH the chest (about 60% as much, so the user can still
-    // see forward when leaning over a railing).
-    if (this.head) {
-      // Chest-follow lean + camera aim pitch (TP head tracking) compose.
-      this.head.rotation.x = totalLean * 0.6 + (this._headAimPitch || 0);
-    }
-    // Crouch — bend the legs forward and drop the chest + head by a few
-    // centimetres for the crouched silhouette. Feet stay on the floor (we
-    // never modify the group y) so the body never clips through the ground.
-    // Chest + head positions are restored from cached baselines each frame
-    // so the offset doesn't compound.
-    if (this._chestBaseY === undefined && this.chest) this._chestBaseY = this.chest.position.y;
-    if (this._headBaseY === undefined && this.head)   this._headBaseY  = this.head.position.y;
-    const crouchDrop = ps.crouch * 0.10;
-    if (this.chest && this._chestBaseY !== undefined) {
-      this.chest.position.y = this._chestBaseY - crouchDrop;
-    }
-    if (this.head && this._headBaseY !== undefined) {
-      this.head.position.y = this._headBaseY - crouchDrop;
-    }
-    if (ps.crouch > 0.01 && this.legs) {
-      // A crouch is bent KNEES, not a shrunken torso: thigh pitches forward,
-      // shin folds back, and the whole body drops by exactly the geometric
-      // shortening of the bent leg — so the feet stay planted on the floor.
-      const c = ps.crouch;
-      const hipBend = c * 0.50;
-      const kneeBend = c * 0.95;
-      this.legs.forEach(leg => {
+    // Hip hinge for reach assist — applied to the spine chain below so it
+    // carries the shoulders forward rather than just tilting the chest.
+    const hinge = assistLean * 0.62;
+    // Hip counter-twist: the pelvis leads each stride while the thorax
+    // counter-rotates above it — the hallmark of a real walk cycle. In a bone
+    // CHAIN the chest inherits the pelvis, so its local yaw must overshoot to
+    // land the shoulders on the opposite side.
+    if (this._hipTwist === undefined) this._hipTwist = 0;
+    const hipTwistTarget = Math.sin(walkPhase) * walkAmt * fwdShare;
+    this._hipTwist += (hipTwistTarget - this._hipTwist) * Math.min(1, dtB * 15);
+    const pelvisYaw = -this._hipTwist * 0.085;
+    const gaitRoll = Math.sin(walkPhase) * walkAmt * this.bt.sway;
+    this.hips.rotation.set(hinge * 0.45, pelvisYaw, gaitRoll * 0.055);
+    this.spine.rotation.set(totalLean * 0.35 + hinge * 0.35, -pelvisYaw * 0.9, -gaitRoll * 0.020);
+    this.chest.rotation.set(totalLean * 0.65 + hinge * 0.20, -pelvisYaw * 1.15, -gaitRoll * 0.035);
+
+    // Crouch — bent KNEES, not a shrunken torso: the thigh pitches forward,
+    // the shin folds back, and the whole body drops by exactly the geometric
+    // shortening of the bent leg, so the feet stay planted.
+    const crouchAmt = Math.max(ps.crouch, assistCrouch);
+    if (crouchAmt > 0.01) {
+      const c = crouchAmt;
+      // A full crouch is a real squat: ~40 cm of drop. The old angles gave 8 cm,
+      // so "crouch to pet the dog" barely moved the character and the hand
+      // could never get near the animal.
+      const hipBend = c * 1.10;
+      const kneeBend = c * 2.15;
+      for (const leg of this.legs) {
         leg.hip.rotation.x -= hipBend;
         leg.knee.rotation.x += kneeBend;
         leg.foot.rotation.x = -(leg.hip.rotation.x + leg.knee.rotation.x) * 0.85;
-      });
+      }
+      // Squatting tips the torso forward — sitting bolt upright in a deep
+      // crouch is a pose no balanced human holds.
+      this.spine.rotation.x += c * 0.24;
+      this.chest.rotation.x += c * 0.26;
       const drop = this._thighLen * (1 - Math.cos(hipBend))
         + this._shinLen * (1 - Math.cos(kneeBend - hipBend));
       this.group.position.y -= drop;
     }
-    // Hip counter-twist: the pelvis rotates with the stepping leg while the
-    // chest counter-rotates above it — the hallmark of a real walk cycle.
-    if (this._hipTwist === undefined) this._hipTwist = 0;
-    const hipTwistTarget = Math.sin(walkPhase) * 0.06 * walkAmt;
-    this._hipTwist += (hipTwistTarget - this._hipTwist) * Math.min(1, dtB * 15);   // dt-based (was per-frame 0.25)
-    if (this.hips) this.hips.rotation.y = this._hipTwist * 1.7;
-    if (this.chest) this.chest.rotation.y = -this._hipTwist * 1.2;
-    // Pelvis ROLL + shoulder counter-roll: the pelvis dips toward the
-    // swinging leg each step while the shoulders tilt the other way — with
-    // only the lateral weight-shift the torso slid side to side like a
-    // block on rails. Scaled by the body type's sway personality.
-    const gaitRoll = Math.sin(walkPhase) * walkAmt * this.bt.sway;
-    if (this.hips) this.hips.rotation.z = gaitRoll * 0.055;
-    if (this.chest) this.chest.rotation.z = -gaitRoll * 0.030;
-    // Pelvis ROTATION (around Y): the pelvis leads each stride — as the right
-    // leg swings forward the right hip advances with it (~5°). Stiff hips
-    // with free-swinging legs is the other half of the toy-soldier read.
-    // Body-local forward is +Z, so the advancing (+X) right side needs a
-    // negative Y rotation. Forward strides only — a strafe shuffle keeps
-    // the pelvis square.
-    if (this.hips) this.hips.rotation.y = -Math.sin(walkPhase) * 0.09 * walkAmt
-      * (typeof fwdShare === "number" ? fwdShare : 1);
-    // Footstep audio + visible dust puff each time a foot plants. The
-    // dust is an invisible-by-default Points cloud we lazy-create the
-    // first time a step fires; each puff is N points expanding from the
-    // foot's world position with gravity-decay fade.
+
+    // ---------- Head + gaze ----------
+    this._nextHeadTurnAt = this._nextHeadTurnAt || (t + 4 + Math.random() * 6);
+    this._headTurnAmount = this._headTurnAmount || 0;
+    this._headTurnTarget = this._headTurnTarget || 0;
+    if (idleFactor > 0.7 && t > this._nextHeadTurnAt) {
+      this._headTurnTarget = (Math.random() - 0.5) * 0.6;
+      this._nextHeadTurnAt = t + 5 + Math.random() * 7;
+      setTimeout(() => { this._headTurnTarget = 0; }, 1500);
+    }
+    this._headTurnAmount += (this._headTurnTarget - this._headTurnAmount) * Math.min(1, dtB * 2.4);
+    if (this.head) {
+      const aimY = this._headAimYaw || 0;
+      const wanderK = Math.max(0, 1 - Math.abs(aimY) * 3);
+      // The neck carries part of the turn — a head that swivels alone on a
+      // rigid neck is the classic owl tell.
+      const yawTotal = this._headTurnAmount * wanderK + aimY;
+      this.neck.rotation.y = yawTotal * 0.35;
+      this.neck.rotation.x = totalLean * -0.25 - hinge * 0.30;
+      this.head.rotation.y = yawTotal * 0.65;
+      this.head.rotation.x = totalLean * 0.30 - hinge * 0.55 + (this._headAimPitch || 0)
+        + Math.sin(t * 0.7) * 0.02
+        + (Math.abs(Math.sin(walkPhase)) - 0.6) * 0.035 * walkAmt;
+      this.head.rotation.z = Math.sin(t * 0.53) * 0.012 - gaitRoll * 0.02;
+    }
+    // Eyes lead the head: the pupils flick toward whatever the character is
+    // reaching for / walking toward slightly before the head follows.
+    if (this.face && this.face.setGaze) {
+      let gx = 0, gy = 0;
+      if (hands && hands._reach && hands._reachStrength > 0.15 && hands._reachWorld) {
+        this._gazeTarget = this._gazeTarget || new THREE.Vector3();
+        this._gazeTarget.copy(hands._reachWorld);
+        this.face.lookAtWorld(this._gazeTarget, this.head);
+      } else {
+        gx = (this._headAimYaw || 0) * 0.45 + Math.sin(t * 0.31) * 0.05;
+        gy = -(this._headAimPitch || 0) * 0.35;
+        this.face.setGaze(
+          Math.max(-0.35, Math.min(0.35, gx)),
+          Math.max(-0.22, Math.min(0.22, gy))
+        );
+      }
+    }
+
+    // ---------- Footsteps + dust ----------
     if (walkAmt > 0.4) {
       if (this._lastStepBucket == null) this._lastStepBucket = -1;
       const stepBucket = Math.floor(walkPhase / Math.PI);
       if (stepBucket !== this._lastStepBucket) {
         if (this._lastStepBucket !== -1 && window.PhobiaAudio?.footstep) {
-          // Step volume scales with actual speed (speedNorm): a Shift-creep
-          // is a quiet shuffle (~0.5×), a slow analog inch quieter still —
-          // full pace is numerically identical to before.
-          const sn = (controls && controls.getWalkState)
-            ? (controls.getWalkState().speedNorm ?? 1) : 1;
-          const stepVol = walkAmt * (0.25 + 0.75 * Math.pow(sn, 1.4));
+          const stepVol = walkAmt * (0.25 + 0.75 * Math.pow(speedNorm, 1.4));
           try { window.PhobiaAudio.footstep(stepVol, this.opts.surface); } catch {}
-          // Spawn a small dust puff at whichever foot just planted.
-          // The PLANTED foot is the one with the LOWEST current y (sin
-          // crossing zero from above), but tracking that exactly is
-          // expensive — instead we alternate based on stepBucket parity.
-          this._spawnFootDust(stepBucket % 2 === 0 ? -1 : 1, walkAmt * (0.3 + 0.7 * sn));
+          this._spawnFootDust(stepBucket % 2 === 0 ? -1 : 1, walkAmt * (0.3 + 0.7 * speedNorm));
         }
         this._lastStepBucket = stepBucket;
       }
     }
-    // Update active dust puffs (fade + spread). dt-based timing so the
-    // particles look identical at any framerate.
     if (this._dustPuffs && this._dustPuffs.length > 0) {
-      const dustDt = (this._lastBodyT == null)
-        ? (1 / 60)
-        : Math.max(0, Math.min(0.05, t - this._lastBodyT));
+      const dustDt = dtB;
       const aliveDust = [];
       for (const puff of this._dustPuffs) {
         puff.life -= dustDt;
@@ -14684,14 +15442,12 @@ class Body {
           puff.mesh.material.dispose();
           continue;
         }
-        // Spread + rise + fade
         const ageK = 1 - puff.life / puff.maxLife;
         const pos = puff.mesh.geometry.attributes.position;
         for (let i = 0; i < pos.count; i++) {
           pos.array[i * 3]     += puff.velocities[i * 3]     * dustDt;
           pos.array[i * 3 + 1] += puff.velocities[i * 3 + 1] * dustDt;
           pos.array[i * 3 + 2] += puff.velocities[i * 3 + 2] * dustDt;
-          // Slight gravity / settle
           puff.velocities[i * 3 + 1] -= 0.4 * dustDt;
         }
         pos.needsUpdate = true;
@@ -14702,229 +15458,170 @@ class Body {
       this._dustPuffs = aliveDust;
     }
     this._lastBodyT = t;
-    // Arms — counter-swing while walking, OR rotate forward for hand gestures.
-    // Now with a real elbow joint: each gesture also bends the forearm forward
-    // so reaching feels like reaching, not like a stiff broom sweep.
-    if (this.arms) {
-      const gesture = hands && hands.gestureType ? hands.gestureType : "rest";
-      const gestureStrength = hands?.gestureStrength || 0;
-      // Each gesture maps to {shoulder, elbow} target rotations (right arm).
-      // Shoulder pitches the upper arm forward (negative = up/forward).
-      // Elbow bends the forearm forward off the upper arm (positive = forward).
-      let rightShoulder = 0, rightElbow = 0;
-      let leftShoulder = 0, leftElbow = 0;
-      const pulse = hands?.actionPulse || 0;
-      if (gesture === "pet") {
-        rightShoulder = -1.0;
-        rightElbow    = 0.7 + pulse * 0.3;
-      } else if (gesture === "grab") {
-        rightShoulder = -0.6; rightElbow = 0.55;
-        leftShoulder  = -0.6; leftElbow  = 0.55;
-      } else if (gesture === "paddle") {
-        rightShoulder = -0.5; rightElbow = 0.45;
-        leftShoulder  = -0.5; leftElbow  = 0.45;
-      } else if (gesture === "touch") {
-        rightShoulder = -0.7;
-        rightElbow    = 0.5 + pulse * 0.4;
-      } else if (gesture === "brush") {
-        rightShoulder = -0.4 - 0.3 * pulse;
-        rightElbow    = 0.5 + pulse * 0.3;
-      }
-      // Posture-driven arm targets — these COMBINE with gesture targets so a
-      // scene can set both (e.g. dogs scene sets gesture="pet" + posture
-      // crouch + reach). We pick whichever is stronger per axis.
-      // - reach: both hands forward at chest height — railing grip / wading
-      // - armSpread: arms held lateral, like a tightrope walker for balance
-      // Posture reach is a THIRD-PERSON pose: in FP the hand meshes already
-      // reach, and the body's chest-height arms swung up into the camera.
-      const reachStrength = this.cameraMode === "tp" ? ps.reach : 0;
-      const spreadStrength = ps.armSpread;
-      // reach: shoulder pitched forward (-rad), elbow slightly bent
-      const reachShoulder = -1.2 + (1 - ps.reachHeight) * 0.35;   // chest height = -1.2
-      const reachElbow    = 0.45 + reachStrength * 0.20;
-      // armSpread: shoulder pitched LATERALLY (rotation.z, not x). Arms out.
-      // Implemented below via z-rotation; we don't change shoulder.x for it.
 
-      // ---- World-anchored arm aim (third-person twin of the FP hand IK) ----
-      // When the FP hands have a live reach target (petting the dog, gripping
-      // the rail), aim the SAME world point with the avatar's arm via a tiny
-      // two-bone IK — so in third person the character visibly reaches toward
-      // the thing, not vaguely forward. Reuses the Hands reach state so every
-      // scene gets this for free.
-      let aim = null;
-      // TP only: in first person the FP hand meshes already perform the reach —
-      // the body's arm doing it too swung a phantom third arm up through the
-      // middle of the view whenever the player petted the dog.
-      if (this.cameraMode === "tp" && hands && hands._reach && hands._reachStrength > 0.02 && hands._reachWorld) {
-        const yaw = this.group.rotation.y;
-        const wx = hands._reachWorld.x - this.group.position.x;
-        const wy = hands._reachWorld.y;
-        const wz = hands._reachWorld.z - this.group.position.z;
-        // Rotate the offset into body-local space (group only ever yaws)
-        const cy = Math.cos(-yaw), sy = Math.sin(-yaw);
-        const lx = wx * cy + wz * sy;
-        const lz = -wx * sy + wz * cy;
-        const armY = this.group.position.y + this.opts.chestTopY - 0.10;
-        const ly = wy - armY;
-        const horiz = Math.hypot(lx, lz);
-        const dist = Math.max(0.05, Math.hypot(horiz, ly));
-        // Two-bone IK: elbow bend + shoulder correction from the triangle
-        // (upper 0.30, forearm 0.26), clamped so full stretch stays sane.
-        const A = 0.30 * this.bt.h, B = 0.26 * this.bt.h;
-        const d = Math.max(Math.abs(A - B) + 0.02, Math.min(A + B - 0.01, dist));
-        const cosE = Math.max(-1, Math.min(1, (A * A + B * B - d * d) / (2 * A * B)));
-        const bend = Math.PI - Math.acos(cosE);
-        const cosS = Math.max(-1, Math.min(1, (A * A + d * d - B * B) / (2 * A * d)));
-        const corr = Math.acos(cosS);
-        aim = {
-          side: hands._reach.hand === "left" ? -1 : (hands._reach.hand === "both" ? 0 : 1),
-          k: hands._reachStrength,
-          // Horizontal swing clamped to what a shoulder can do — past ~50°
-          // the whole body would turn (and does, via the controls yaw);
-          // letting the arm chase further folds it across the chest.
-          // NOTE the body mesh faces LOCAL +Z (not the camera's -Z): the
-          // angle is measured from +Z, or a dead-ahead target computes π and
-          // slams the clamp — the arm pointed 50° sideways on every
-          // squared-up pet.
-          yawTo: Math.max(-0.9, Math.min(0.9, Math.atan2(lx, lz) * 0.8)),
-          pitch: -(Math.atan2(horiz, -ly) + corr * 0.6), // from hanging-down, toward target
-          elbow: bend,
-        };
-        // Whole-body engagement: the chest turns and tips a touch toward the
-        // reach target (more when it's LOW — petting a small dog bends the
-        // back, not just the shoulder). chest.rotation.x/y are absolutely
-        // re-set each frame above, so these adds never compound.
-        if (this.chest) {
-          const lowness = Math.max(0, Math.min(1, -ly / 0.8));
-          this.chest.rotation.x += (0.10 + lowness * 0.22) * aim.k;
-          this.chest.rotation.y += aim.yawTo * 0.3 * aim.k;
-        }
-      }
-
-      this.arms.forEach((arm) => {
-        const side = arm.side;       // +1 right, -1 left
-        // Right arm phase = LEFT leg phase, and vice versa, so the arm
-        // swings OPPOSITE to the same-side leg (which is how humans walk).
-        // Wider amplitude than the legs since arms swing more freely.
-        const armPhase = walkPhase + (side > 0 ? Math.PI : 0);
-        // Calmer swing than the legs (0.65 was a power-walk pump — relaxed
-        // human arms swing through a NARROWER arc than the stride), with a
-        // touch of per-side asymmetry so the two arms never mirror exactly.
-        const swing = Math.sin(armPhase) * (side > 0 ? 0.40 : 0.45) * walkAmt * strideK;
-        const shoulderTarget = side > 0 ? rightShoulder : leftShoulder;
-        const elbowTarget    = side > 0 ? rightElbow    : leftElbow;
-        // Layered priority: gesture > reach > walk swing. Gesture arms are
-        // THIRD-PERSON only, like reach: in FP the hand meshes act out the
-        // gesture and the body's raised arm floats into the middle of view.
-        const gestureWeight = this.cameraMode === "tp" ? gestureStrength : 0;
-        const reachWeight   = (1 - gestureWeight) * reachStrength;
-        const swingWeight   = (1 - gestureWeight) * (1 - reachStrength);
-        // Idle life: even at rest the arms breathe + drift a touch and hang
-        // with a slight forward/relaxed bias, so the avatar isn't a ramrod
-        // mannequin in third-person. Fades out as the walk swing takes over.
-        const idle = 1 - walkAmt;
-        const idleSway = Math.sin(t * 0.9 + side * 1.7) * 0.025 * idle;
-        let rotX =
-            shoulderTarget * gestureWeight
-          + reachShoulder  * reachWeight
-          + (swing + 0.05 * idle + idleSway * 0.6) * swingWeight;
-        // Lateral arm sway: armSpread puts arms wide (large z-rotation).
-        // Otherwise small natural sway based on walk phase + side bias.
-        const spreadZ = side * (0.95 * spreadStrength);
-        const naturalZ = side * 0.09 + Math.sin(armPhase * 0.5) * 0.04 * walkAmt + idleSway;
-        arm.root.rotation.z = spreadZ + naturalZ * (1 - spreadStrength);
-        // Elbow: gesture > reach > walk passive bend (slightly relaxed at rest
-        // so the forearm isn't a straight stick).
-        // The forearm TRAILS the upper arm by ~0.5 rad of phase (whip-like
-        // follow-through) — an elbow that bends in perfect sync with the
-        // shoulder reads as a single rigid pendulum.
-        const passiveBend = 0.24 + Math.max(0, Math.sin(armPhase - 0.5)) * 0.26 * walkAmt + idleSway * 0.5;
-        let elbX =
-            elbowTarget   * gestureWeight
-          + reachElbow    * reachWeight
-          + passiveBend   * swingWeight;
-        // World-aim overrides the layered pose for the reaching arm(s).
-        let rotY = 0;
-        if (aim && (aim.side === 0 || aim.side === side)) {
-          rotX = rotX + (aim.pitch - rotX) * aim.k;
-          elbX = elbX + (aim.elbow - elbX) * aim.k;
-          rotY = aim.yawTo * aim.k;
-        }
-        arm.root.rotation.x = rotX;
-        arm.root.rotation.y = rotY;
-        arm.elbow.rotation.x = elbX;
-      });
+    // ---------- Arms ----------
+    const gesture = hands && hands.gestureType ? hands.gestureType : "rest";
+    const gestureStrength = hands?.gestureStrength || 0;
+    const pulse = hands?.actionPulse || 0;
+    // Gesture targets, per side, as {shoulder pitch, elbow FLEXION (≥0)}.
+    let rS = 0, rE = 0, lS = 0, lE = 0;
+    if (gesture === "pet") {
+      rS = -1.0; rE = 0.75 + pulse * 0.30;
+    } else if (gesture === "grab") {
+      rS = -0.65; rE = 0.70; lS = -0.65; lE = 0.70;
+    } else if (gesture === "paddle") {
+      rS = -0.55; rE = 0.60; lS = -0.55; lE = 0.60;
+    } else if (gesture === "touch") {
+      rS = -0.75; rE = 0.55 + pulse * 0.40;
+    } else if (gesture === "brush") {
+      rS = -0.45 - 0.30 * pulse; rE = 0.55 + pulse * 0.30;
     }
-    // Shoulders bob with the walk
-    if (this.shoulders) {
-      const bob = Math.abs(Math.sin(walkPhase)) * 0.025 * walkAmt;
-      this.shoulders.forEach(s => { s.mesh.position.y = this.opts.chestTopY - 0.06 + bob; });
+    const reachStrength = this.cameraMode === "tp" ? ps.reach : 0;
+    const spreadStrength = ps.armSpread;
+    const reachShoulder = -1.2 + (1 - ps.reachHeight) * 0.35;
+    const reachElbow    = 0.45 + reachStrength * 0.20;
+
+    // ---- torso engagement toward the contact point ----
+    // The spine turns and tips toward whatever is being touched, so the reach
+    // reads as intention rather than an arm operating on its own.
+    if (contact) {
+      this.chest.updateMatrixWorld();
+      const local = _bV1.copy(contact.world);
+      this.chest.worldToLocal(local);
+      const twist = Math.max(-0.5, Math.min(0.5, Math.atan2(local.x, Math.max(0.1, local.z)) * 0.45));
+      this.chest.rotation.y += twist * contact.k;
+      this.spine.rotation.y += twist * 0.5 * contact.k;
+    }
+
+    for (let i = 0; i < this.arms.length; i++) {
+      const arm = this.arms[i];
+      const side = arm.side;
+      // Right arm swings with the LEFT leg, which is how humans walk.
+      const armPhase = walkPhase + (side > 0 ? Math.PI : 0);
+      const swing = Math.sin(armPhase) * (side > 0 ? 0.40 : 0.45) * walkAmt * strideK;
+      const shoulderTarget = side > 0 ? rS : lS;
+      const elbowTarget    = side > 0 ? rE : lE;
+      const gestureWeight = this.cameraMode === "tp" ? gestureStrength : 0;
+      // The arm that ISN'T touching anything shouldn't mirror the reach — a
+      // one-handed pet with both arms thrust forward reads as a zombie. It
+      // keeps a light brace instead.
+      const idleArm = contact && contact.side !== 0 && contact.side !== side;
+      const reachW = reachStrength * (idleArm ? 0.30 : 1);
+      const reachWeight   = (1 - gestureWeight) * reachW;
+      const swingWeight   = (1 - gestureWeight) * (1 - reachW);
+      const idle = 1 - walkAmt;
+      const idleSway = Math.sin(t * 0.9 + side * 1.7) * 0.025 * idle;
+      const rotX =
+          shoulderTarget * gestureWeight
+        + reachShoulder  * reachWeight
+        + (swing + 0.05 * idle + idleSway * 0.6) * swingWeight;
+      const spreadZ = side * (0.95 * spreadStrength + (idleArm ? 0.18 * contact.k : 0));
+      const naturalZ = side * 0.10 + Math.sin(armPhase * 0.5) * 0.04 * walkAmt + idleSway;
+      // The forearm TRAILS the upper arm by ~0.5 rad of phase (whip-like
+      // follow-through) — an elbow that bends in sync reads as one rigid rod.
+      const passiveBend = 0.26 + Math.max(0, Math.sin(armPhase - 0.5)) * 0.26 * walkAmt + idleSway * 0.5;
+      const elbX =
+          elbowTarget   * gestureWeight
+        + reachElbow    * reachWeight
+        + passiveBend   * swingWeight;
+      arm.root.rotation.set(rotX, 0, spreadZ + naturalZ * (1 - spreadStrength));
+      this._elbowFlex(arm, elbX);
+      arm.wrist.rotation.set(0, 0, 0);
+
+      // Contact overrides the layered pose for the reaching arm(s).
+      const hk = this._handK[i];
+      let wantCurl = 0, wantSpread = 0;
+      if (contact && (contact.side === 0 || contact.side === side)) {
+        const k = contact.k;
+        // Aim the WRIST at a point one palm-depth off the surface so the palm
+        // itself — not the wrist joint — is what lands on the object.
+        const n = contact.normal;
+        const tgt = _bV3.copy(contact.world);
+        if (n) tgt.addScaledVector(n, 0.055);
+        else tgt.y += 0.055;
+        this.chest.updateMatrixWorld();
+        this.chest.worldToLocal(tgt);
+        if (this._armIK(arm, tgt, k)) {
+          // Roll the palm onto the surface: the hand's palm side is local −Z.
+          if (n) {
+            arm.wrist.updateMatrixWorld();
+            const nl = _bV4.copy(n);
+            arm.wrist.parent.updateMatrixWorld();
+            // normal → the wrist's parent space (direction only)
+            _bM1.copy(arm.wrist.parent.matrixWorld).invert();
+            nl.transformDirection(_bM1).normalize();
+            // Palm faces −Z in hand space; hand carries a fixed ±0.30 yaw.
+            const palmLocal = _bV5.set(0, 0, -1).applyAxisAngle(
+              new THREE.Vector3(0, 1, 0), arm.side * -0.30);
+            _bQ2.setFromUnitVectors(palmLocal.normalize(), nl.multiplyScalar(-1).normalize());
+            arm.wrist.quaternion.slerp(_bQ2, k * 0.8);
+          }
+          wantCurl = contact.curl;
+          wantSpread = contact.grip === "flat" ? 0.65 : 0;
+        }
+      } else if (gestureWeight > 0.3 && side > 0) {
+        wantCurl = gesture === "grab" ? 0.7 : 0.18;
+      }
+      hk.curl += (wantCurl - hk.curl) * Math.min(1, dtB * 8);
+      hk.spread += (wantSpread - hk.spread) * Math.min(1, dtB * 8);
+      if (arm.hand.userData.setCurl) arm.hand.userData.setCurl(hk.curl, hk.spread);
     }
 
     // ---------- Wind flutter (hair + scarf) ----------
-    // The phase increments at a rate proportional to wind exposure so a calm
-    // room has nearly-still cloth and a windy ledge has obvious flap. Caller
-    // can crank `body.opts.windExposure` mid-scene (e.g. heights amplifies it
-    // when the user looks down or steps to the edge).
     const wind = Math.max(0, this.opts.windExposure || 0);
-    this._windPhase += (wind > 0 ? 0.06 + wind * 0.10 : 0);
+    this._windPhase += (wind > 0 ? (0.06 + wind * 0.10) * dtB * 60 : 0);
     if (this.scarf) {
       const visible = wind > 0.001;
       if (this.scarf.visible !== visible) this.scarf.visible = visible;
       if (visible && this.scarfTails) {
-        const flap = wind;
-        // Two tails out of phase so they look like real cloth, not a sign
         for (let i = 0; i < this.scarfTails.length; i++) {
           const tail = this.scarfTails[i];
           const phase = this._windPhase + i * 1.3;
-          tail.rotation.x = -0.10 + Math.sin(phase * 1.4) * 0.30 * flap;
-          tail.rotation.z = Math.sin(phase * 0.9 + 0.4) * 0.45 * flap;
-          tail.position.x = (i ? -0.03 : 0.03) + Math.sin(phase * 0.7) * 0.04 * flap;
+          tail.rotation.x = -0.10 + Math.sin(phase * 1.4) * 0.30 * wind;
+          tail.rotation.z = Math.sin(phase * 0.9 + 0.4) * 0.45 * wind;
+          tail.position.x = (i ? -0.03 : 0.03) + Math.sin(phase * 0.7) * 0.04 * wind;
         }
       }
     }
-    if (this.hairFlutter && wind > 0.001) {
-      // Long hair / pony tail / curls react to gusts. Flutter is a damped
-      // rotation around the head's hinge.
+    if (this.hairFlutter) {
+      // Long hair / a pony tail sway with the head's motion even indoors —
+      // perfectly rigid hair is one of the loudest "this is a doll" cues.
       const phase = this._windPhase * 0.9;
-      this.hairFlutter.rotation.x = Math.sin(phase * 1.6) * 0.15 * wind;
-      this.hairFlutter.rotation.z = Math.sin(phase + 0.6) * 0.12 * wind;
+      const swayX = Math.sin(t * 1.7) * 0.02 + walkAmt * Math.sin(walkPhase * 2) * 0.05;
+      this.hairFlutter.rotation.x = swayX + Math.sin(phase * 1.6) * 0.15 * wind;
+      this.hairFlutter.rotation.z = Math.sin(t * 1.3) * 0.015 - gaitRoll * 0.05
+        + Math.sin(phase + 0.6) * 0.12 * wind;
     }
 
     // ---------- Blinking ----------
-    // Real humans blink ~10x/min. Animates the eyelid scale.y from 0.05 (open)
-    // to 1.0 (closed) over ~140 ms. Only meaningful when head is visible
-    // (third-person mode), but the timer still ticks so the blink rhythm is
-    // continuous when the user toggles between modes.
-    if (this.eyes && this.eyes.length === 2) {
-      this._blinkTimer -= dtB;   // dt-based so blink rate is frame-rate independent (was 2x fast at 120 Hz)
-      if (this._blinkTimer < 0) {
-        this._blinkStrength = 1.0;
-        this._blinkTimer = 4 + Math.random() * 4;
+    // ~12 blinks/minute, each a fast close and a slower open — lids that snap
+    // symmetrically read as a shutter, not an eye.
+    if (this.face && this.face.setBlink) {
+      this._blinkTimer -= dtB;
+      if (this._blinkTimer < 0 && this._blinkPhase <= 0) {
+        this._blinkPhase = 1;
+        this._blinkTimer = 2.5 + Math.random() * 4;
       }
-      this._blinkStrength = Math.max(0, this._blinkStrength - 0.10);
-      const lidY = 0.05 + this._blinkStrength * 0.95;
-      for (const e of this.eyes) {
-        if (e.lid) e.lid.scale.y = lidY;
+      if (this._blinkPhase > 0) {
+        this._blinkPhase -= dtB / 0.16;
+        const p = 1 - Math.max(0, this._blinkPhase);
+        // p: 0→1 across the blink; close fast (first 35%), open slower.
+        const k = p < 0.35 ? p / 0.35 : Math.max(0, 1 - (p - 0.35) / 0.65);
+        this.face.setBlink(k * k * (3 - 2 * k));
+        if (this._blinkPhase <= 0) this.face.setBlink(0);
       }
     }
   }
 
   // Spawn a small dust puff at the planted foot. Surface determines the
-  // particle colour (concrete = grey, wood = brown, grass = green tint,
-  // splash = blue ripple) so each step matches the floor it lands on.
+  // particle colour so each step matches the floor it lands on.
   _spawnFootDust(side, walkAmt) {
     if (!this.scene) return;
-    // Skip on slow walks (subtle steps don't kick up dust)
     if (walkAmt < 0.5) return;
-    // Foot world position — we approximate by reading the body group
-    // position + the foot mesh's local position (after the walk-cycle has
-    // updated it).
     const leg = this.legs && this.legs.find(l => l.side === side);
     if (!leg) return;
     const wp = new THREE.Vector3();
     leg.foot.getWorldPosition(wp);
-    // Surface palette
     const surface = this.opts.surface || "hard";
     let colour, baseSize, isWater = false;
     switch (surface) {
@@ -14939,11 +15636,9 @@ class Body {
     const positions = new Float32Array(N * 3);
     const velocities = new Float32Array(N * 3);
     for (let i = 0; i < N; i++) {
-      // Start at the foot, scattered in a small disc
       positions[i * 3]     = wp.x + (Math.random() - 0.5) * 0.05;
-      positions[i * 3 + 1] = wp.y + 0.005 + Math.random() * 0.01;
+      positions[i * 3 + 1] = wp.y - 0.03 + Math.random() * 0.01;
       positions[i * 3 + 2] = wp.z + (Math.random() - 0.5) * 0.05;
-      // Velocity radiating outward + slight upward
       const a = Math.random() * Math.PI * 2;
       const speed = 0.3 + Math.random() * 0.4;
       velocities[i * 3]     = Math.cos(a) * speed;
@@ -14960,21 +15655,15 @@ class Body {
     const points = new THREE.Points(geo, mat);
     this.scene.add(points);
     if (!this._dustPuffs) this._dustPuffs = [];
-    this._dustPuffs.push({
-      mesh: points, velocities, life: 0.8, maxLife: 0.8, baseSize,
-    });
+    this._dustPuffs.push({ mesh: points, velocities, life: 0.8, maxLife: 0.8, baseSize });
   }
 
-  // Adjust runtime wind exposure (scenes can ramp it dynamically e.g. heights
-  // amplifies the flutter when the user is at the edge / looking down).
   setWindExposure(amount) {
     this.opts.windExposure = Math.max(0, Math.min(1.4, amount || 0));
     if (this.scarf) this.scarf.visible = this.opts.windExposure > 0.001;
   }
   // Set posture targets — the body smoothly lerps toward these in update().
   // Pass any subset of { lean, crouch, armSpread, reach, reachHeight }.
-  // Each is 0..1 (clamped). reach makes the hands extend forward; reachHeight
-  // 0 = at hip, 0.5 = waist, 1 = chest level for the reach gesture.
   setPosture(opts) {
     if (!opts) return;
     const p = this.posture;
@@ -14986,9 +15675,6 @@ class Body {
   }
 
   dispose() {
-    // Clean up any in-flight footstep dust particles (added directly to
-    // the scene, not the body group, so they wouldn't be caught by the
-    // group traversal below).
     if (this._dustPuffs) {
       this._dustPuffs.forEach(puff => {
         if (puff.mesh && puff.mesh.parent) puff.mesh.parent.remove(puff.mesh);
@@ -14997,10 +15683,9 @@ class Body {
       });
       this._dustPuffs = null;
     }
-    // The fill light lives on the scene (not the body group), so remove it
-    // explicitly or it lingers after the scene unmounts.
     if (this.fillLight && this.fillLight.parent) this.fillLight.parent.remove(this.fillLight);
     if (this.group.parent) this.group.parent.remove(this.group);
+    if (this.rig && this.rig.skeleton) this.rig.skeleton.dispose();
     this.group.traverse(o => {
       if (o.geometry) o.geometry.dispose();
       if (o.material) {
@@ -15010,6 +15695,7 @@ class Body {
     });
   }
 }
+
 
 // =============================================================================
 // ---------- TherapistNPC ----------
@@ -23591,9 +24277,13 @@ function setupDogs(scene, camera, level, levelIdx) {
           // Stroke along the spine while actively petting: nudge toward the
           // player (neck) then back over the withers.
           const stroke = petPulse > 0.05 ? Math.sin((t || 0) * 3) * dogH * 0.10 * petPulse : 0;
-          _petPt.x += tpx * (dogH * 0.08 - stroke);
+          // Toward the NEAR flank, not the spine's centre line: the contact
+          // bone sits mid-body, and reaching across a whole dog is a metre of
+          // arm nobody has.
+          const flank = Math.max(dogH * 0.08, ((parts && parts.span) || dogH) * 0.34);
+          _petPt.x += tpx * (flank - stroke);
           _petPt.y += dogH * 0.04;   // land on the coat, not inside the mesh
-          _petPt.z += tpz * (dogH * 0.08 - stroke);
+          _petPt.z += tpz * (flank - stroke);
         } else {
           const stroke = petPulse > 0.05 ? Math.sin((t || 0) * 3) * dogH * 0.12 * petPulse : 0;
           const nearNudge = dogH * 0.42 - stroke;
@@ -31128,646 +31818,91 @@ function setupDark(scene, camera, level) {
 }
 
 // ---------- 3D avatar preview ----------
-// Used by the character creator. Builds a small rotating procedural figure
-// from the same colour palette the scene scenes use.
-// Build a fully articulated, anatomically-grounded character. The figure has:
-//   - Egg-shaped head (cranium + jaw + chin) with proper face features
-//   - Eyes (whites + iris + pupil + catchlight) and brows that match hair colour
-//   - A nose, lips, ears
-//   - Sculpted hair styles
-//   - Tapered torso (shoulders > chest > waist)
-//   - Two-segment arms (upper arm + forearm + hand)
-//   - Two-segment legs (thigh + shin + foot)
-//   - Subtle idle animation hooks exposed via group.userData.animate
+// The creator preview, the valley-camp vignette and the title screen all show
+// the SAME rig the exposure scenes use (buildHumanRig). Before this they had
+// their own, separately-drifting figure — you designed one person and then
+// played as a cruder one.
 function buildAvatarFigure(c) {
   const group = new THREE.Group();
-  const skin   = (c && c.skinHex)  ? c.skinHex  : "#e8b794";
-  const hair   = (c && c.hairHex)  ? c.hairHex  : "#4a2c18";
-  const shirt  = (c && c.shirtHex) ? c.shirtHex : "#2c9d96";
-  const eye    = (c && c.eyeHex)   ? c.eyeHex   : "#3a2410";
-  // Derived colours
-  const skinShadow = new THREE.Color(skin).multiplyScalar(0.78).getHex();
-  const skinHighlight = new THREE.Color(skin).multiplyScalar(1.10).getHex();
-  const lipsCol = new THREE.Color(skin).lerp(new THREE.Color(0xb8525a), 0.45).getHex();
-  const hairShadow = new THREE.Color(hair).multiplyScalar(0.78).getHex();
-  const shirtFold = new THREE.Color(shirt).multiplyScalar(0.78).getHex();
+  const bt = BODY_TYPES_3D[c && c.bodyType] || BODY_TYPES_3D.man;
+  // Same landmark contract as the in-scene Body: scale the skeleton's height
+  // landmarks by the body type, then let the rig derive everything else.
+  const L = { headY: 1.55, neckY: 1.40, chestTopY: 1.28, waistY: 0.92, hipY: 0.82, kneeY: 0.45, ankleY: 0.04 };
+  for (const k of Object.keys(L)) L[k] *= bt.h;
+  const rig = buildHumanRig({
+    bodyType: c && c.bodyType,
+    skinColor:  (c && c.skinHex)  || "#e8b794",
+    hairColor:  (c && c.hairHex)  || "#4a2c18",
+    shirtColor: (c && c.shirtHex) || "#2c9d96",
+    eyeColor:   (c && c.eyeHex)   || "#3a2410",
+    hairStyle:  c && c.hairStyle,
+    glasses:    c && c.glasses,
+    facialHair: c && c.facialHair,
+    headwear:   c && c.headwear,
+    topStyle:   c && c.topStyle,
+    width: 0.18 * bt.shoulder,
+    headY: L.headY, neckY: L.neckY, chestTopY: L.chestTopY, waistY: L.waistY,
+    hipY: L.hipY, kneeY: L.kneeY, ankleY: L.ankleY,
+  });
+  group.add(rig.group);
+  group.userData.rig = rig;
 
-  // Skin reflects the environment far less than default — full envMapIntensity
-  // reads as plastic; damped it reads as matte, living skin.
-  const skinM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(skin),   roughness: 0.62, metalness: 0.0, envMapIntensity: 0.5 });
-  const skinShM = new THREE.MeshStandardMaterial({ color: skinShadow, roughness: 0.7 });
-  const hairM   = new THREE.MeshStandardMaterial({ color: new THREE.Color(hair),   roughness: 0.82, envMapIntensity: 0.5 });
-  const hairShM = new THREE.MeshStandardMaterial({ color: hairShadow, roughness: 0.85 });
-  const browM   = new THREE.MeshStandardMaterial({ color: hairShadow, roughness: 1.0 });
-  const shirtM  = new THREE.MeshStandardMaterial({ color: new THREE.Color(shirt),  roughness: 0.85, envMapIntensity: 0.35 });
-  const shirtFoldM = new THREE.MeshStandardMaterial({ color: shirtFold, roughness: 0.85 });
-  // Eyes get a clearcoat "wet" glint — the single strongest alive-face cue.
-  const irisM   = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(eye),    roughness: 0.22, metalness: 0.1, clearcoat: 0.85, clearcoatRoughness: 0.2 });
-  const eyeWhiteM = new THREE.MeshPhysicalMaterial({ color: 0xfff4ea, roughness: 0.28, clearcoat: 0.6, clearcoatRoughness: 0.3 });
-  const lipsM   = new THREE.MeshStandardMaterial({ color: lipsCol, roughness: 0.55 });
-  const pantsM  = new THREE.MeshStandardMaterial({ color: 0x2c3a52, roughness: 0.95 });
-  const shoeM   = new THREE.MeshStandardMaterial({ color: 0x18181c, roughness: 0.6 });
-  const beltM   = new THREE.MeshStandardMaterial({ color: 0x2a1f18, roughness: 0.55, metalness: 0.2 });
-
-  // ===== HEAD =====
-  // The head sits on a separate Group so we can rotate it independently
-  // (idle look-around). All facial features hang off this group.
-  const head = new THREE.Group();
-  head.position.y = 1.52;
-  // Human head-to-body ratio. The facial features were authored around a
-  // 0.20 cranium — bobblehead territory on a 1.75 m frame, and the single
-  // biggest "alien" cue in the creator. Scaling the whole head GROUP keeps
-  // every feature's relative layout while bringing the ratio to ~1:7.
-  head.scale.setScalar(0.86);
-  group.add(head);
-
-  // Cranium — slightly egg-shaped (taller than wide, slightly flatter back)
-  const cranium = new THREE.Mesh(new THREE.SphereGeometry(0.20, 32, 24), skinM);
-  cranium.scale.set(1.0, 1.05, 0.95);
-  cranium.position.y = 0.05;
-  cranium.castShadow = true;
-  head.add(cranium);
-
-  // ===== HEADWEAR ===== (beanie / cap — coordinates with the shirt colour)
-  if (c && (c.headwear === "beanie" || c.headwear === "cap")) {
-    const hwM = new THREE.MeshStandardMaterial({ color: new THREE.Color(shirt), roughness: 0.92 });
-    const hwBandM = new THREE.MeshStandardMaterial({ color: new THREE.Color(shirt).multiplyScalar(0.8), roughness: 0.92 });
-    if (c.headwear === "beanie") {
-      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.215, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.58), hwM);
-      dome.scale.set(1.02, 1.12, 1.0);
-      dome.position.y = 0.075;
-      dome.castShadow = true;
-      head.add(dome);
-      const band = new THREE.Mesh(new THREE.TorusGeometry(0.206, 0.033, 12, 28), hwBandM);
-      band.rotation.x = Math.PI / 2;
-      band.scale.set(1.02, 1.0, 1.0);
-      band.position.y = 0.085;
-      head.add(band);
-      const pom = new THREE.Mesh(new THREE.SphereGeometry(0.037, 12, 10), hwBandM);
-      pom.position.y = 0.30;
-      head.add(pom);
-    } else { // cap
-      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.21, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.54), hwM);
-      dome.scale.set(1.02, 1.0, 1.0);
-      dome.position.y = 0.085;
-      dome.castShadow = true;
-      head.add(dome);
-      // Rounded visor — a flat disc pushed forward (+z); its back half tucks
-      // inside the head so only the front brim shows.
-      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.165, 0.165, 0.024, 22), hwBandM);
-      brim.scale.set(1.0, 1.0, 0.82);
-      brim.position.set(0, 0.045, 0.12);
-      head.add(brim);
-    }
-  }
-
-  // Jaw (narrower, lower) gives the face a real shape from any angle
-  const jaw = new THREE.Mesh(new THREE.SphereGeometry(0.18, 24, 18), skinM);
-  jaw.scale.set(0.85, 0.55, 0.85);
-  jaw.position.set(0, -0.10, 0.005);
-  head.add(jaw);
-
-  // Chin (small forward bulge)
-  const chin = new THREE.Mesh(new THREE.SphereGeometry(0.07, 14, 10), skinM);
-  chin.scale.set(0.75, 0.55, 0.7);
-  chin.position.set(0, -0.16, 0.07);
-  head.add(chin);
-
-  // Ears
-  for (const sx of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), skinM);
-    ear.scale.set(0.45, 1.2, 0.7);
-    ear.position.set(sx * 0.20, 0.0, -0.005);
-    head.add(ear);
-  }
-
-  // Nose — bridge + tip + nostrils. Deliberately modest: at the old scale the
-  // bridge+tip stack dominated the mid-face and the tip drooped INTO the
-  // upper-lip zone, merging nose and mouth into one fleshy mass up close.
-  const noseBridge = new THREE.Mesh(new THREE.SphereGeometry(0.020, 10, 8), skinM);
-  noseBridge.scale.set(0.85, 1.35, 1.1);
-  noseBridge.position.set(0, -0.005, 0.180);
-  head.add(noseBridge);
-  const noseTip = new THREE.Mesh(new THREE.SphereGeometry(0.026, 12, 10), skinM);
-  noseTip.scale.set(1.0, 0.80, 1.1);
-  noseTip.position.set(0, -0.038, 0.196);
-  head.add(noseTip);
-  for (const sx of [-1, 1]) {
-    const nostril = new THREE.Mesh(
-      new THREE.SphereGeometry(0.009, 8, 6),
-      new THREE.MeshStandardMaterial({ color: skinShadow, roughness: 0.9 })
-    );
-    nostril.position.set(sx * 0.015, -0.052, 0.208);
-    head.add(nostril);
-  }
-
-  // Eyes — whites + iris + pupil + catchlight + upper eyelid (closes when
-  // blinking). Everything is tucked INSIDE the skull silhouette: with the old
-  // offsets the iris/pupil/catchlight stack floated ~2 cm in front of the
-  // face, which read fine head-on but as a googly bead in profile.
-  const eyeRefs = [];
-  for (const sx of [-1, 1]) {
-    const eyeGroup = new THREE.Group();
-    // Sits flush with the skull surface (cranium half-depth ≈0.188 at eye
-    // height): recessing further sinks the whites into shadow, protruding
-    // further reads as googly beads in profile.
-    eyeGroup.position.set(sx * 0.075, 0.025, 0.170);
-    head.add(eyeGroup);
-
-    const white = new THREE.Mesh(new THREE.SphereGeometry(0.036, 16, 14), eyeWhiteM);
-    white.scale.set(0.85, 0.95, 0.50);
-    white.position.set(0, 0, 0.005);
-    eyeGroup.add(white);
-
-    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.024, 14, 12), irisM);
-    iris.position.set(0, 0, 0.016);
-    iris.scale.set(1, 1, 0.35);
-    eyeGroup.add(iris);
-
-    const pupil = new THREE.Mesh(
-      new THREE.SphereGeometry(0.010, 10, 8),
-      new THREE.MeshBasicMaterial({ color: 0x080404 })
-    );
-    pupil.scale.set(1, 1, 0.5);
-    pupil.position.set(0, 0, 0.0235);
-    eyeGroup.add(pupil);
-
-    const hl = new THREE.Mesh(
-      new THREE.SphereGeometry(0.006, 6, 5),
-      new THREE.MeshBasicMaterial({ color: 0xffffff })
-    );
-    hl.scale.set(1, 1, 0.5);
-    hl.position.set(sx * 0.007, 0.009, 0.027);
-    eyeGroup.add(hl);
-
-    // Upper eyelid (a thin half-sphere we scale to "close" for blinks)
-    const lid = new THREE.Mesh(
-      new THREE.SphereGeometry(0.038, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2),
-      skinM
-    );
-    lid.scale.set(1.0, 0.05, 0.50);
-    lid.position.set(0, 0.005, 0.005);
-    eyeGroup.add(lid);
-
-    eyeRefs.push({ group: eyeGroup, lid });
-  }
-
-  // Eyebrows — match hair shadow colour, tilted slightly inward for friendly look
-  for (const sx of [-1, 1]) {
-    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.011, 0.020), browM);
-    brow.position.set(sx * 0.075, 0.082, 0.175);
-    brow.rotation.z = -sx * 0.08;
-    head.add(brow);
-  }
-
-  // Mouth — soft closed lips. Two squashed spheres (upper slimmer, lower
-  // fuller) read as lips from every angle. The old half-torus arcs lived in
-  // the XY plane, so rotating them ±90° about Z pointed the arc VERTICALLY —
-  // they rendered as flesh-coloured C-curls hanging beside the nose.
-  const upperLip = new THREE.Mesh(new THREE.SphereGeometry(0.030, 14, 10), lipsM);
-  upperLip.scale.set(1.45, 0.34, 0.50);
-  upperLip.position.set(0, -0.088, 0.188);
-  head.add(upperLip);
-  const lowerLip = new THREE.Mesh(new THREE.SphereGeometry(0.030, 14, 10), lipsM);
-  lowerLip.scale.set(1.25, 0.46, 0.56);
-  lowerLip.position.set(0, -0.110, 0.185);
-  head.add(lowerLip);
-  // Mouth shadow (a touch of dark between the lips for depth)
-  const mouthShadow = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.055, 0.004),
-    new THREE.MeshBasicMaterial({ color: 0x4a1a1a, transparent: true, opacity: 0.45 })
-  );
-  mouthShadow.position.set(0, -0.099, 0.203);
-  head.add(mouthShadow);
-
-  // Cheek warmth — mostly sunk into the skull so only a soft gradient
-  // surfaces; at full opacity they read as flat circular stickers.
-  for (const sx of [-1, 1]) {
-    const cheek = new THREE.Mesh(
-      new THREE.SphereGeometry(0.04, 10, 8),
-      new THREE.MeshStandardMaterial({
-        color: new THREE.Color(skin).lerp(new THREE.Color(0xe07a72), 0.25).getHex(),
-        roughness: 0.9, transparent: true, opacity: 0.32,
-      })
-    );
-    cheek.scale.set(1.0, 0.6, 0.22);
-    cheek.position.set(sx * 0.125, -0.05, 0.158);
-    head.add(cheek);
-  }
-
-  // ===== HAIR =====
-  // Sculpted styles. Each is built on top of the cranium so it sits naturally.
-  const hairStyle = c?.hairStyle || "short";
-  if (hairStyle === "short") {
-    // Capped sphere with a slight forward fringe
-    const cap = new THREE.Mesh(
-      new THREE.SphereGeometry(0.205, 28, 20, 0, Math.PI * 2, 0, Math.PI * 0.55),
-      hairM
-    );
-    cap.scale.copy(cranium.scale);
-    cap.position.copy(cranium.position);
-    head.add(cap);
-    // Fringe (small forward sweep ABOVE the brow — kept clear of the eye
-    // line so brows + eyes + fringe don't merge into one "visor" band)
-    const fringe = new THREE.Mesh(new THREE.SphereGeometry(0.10, 14, 10), hairM);
-    fringe.scale.set(1.35, 0.36, 0.45);
-    fringe.position.set(0, 0.135, 0.145);
-    head.add(fringe);
-  } else if (hairStyle === "buzz") {
-    const cap = new THREE.Mesh(
-      new THREE.SphereGeometry(0.202, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.45),
-      new THREE.MeshStandardMaterial({ color: hair, roughness: 1.0, transparent: true, opacity: 0.85 })
-    );
-    cap.scale.copy(cranium.scale);
-    cap.position.copy(cranium.position);
-    head.add(cap);
-  } else if (hairStyle === "long") {
-    const cap = new THREE.Mesh(
-      new THREE.SphereGeometry(0.21, 28, 20, 0, Math.PI * 2, 0, Math.PI * 0.55),
-      hairM
-    );
-    cap.scale.copy(cranium.scale);
-    cap.position.copy(cranium.position);
-    head.add(cap);
-    // Two long falls (left + right) — each a curved cylinder hanging down
-    for (const sx of [-1, 1]) {
-      const fall = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.07, 0.55, 12), hairM);
-      fall.position.set(sx * 0.16, -0.18, -0.05);
-      fall.rotation.z = sx * 0.05;
-      head.add(fall);
-    }
-    // Back hair (longer)
-    const back = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.10, 0.45, 16), hairM);
-    back.position.set(0, -0.10, -0.13);
-    back.rotation.x = -0.2;
-    head.add(back);
-  } else if (hairStyle === "pony") {
-    const cap = new THREE.Mesh(
-      new THREE.SphereGeometry(0.205, 28, 20, 0, Math.PI * 2, 0, Math.PI * 0.55),
-      hairM
-    );
-    cap.scale.copy(cranium.scale);
-    cap.position.copy(cranium.position);
-    head.add(cap);
-    // Ponytail behind the head
-    const tieGroup = new THREE.Group();
-    tieGroup.position.set(0, 0.02, -0.18);
-    head.add(tieGroup);
-    // Hair tie
-    const tie = new THREE.Mesh(
-      new THREE.TorusGeometry(0.045, 0.012, 8, 14),
-      new THREE.MeshStandardMaterial({ color: 0xc92e2e, roughness: 0.8 })
-    );
-    tie.rotation.x = Math.PI / 2;
-    tieGroup.add(tie);
-    // The tail itself
-    const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.025, 0.40, 14), hairM);
-    tail.position.set(0, -0.18, -0.04);
-    tail.rotation.x = -0.18;
-    tieGroup.add(tail);
-  } else if (hairStyle === "curly") {
-    // Several overlapping spheres around the cranium for a curl-pile look
-    const r = 0.075;
-    const positions = [
-      [-0.13,  0.10,  0.10],
-      [ 0.13,  0.10,  0.10],
-      [-0.18,  0.05,  0.0 ],
-      [ 0.18,  0.05,  0.0 ],
-      [ 0.0,   0.16,  0.05],
-      [-0.10,  0.18, -0.05],
-      [ 0.10,  0.18, -0.05],
-      [-0.16,  0.05, -0.10],
-      [ 0.16,  0.05, -0.10],
-      [ 0.0,   0.10, -0.13],
-    ];
-    for (const [x, y, z] of positions) {
-      const curl = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 10), hairM);
-      curl.position.set(x, y, z);
-      curl.scale.setScalar(0.85 + Math.random() * 0.3);
-      head.add(curl);
-    }
-  }
-  // "bald" → no hair (chrome dome shows skin only)
-
-  // ===== GLASSES =====
-  if (c?.glasses && c.glasses !== "none") {
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x1a1414, metalness: 0.5, roughness: 0.35 });
-    if (c.glasses === "round") {
-      for (const sx of [-1, 1]) {
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.008, 8, 18), frameMat);
-        ring.position.set(sx * 0.075, 0.025, 0.20);
-        ring.rotation.y = Math.PI / 2;
-        head.add(ring);
-      }
-    } else {
-      // Square frames
-      for (const sx of [-1, 1]) {
-        const ring = new THREE.Mesh(
-          new THREE.TorusGeometry(0.055, 0.007, 4, 12),
-          frameMat
-        );
-        ring.position.set(sx * 0.075, 0.025, 0.20);
-        ring.rotation.y = Math.PI / 2;
-        ring.rotation.z = Math.PI / 4;
-        ring.scale.set(1.0, 1.0, 0.9);
-        head.add(ring);
-      }
-    }
-    // Bridge between the lenses
-    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.008, 0.008), frameMat);
-    bridge.position.set(0, 0.025, 0.20);
-    head.add(bridge);
-    // Temple arms going back over the ears
-    for (const sx of [-1, 1]) {
-      const temple = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.006, 0.006), frameMat);
-      temple.position.set(sx * 0.16, 0.025, 0.10);
-      temple.rotation.y = sx * 0.55;
-      head.add(temple);
-    }
-  }
-
-  // ===== FACIAL HAIR =====
-  if (c?.facialHair && c.facialHair !== "none") {
-    const fhM = new THREE.MeshStandardMaterial({ color: hairShadow, roughness: 1.0 });
-    if (c.facialHair === "moustache") {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.018, 0.025), fhM);
-      m.position.set(0, -0.057, 0.215);
-      // A subtle curve so it doesn't read as a flat sticker
-      m.rotation.x = -0.15;
-      head.add(m);
-    } else if (c.facialHair === "stubble") {
-      // Stubble is rendered as a transparent darkening band over the lower face
-      const cover = new THREE.Mesh(
-        new THREE.SphereGeometry(0.205, 24, 18, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.32),
-        new THREE.MeshStandardMaterial({ color: hairShadow, roughness: 1.0, transparent: true, opacity: 0.45 })
-      );
-      cover.scale.copy(cranium.scale);
-      cover.position.copy(cranium.position);
-      head.add(cover);
-    } else if (c.facialHair === "beard") {
-      // Full beard — a denser cap on the lower face that wraps the chin
-      const beardCap = new THREE.Mesh(
-        new THREE.SphereGeometry(0.207, 24, 18, 0, Math.PI * 2, Math.PI * 0.50, Math.PI * 0.45),
-        fhM
-      );
-      beardCap.scale.set(cranium.scale.x * 1.0, cranium.scale.y * 1.05, cranium.scale.z * 1.05);
-      beardCap.position.copy(cranium.position);
-      head.add(beardCap);
-      // Moustache strip
-      const ms = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.014, 0.022), fhM);
-      ms.position.set(0, -0.057, 0.215);
-      ms.rotation.x = -0.12;
-      head.add(ms);
-    }
-  }
-
-  // ===== NECK =====
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.082, 0.18, 18), skinM);
-  neck.position.y = 1.33;
-  group.add(neck);
-
-  // ===== TORSO (tapered: shoulders > chest > waist) =====
-  // Chest — slim in z so it reads as a torso, not a ball. Width is kept
-  // UNDER the shoulder span: at 1.30× the chest swallowed the arms entirely
-  // (capsules hung inside its silhouette) and the figure read as armless.
-  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.20, 28, 20), shirtM);
-  chest.scale.set(1.14, 1.02, 0.62);
-  chest.position.y = 1.10;
-  chest.castShadow = true;
-  group.add(chest);
-  // Shirt fold/seam down the centre (purely visual depth cue)
-  const seam = new THREE.Mesh(
-    new THREE.BoxGeometry(0.018, 0.45, 0.005),
-    shirtFoldM
-  );
-  seam.position.set(0, 0.95, 0.142);
-  group.add(seam);
-  // Waist — narrower than chest
-  const waist = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.20, 0.30, 18), shirtM);
-  waist.scale.set(0.97, 1, 0.70);
-  waist.position.y = 0.78;
-  waist.castShadow = true;
-  group.add(waist);
-
-  // ===== OUTFIT STYLE ===== (hoodie / jacket detailing over the torso)
-  if (c && (c.topStyle === "hoodie" || c.topStyle === "jacket")) {
-    const foldM = new THREE.MeshStandardMaterial({ color: new THREE.Color(shirtFold), roughness: 0.9 });
-    if (c.topStyle === "hoodie") {
-      const cowl = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.045, 12, 24), foldM);
-      cowl.rotation.x = Math.PI / 2; cowl.scale.set(1.25, 1.0, 0.95);
-      cowl.position.set(0, 1.30, -0.01); cowl.castShadow = true;
-      group.add(cowl);
-      const drape = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.6), foldM);
-      drape.scale.set(1.2, 0.9, 0.7); drape.position.set(0, 1.34, -0.10);
-      group.add(drape);
-      const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.10, 0.05), foldM);
-      pocket.position.set(0, 0.92, 0.12);
-      group.add(pocket);
-    } else { // jacket
-      const zipM = new THREE.MeshStandardMaterial({ color: new THREE.Color(shirt).multiplyScalar(1.18), roughness: 0.5, metalness: 0.3 });
-      const zip = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.5, 0.02), zipM);
-      zip.position.set(0, 0.98, 0.135);
-      group.add(zip);
-      for (const sx of [-1, 1]) {
-        const lapel = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.22, 0.022), foldM);
-        lapel.position.set(sx * 0.07, 1.16, 0.12);
-        lapel.rotation.z = sx * 0.5;
-        group.add(lapel);
-      }
-    }
-  }
-  // Belt
-  const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.20, 0.05, 20), beltM);
-  belt.scale.set(1.04, 1, 0.78);
-  belt.position.y = 0.62;
-  group.add(belt);
-  const buckle = new THREE.Mesh(
-    new THREE.BoxGeometry(0.07, 0.045, 0.012),
-    new THREE.MeshStandardMaterial({ color: 0xc4a64a, metalness: 0.85, roughness: 0.25 })
-  );
-  buckle.position.set(0, 0.62, 0.165);
-  group.add(buckle);
-
-  // ===== SHOULDERS =====
-  // Squashed + tucked into the chest line so they read as deltoids inside
-  // the sleeve — at full-sphere size on top of the old wide chest they
-  // floated above the silhouette like balloons.
-  const shoulders = [];
-  for (const sx of [-1, 1]) {
-    const sh = new THREE.Mesh(new THREE.SphereGeometry(0.085, 16, 12), shirtM);
-    sh.scale.set(0.92, 0.74, 0.82);
-    sh.position.set(sx * 0.222, 1.185, 0);
-    sh.castShadow = true;
-    group.add(sh);
-    shoulders.push(sh);
-  }
-
-  // ===== ARMS — articulated (shoulder root → upper arm → elbow → forearm → hand) =====
-  const armRefs = [];
-  const upperArmLen = 0.30;
-  const forearmLen = 0.28;
-  for (const sx of [-1, 1]) {
-    const armRoot = new THREE.Group();
-    // Rooted just outside the (narrowed) chest so the whole arm is visible.
-    armRoot.position.set(sx * 0.245, 1.18, 0);
-    armRoot.rotation.z = sx * 0.07;     // arms hang close to the body, relaxed
-    armRoot.rotation.x = 0.04;          // and a touch forward
-    group.add(armRoot);
-
-    // Upper arm (shirt-coloured) — slim; thick capsules read as inflatable
-    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.062, upperArmLen, 8, 14), shirtM);
-    upper.position.set(0, -upperArmLen / 2, 0);
-    upper.castShadow = true;
-    armRoot.add(upper);
-
-    // Sleeve cuff (slightly darker band where shirt ends)
-    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.067, 0.067, 0.025, 14), shirtFoldM);
-    cuff.position.set(0, -upperArmLen - 0.005, 0);
-    armRoot.add(cuff);
-
-    // Elbow group (rotates the forearm)
-    const elbow = new THREE.Group();
-    elbow.position.set(0, -upperArmLen - 0.02, 0);
-    armRoot.add(elbow);
-
-    // Forearm (skin) — tapers toward the wrist
-    const fore = new THREE.Mesh(new THREE.CapsuleGeometry(0.048, forearmLen, 8, 14), skinM);
-    fore.position.set(0, -forearmLen / 2, 0);
-    fore.castShadow = true;
-    elbow.add(fore);
-    const wristTaper = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.046, 0.06, 12), skinM);
-    wristTaper.position.set(0, -forearmLen + 0.01, 0);
-    elbow.add(wristTaper);
-
-    // Hand — flattened palm, opposable thumb, four INDIVIDUAL fingers with
-    // human length variation (index < middle > ring > pinky) and a soft
-    // rest curl. The old single "finger plate" box read as a mitten.
-    const hand = new THREE.Group();
-    hand.position.set(0, -forearmLen - 0.035, 0);
-    hand.rotation.y = sx * -0.35;       // palms turn toward the thighs at rest
-    elbow.add(hand);
-    const palm = new THREE.Mesh(new THREE.SphereGeometry(0.058, 14, 12), skinM);
-    palm.scale.set(0.74, 1.0, 0.44);
-    hand.add(palm);
-    const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.0145, 0.045, 6, 8), skinM);
-    thumb.position.set(sx * 0.04, -0.01, 0.018);
-    thumb.rotation.z = -sx * 0.55;
-    thumb.rotation.x = 0.25;
-    hand.add(thumb);
-    const fingerLens = [0.048, 0.056, 0.050, 0.038];
-    for (let f = 0; f < 4; f++) {
-      const fl = fingerLens[f];
-      // Knuckle pivot so the rest curl bends from the palm edge, not the
-      // finger's midpoint (a mid-pivot rotation drives fingertips into the palm).
-      const knuckle = new THREE.Group();
-      knuckle.position.set(sx * (f - 1.5) * 0.0215, -0.052, 0.004);
-      knuckle.rotation.x = 0.30;                     // relaxed curl
-      knuckle.rotation.z = sx * (f - 1.5) * -0.05;   // slight natural splay
-      hand.add(knuckle);
-      const finger = new THREE.Mesh(new THREE.CapsuleGeometry(0.0105, fl, 6, 8), skinM);
-      finger.position.set(0, -fl / 2, 0);
-      knuckle.add(finger);
-    }
-
-    armRefs.push({ root: armRoot, elbow, hand, side: sx });
-  }
-
-  // ===== LEGS — articulated (hip → thigh → knee → shin → foot) =====
-  // Hip height chosen so the soles of the shoes sit at y=0 (the floor).
-  // foot bottom = hipY - thighLen - 0.02 - shinLen - 0.05 - foot/2 - sole/2
-  //             = 0.79 - 0.36 - 0.02 - 0.32 - 0.05 - 0.035 - 0.009 ≈ 0
-  const legRefs = [];
-  const thighLen = 0.36;
-  const shinLen  = 0.32;
-  const hipY = 0.79;
-  for (const sx of [-1, 1]) {
-    const legRoot = new THREE.Group();
-    legRoot.position.set(sx * 0.104, hipY, 0);
-    legRoot.rotation.y = sx * 0.07;     // natural out-toed stance
-    group.add(legRoot);
-
-    // Thigh
-    const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.084, thighLen, 8, 14), pantsM);
-    thigh.position.set(0, -thighLen / 2, 0);
-    thigh.castShadow = true;
-    legRoot.add(thigh);
-
-    // Knee
-    const knee = new THREE.Group();
-    knee.position.set(0, -thighLen - 0.02, 0);
-    legRoot.add(knee);
-
-    // Shin
-    const shin = new THREE.Mesh(new THREE.CapsuleGeometry(0.063, shinLen, 8, 14), pantsM);
-    shin.position.set(0, -shinLen / 2, 0);
-    shin.castShadow = true;
-    knee.add(shin);
-
-    // Foot (shoe)
-    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.07, 0.22), shoeM);
-    foot.position.set(0, -shinLen - 0.05, 0.04);
-    foot.castShadow = true;
-    knee.add(foot);
-    // Sole
-    const sole = new THREE.Mesh(
-      new THREE.BoxGeometry(0.105, 0.018, 0.225),
-      new THREE.MeshStandardMaterial({ color: 0x0c0c10, roughness: 0.85 })
-    );
-    sole.position.set(0, -shinLen - 0.085, 0.04);
-    knee.add(sole);
-
-    legRefs.push({ root: legRoot, knee, side: sx });
-  }
-
-  // ===== Floor shadow =====
+  // Soft contact shadow so the figure stands on something.
   const shadow = new THREE.Mesh(
-    new THREE.CircleGeometry(0.45, 28),
-    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.30 })
+    new THREE.CircleGeometry(0.42, 28),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.30, depthWrite: false })
   );
   shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = -0.001;
+  shadow.position.y = 0.004;
   group.add(shadow);
 
-  // Idle animation hooks. Consumers (e.g. AvatarPreview) call animate(t)
-  // each frame to drive breathing + blinking + subtle head sway.
+  // Idle loop — breath, blink, weight shift, a slow scan of the room, and a
+  // resting arm pose. Standing perfectly still is the loudest mannequin tell,
+  // so nothing here is ever completely at rest.
+  let blinkAt = 1.5, blinkP = 0, last = 0;
   group.userData.animate = function (t) {
-    // Subtle breathing
-    chest.scale.y = 1.05 + Math.sin(t * 1.6) * 0.012;
-    waist.scale.y = 1.0 + Math.sin(t * 1.6 + 0.4) * 0.006;
-    // Head sway
-    head.rotation.y = Math.sin(t * 0.6) * 0.06;
-    head.rotation.z = Math.sin(t * 0.45) * 0.015;
-    // Blink — quick close every ~3-5s. The lid scale.y goes 0.05 → 1.0 → 0.05
-    // briefly, simulating eyelid drop.
-    const blinkPeriod = 3.5;
-    const blinkPhase = (t % blinkPeriod) / blinkPeriod;
-    let lidY = 0.05;
-    if (blinkPhase < 0.04) {
-      // 0.0 → 0.04 → close+open
-      const k = blinkPhase / 0.04;     // 0..1
-      lidY = 0.05 + Math.sin(k * Math.PI) * 0.95;
-    }
-    eyeRefs.forEach(e => { e.lid.scale.y = lidY; });
-    // Arms gently sway with breathing. The elbow rests at a visible bend —
-    // fully straight arms are the classic "mannequin" tell.
-    armRefs.forEach(a => {
-      a.root.rotation.x = 0.04 + Math.sin(t * 1.6 + a.side * 0.3) * 0.01;
-      a.elbow.rotation.x = 0.16 + Math.sin(t * 1.6 + a.side) * 0.012;
+    const dt = Math.min(0.05, Math.max(0.001, t - last)); last = t;
+    const br = Math.sin(t * 1.35);
+    if (rig.breath) rig.breath.scale.set(1 + br * 0.020, 1 + br * 0.014, 1 + br * 0.026);
+    rig.group.position.y = br * 0.006;
+    // Weight shift: hips drift, shoulders counter, one knee softens.
+    const shift = Math.sin(t * 0.42);
+    rig.pelvis.rotation.set(0, shift * 0.045, shift * 0.030);
+    rig.spine.rotation.set(0.02, -shift * 0.030, -shift * 0.018);
+    rig.chest.rotation.set(0.015, -shift * 0.045, -shift * 0.022);
+    rig.legs.forEach((leg, i) => {
+      const s = i === 0 ? shift : -shift;
+      leg.hip.rotation.set(-0.02 + Math.max(0, s) * 0.10, 0, 0);
+      leg.knee.rotation.x = 0.04 + Math.max(0, s) * 0.14;
+      leg.foot.rotation.x = -(leg.hip.rotation.x + leg.knee.rotation.x) * 0.8;
     });
-    // Slow weight shift at the hips — standing perfectly still is another one.
-    waist.rotation.y = Math.sin(t * 0.4) * 0.02;
+    // Head + eyes scan slowly; eyes lead, head follows.
+    const look = Math.sin(t * 0.33) * 0.22 + Math.sin(t * 0.11) * 0.10;
+    rig.neck.rotation.set(0.02, look * 0.35, Math.sin(t * 0.27) * 0.02);
+    rig.head.rotation.set(Math.sin(t * 0.24) * 0.04, look * 0.65, Math.sin(t * 0.31) * 0.02);
+    if (rig.face) rig.face.setGaze(look * 0.5 + Math.sin(t * 0.9) * 0.05, Math.sin(t * 0.5) * 0.05);
+    // Arms hang with a live, asymmetric bend.
+    rig.arms.forEach((a) => {
+      const p = t * 1.1 + a.side * 1.3;
+      a.root.rotation.set(0.04 + Math.sin(p) * 0.018, 0, a.side * 0.115 + Math.sin(p * 0.7) * 0.012);
+      a.elbow.rotation.x = -(0.28 + Math.sin(p + 0.6) * 0.02);
+      if (a.hand.userData.setCurl) a.hand.userData.setCurl(0.10 + Math.sin(p) * 0.03, 0);
+    });
+    if (rig.hairFlutter) {
+      rig.hairFlutter.rotation.x = Math.sin(t * 1.4) * 0.025;
+      rig.hairFlutter.rotation.z = Math.sin(t * 1.05) * 0.02 - shift * 0.05;
+    }
+    // Blink: fast close, slower open.
+    blinkAt -= dt;
+    if (blinkAt < 0 && blinkP <= 0) { blinkP = 1; blinkAt = 2.5 + Math.random() * 3.5; }
+    if (blinkP > 0 && rig.face) {
+      blinkP -= dt / 0.16;
+      const p = 1 - Math.max(0, blinkP);
+      const k = p < 0.35 ? p / 0.35 : Math.max(0, 1 - (p - 0.35) / 0.65);
+      rig.face.setBlink(k * k * (3 - 2 * k));
+      if (blinkP <= 0) rig.face.setBlink(0);
+    }
   };
-  // ===== BODY TYPE silhouette =====
-  // Mirror of the in-scene Body proportions: uniform height scale plus the
-  // child head-to-body ratio, so the creator preview matches what you'll
-  // actually see over-the-shoulder in scenes.
-  {
-    const bt = ({ man: { s: 1.0, head: 1.0 }, woman: { s: 0.96, head: 0.97 },
-                  boy: { s: 0.84, head: 1.15 }, girl: { s: 0.82, head: 1.17 } })[c && c.bodyType] || { s: 1.0, head: 1.0 };
-    group.scale.setScalar(bt.s);
-    head.scale.multiplyScalar(bt.head);
-  }
-
   return group;
 }
 
