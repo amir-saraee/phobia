@@ -27910,13 +27910,26 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
 }
 
 // ---------- Flying (airplane cabin) ----------
-function setupFlying(scene, camera, level) {
+// Airline cabins are not one cabin. Four liveries, drawn per visit — the seat
+// you are strapped into is a different aircraft each time you fly.
+const CABIN_LIVERIES = [
+  { seat: 0x4a4055, carpet: 0x4a3a4a, panel: 0xd5d1c8 },
+  { seat: 0x2f4a5c, carpet: 0x2c3a44, panel: 0xdcdad2 },
+  { seat: 0x5c3038, carpet: 0x46323a, panel: 0xd8d2c6 },
+  { seat: 0x3d4a42, carpet: 0x36403a, panel: 0xd2d4cc },
+];
+
+function setupFlying(scene, camera, level, levelIdx, ctx) {
   const stage = level.stage; // 0..1, ramp by rung
+  const V = ctx || sceneContext("flying", levelIdx || 0, false);
+  const livery = V.pick(CABIN_LIVERIES);
+  // The window is the cabin's only outside, so the hour reaches in through it.
+  const sunElev = 6 + V.hour.elev * 10;
 
   scene.background = new THREE.Color(0x88a8c8);
   // Strong key light from outside the window
-  const sun = new THREE.DirectionalLight(0xfff5d0, 2.0);
-  sun.position.set(-8, 10, -3);
+  const sun = new THREE.DirectionalLight(_hexMix(0xfff5d0, V.hour.key, 0.55), 2.0 * V.range(0.85, 1.12));
+  sun.position.set(-8, sunElev, -3);
   sun.castShadow = true;
   scene.add(sun);
   scene.add(new THREE.AmbientLight(0x2a3a4a, 0.6));
@@ -27932,11 +27945,11 @@ function setupFlying(scene, camera, level) {
   scene.add(cabinLight);
 
   // Cabin interior — a curved tube with seats and a window cutout
-  const cabinMat = new THREE.MeshStandardMaterial({ color: 0xd5d1c8, roughness: 0.85 });
+  const cabinMat = new THREE.MeshStandardMaterial({ color: livery.panel, roughness: 0.85 });
   // Floor (carpet)
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(8, 30),
-    new THREE.MeshStandardMaterial({ color: 0x4a3a4a, roughness: 0.95 })
+    new THREE.MeshStandardMaterial({ color: livery.carpet, roughness: 0.95 })
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -1.2;
@@ -28025,7 +28038,7 @@ function setupFlying(scene, camera, level) {
   scene.add(spinner);
 
   // Seat in front of you (the back of someone else's seat)
-  const seatMat = new THREE.MeshStandardMaterial({ color: 0x4a4055, roughness: 0.85 });
+  const seatMat = new THREE.MeshStandardMaterial({ color: livery.seat, roughness: 0.85 });
   const seatBack = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.4, 0.15), seatMat);
   seatBack.position.set(0, 0.2, -1.2);
   seatBack.castShadow = true;
@@ -28287,19 +28300,25 @@ function setupFlying(scene, camera, level) {
 }
 
 // ---------- Needles (medical) ----------
-function setupNeedles(scene, camera, level) {
+function setupNeedles(scene, camera, level, levelIdx, ctx) {
   const proximity = level.proximity;
   let injectionPatch = null;    // the swab/skin site mesh — dimples on contact
+  // Not every clinic is the same clinic. The lighting stays clinical — that is
+  // the point of the room — but its temperature and the wall colour move, so
+  // the fourth appointment isn't visibly the first one again.
+  const V = ctx || sceneContext("needles", levelIdx || 0, false);
+  const clinicWarm = V.range(0, 1);
+  const clinicTint = (hex) => _hexMix(hex, _hexMix(0xe8f0ff, 0xfff4e2, clinicWarm), 0.30);
 
-  scene.background = new THREE.Color(0xd2dae4);
+  scene.background = new THREE.Color(clinicTint(0xd2dae4));
   // Clinical lighting — bright and cool, but tuned for the ACES tone-mapping so
   // the white room doesn't clip to a featureless void (it did at intensity 4).
-  const ceiling = new THREE.RectAreaLight(0xffffff, 1.3, 3.2, 3.2);
+  const ceiling = new THREE.RectAreaLight(_hexMix(0xf2f7ff, 0xfff2df, clinicWarm), 1.3 * V.range(0.92, 1.08), 3.2, 3.2);
   ceiling.position.set(0, 3, -1);
   ceiling.lookAt(0, 0, -1);
   scene.add(ceiling);
-  scene.add(new THREE.HemisphereLight(0xeef4ff, 0x97a2af, 0.45));
-  scene.add(new THREE.AmbientLight(0xeef4ff, 0.16));
+  scene.add(new THREE.HemisphereLight(clinicTint(0xeef4ff), 0x97a2af, 0.45));
+  scene.add(new THREE.AmbientLight(clinicTint(0xeef4ff), 0.16));
 
   // Floor (linoleum)
   const floor = new THREE.Mesh(
@@ -30214,8 +30233,13 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
 }
 
 // ---------- Public speaking ----------
-function setupSpeaking(scene, camera, level) {
+function setupSpeaking(scene, camera, level, levelIdx, ctx) {
   const crowd = level.crowd; // 0..1
+  // The one scene where variation has to be handled with tongs: audience SIZE
+  // is the rung's difficulty, and `crowd` drives row count, seats per row and
+  // the fill probability. None of those move. What varies is who the people
+  // are, where the friendly face sits, and the temperature of the room.
+  const V = ctx || sceneContext("speaking", levelIdx || 0, false);
 
   // Slightly lifted backdrop + fog so the audience actually reads against the
   // dark room instead of getting swallowed. Real auditoriums still have ambient
@@ -30224,7 +30248,8 @@ function setupSpeaking(scene, camera, level) {
   scene.fog = new THREE.Fog(0x141826, 14, 90);
 
   // Spotlight on the speaker (us)
-  const spot = new THREE.SpotLight(0xfff0d0, crowd > 0 ? 6 : 1.8, 30, Math.PI / 6, 0.3);
+  const spot = new THREE.SpotLight(_hexMix(0xfff0d0, V.rng() < 0.5 ? 0xffe6b8 : 0xf4f2ff, V.range(0.15, 0.5)),
+    crowd > 0 ? 6 : 1.8, 30, Math.PI / 6, 0.3);
   spot.position.set(0, 6, 4);
   spot.target.position.set(0, 0, -2);
   spot.castShadow = true;
@@ -30436,7 +30461,7 @@ function setupSpeaking(scene, camera, level) {
       eye.position.set(sx, 0.05, 0.21);
       friendlyHead.add(eye);
     }
-    friendly.position.set(0, -1, -2.2);
+    friendly.position.set(V.range(-1.5, 1.5), -1, -2.2 + V.range(-0.25, 0.25));
     friendly.castShadow = true;
     scene.add(friendly);
   }
@@ -30463,9 +30488,11 @@ function setupSpeaking(scene, camera, level) {
 
   function buildAudienceMember() {
     const person = new THREE.Group();
-    const skinHex = skinTones[Math.floor(Math.random() * skinTones.length)];
-    const hairHex = hairTones[Math.floor(Math.random() * hairTones.length)];
-    const shirtHex = shirtTones[Math.floor(Math.random() * shirtTones.length)];
+    // Seeded, not Math.random: a refresh mid-rung should put the same people
+    // back in the same seats, while tomorrow's audience is a different crowd.
+    const skinHex = skinTones[Math.floor(V.rng() * skinTones.length)];
+    const hairHex = hairTones[Math.floor(V.rng() * hairTones.length)];
+    const shirtHex = shirtTones[Math.floor(V.rng() * shirtTones.length)];
     // Small emissive lift so faces don't disappear into the auditorium dark.
     // Real audiences are slightly self-lit by phone screens / aisle lights /
     // crowd-glow; this gets the same effect without an extra light per face.
