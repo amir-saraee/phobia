@@ -6274,15 +6274,61 @@ const PhobiaNarrator = (() => {
       ],
     },
     water: {
-      arrival: ["You're at the shore. The water is here. You can wade in or not."],
-      walking: ["Wading in. The water is cool. Notice your feet."],
-      close: ["You're in the water. Notice it holds you up."],
-      panic: ["You're safe. You can step back to shore any time."],
-      avoidance: ["You stepped back. Good."],
-      habituation: ["Lower fear than last time."],
+      arrival: [
+        "You're at the shore. The water is here. You can wade in or not.",
+        "Shore under your feet. The water starts where you decide it does.",
+        "The lake is quiet today. Wade in whenever you're ready.",
+      ],
+      walking: [
+        "Wading in. The water is cool. Notice your feet.",
+        "A little deeper with each step. You set the pace.",
+        "Cold at the ankles, then the knees. Your breath stays yours.",
+      ],
+      close: [
+        "You're in the water. Notice it holds you up.",
+        "You're in. Feel how the water carries some of your weight.",
+        "Deep enough to feel it hold you. You can stop right here.",
+      ],
+      panic: [
+        "You're safe. You can step back to shore any time.",
+        "Your feet still reach the bottom. The shore is right behind you.",
+        "One slow breath out. Then decide — stay, or step back. Both are safe.",
+      ],
+      avoidance: [
+        "You stepped back. Good.",
+        "Back on the sand. That counts too. In again when you're ready.",
+        "You chose space. Good. The water isn't going anywhere.",
+      ],
+      habituation: [
+        "Lower fear than last time.",
+        "Lower fear, deeper water. That's your body learning.",
+      ],
     },
   };
-  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  // Shuffled round-robin per bucket (WeakMap keyed by the bank array): every
+  // variant plays before any repeats, and a reshuffle never lands the same
+  // line twice in a row. Uniform random over 2-3 variants repeated itself
+  // back-to-back often enough to read as a tape loop over a 2-minute hold.
+  const rrState = new WeakMap();
+  function pick(arr) {
+    if (!arr || arr.length === 0) return undefined;
+    if (arr.length === 1) return arr[0];
+    let st = rrState.get(arr);
+    if (!st || st.i >= st.order.length) {
+      const order = arr.map((_, i) => i);
+      for (let i = order.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+      if (st && order[0] === st.last && order.length > 1) {
+        [order[0], order[1]] = [order[1], order[0]];
+      }
+      st = { order, i: 0, last: st ? st.last : -1 };
+      rrState.set(arr, st);
+    }
+    st.last = st.order[st.i++];
+    return arr[st.last];
+  }
 
   // The engine's main entrypoint — called per frame from the scene's update.
   // Reads PhobiaFear state and decides whether (and what) to say.
@@ -6322,7 +6368,12 @@ const PhobiaNarrator = (() => {
     try {
       // Panic/threatened support interrupts whatever ambient cue is
       // mid-sentence; everything else waits its turn in the voice queue.
-      window.PhobiaVoice.speak(line, { urgent: bucket === sceneLines.panic || bucket === sceneLines.threatened });
+      // Those two buckets (plus avoidance coaching) are also AUDIBLE — the
+      // moments a scared user most needs a human voice. Ambient commentary
+      // (arrival/walking/close) stays caption-only.
+      const isUrgent = bucket === sceneLines.panic || bucket === sceneLines.threatened;
+      const isCoaching = bucket === sceneLines.avoidance;
+      window.PhobiaVoice.speak(line, { urgent: isUrgent, audible: isUrgent || isCoaching });
       PhobiaFear.markNarrated();
     } catch {}
   }
@@ -6336,7 +6387,8 @@ const PhobiaNarrator = (() => {
     const sceneLines = lines[scenePhobia] || lines.heights;
     if (peakNow < delta.lastPeak - 5) {
       const line = pick(sceneLines.habituation);
-      try { window.PhobiaVoice.speak(line); } catch {}
+      // The one unambiguous good-news beat of a session — spoken, warmly.
+      try { window.PhobiaVoice.speak(line, { audible: true, praise: true }); } catch {}
       return true;
     }
     return false;
@@ -6555,13 +6607,21 @@ const PhobiaVoice = (() => {
       window.dispatchEvent(new CustomEvent("voice-line", {
         detail: { text, durationMs: _capMs }
       }));
+      // Register with the cross-channel prompt dedupe (result ignored — the
+      // caption always shows; it mutes near-identical ctx prompts/hints).
+      if (window.PhobiaFX && window.PhobiaFX.promptGate) {
+        window.PhobiaFX.promptGate("voice", text);
+      }
     } catch {}
-    // ---- Guidance is VISUAL now ----
+    // ---- Guidance is visual-first, audible at the moments that matter ----
     // Every guidance line renders as the on-screen caption/tip dispatched
-    // above; spoken narration over the scene reads as nagging and is gone.
-    // The audio path survives ONLY for a deliberate, user-initiated sample
-    // (opts.force — the Settings "hear it" button).
-    if (!opts.force || !text) return;
+    // above. Ambient commentary stays caption-only (spoken play-by-play reads
+    // as nagging), but event-critical beats — panic support, grounding, rung
+    // intros, strike aftermath, habituation praise — pass opts.audible and are
+    // actually spoken, unless the user muted the guide (🗣️ pill / Settings).
+    // opts.force (the Settings "hear it" sample) bypasses the mute check.
+    if (!text) return;
+    if (!opts.force && (!opts.audible || muted)) return;
     // Recorded clip when we have one for this exact line; live TTS otherwise.
     const norm = normalize(text);
     let items;
@@ -6570,11 +6630,18 @@ const PhobiaVoice = (() => {
     } else {
       if (!synth) return;
       const parts = splitSentences(text);
+      // Register shapes delivery on the live-TTS fallback the way the
+      // pre-rendered clips bake it in: panic support is present (not sleepy),
+      // praise beats are warm and slow. Explicit opts always win.
+      const regRate = opts.urgent ? 0.95 : opts.praise ? 0.78 : null;
+      const regPitch = opts.urgent ? 1.0 : opts.praise ? 0.9 : null;
       items = parts.map((p, i) => ({
         kind: "tts",
         text: p,
         endOfLine: i === parts.length - 1,
-        rate: opts.rate, pitch: opts.pitch, volume: opts.volume,
+        rate: opts.rate != null ? opts.rate : regRate,
+        pitch: opts.pitch != null ? opts.pitch : regPitch,
+        volume: opts.volume,
       }));
     }
     if (opts.urgent) {
@@ -10541,9 +10608,12 @@ function mountExposure(phobiaKey, levelIdx) {
     const rungReplay = (() => { try { return getProgress(phobiaKey).highestCompleted >= levelIdx; } catch { return false; } })();
     const lines = rungReplay ? [] : ((VOICE_LINES[phobiaKey] || [])[levelIdx] || []);
     lines.forEach((line, i) => {
-      const delay = 1400 + i * 14000;
+      // Jittered cadence — a fixed 14 s metronome reads as scripted tape.
+      // Only the FIRST cue (the rung's framing line) is spoken aloud; the
+      // follow-ups stay caption-only so the voice keeps its scarcity.
+      const delay = 1400 + i * (12000 + Math.random() * 6000);
       voiceTimers.push(setTimeout(() => {
-        if (timer && timer.isConnected) PhobiaVoice.speak(line);
+        if (timer && timer.isConnected) PhobiaVoice.speak(line, { audible: i === 0 });
       }, delay));
     });
     // Inactivity watcher — start once the scene is live.
@@ -10744,9 +10814,13 @@ function mountExposure(phobiaKey, levelIdx) {
           if (window.PhobiaFX && window.PhobiaFX.celebrate) window.PhobiaFX.celebrate();
           if (window.PhobiaVoice) {
             try {
-              window.PhobiaVoice.speak("You did it. You stayed with it. That is real progress.");
+              // Spoken, in the warm register — the emotional payoff beat.
+              window.PhobiaVoice.speak("You did it. You stayed with it. That is real progress.", { audible: true, praise: true });
             } catch {}
           }
+          // The avatar's face relaxes with the praise (brows past neutral,
+          // soft lower-lid raise) — Body listens for this event.
+          try { window.dispatchEvent(new CustomEvent("mira-relief")); } catch {}
           if (window.PhobiaFX && window.PhobiaFX.achievement) {
             window.PhobiaFX.achievement(
               `${phobiaKey}.rungHeld.${levelIdx}`,
@@ -17928,8 +18002,17 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       if (interactFn && hands) {
         const probe = interactFn(controls, hands, t, dt) || {};
         hands.setGesture(probe.gesture || "rest");
-        reachHint.textContent = probe.hint || "";
-        reachHint.style.opacity = probe.hint ? "1" : "0";
+        // Gate NEW hint text through the cross-channel dedupe so a caption or
+        // context prompt saying nearly the same thing doesn't triple-stack.
+        if ((probe.hint || "") !== active._lastReachHint) {
+          active._lastReachHint = probe.hint || "";
+          active._reachHintOk = !probe.hint ||
+            !window.PhobiaFX || !window.PhobiaFX.promptGate ||
+            window.PhobiaFX.promptGate("hint", probe.hint);
+        }
+        const showHint = probe.hint && active._reachHintOk;
+        reachHint.textContent = showHint ? probe.hint : "";
+        reachHint.style.opacity = showHint ? "1" : "0";
         // In-world affordance: scenes may return `target` (an Object3D) when
         // something is genuinely reachable — a soft pulsing ring appears on
         // the ground under it, and the cursor becomes a pointer. The bottom
@@ -18204,6 +18287,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     if (groundingActive) return;
     groundingActive = true;
     if (window.PhobiaFear) window.PhobiaFear.setGroundingMode(true);
+    // Soften the world under the exercise even when the voice is muted —
+    // "four things you can hear" needs the ambience present but gentle.
+    try { if (window.PhobiaAudio) window.PhobiaAudio.duck(true); } catch {}
     groundingOverlay.classList.add("active");
     if (!IS_TOUCH) groundingExitHint.classList.add("visible");
     groundingStep = 0;
@@ -18216,7 +18302,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       groundingText.textContent = s.text;
       groundingText.classList.add("visible");
       if (window.PhobiaVoice) {
-        try { window.PhobiaVoice.speak(s.text, { urgent: true }); } catch {}
+        // 5-4-3-2-1 is the panic exit — the one flow that must be SPOKEN:
+        // a panicking user has stopped reading.
+        try { window.PhobiaVoice.speak(s.text, { urgent: true, audible: true }); } catch {}
       }
       groundingTimer = setTimeout(() => {
         groundingText.classList.remove("visible");
@@ -18230,6 +18318,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     groundingActive = false;
     if (groundingTimer) { clearTimeout(groundingTimer); groundingTimer = null; }
     if (window.PhobiaFear) window.PhobiaFear.setGroundingMode(false);
+    try { if (window.PhobiaAudio) window.PhobiaAudio.duck(false); } catch {}
     groundingOverlay.classList.remove("active");
     groundingText.classList.remove("visible");
     groundingExitHint.classList.remove("visible");
@@ -18333,9 +18422,27 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // guidance; showing it five times is noise. A given text repeats only
   // after a 90 s quiet window; the map dies with the scene mount.
   const ctxPromptSeen = new Map();
+  // Cross-CHANNEL dedupe: the same beat often lands as a spoken caption, a
+  // context prompt AND a reach hint within a frame of each other, worded
+  // almost — but not exactly — alike ("Offer a closed fist…" ×3, stacked).
+  // A fuzzy key (first 26 alphanumerics) shared across channels lets the
+  // first channel through and mutes near-duplicates from the others for 6 s.
+  window.PhobiaFX._recentPrompts = window.PhobiaFX._recentPrompts || new Map();
+  window.PhobiaFX.promptGate = function (channel, text, windowMs = 6000) {
+    const m = window.PhobiaFX._recentPrompts;
+    const k = String(text).toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 26);
+    if (!k) return true;
+    const now = performance.now();
+    if (m.size > 40) { for (const [kk, ee] of m) { if (now - ee.t > 30000) m.delete(kk); } }
+    const e = m.get(k);
+    if (e && e.channel !== channel && now - e.t < windowMs) return false;
+    m.set(k, { t: now, channel });
+    return true;
+  };
   function showContextPrompt(text, durationMs = 4500) {
     const lastAt = ctxPromptSeen.get(text) || 0;
     if (performance.now() - lastAt < 90000) return;
+    if (!window.PhobiaFX.promptGate("ctx", text)) return;
     ctxPromptSeen.set(text, performance.now());
     if (ctxPromptHideT) { clearTimeout(ctxPromptHideT); ctxPromptHideT = null; }
     ctxPrompt.textContent = text;
