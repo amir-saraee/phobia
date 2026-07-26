@@ -5299,11 +5299,11 @@ const PhobiaAudio = (() => {
   }
 
   // Single footstep — short low thump that varies by surface.
-  // surface: "hard" (concrete / tile) · "wood" · "soft" (carpet / dirt) · "grass" · "splash" (shallow water)
+  // surface: "hard" (concrete / tile) · "wood" · "soft" (carpet / dirt) · "grass" · "splash" (shallow water) · "glass" (skywalk pane)
   function footstep(softness = 0.35, surface = "hard") {
     const c = ensureCtx(); if (!c) return;
     const now = c.currentTime;
-    const dur = surface === "splash" ? 0.20 : 0.13;
+    const dur = surface === "splash" ? 0.20 : surface === "glass" ? 0.09 : 0.13;
     const buf = noiseBuffer(dur);
     const src = c.createBufferSource();
     src.buffer = buf;
@@ -5322,6 +5322,10 @@ const PhobiaAudio = (() => {
       case "splash":
         cutoff = 900 + Math.random() * 700; q = 0.4; gain = 0.16;
         type = "bandpass"; break;
+      case "glass":
+        // Bright short tap — a hard sole on a glass pane over the void
+        cutoff = 1500 + Math.random() * 600; q = 2.0; gain = 0.14;
+        type = "bandpass"; break;
       case "hard":
       default:
         cutoff = 220 + Math.random() * 90; q = 0.7; gain = 0.18; break;
@@ -5334,6 +5338,38 @@ const PhobiaAudio = (() => {
     g.gain.exponentialRampToValueAtTime(0.001, now + dur);
     src.connect(filter).connect(g).connect(master);
     src.start(now); src.stop(now + dur + 0.02);
+  }
+
+  // Metal rattle — one clattery hit of a shaken steel railing: a bandpass
+  // noise snap (the segment jumping in its bracket) over inharmonic ring-mode
+  // partials that decay fast. Pure hardware — no envelope or formant shared
+  // with any creature sound. Call it a few times at 40–90 ms gaps for a shake.
+  function metalRattle(intensity = 1.0, pos = null) {
+    const c = ensureCtx(); if (!c) return;
+    const out = spatial(pos, { refDistance: 0.8, maxDistance: 12 });
+    const now = c.currentTime;
+    // Clatter snap — the 900–1800 Hz body of rattling tube steel
+    const ns = c.createBufferSource(); ns.buffer = noiseBuffer(0.08);
+    const bp = c.createBiquadFilter();
+    bp.type = "bandpass"; bp.frequency.value = 900 + Math.random() * 900; bp.Q.value = 1.6;
+    const ng = c.createGain();
+    ng.gain.setValueAtTime(0.0001, now);
+    ng.gain.exponentialRampToValueAtTime(0.15 * intensity, now + 0.003);
+    ng.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+    ns.connect(bp).connect(ng).connect(out);
+    ns.start(now); ns.stop(now + 0.09);
+    // Ring modes — inharmonic partials of the pipe, ~0.25 s decay
+    const f0 = 1150 + Math.random() * 500;
+    for (const [ratio, amp] of [[1, 0.045], [2.76, 0.026], [5.4, 0.012]]) {
+      const osc = c.createOscillator(); osc.type = "sine";
+      osc.frequency.value = f0 * ratio * (0.98 + Math.random() * 0.04);
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(amp * intensity, now + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0008, now + 0.20 + Math.random() * 0.08);
+      osc.connect(g).connect(out);
+      osc.start(now); osc.stop(now + 0.32);
+    }
   }
 
   // ---- Dog vocalisations (whine / soft pant / sniff) ----
@@ -5705,6 +5741,85 @@ const PhobiaAudio = (() => {
     lfo.stop(now + dur + 0.15); ns.stop(now + dur + 0.1);
   }
 
+  // ---- Crowd foley (speaking scene) ----
+  // A cough from a specific seat: one or two voiced huffs of bandpassed noise,
+  // spatialised to an audience member's position so the murmur bed has bodies.
+  function crowdCough(intensity = 0.4, pos = null) {
+    const c = ensureCtx(); if (!c) return;
+    const out = spatial(pos, { refDistance: 2.5, maxDistance: 30, rolloffFactor: 1.3, reverb: 0.3 });
+    const now = c.currentTime;
+    const bursts = Math.random() < 0.6 ? 2 : 1;
+    for (let i = 0; i < bursts; i++) {
+      const t0 = now + i * (0.16 + Math.random() * 0.06);
+      const src = c.createBufferSource(); src.buffer = noiseBuffer(0.3);
+      const bp = c.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = 420 + Math.random() * 260;
+      bp.Q.value = 1.1;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime((0.30 + Math.random() * 0.12) * intensity * (i ? 0.7 : 1), t0 + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.14 + Math.random() * 0.06);
+      src.connect(bp).connect(g).connect(out);
+      src.start(t0); src.stop(t0 + 0.3);
+    }
+  }
+
+  // Seat shuffle / clothing rustle — somebody shifting their weight. Dark
+  // lowpassed noise with a slow swell: the "a hundred people sitting mostly
+  // still" texture between coughs.
+  function crowdShuffle(intensity = 0.35, pos = null) {
+    const c = ensureCtx(); if (!c) return;
+    const out = spatial(pos, { refDistance: 2.5, maxDistance: 26, rolloffFactor: 1.3, reverb: 0.25 });
+    const now = c.currentTime;
+    const dur = 0.5 + Math.random() * 0.5;
+    const src = c.createBufferSource(); src.buffer = noiseBuffer(dur + 0.1);
+    const lp = c.createBiquadFilter();
+    lp.type = "lowpass"; lp.frequency.value = 700 + Math.random() * 500; lp.Q.value = 0.6;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(0.16 * intensity, now + dur * 0.4);
+    g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    src.connect(lp).connect(g).connect(out);
+    src.start(now); src.stop(now + dur + 0.05);
+  }
+
+  // ---- Applause ----
+  // The end-of-speech payoff: a broadband clap wash that swells and dies, with
+  // discrete clap transients on top so it reads as hands, not rain. Intensity
+  // sets how many pairs of hands and how long they keep going.
+  function applause(intensity = 0.7, dur = null) {
+    const c = ensureCtx(); if (!c) return;
+    const now = c.currentTime;
+    const D = dur || (2.2 + intensity * 2.2);
+    const wash = c.createBufferSource(); wash.buffer = noiseBuffer(D + 0.5);
+    const washBp = c.createBiquadFilter();
+    washBp.type = "bandpass"; washBp.frequency.value = 1500; washBp.Q.value = 0.5;
+    const washG = c.createGain();
+    washG.gain.setValueAtTime(0, now);
+    washG.gain.linearRampToValueAtTime(0.12 * intensity, now + 0.35);
+    washG.gain.setValueAtTime(0.12 * intensity, now + D * 0.7);
+    washG.gain.exponentialRampToValueAtTime(0.001, now + D);
+    wash.connect(washBp).connect(washG).connect(master);
+    wash.start(now); wash.stop(now + D + 0.1);
+    // Discrete claps, densest mid-swell (sin envelope over the duration)
+    const clapBuf = noiseBuffer(0.15);
+    const claps = Math.min(70, Math.floor(28 + intensity * 45));
+    for (let i = 0; i < claps; i++) {
+      const at = now + Math.random() * D;
+      const env = Math.pow(Math.sin(Math.PI * Math.min(1, (at - now) / D)), 0.8);
+      const s = c.createBufferSource(); s.buffer = clapBuf;
+      const bp = c.createBiquadFilter();
+      bp.type = "bandpass"; bp.frequency.value = 900 + Math.random() * 1800; bp.Q.value = 1.5;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime((0.05 + Math.random() * 0.05) * intensity * env, at + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.001, at + 0.05 + Math.random() * 0.04);
+      s.connect(bp).connect(g).connect(master);
+      s.start(at); s.stop(at + 0.12);
+    }
+  }
+
   // ---- Wind howl (gust) ----
   // A single low-frequency-modulated noise sweep that layers on top of the
   // continuous wind. Heights uses this as the user nears the railing or
@@ -5916,10 +6031,13 @@ const PhobiaAudio = (() => {
     // Spider foley (additive)
     skitterTicks, bristleRustle, chitinTik, webPluck, startCellarAmbient,
     bark, splash, doorCreak, thunder, indicatorClick, footstep,
+    metalRattle,
     // Dog vocalisations — dogVocal is the unified entry (samples-first with
     // synth fallback); the individual synths stay exported for direct use.
     dogVocal, preloadDogSamples,
     dogWhine, dogPant, dogSniff, growl,
+    // Crowd foley + applause (speaking scene)
+    crowdCough, crowdShuffle, applause,
     // Dog movement foley
     dogFootfall, ballBounce, dogMouthGrab, dogLapping,
     // Room acoustics
@@ -14403,8 +14521,35 @@ function buildHead(o) {
     lash.rotation.x = Math.PI / 2;              // lies IN the lid-margin plane
     lash.position.y = FACE.eyeR * 0.19;         // the margin circle's height on the globe
     upper.add(lash);
-    eyes.push({ group: socket, globe, upper, lower, iris, pupil, side: sx });
+    // `lag`: a fixed per-side lid offset. Perfectly mirrored lids are a doll
+    // cue at conversation range — no real face is symmetric to the millimetre.
+    eyes.push({ group: socket, globe, upper, lower, iris, pupil, side: sx, lag: sx * 0.008 });
   }
+
+  // --- mouth ---------------------------------------------------------------
+  // Everything else about the mouth is paint on a rigid shell, so this dark cap
+  // at the lip seam is the only thing that can OPEN. Flat (invisible) when
+  // closed; setTalk() scales it. Sample the sculpted surface for its depth for
+  // the same reason the eyes do — a constant floats off a retuned face.
+  const mouthSurfZ = (() => {
+    let best = 0.0845, bd = Infinity;
+    for (let j = 0; j <= 120; j++) {
+      const ph = 1.20 + (j / 120) * 1.10;
+      const q = headPoint(0, ph);
+      if (q.z <= 0) continue;
+      const d = Math.abs(q.y - FACE.mouthY);
+      if (d < bd) { bd = d; best = q.z; }
+    }
+    return best;
+  })();
+  const mouthCap = new THREE.Mesh(
+    new THREE.SphereGeometry(0.0130, 14, 10),
+    new THREE.MeshBasicMaterial({ color: 0x1a0a0a })
+  );
+  mouthCap.scale.set(1.55, 0.0001, 0.40);
+  mouthCap.position.set(0, FACE.mouthY - 0.0030, mouthSurfZ - 0.0040);
+  mouthCap.visible = false;
+  face.add(mouthCap);
 
   // --- eyebrows ------------------------------------------------------------
   // Cut from the SAME sculpted surface as the skull and offset a hair's width
@@ -19860,6 +20005,51 @@ function setupHeights(scene, camera, level) {
   fascia.castShadow = true; fascia.receiveShadow = true;
   scene.add(fascia);
 
+  // The building the platform belongs to. The city loop skips the
+  // |cx|<15 && |cz|<15 zone, so without this shaft the slab (and its ROOF
+  // ACCESS penthouse) floats in mid-air — the lean-over view looked straight
+  // down at bare street where a facade must be. The front face is inset
+  // ~0.5–1 m behind the slab edge so the drop past the glass / lean line
+  // stays sheer (observation-deck overhang).
+  if (h > 0.05) {
+    const shaftH = cameraY - 1.7;
+    const shaftD = concreteDepth * 0.9;
+    const shaftW = platLen * 0.9;
+    const shaftZ = concreteCenterZ + 0.3;
+    const shaft = new THREE.Mesh(
+      new THREE.BoxGeometry(shaftW, shaftH, shaftD),
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color().setHSL(0.62, 0.06, tod === "twilight" ? 0.16 : 0.26),
+        roughness: 0.85,
+      })
+    );
+    shaft.position.set(0, shaftH / 2, shaftZ);
+    shaft.castShadow = true; shaft.receiveShadow = true;
+    scene.add(shaft);
+    collisionObjects.push(shaft);
+    // Lit windows down the drop face — same per-time-of-day density as the
+    // city blocks, so looking over the edge reads floors, not a blank slab.
+    const shaftWinChance = { morning: 0.04, midday: 0.03, afternoon: 0.08,
+                             golden: 0.42, twilight: 0.78 }[tod] || 0.1;
+    const shaftLitMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color().setHSL(0.13, 0.70,
+        tod === "twilight" ? 0.65 : tod === "golden" ? 0.58 : 0.50),
+      fog: true,
+    });
+    const faceZ = shaftZ - shaftD / 2 - 0.05;
+    const shaftCols = Math.max(2, Math.floor(shaftW / 3));
+    const shaftRows = Math.floor(shaftH / 4);
+    for (let r = 1; r < shaftRows; r++) {
+      for (let sc = 0; sc < shaftCols; sc++) {
+        if (seed() > shaftWinChance) continue;
+        const win = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 1.2), shaftLitMat);
+        win.position.set(-shaftW / 2 + (sc + 0.5) * (shaftW / shaftCols), r * 4, faceZ);
+        win.rotation.y = Math.PI;      // faces the drop side (-z)
+        scene.add(win);
+      }
+    }
+  }
+
   // Brushed steel railing — lower roughness for sharper highlights, with the
   // env map doing the heavy lifting. envMapIntensity > 1 gives a real metal
   // pop against the sky.
@@ -19908,11 +20098,14 @@ function setupHeights(scene, camera, level) {
   for (let i = 0; i < carCount; i++) {
     const car = new THREE.Group();
     const heading = i % 2 === 0 ? 1 : -1;
-    // Headlights — slightly larger at dark times so they read from far away
-    const headR = isDark ? 0.85 : 0.55;
+    // Headlights — the glow-ball size scales with rung height: from a rooftop
+    // a car needs an oversized bloom to read at all, but at the low rungs the
+    // same sphere was wider than half the car body and skewered through it.
+    // Slightly larger at dark times so they still pop from far away.
+    const headR = (0.15 + h * 0.70) * (isDark ? 1.0 : 0.7);
     const head = new THREE.Mesh(new THREE.SphereGeometry(headR), headlightMat);
     head.position.set(heading * 1.4, 0.05, 0); car.add(head);
-    const tailR = isDark ? 0.65 : 0.45;
+    const tailR = (0.12 + h * 0.55) * (isDark ? 1.0 : 0.7);
     const tail = new THREE.Mesh(new THREE.SphereGeometry(tailR), taillightMat);
     tail.position.set(-heading * 1.4, 0.05, 0); car.add(tail);
     // Car body — colour varies a bit so the city doesn't look uniform
@@ -20387,6 +20580,11 @@ function setupHeights(scene, camera, level) {
   let _gustT = 0, _gustDur = 0, _gustPeak = 0, _gustDir = 1, _nextGust = 2;
   let _vertigoSm = 0;   // smoothed vertigo — raw value can step instantly
   const _railGrip = new THREE.Vector3();
+  // Grip strength from last frame's posture pass — a held rail steadies the
+  // body against the sway, and rail shakes only reach the head through it.
+  let _gripSteady = 0;
+  // Glass-skywalk underfoot edge-detect (first-crossing jolt fires once)
+  let _wasOnGlass = false;
   // Auto-look-down animation state (driven by the "Look down" command button)
   let autoLookT = 0;
   let autoLookFrom = 0, autoLookTarget = 0;
@@ -20420,21 +20618,31 @@ function setupHeights(scene, camera, level) {
   };
   // Falling coins (one per "Drop a coin" press) — they tumble far below
   const coins = [];
-  function dropCoin(controls) {
+  let coinDropAnim = null;   // pending hand-extend beat before the coin exists
+  function spawnCoin(x, y, z) {
     const coin = new THREE.Mesh(
       new THREE.CylinderGeometry(0.14, 0.14, 0.025, 16),
       new THREE.MeshStandardMaterial({ color: 0xddc060, metalness: 0.9, roughness: 0.25 })
     );
-    coin.position.set(
-      controls.position.x + (Math.random() - 0.5) * 0.1,
-      controls.position.y - 0.5,
-      controls.position.z - 0.6
-    );
+    coin.position.set(x + (Math.random() - 0.5) * 0.05, y, z);
     coin.userData = { vy: -1.5, vx: (Math.random() - 0.5) * 0.6, vz: -1 - Math.random() * 1.5,
                       spinX: (Math.random() - 0.5) * 6, spinZ: (Math.random() - 0.5) * 4,
                       landed: false };
     scene.add(coin);
     coins.push(coin);
+  }
+  function dropCoin(controls) {
+    // The hand extends past the rail and opens BEFORE the coin exists — the
+    // coin falls from the fingertips, not from a point under the camera.
+    // Release point: ~0.4 m ahead of the face, 0.3 m below the eye line.
+    const hx = controls.position.x - Math.sin(controls.yaw) * 0.4;
+    const hz = controls.position.z - Math.cos(controls.yaw) * 0.4;
+    const hy = controls.position.y - 0.3;
+    if (active && active.hands && active.hands.setReachTarget && !coinDropAnim) {
+      coinDropAnim = { t: 0, pos: new THREE.Vector3(hx, hy, hz) };
+      return;
+    }
+    spawnCoin(hx, hy, hz);
   }
 
   // Wire the heights command bar buttons. We re-query each tick of the bar
@@ -20486,9 +20694,18 @@ function setupHeights(scene, camera, level) {
             break;
           case "shake":
             shakeT = 1.0;
-            if (window.PhobiaAudio) {
-              for (let i = 0; i < 6; i++) setTimeout(() => window.PhobiaAudio.bark(0.18), i * 60);
+            // Steel clatter at the rail position — irregular 40–90 ms gaps so
+            // the rattle doesn't loop like a sample.
+            if (window.PhobiaAudio && window.PhobiaAudio.metalRattle) {
+              let rd = 0;
+              for (let i = 0; i < 6; i++) {
+                rd += 40 + Math.random() * 50;
+                setTimeout(() => window.PhobiaAudio.metalRattle(0.9,
+                  { x: c.position.x, y: cameraY - 0.5, z: -0.4 }), rd);
+              }
             }
+            // A gripped rail transmits the wobble into the hands/head
+            if (_gripSteady > 0.25 && c.kickShake) c.kickShake(0.02);
             break;
           case "coin":
             dropCoin(c);
@@ -20582,9 +20799,16 @@ function setupHeights(scene, camera, level) {
       if (railHits.length > 0) {
         // SHAKE — the user is touching the rail; their grip rocks it.
         shakeT = 1.0;
-        if (window.PhobiaAudio) {
-          for (let i = 0; i < 4; i++) setTimeout(() => window.PhobiaAudio.bark(0.15), i * 70);
+        if (window.PhobiaAudio && window.PhobiaAudio.metalRattle) {
+          let rd = 0;
+          for (let i = 0; i < 4; i++) {
+            rd += 40 + Math.random() * 50;
+            setTimeout(() => window.PhobiaAudio.metalRattle(0.75,
+              { x: controls.position.x, y: cameraY - 0.5, z: -0.4 }), rd);
+          }
         }
+        // A gripped rail transmits the wobble into the hands/head
+        if (_gripSteady > 0.25 && controls.kickShake) controls.kickShake(0.02);
         if (window.PhobiaFX && window.PhobiaFX.contextPrompt) {
           window.PhobiaFX.contextPrompt("The railing is solid. It moves a little — it's strong.", 3500);
         }
@@ -20699,6 +20923,23 @@ function setupHeights(scene, camera, level) {
         camera.position.z -= leaning * 0.16;   // toward the drop (railing is at -z)
       }
 
+      // ---- Glass skywalk underfoot ----
+      // Crossing from concrete onto the pane has to register in the body:
+      // footfalls brighten to glass taps, fear ticks up (fed into the
+      // proximity input below), and the first step over the void lands a
+      // small jolt plus a faint underfoot click.
+      if (hasGlass && controls) {
+        const onGlass = controls.position.z < (-0.5 + glassDepth);
+        controls.opts.surface = onGlass ? "glass" : "hard";
+        if (onGlass && !_wasOnGlass) {
+          if (controls.kickShake) controls.kickShake(0.02);
+          if (window.PhobiaAudio && window.PhobiaAudio.indicatorClick) {
+            try { window.PhobiaAudio.indicatorClick({ x: controls.position.x, y: platTopY, z: controls.position.z }); } catch {}
+          }
+        }
+        _wasOnGlass = onGlass;
+      }
+
       // ---- Wind sway: chaotic gusts, not a clean sine ----
       // Real edge-of-a-tall-building sway is unpredictable — a low constant
       // jitter with sudden gusts that shove you, then ease off. A predictable
@@ -20714,12 +20955,20 @@ function setupHeights(scene, camera, level) {
         _gustDur  = 0.5 + Math.random() * 1.3;
         _gustPeak = 0.45 + Math.random() * 0.9;
         _gustDir  = Math.random() < 0.5 ? -1 : 1;
+        // A hard gust up high lands a sharp involuntary head-jolt on top of
+        // the smooth shove — the flinch a real edge gust forces out of you.
+        if (_gustPeak > 0.9 && h > 0.5 && controls && controls.kickShake
+            && !controls._reduceMotion) {
+          controls.kickShake(0.02 + _gustPeak * 0.025);
+        }
       }
       const gust = _gustT < _gustDur ? Math.sin((_gustT / _gustDur) * Math.PI) * _gustPeak : 0;
       // Incommensurate sines → no perceptible period (cheap value-noise).
       const nX = Math.sin(t * 1.7) + 0.6 * Math.sin(t * 3.31 + 1.3) + 0.4 * Math.sin(t * 5.13 + 2.7);
       const nY = Math.sin(t * 1.27 + 2.1) + 0.5 * Math.sin(t * 2.91 + 0.7);
-      const amp = (0.35 + h) * swayBoost;
+      // Two hands on the rail steady the body — the sway can't shove a braced
+      // stance as far as a free-standing one.
+      const amp = (0.35 + h) * swayBoost * (1 - 0.45 * _gripSteady);
       camera.position.x += nX * 0.018 * amp + _gustDir * gust * 0.05 * amp;
       camera.position.y += nY * 0.014 * amp;
       camera.rotation.z += (nX * 0.0035 + _gustDir * gust * 0.012) * h * mScale;
@@ -20778,7 +21027,10 @@ function setupHeights(scene, camera, level) {
         // itself when the player stays in-zone. The Fear value then drives
         // ALL effects — visual, audio, narration — through a single channel.
         if (window.PhobiaFear) {
-          window.PhobiaFear.setInput("proximity", edgeProx * (0.4 + h));
+          // Standing on the glass pane adds a constant on top of edge
+          // proximity — the void is under the feet even away from the rail.
+          window.PhobiaFear.setInput("proximity",
+            Math.min(1, edgeProx * (0.4 + h) + (_wasOnGlass ? 0.15 : 0)));
           window.PhobiaFear.setInput("gaze", lookProx);
           // Time-in-zone tracker: rises when at edge, falls when back
           const dtN = dt || 0.016;
@@ -20984,13 +21236,31 @@ function setupHeights(scene, camera, level) {
         // facing the drop — knuckles on the metal instead of a canned grab
         // pose floating in the air. The rail top sits at cameraY-0.5, z=-0.4.
         if (active.hands && active.hands.setReachTarget) {
-          if (reach > 0.25 && Math.cos(controls.yaw) > 0.2 && z > -0.55) {
-            _railGrip.set(controls.position.x, cameraY - 0.5, -0.4);
+          if (coinDropAnim) {
+            // Hand is busy with the coin-drop beat (target set below) — the
+            // grip must not overwrite it, and a rail off both hands doesn't
+            // steady anything.
+            _gripSteady = 0;
+          } else if (reach > 0.25 && Math.cos(controls.yaw) > 0.2 && z > -0.55) {
+            let gripY = cameraY - 0.5;
+            if (shakeT > 0) {
+              // Knuckles ride the wobbling segment while the metal visibly
+              // moves — pinning them to the static rail height broke the grip.
+              let best = null, bestD = Infinity;
+              for (const seg of railSegments) {
+                const d = Math.abs(seg.userData.baseX - controls.position.x);
+                if (d < bestD) { bestD = d; best = seg; }
+              }
+              if (best) gripY = best.position.y;
+            }
+            _railGrip.set(controls.position.x, gripY, -0.4);
             active.hands.setReachTarget(_railGrip, {
               hand: "both", grip: "wrap", normal: _UP, spread: 0.24, maxReach: 0.74,
             });
+            _gripSteady = reach;
           } else {
             active.hands.clearReachTarget();
+            _gripSteady = 0;
           }
         }
       }
@@ -21157,6 +21427,21 @@ function setupHeights(scene, camera, level) {
         }
         pos.needsUpdate = true;
       }
+      // Coin-drop hand beat: the right hand holds the release point for
+      // ~0.35 s, then the coin is spawned AT the hand and falls from it.
+      if (coinDropAnim && controls) {
+        coinDropAnim.t += dt || 0.016;
+        if (active.hands && active.hands.setReachTarget) {
+          active.hands.setReachTarget(coinDropAnim.pos, {
+            hand: "right", grip: "wrap", curl: 0.5, maxReach: 0.7,
+          });
+        }
+        if (coinDropAnim.t >= 0.35) {
+          spawnCoin(coinDropAnim.pos.x, coinDropAnim.pos.y, coinDropAnim.pos.z);
+          if (active.hands && active.hands.clearReachTarget) active.hands.clearReachTarget();
+          coinDropAnim = null;
+        }
+      }
       // Falling coins — gravity + spin until they hit the ground (groundY)
       const dtCoin = dt || 0.016;
       for (let i = coins.length - 1; i >= 0; i--) {
@@ -21172,9 +21457,14 @@ function setupHeights(scene, camera, level) {
           coin.position.y = groundY + 0.05;
           coin.userData.landed = true;
           coin.userData.vy = 0;
-          // Tiny ping sound on landing (the coin is far away so it's quiet)
-          if (window.PhobiaAudio && window.PhobiaAudio.indicatorClick) {
-            setTimeout(() => window.PhobiaAudio.indicatorClick(), 80);
+          // Tiny ping on landing — delayed by the real speed of sound over
+          // the drop height, spatialised at the landing spot so distance
+          // attenuation makes a rooftop drop faint and a balcony drop crisp.
+          // Beyond ~60 m the ping wouldn't reach the ear at all: skip it.
+          if (window.PhobiaAudio && window.PhobiaAudio.indicatorClick && cameraY <= 60) {
+            const delayMs = Math.max(80, (cameraY / 343) * 1000);
+            const landPos = { x: coin.position.x, y: groundY, z: coin.position.z };
+            setTimeout(() => window.PhobiaAudio.indicatorClick(landPos), delayMs);
           }
           // Remove old coins after a few seconds to avoid clutter
           setTimeout(() => {
@@ -21367,16 +21657,20 @@ function setupWater(scene, camera, level) {
   if (fill > 0.45) {
     const seaweedCount = 8 + Math.floor(fill * 12);
     for (let i = 0; i < seaweedCount; i++) {
+      const wh = 0.6 + Math.random() * 0.4;
       const w = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.10, 0.6 + Math.random() * 0.4),
+        new THREE.PlaneGeometry(0.10, wh),
         new THREE.MeshStandardMaterial({
           color: 0x3a7a4a, roughness: 1.0, side: THREE.DoubleSide,
           transparent: true, opacity: 0.85,
         })
       );
+      // Pivot at the base: the sway rotation must tilt the strand FROM the
+      // sand — a centre pivot swung the root up off the bottom.
+      w.geometry.translate(0, wh / 2, 0);
       w.position.set(
         (Math.random() - 0.5) * 18,
-        bottomDepth + (w.geometry.parameters.height / 2) - 0.1,
+        bottomDepth - 0.1,
         -2 - Math.random() * 12
       );
       w.rotation.y = Math.random() * Math.PI;
@@ -21452,7 +21746,7 @@ function setupWater(scene, camera, level) {
         (waterY != null ? waterY : -1) - 0.2 - Math.random() * 1.2,
         -4 - Math.random() * 14
       );
-      f.userData = { vx: 0.5 + Math.random() * 1.2, dir: Math.random() < 0.5 ? -1 : 1, scared: 0 };
+      f.userData = { vx: 0.5 + Math.random() * 1.2, dir: Math.random() < 0.5 ? -1 : 1, scared: 0, turnT: 0 };
       scene.add(f);
       fish.push(f);
     }
@@ -21511,6 +21805,7 @@ function setupWater(scene, camera, level) {
   // under. Only reachable on the deep rungs (maxDepth must exceed head height).
   const HEAD_DEPTH = 1.5;            // depth at which the eye-line goes under
   let submersion = 0, breath = 1, breathWarned = false, breathReliefShown = false, uwOverlay = null, breathHud2 = null;
+  let _prevSub = 0, _dripT = 0;      // residual lens-water timer after surfacing
   function buildSubmersionUI() {
     const stage = document.getElementById("stage");
     if (!stage) return;
@@ -21565,6 +21860,8 @@ function setupWater(scene, camera, level) {
   let heldPebble = null;
   let pebbleActionAt = -1;   // timestamp of the last pebble pickup/throw (suppresses the generic tap-splash)
   let heldPebbleMesh = null;     // visible mesh in user's hand (camera-attached)
+  let pickupAnim = null;         // crouch+reach beat between click and stone-in-hand
+  let wadeRing = null, wadeStepT = 0;   // bow-wave ring + per-stride ripple timer
   function buildPebble(rxBase, ryBase, rzBase) {
     const geo = new THREE.SphereGeometry(0.06 + Math.random() * 0.05, 10, 8);
     const mat = new THREE.MeshStandardMaterial({
@@ -21654,12 +21951,18 @@ function setupWater(scene, camera, level) {
       wRaycaster.setFromCamera(wMouse, camera);
       // First check: did we click an unheld pebble?
       const pebbleHits = wRaycaster.intersectObjects(pebbles, false);
-      if (pebbleHits.length > 0 && !heldPebble) {
+      if (pebbleHits.length > 0 && !heldPebble && !pickupAnim) {
         const target = pebbleHits[0].object;
+        // Reach-down beat (run by update()): the body dips and the FP hand
+        // extends to the stone on the sand — the stone only appears in the
+        // hand once the fingers get there, instead of teleporting a metre up
+        // to a floating camera offset. heldPebble is claimed up front so a
+        // second tap can't double-grab mid-reach.
         heldPebble = target;
         pebbleActionAt = performance.now();
-        target.visible = false;
-        showHeldPebble(target);
+        const wp = new THREE.Vector3();
+        target.getWorldPosition(wp);
+        pickupAnim = { t: 0, dur: 0.6, target, wp, grabbed: false };
         if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
         if (window.PhobiaVoice && Math.random() < 0.4) {
           window.PhobiaVoice.speak("A small stone in your hand. Notice the weight.");
@@ -21669,7 +21972,9 @@ function setupWater(scene, camera, level) {
       // Second check: if holding a pebble + clicked anywhere on the water
       // surface, throw it. Default click already spawns a splash ring; the
       // pebble adds a real arcing throw with a heavier splash on landing.
-      if (heldPebble) {
+      // (heldPebbleMesh only exists once the pickup reach has completed —
+      // no throwing a stone the hand hasn't closed around yet.)
+      if (heldPebble && heldPebbleMesh) {
         pebbleActionAt = performance.now();
         // Compute target world position from the click ray hitting y=waterY
         const ray = wRaycaster.ray;
@@ -21733,11 +22038,17 @@ function setupWater(scene, camera, level) {
     hands: { skinColor: 0xd4a07a, sleeveColor: 0x4a5d8a },
     bloom: { strength: 0.3, threshold: 0.95 },
     ssao: false,                   // water surface + sky look worse with AO
-    surface: "splash",
+    // Spawn is on dry sand — update() flips this to "splash" only once the
+    // water is genuinely around the ankles (a static "splash" made the user
+    // audibly wade while still on the beach).
+    surface: "soft",
     interact(controls) {
       const z = controls ? controls.position.z : shoreZ;
       const k = Math.max(0, Math.min(1, (shoreZ - z) / (shoreZ - deepZ)));
-      const depth = k * maxDepth;
+      // Same slope-vs-waterline reconciliation as update(): whichever is
+      // deeper is what the eye sees on the body.
+      const visD = controls ? Math.max(0, waterY - (controls.position.y - 1.0)) : 0;
+      const depth = Math.max(k * maxDepth, visD);
       if (depth > 0.05) {
         return { gesture: "paddle", hint: `${depthLabel(depth)} · click to splash · walk back any time` };
       }
@@ -21780,14 +22091,26 @@ function setupWater(scene, camera, level) {
       const k = Math.max(0, Math.min(1, (shoreZ - z) / (shoreZ - deepZ)));
       const depth = k * maxDepth;
       if (controls) controls.position.y = -depth;
+      // Depth as the EYE sees it. The water plane sits at waterY regardless
+      // of the wade slope, so on the deep rungs the surface can stand well up
+      // the body while the slope-derived depth still reads zero (the fill=1.0
+      // spawn is visibly waist-deep on the flooded beach, HUD said "On
+      // shore"). Label, entry splash, fear, footfalls and posture all follow
+      // whichever is deeper so nothing contradicts the visible waterline.
+      // Eye height ≈ 1.0 m (beach at −1, spawn eye line at 0).
+      const visDepth = controls ? Math.max(0, waterY - (controls.position.y - 1.0)) : 0;
+      const effDepth = Math.max(depth, visDepth);
+      // Footfalls match what the feet are actually in — dry sand until the
+      // water is genuinely at the ankles, splash after.
+      if (controls) controls.opts.surface = effDepth > 0.05 ? "splash" : "soft";
       // First time the user actually steps into the water → splash + voice cue
-      if (lastWaterEntryZ === null && depth > 0.05) {
+      if (lastWaterEntryZ === null && effDepth > 0.05 && controls) {
         lastWaterEntryZ = z;
         if (window.PhobiaAudio && window.PhobiaAudio.splash) {
           try { window.PhobiaAudio.splash(0.5, { x: controls.position.x, y: waterY, z }); } catch {}
         }
         if (window.PhobiaVoice) window.PhobiaVoice.speak("First step. The water meets your skin. Notice that you can step back any time.");
-      } else if (lastWaterEntryZ !== null && depth <= 0.02) {
+      } else if (lastWaterEntryZ !== null && effDepth <= 0.02) {
         lastWaterEntryZ = null;
       }
 
@@ -21796,12 +22119,12 @@ function setupWater(scene, camera, level) {
       // water scene since fear stays at zero. Depth maps directly to fear:
       // ankle-deep = mild, waist+ = high.
       if (controls && window.PhobiaFear) {
-        const fearProx = Math.max(0, Math.min(1, depth / 1.6));   // 0..1.6 m
+        const fearProx = Math.max(0, Math.min(1, effDepth / 1.6));   // 0..1.6 m
         window.PhobiaFear.setInput("proximity", fearProx * 0.85);
         // Gaze toward the water (slightly down) adds to fear input
         const lookDownAmt = Math.max(0, Math.min(1, -controls.pitch / 0.6));
         window.PhobiaFear.setInput("gaze", lookDownAmt * 0.5 * fearProx);
-        const isAway = depth < 0.05;
+        const isAway = effDepth < 0.05;
         window.PhobiaFear.bumpAvoidance(dt || 0.016, isAway);
       }
 
@@ -21809,6 +22132,24 @@ function setupWater(scene, camera, level) {
       const dW = dt || 0.016;
       submersion = Math.max(0, Math.min(1, (depth - HEAD_DEPTH) / 0.5));
       if (uwOverlay) uwOverlay.style.opacity = String(submersion * 0.95);
+      // Surfacing leaves water on the lens — ~2 s of fading drip/blur instead
+      // of the overlay snapping bone-dry the frame the eye clears the surface.
+      if (_prevSub > 0.05 && submersion <= 0.05) _dripT = 2.0;
+      _prevSub = submersion;
+      if (submersion <= 0.05 && _dripT > 0 && uwOverlay) {
+        _dripT = Math.max(0, _dripT - dW);
+        const dk = _dripT / 2.0;
+        uwOverlay.style.opacity = String(dk * 0.35);
+        const dripBlur = "blur(" + (dk * 1.6).toFixed(2) + "px)";
+        uwOverlay.style.backdropFilter = dripBlur;
+        uwOverlay.style.webkitBackdropFilter = dripBlur;
+        uwOverlay._dripped = true;
+      } else if (submersion > 0.05 && uwOverlay && uwOverlay._dripped) {
+        // Back under: restore the full submerged blur the drip decayed
+        uwOverlay._dripped = false;
+        uwOverlay.style.backdropFilter = "blur(1.6px)";
+        uwOverlay.style.webkitBackdropFilter = "blur(1.6px)";
+      }
       // Murky underwater fog only while the head is actually under — the shore
       // stays clear (the old static murky fog drowned the whole scene at spawn).
       const wantMurky = submersion > 0.05;
@@ -26332,6 +26673,12 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   };
 }
 
+// Live threat handoff: while a creature is loaded (spider coil/pounce, snake
+// defensive display) its scene publishes the head position here each frame so
+// the FP layers can read it; null outside a threat window. One shared object —
+// the scenes never run concurrently.
+const _threatPos = { x: 0, y: 0, z: 0 };
+
 // ---------- Procedural spider "alive" layer ----------
 // Mirrors DogController._bodyLife: after the mixer writes each clip pose, we
 // READ the bones and ADD small deltas (never accumulate) — 8-leg micro-twitch,
@@ -26356,6 +26703,7 @@ class SpiderController {
     this._rig = null;
     this.suspend = false;    // scene sets true during jar / removed states (skips whole layer)
     this.suspendY = false;   // scene sets true when it owns y (wall-pounce parabola)
+    this.calm = false;       // scene sets true under the jar: breath + faint twitch only
   }
   setAlert(a) { this.alert = Math.max(0, Math.min(1, a)); }
   setCoil(c) { this.coil = Math.max(0, Math.min(1, c)); }
@@ -26421,18 +26769,31 @@ class SpiderController {
     const bobP = this._legPhase;
 
     // ---- Gait leg swing (alternating tetrapod, only while moving) ----
+    // Phase groups are L1+R2+L3+R4 anti-phase to R1+L2+R3+L4 (the old i%2
+    // split rowed each whole side in unison), plus a small front-to-back
+    // metachronal lag. Swing legs also fold slightly so the tarsi arc clear
+    // instead of skating.
     if (this._walkAmtSm > 0.01) {
       for (let i = 0; i < legs.length; i++) {
-        const off = (i % 2) * Math.PI + Math.floor(i / 2) * 0.5;
+        const row = i >> 1, sd = i & 1;   // legs built base-major: L,R per row
+        const off = ((row + sd) & 1) * Math.PI + row * 0.18;
         const sw = Math.sin(bobP + off);
         if (legs[i].mid) legs[i].mid.rotation.z += sw * 0.18 * this._walkAmtSm;
         if (legs[i].tip) legs[i].tip.rotation.z += sw * 0.12 * this._walkAmtSm;
         if (legs[i].up)  legs[i].up.rotation.y += Math.cos(bobP + off) * 0.06 * this._walkAmtSm;
+        if (sw > 0) {
+          const lift = sw * sw * this._walkAmtSm;
+          if (legs[i].mid) legs[i].mid.rotation.x -= lift * 0.16;
+          if (legs[i].tip) legs[i].tip.rotation.x += lift * 0.10;
+        }
       }
     }
 
     // ---- Idle micro-twitch + isolated single-leg flick (the "it's alive" tell) ----
-    const stillness = 1 - Math.min(1, this._coilSm + this._pounceSm);   // no fidget while loaded
+    // Under the jar (calm) the twitch halves but never stops — a fully frozen
+    // additive layer read as a dead prop at point-blank range.
+    const calmMul = this.calm ? 0.5 : 1;
+    const stillness = (1 - Math.min(1, this._coilSm + this._pounceSm)) * calmMul;   // no fidget while loaded
     for (let i = 0; i < legs.length; i++) {
       const ph = this._twitchT[i] + t * (2.2 + (i % 3) * 0.6);
       if (legs[i].tip) legs[i].tip.rotation.x += Math.sin(ph) * 0.03 * (1 - 0.6 * this._walkAmtSm) * stillness;
@@ -26446,31 +26807,36 @@ class SpiderController {
     }
     if (this._flickT > 0) {
       this._flickT -= d;
-      const f = Math.sin((1 - this._flickT / 0.22) * Math.PI);
+      const f = Math.sin((1 - this._flickT / 0.22) * Math.PI) * calmMul;
       const L = legs[this._flickLeg];
       if (L) { if (L.tip) L.tip.rotation.x += f * 0.35; if (L.mid) L.mid.rotation.x += f * 0.18; }
     }
 
     // ---- Feeler wave (the two front legs paw the air) ----
-    const feelDamp = 1 - 0.7 * this._coilSm;
-    const feelP = t * 3.4;
-    let fi = 0;
-    for (const L of legs) {
-      if (!L.isFeeler) continue;
-      const side = (fi++) * Math.PI;
-      if (L.up)  L.up.rotation.x  -= (0.12 + Math.sin(feelP + side) * 0.14) * feelDamp;
-      if (L.mid) L.mid.rotation.x -= 0.10 * feelDamp;
-      if (L.tip) L.tip.rotation.x += Math.sin(feelP * 1.3 + side) * 0.10 * feelDamp;
+    if (!this.calm) {
+      const feelDamp = 1 - 0.7 * this._coilSm;
+      const feelP = t * 3.4;
+      let fi = 0;
+      for (const L of legs) {
+        if (!L.isFeeler) continue;
+        const side = (fi++) * Math.PI;
+        if (L.up)  L.up.rotation.x  -= (0.12 + Math.sin(feelP + side) * 0.14) * feelDamp;
+        if (L.mid) L.mid.rotation.x -= 0.10 * feelDamp;
+        if (L.tip) L.tip.rotation.x += Math.sin(feelP * 1.3 + side) * 0.10 * feelDamp;
+      }
     }
 
     // ---- Alert posture (hikes up on its legs, front legs raise) ----
-    this._alertSm += (this.alert - this._alertSm) * Math.min(1, d * 6);
+    this._alertSm += ((this.calm ? 0 : this.alert) - this._alertSm) * Math.min(1, d * 6);
     if (this._alertSm > 0.01) {
       const a = this._alertSm;
       this._poseYOff += 0.08 * a * this.height;
-      const quiver = Math.sin(t * 30) * 0.012 * a;
       for (let i = 0; i < legs.length; i++) {
         const L = legs[i];
+        // De-phased per-leg tremor with a slow wax/wane envelope — a unison
+        // 30 Hz sine across all eight legs read as a render glitch, not an
+        // aroused animal.
+        const quiver = Math.sin(t * (26 + (i % 3) * 5) + this._twitchT[i]) * 0.012 * a * (0.6 + 0.4 * Math.sin(t * 1.7 + i));
         if (L.up)  L.up.rotation.x  -= 0.18 * a + (L.isFeeler || i < 4 ? 0.22 * a : 0);
         if (L.mid) L.mid.rotation.x += 0.28 * a + quiver;
         if (L.tip) L.tip.rotation.x -= 0.10 * a;
@@ -26478,7 +26844,7 @@ class SpiderController {
     }
 
     // ---- Coil telegraph (hunkers + gathers legs, loading the spring) ----
-    this._coilSm += (this.coil - this._coilSm) * Math.min(1, d * 8);
+    this._coilSm += ((this.calm ? 0 : this.coil) - this._coilSm) * Math.min(1, d * 8);
     if (this._coilSm > 0.01) {
       const c = this._coilSm;
       this._poseYOff -= 0.06 * c * this.height;
@@ -26507,7 +26873,7 @@ class SpiderController {
     // Skipped when the scene owns y (the wall-rung pounce parabola).
     // sin² instead of |sin| — the |sin| kink put a sharp V into every gait
     // beat (same vibration source the dog bob had).
-    if (!this.suspendY) {
+    if (!this.suspendY && !this.calm) {
       const bobK = Math.sin(bobP * 0.5);
       const bob = this._walkAmtSm > 0.01
         ? bobK * bobK * 0.010 * this.height * this._walkAmtSm : 0;
@@ -26851,6 +27217,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   let skitterTargetYaw = 0;           // heading goal — turned toward, never snapped
   let skitterSpeedMul = 1;            // 1 = full dart, ~0.3 = idle micro-shuffle
   let microShuffleAt = 1.5 + Math.random() * 2.0;
+  let wallSpin = 0;                   // wall rung: heading spin about the wall normal
+  let spPrevPlayer = null, spApproachSpeed = 0, startleCd = 0;  // player's radial rush (m/s)
   let spiderControls = null;
   let scriptedGesture = null;   // overrides the default "rest" gesture briefly
   let scriptedGestureUntil = 0;
@@ -26859,7 +27227,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   let pounceT = 0;
   let elapsed = 0;              // scene clock
   let nextPounceAt = B.firstPounceAt ?? Infinity;
-  let coilStartDist = 0, thisCoil = 0.9, pounceFired = false;
+  let coilStartDist = 0, thisCoil = 0.9, pounceFired = false, recoilTicked = false;
   let heldCycles = 0, retreatPraised = false, holdPraised = false;
   let completionBeatDone = false;
   let arousalFloor = 0, engageDur = 0;
@@ -27246,6 +27614,37 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         const dzp = controls ? controls.position.z - spider.position.z : 0;
         const distP = Math.hypot(dxp, dzp) || 0.0001;
 
+        // Player's OWN radial approach speed (the snake's calc): a rush and a
+        // careful creep must not read the same to the flagship creature.
+        if (controls && d > 0) {
+          if (spPrevPlayer) {
+            const pvx = (controls.position.x - spPrevPlayer.x) / d;
+            const pvz = (controls.position.z - spPrevPlayer.z) / d;
+            const inst = (pvx * -dxp + pvz * -dzp) / distP;   // + = closing on the spider
+            spApproachSpeed += (inst - spApproachSpeed) * Math.min(1, d * 6);
+          } else spPrevPlayer = { x: 0, z: 0 };
+          spPrevPlayer.x = controls.position.x; spPrevPlayer.z = controls.position.z;
+        }
+
+        // ---- Startle: a rush triggers an immediate BACKWARD escape dart ----
+        // (a spider's fastest recorded locomotion is the backward escape). It
+        // keeps facing you while it shoots away — accurate, and more relieving
+        // than a turn-and-run.
+        startleCd = Math.max(0, startleCd - d);
+        if (B.skitter && loose && controls && pounceState === "idle" && startleCd <= 0
+            && elapsed > (B.firstSkitterAt ?? 0) && spApproachSpeed > 0.8 && distP < 3.5) {
+          startleCd = 2.2 + Math.random() * 1.5;
+          skitterState = "skittering"; skitterT = 0;
+          skitterDur = 0.30 + Math.random() * 0.12; skitterSpeedMul = 1.7;
+          let vx = -dxp / distP + (Math.random() - 0.5) * 0.5, vz = -dzp / distP;
+          const m = Math.hypot(vx, vz) || 1;
+          skitterDir = { x: vx / m, z: vz / m };
+          skitterTargetYaw = Math.atan2(dxp, dzp);   // face the player; retreat backward
+          if (p.play) p.play("Walk", 0.05, { timeScale: 2.2 });
+          if (A && A.skitterTicks) try { A.skitterTicks({ x: spider.position.x, y: -0.9, z: spider.position.z }, { duration: skitterDur, intensity: 0.7, legRate: 55 }); } catch {}
+          if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.4);
+        }
+
         // ---- Ambient skitter machine (data-driven, suppressed during a pounce) ----
         if (B.skitter && loose && controls && pounceState === "idle" && elapsed > (B.firstSkitterAt ?? 0)) {
           skitterT += d;
@@ -27271,6 +27670,13 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               const wander = Math.random() * Math.PI * 2;
               let vx = bias * (dxp / distP) + jag + (1 - bias) * Math.sin(wander) * 0.5;
               let vz = bias * (dzp / distP) + (1 - bias) * Math.cos(wander) * 0.5;
+              // Saltatory coupling: a short pause continues the previous
+              // displacement; only a long pause is a reorientation bout (turn
+              // angle grows with pause length — the measured statistic).
+              // skitterT was just reset; the pause length is nextSkitter.
+              const keepK = Math.max(0, 1 - nextSkitter / 2.5) * 0.65;
+              vx = vx * (1 - keepK) + skitterDir.x * keepK;
+              vz = vz * (1 - keepK) + skitterDir.z * keepK;
               // Non-pounce rungs stop short of the player (guardDist).
               if (!B.pounce && distP < (B.guardDist ?? 1.2) + 0.4) { vx -= (dxp / distP) * 0.8; vz -= (dzp / distP) * 0.8; }
               const m = Math.hypot(vx, vz) || 1;
@@ -27298,6 +27704,10 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
                 if (hr > B.homeRadius) { spider.position.x = homeAnchor.x + hdx / hr * B.homeRadius; spider.position.z = homeAnchor.z + hdz / hr * B.homeRadius; }
               }
             }
+            // Clip rate re-synced to the ACTUAL translation speed every frame
+            // (mirror the snake at SNAKE_REF_SPEED) — the burst-start rate froze
+            // while baseSpd escalated and the 0.3x shuffle cycled at full rate.
+            if (p.current) p.current.timeScale = Math.max(0.8, Math.min(2.6, speed / 0.9));
             if (skitterT > skitterDur) {
               skitterState = "pausing"; skitterT = 0;
               if (p.play) p.play("Idle", 0.12);
@@ -27325,6 +27735,17 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           }
           spider.position.x = Math.max(ROOM.x0 + 0.3, Math.min(ROOM.x1 - 0.3, spider.position.x));
           spider.position.z = Math.max(ROOM.z0 + 0.3, Math.min(2.5, spider.position.z));
+        } else if (loose && onWall) {
+          // Heading spin in the wall plane. The base pose is a pure z-roll, so
+          // a spin about the wall normal composes as plain addition on
+          // rotation.z: spin 0 IS the shipped watching pose; while climbing the
+          // body swings toward the travel direction and eases back after.
+          const spinTarget = (skitterState === "skittering" && pounceState === "idle")
+            ? Math.atan2(skitterDir.z * 0.5, skitterDir.x)
+            : 0;
+          let dsp = spinTarget - wallSpin; dsp = Math.atan2(Math.sin(dsp), Math.cos(dsp));
+          wallSpin += dsp * Math.min(1, d * (skitterState === "skittering" ? 10 : 3));
+          spider.rotation.z = -Math.PI / 2 + wallSpin;
         }
 
         // ---- Alert posture from proximity ----
@@ -28123,11 +28544,31 @@ function setupFlying(scene, camera, level, levelIdx, ctx) {
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
-  const windowGlass = new THREE.Mesh(new THREE.CircleGeometry(0.42, 24), skyMat);
+  // The sky shader lives on a big plane OUT past the wing, not on the window
+  // disc itself: an opaque sky disc at the aperture depth-occluded the whole
+  // wing/engine assembly, so the "wing of the plane I'm on" could never render.
+  const sky = new THREE.Mesh(new THREE.PlaneGeometry(10, 7), skyMat);
+  sky.position.set(-7, 0.3, -4);
+  sky.rotation.y = Math.PI / 2;
+  scene.add(sky);
+  // The window disc is now just glass — a faint sheen you see THROUGH.
+  const windowGlass = new THREE.Mesh(
+    new THREE.CircleGeometry(0.42, 24),
+    new THREE.MeshBasicMaterial({ color: 0xdbe9f4, transparent: true, opacity: 0.08, depthWrite: false })
+  );
   windowGlass.position.copy(windowFrame.position);
   windowGlass.position.x += 0.01;
   windowGlass.rotation.y = Math.PI / 2;
   scene.add(windowGlass);
+  // Fuselage panel around the porthole — closes the cabin side so the outside
+  // is only visible through the window (and hides the wing root at the wall).
+  const fuselage = new THREE.Mesh(
+    new THREE.RingGeometry(0.5, 7, 24),
+    new THREE.MeshStandardMaterial({ color: livery.panel, roughness: 0.85, side: THREE.DoubleSide })
+  );
+  fuselage.position.set(-1.96, 0.3, -4);
+  fuselage.rotation.y = Math.PI / 2;
+  scene.add(fuselage);
 
   // Wing visible through the window — a real flat wing whose root reaches back
   // toward the fuselage and whose tip extends out past the engine, so it reads
