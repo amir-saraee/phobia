@@ -2925,6 +2925,10 @@ if ("serviceWorker" in navigator) {
     border-left: 3px solid var(--accent);
   }
   .stage .captions.show { opacity: 1; }
+  /* Player-spoken lines ("You: Come here.") — visually a different voice */
+  .stage .captions.you {
+    border-left-color: #8ab4ff; font-style: italic; color: #dbe7ff;
+  }
 
   /* Heights scene */
   .scene-heights .ground { transition: transform 1.2s ease; }
@@ -6723,7 +6727,7 @@ const PhobiaVoice = (() => {
       const _sentences = (text.match(/[.!?]+(\s|$)/g) || []).length || 1;
       const _capMs = Math.max(2600, text.length * 95 + (_sentences - 1) * 650);
       window.dispatchEvent(new CustomEvent("voice-line", {
-        detail: { text, durationMs: _capMs }
+        detail: { text, durationMs: _capMs, speaker: opts.speaker || "guide" }
       }));
       // Register with the cross-channel prompt dedupe (result ignored — the
       // caption always shows; it mutes near-identical ctx prompts/hints).
@@ -6739,6 +6743,10 @@ const PhobiaVoice = (() => {
     // actually spoken, unless the user muted the guide (🗣️ pill / Settings).
     // opts.force (the Settings "hear it" sample) bypasses the mute check.
     if (!text) return;
+    // The player's own lines ("Come here.", "Treat.") are captioned as the
+    // player, never voiced — Mira's voice speaking YOUR commands breaks the
+    // embodiment contract.
+    if (opts.speaker && opts.speaker !== "guide") return;
     if (!opts.force && (!opts.audible || muted)) return;
     // Recorded clip when we have one for this exact line; live TTS otherwise.
     const norm = normalize(text);
@@ -10589,7 +10597,11 @@ function mountExposure(phobiaKey, levelIdx) {
   }
   function onVoiceLine(e) {
     if (!captions || !captions.isConnected) return;
-    captions.textContent = e.detail.text;
+    // Player-spoken lines are attributed and styled apart from the guide —
+    // one caption channel, two clearly different voices.
+    const you = e.detail.speaker === "you";
+    captions.textContent = you ? `You: ${e.detail.text}` : e.detail.text;
+    captions.classList.toggle("you", you);
     captions.classList.add("show");
     if (captionsTimer) clearTimeout(captionsTimer);
     captionsTimer = setTimeout(() => {
