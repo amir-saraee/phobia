@@ -96,6 +96,19 @@ for (const rungs of Object.values(voiceLines))
     }
 }
 
+// PhobiaNarrator event beats: { kind: { phobia: [line], _: [line] } }.
+// These are the discrete moments (it came at you, you touched it, it startled
+// you), so their register comes from the EVENT kind, not from a fear bucket.
+{
+  const lit = extractLiteral("const eventLines = {", "{", "}");
+  const banks = eval("(" + lit + ")");
+  for (const [kind, byScene] of Object.entries(banks)) {
+    const reg = kind === "startle" ? "urgent"
+              : (kind === "contact" || kind === "settle") ? "praise" : "calm";
+    for (const bank of Object.values(byScene)) for (const l of bank) push(l, reg);
+  }
+}
+
 // Grounding script: [{ text, duration }, ...]
 {
   const lit = extractLiteral("const groundingScript = [", "[", "]");

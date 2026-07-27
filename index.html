@@ -6550,6 +6550,77 @@ const PhobiaNarrator = (() => {
       ],
     },
   };
+  // ---- Event beats -------------------------------------------------------
+  // Everything above is POLLED: the engine samples fear and proximity every few
+  // seconds and picks a bucket. That is right for ambient coaching and wrong
+  // for the moments that actually land — the dog stands up and starts toward
+  // you, your hand finally reaches its back, it startles you and you stay.
+  // Those are discrete events, they matter for about two seconds, and a poll on
+  // an 8-second gap misses them completely or comments on them long after they
+  // are over. `event()` speaks them the moment they happen, in the register the
+  // moment deserves, and each one fires at most once per rung.
+  const eventLines = {
+    // Something you feared moved toward you and you are still here.
+    approach: {
+      dogs:    ["It's coming to you. You can stand still, or step back. Both are fine."],
+      spiders: ["It moved toward you. You're still here. That's the whole exercise."],
+      snakes:  ["It's coming closer. Slow is safe. Let it come, or give it room."],
+      _:       ["It's closer now. You're still here."],
+    },
+    // The hand actually landed. This is the beat the whole scene exists for.
+    contact: {
+      dogs:    ["Your hand is on it. Feel the warmth. That's a real dog under your palm."],
+      spiders: ["You're touching it. Nothing happened. Stay one more breath."],
+      snakes:  ["Your hand is on it. Cool and dry — not what fear promised."],
+      _:       ["You're touching it. Notice what your body does now."],
+    },
+    // It startled you — barked, lunged, struck — and you did not run.
+    startle: {
+      dogs:    ["That was loud. You flinched and you stayed. That counts."],
+      spiders: ["It moved fast. Your body jumped. Let it settle. Nothing reached you."],
+      snakes:  ["It struck the air and stopped short. You're untouched. Breathe out."],
+      _:       ["Your body jumped. That's the alarm doing its job. Nothing happened."],
+    },
+    // It stopped being agitated while you held your ground.
+    settle: {
+      dogs:    ["It's settling. You held your ground and the room got calmer."],
+      spiders: ["It's still again. The wave passed on its own — it always does."],
+      snakes:  ["It's lowering. You waited, and it chose to stand down."],
+      _:       ["It settled. You stayed, and the moment passed."],
+    },
+    // You backed off after being close. Never a scolding.
+    retreat: {
+      _: ["You gave yourself space. That's a choice, not a failure. Go back in when you're ready."],
+    },
+  };
+  const eventFired = new Set();
+  // `kind` is one of the keys above. Repeat suppression is per rung, so a
+  // second dog scene says it again but one session never repeats itself.
+  function event(scenePhobia, kind, opts = {}) {
+    if (!window.PhobiaVoice) return false;
+    const bank = eventLines[kind];
+    if (!bank) return false;
+    const key = scenePhobia + "|" + kind;
+    if (eventFired.has(key)) return false;
+    const arr = bank[scenePhobia] || bank._;
+    if (!arr || !arr.length) return false;
+    eventFired.add(key);
+    try {
+      // Startles interrupt; the rest wait their turn. All of them are audible:
+      // an event beat that only shows as a caption is a beat the player misses
+      // precisely when they are staring at the animal instead of the text.
+      window.PhobiaVoice.speak(pick(arr), {
+        urgent: kind === "startle",
+        audible: true,
+        praise: kind === "contact" || kind === "settle",
+      });
+      PhobiaFear.markNarrated();
+    } catch {}
+    return true;
+  }
+  // Scenes call this on mount so a fresh rung can speak its beats again.
+  function resetEvents() { eventFired.clear(); }
+
   // Shuffled round-robin per bucket (WeakMap keyed by the bank array): every
   // variant plays before any repeats, and a reshuffle never lands the same
   // line twice in a row. Uniform random over 2-3 variants repeated itself
@@ -6638,7 +6709,7 @@ const PhobiaNarrator = (() => {
     }
     return false;
   }
-  return { tick, speakHabituation };
+  return { tick, speakHabituation, event, resetEvents };
 })();
 window.PhobiaNarrator = PhobiaNarrator;
 
@@ -14220,11 +14291,19 @@ function makeHeadSurface(shape) {
     // is why the mouth and chin used to be invisible from the front. Push the
     // lower face forward onto a real jaw plane and widen it, fading out near
     // the pole so the bottom vertex stays a single point (no hole).
+    //
+    // The push must not keep GROWING all the way to the pole. Ramped to the
+    // bottom it carried the chin out past the nose tip (measured midline z
+    // 0.1255 at the chin vs 0.1227 at the tip) — the beak profile that made
+    // every side view read as a bird. A real chin sits ~3 cm behind the tip,
+    // so the ramp is taken back off below the mentolabial crease and the jaw
+    // lands on a near-vertical plane instead of a wedge.
     {
       const drop = _sstep(-0.052, -0.098, y);
+      const chinTaper = 1 - 0.52 * _sstep(-0.072, -0.100, y);
       const poleFade = _sstep(1.00, 0.88, phi / Math.PI);
       const front = Math.max(0, Math.cos(theta));
-      z += 0.078 * drop * Math.pow(front, 1.5) * poleFade;
+      z += 0.078 * drop * chinTaper * Math.pow(front, 1.5) * poleFade;
       x += 0.019 * Math.sign(x || 1) * drop * Math.abs(Math.sin(theta)) * poleFade;
     }
     // A flat-ish underside, applied only at the very bottom so it shapes the
@@ -14270,6 +14349,10 @@ function makeHeadSurface(shape) {
     z += 0.0125 * _falloff(ax - 0.0160, y + 0.0400, z - 0.0820, 0.0105, 0.0110, 0.028);
     x += 0.0075 * Math.sign(x || 1) * _falloff(ax - 0.0170, y + 0.0405, z - 0.0790, 0.0100, 0.0110, 0.028);
     z -= 0.0125 * _falloff(x, y - FACE.noseBaseY, z - 0.0870, 0.0165, 0.0068, 0.026);
+    // Nostril openings, as real dents. Painting them on was leaving one broad
+    // brown bar across the whole nose base — a nostril has to catch its own
+    // shadow, and at this scale that means actual geometry.
+    z -= 0.0072 * _falloff(ax - 0.0102, y + 0.0452, z - 0.0930, 0.0048, 0.0042, 0.020);
     // Philtrum groove
     z -= 0.0040 * _falloff(x, y + 0.0530, z - 0.0850, 0.0060, 0.0070, 0.020);
     // Lips: the upper is thinner and sits slightly behind the lower
@@ -14278,8 +14361,12 @@ function makeHeadSurface(shape) {
     z += 0.0150 * _falloff(x, y + 0.0730, z - 0.0815, 0.0205, 0.0090, 0.024);
     // Mouth corners tuck in
     z -= 0.0080 * _falloff(ax - 0.0240, y - FACE.mouthY, z - 0.0740, 0.0085, 0.0105, 0.030);
-    // Mentolabial crease, then the chin itself
-    z -= 0.0075 * _falloff(x, y + 0.0820, z - 0.0790, 0.0205, 0.0075, 0.024);
+    // Mentolabial crease, then the chin itself. The crease has to be measured
+    // against where the jaw plane actually ENDS UP (z ≈ 0.113 here): centred at
+    // the old 0.079 it fired at ~13% strength, the lower lip ran straight into
+    // the chin with no sulcus between them, and the whole lower face read as a
+    // muzzle.
+    z -= 0.0105 * _falloff(x, y + 0.0775, z - 0.1060, 0.0215, 0.0068, 0.032);
     z += 0.0145 * _falloff(x, y - FACE.chinY, z - 0.0740, 0.0235 + 0.006 * sq, 0.0165, 0.030);
     // Jaw corner (gonion) — the square-jaw cue, dialled by `shape`
     x += (0.0040 + 0.0055 * sq) * Math.sign(x || 1)
@@ -14289,6 +14376,128 @@ function makeHeadSurface(shape) {
     y -= 0.0090 * _falloff(x, y + 0.0930, z + 0.0400, 0.0500, 0.0250, 0.0350);
     return new THREE.Vector3(x, y, z);
   };
+}
+
+// ---- facial expression fields (FACS-lite morph targets) -----------------
+// Everything above sculpts ONE face. Until now that face never moved: the only
+// expression channels were rotating the brow ribbons, rotating the eyelids and
+// popping a dark cap open at the lip line. Skin that never deforms is exactly
+// what makes a character read as a mask, however good the neutral sculpt is.
+//
+// Each entry here is a displacement FIELD over head-local space — a pure
+// function of a point on the neutral surface, returning where that point goes
+// at full strength. Because it is a function of position and not of (theta,
+// phi), the very same field can be applied to any mesh cut from this surface:
+// the skull, the beard shell, the hair cap. That is what keeps a beard from
+// tearing off the chin when the jaw drops.
+//
+// Named for the Action Units they stand in for, because that is the vocabulary
+// the fear/relief/speech drivers are written in.
+const FACE_MORPHS = [
+  // AU26 jaw drop. A real jaw ROTATES about a condyle just in front of the ear,
+  // so the chin swings down AND back; translating the lower face straight down
+  // is the classic puppet-hinge tell.
+  { name: "jawOpen", apply(x, y, z, o) {
+      const w = _sstep(-0.030, -0.072, y) * _sstep(-0.150, -0.060, z);
+      if (w <= 0) return;
+      const PY = FACE.earY + 0.012, PZ = -0.030;          // condyle
+      const a = 0.30 * w;                                  // radians at full open
+      const dy = y - PY, dz = z - PZ;
+      o.y += (dy * Math.cos(a) + dz * Math.sin(a)) - dy;
+      o.z += (-dy * Math.sin(a) + dz * Math.cos(a)) - dz;
+      // The lower lip rides the jaw only partly — it is slung between the
+      // corners, so the middle trails and the aperture opens as a lens.
+      o.y += 0.0045 * _falloff(x, y + 0.0720, z - 0.1080, 0.0210, 0.0130, 0.040);
+    } },
+  // AU12 + AU6, the real smile: corners up and OUT, cheek mass lifts, the fold
+  // beside the nose deepens. Corners alone give the rictus of a jack-o-lantern.
+  { name: "smile", apply(x, y, z, o) {
+      const sgn = Math.sign(x || 1);
+      const corner = _falloff(Math.abs(x) - 0.0250, y - FACE.mouthY, z - 0.0800, 0.0175, 0.0135, 0.045);
+      o.y += 0.0125 * corner;
+      o.x += sgn * 0.0090 * corner;
+      o.z -= 0.0035 * corner;
+      const cheek = _falloff(Math.abs(x) - 0.0430, y + 0.0210, z - 0.0780, 0.0230, 0.0190, 0.050);
+      o.y += 0.0058 * cheek; o.z += 0.0042 * cheek;
+      const fold = _falloff(Math.abs(x) - 0.0270, y + 0.0480, z - 0.0900, 0.0075, 0.0190, 0.038);
+      o.z -= 0.0042 * fold;
+      // Lips thin and stretch as they draw back over the teeth.
+      const lips = _falloff(x, y + 0.0655, z - 0.1050, 0.0240, 0.0150, 0.040);
+      o.z -= 0.0022 * lips;
+    } },
+  // AU20 + AU15, the fear/grimace mouth: corners pull back and DOWN, the lips
+  // flatten and tighten. This is the shape that separates fear from surprise.
+  { name: "mouthStretch", apply(x, y, z, o) {
+      const sgn = Math.sign(x || 1);
+      const corner = _falloff(Math.abs(x) - 0.0250, y - FACE.mouthY, z - 0.0800, 0.0195, 0.0150, 0.045);
+      o.x += sgn * 0.0105 * corner;
+      o.y -= 0.0060 * corner;
+      o.z -= 0.0050 * corner;
+      const lips = _falloff(x, y + 0.0655, z - 0.1050, 0.0250, 0.0165, 0.040);
+      o.z -= 0.0048 * lips;
+      const chin = _falloff(x, y + 0.0880, z - 0.1000, 0.0230, 0.0140, 0.038);
+      o.z += 0.0030 * chin; o.y -= 0.0016 * chin;         // mentalis bunches
+    } },
+  // AU1 + AU2 brow raise — the forehead skin actually travels, which is what
+  // puts horizontal folds above the brow. Rotating a brow ribbon cannot.
+  { name: "browRaise", apply(x, y, z, o) {
+      const w = _falloff(Math.abs(x) - 0.0250, y - 0.0330, z - 0.0800, 0.0330, 0.0260, 0.050);
+      o.y += 0.0072 * w;
+      o.z += 0.0022 * _falloff(Math.abs(x) - 0.0250, y - 0.0520, z - 0.0720, 0.0340, 0.0170, 0.045);
+      const lid = _falloff(Math.abs(x) - FACE.eyeX, y - FACE.eyeY - 0.0130, z - 0.0760, 0.0250, 0.0110, 0.040);
+      o.y += 0.0030 * lid;
+    } },
+  // AU4 brow knit: inner ends down and together, glabella bunches forward.
+  // Without the bunch a knit is invisible on a smooth forehead.
+  { name: "browFurrow", apply(x, y, z, o) {
+      const sgn = Math.sign(x || 1);
+      const inner = _falloff(Math.abs(x) - 0.0140, y - FACE.browY - 0.004, z - 0.0870, 0.0175, 0.0150, 0.042);
+      o.y -= 0.0052 * inner;
+      o.x -= sgn * 0.0058 * inner;
+      o.z += 0.0032 * inner;
+      const gl = _falloff(x, y - FACE.browY - 0.006, z - 0.0900, 0.0090, 0.0130, 0.038);
+      o.z += 0.0030 * gl;
+      const dip = _falloff(Math.abs(x) - 0.0210, y - 0.0400, z - 0.0830, 0.0250, 0.0160, 0.045);
+      o.y -= 0.0022 * dip;
+    } },
+  // AU6 + AU7 squint: lower lid rides up, the cheek packs against it, and the
+  // outer canthus creases. The eye narrows from BELOW, not by dropping the lid.
+  { name: "squint", apply(x, y, z, o) {
+      const low = _falloff(Math.abs(x) - FACE.eyeX, y - FACE.eyeY + 0.0135, z - 0.0730, 0.0270, 0.0110, 0.040);
+      o.y += 0.0060 * low; o.z += 0.0026 * low;
+      const crow = _falloff(Math.abs(x) - 0.0530, y - FACE.eyeY, z - 0.0620, 0.0130, 0.0180, 0.040);
+      o.z -= 0.0026 * crow;
+    } },
+  // AU9/AU10, the sneer that rides on disgust and hard fear: the nose wing
+  // lifts, the upper lip lifts with it, the fold beside the nostril deepens.
+  { name: "sneer", apply(x, y, z, o) {
+      const wing = _falloff(Math.abs(x) - 0.0170, y + 0.0400, z - 0.1000, 0.0110, 0.0130, 0.030);
+      o.y += 0.0044 * wing;
+      const upper = _falloff(x, y + 0.0580, z - 0.1010, 0.0180, 0.0110, 0.036);
+      o.y += 0.0034 * upper; o.z -= 0.0016 * upper;
+      const fold = _falloff(Math.abs(x) - 0.0240, y + 0.0500, z - 0.0930, 0.0070, 0.0150, 0.036);
+      o.z -= 0.0038 * fold;
+    } },
+];
+
+// Turn a neutral position array into one morph-delta array per field above.
+// Deltas, not absolute targets — three.js morph attributes are relative, and
+// keeping them relative is what lets several expressions stack.
+const _fmO = { x: 0, y: 0, z: 0 };
+function buildFaceMorphs(posArray) {
+  const n = posArray.length;
+  const out = [];
+  for (const M of FACE_MORPHS) {
+    const d = new Float32Array(n);
+    for (let i = 0; i < n; i += 3) {
+      const x = posArray[i], y = posArray[i + 1], z = posArray[i + 2];
+      _fmO.x = 0; _fmO.y = 0; _fmO.z = 0;
+      M.apply(x, y, z, _fmO);
+      d[i] = _fmO.x; d[i + 1] = _fmO.y; d[i + 2] = _fmO.z;
+    }
+    out.push({ name: M.name, delta: d });
+  }
+  return out;
 }
 
 // A thin ribbon laid along the head's surface. `path(t)` returns [theta, phi];
@@ -14352,6 +14561,17 @@ function buildHeadShell(headPoint, mat, opts = {}) {
   // masked shell dissolves into the skin instead of ending on a polygon edge.
   // A mask boundary always steps along grid lines; no resolution fixes that.
   const fade = !!opts.fade;
+  // Expression morph targets are a pure function of the baked positions, so
+  // they ride the geometry cache with everything else — the cost is paid once
+  // per (shape, resolution), not per swatch click in the creator.
+  const attachMorphs = (g, mesh, packed) => {
+    if (!packed) return;
+    g.morphAttributes.position = packed.pos.map((a) => new THREE.Float32BufferAttribute(a.slice(), 3));
+    g.morphAttributes.normal = packed.nor.map((a) => new THREE.Float32BufferAttribute(a.slice(), 3));
+    g.morphTargetsRelative = true;
+    mesh.morphTargetInfluences = new Array(packed.pos.length).fill(0);
+    mesh.morphTargetDictionary = packed.dict;
+  };
   const cached = opts.cacheKey ? _headGeoCache.get(opts.cacheKey) : null;
   if (cached) {
     const g = new THREE.BufferGeometry();
@@ -14371,6 +14591,7 @@ function buildHeadShell(headPoint, mat, opts = {}) {
     g.setIndex(new THREE.BufferAttribute(cached.idx.slice(), 1));
     const m = new THREE.Mesh(g, mat);
     m.castShadow = true;
+    attachMorphs(g, m, cached.morphs);
     return m;
   }
   const pos = [], uv = [], col = [], idx = [], tintPts = [];
@@ -14429,12 +14650,39 @@ function buildHeadShell(headPoint, mat, opts = {}) {
   g.computeVertexNormals();
   const m = new THREE.Mesh(g, mat);
   m.castShadow = true;
+  // Morph normals are computed, not skipped. A jaw drop rotates the whole
+  // lower face ~17°, and shading it with the neutral pose's normals is exactly
+  // the "the mesh moved but the light didn't" artefact that reads as a puppet.
+  let packedMorphs = null;
+  if (opts.morphs) {
+    const base = g.attributes.position.array;
+    const baseNor = g.attributes.normal.array;
+    const fields = buildFaceMorphs(base);
+    const tmp = new THREE.BufferGeometry();
+    tmp.setIndex(g.index);
+    const posArrs = [], norArrs = [], dict = {};
+    const moved = new Float32Array(base.length);
+    for (let f = 0; f < fields.length; f++) {
+      const d = fields[f].delta;
+      for (let i = 0; i < base.length; i++) moved[i] = base[i] + d[i];
+      tmp.setAttribute("position", new THREE.Float32BufferAttribute(moved.slice(), 3));
+      tmp.computeVertexNormals();
+      const nn = tmp.attributes.normal.array;
+      const dn = new Float32Array(base.length);
+      for (let i = 0; i < base.length; i++) dn[i] = nn[i] - baseNor[i];
+      posArrs.push(d); norArrs.push(dn); dict[fields[f].name] = f;
+    }
+    tmp.dispose();
+    packedMorphs = { pos: posArrs, nor: norArrs, dict };
+    attachMorphs(g, m, packedMorphs);
+  }
   if (opts.cacheKey) {
     _headGeoCache.set(opts.cacheKey, {
       pos: g.attributes.position.array, nor: g.attributes.normal.array,
       uv: g.attributes.uv.array, idx: g.index.array,
       tintPts: new Float32Array(tintPts),
       col: (!tint && fade && g.attributes.color) ? g.attributes.color.array : null,
+      morphs: packedMorphs,
     });
   }
   return m;
@@ -14514,32 +14762,47 @@ function buildHead(o) {
   });
   const lipTone = [1.02, 0.545, 0.515];
   const skull = buildHeadShell(headPoint, faceM, {
-    nu: dense.nu, nv: dense.nv, cacheKey: "skull|" + shape + "|" + dense.nu,
+    nu: dense.nu, nv: dense.nv, morphs: true, cacheKey: "skull|" + shape + "|" + dense.nu,
     tint: (p) => {
       let r = 1, g = 1, b = 1;
       const ax = Math.abs(p.x);
+      // Every field below is centred on the depth the sculpted surface ACTUALLY
+      // reaches at that landmark (measured, not guessed). They used to be
+      // centred 1.5–3 cm behind it — a full sigma of `rz` — so the lip, seam,
+      // nostril and socket tints all ran at 40–80% and biased toward the wrong
+      // side of the curve. That is why the mouth read as a brown smear and the
+      // face as flat paint: the shading was landing off the features.
       // Lips
-      const lip = Math.min(1, _falloff(p.x, p.y + 0.0590, p.z - 0.083, 0.0260, 0.0105, 0.032)
-                            + _falloff(p.x, p.y + 0.0730, p.z - 0.081, 0.0235, 0.0120, 0.032));
+      const lip = Math.min(1, _falloff(p.x, p.y + 0.0590, p.z - 0.1015, 0.0260, 0.0105, 0.040)
+                            + _falloff(p.x, p.y + 0.0730, p.z - 0.1120, 0.0235, 0.0120, 0.040));
       r *= 1 + (lipTone[0] - 1) * lip; g *= 1 + (lipTone[1] - 1) * lip; b *= 1 + (lipTone[2] - 1) * lip;
-      // Lip seam — the dark line that makes a mouth a mouth
-      const seam = _falloff(p.x, p.y - FACE.mouthY, p.z - 0.084, 0.0245, 0.0038, 0.032);
+      // Lip seam — the dark line that makes a mouth a mouth. `rz` is loose on
+      // purpose: the seam runs from z 0.099 at the centre to 0.073 at the
+      // corners, so a tight depth window clips the corners right off.
+      const seam = _falloff(p.x, p.y - FACE.mouthY, p.z - 0.0900, 0.0245, 0.0038, 0.050);
       const sk = 1 - 0.68 * seam; r *= sk; g *= sk * 0.86; b *= sk * 0.88;
       // Eye sockets / upper-lid shadow
-      const sock = _falloff(ax - FACE.eyeX, p.y - FACE.eyeY - 0.006, p.z - 0.066, 0.029, 0.015, 0.040);
+      const sock = _falloff(ax - FACE.eyeX, p.y - FACE.eyeY - 0.006, p.z - 0.0705, 0.029, 0.015, 0.040);
       r *= 1 - 0.22 * sock; g *= 1 - 0.27 * sock; b *= 1 - 0.24 * sock;
-      // Nostril openings
-      const nos = _falloff(ax - 0.0110, p.y + 0.0440, p.z - 0.0860, 0.0075, 0.0058, 0.020);
-      const nk = 1 - 0.78 * nos; r *= nk; g *= nk; b *= nk;
+      // Nostril openings — two small dark slits, not a bar across the septum.
+      const nos = _falloff(ax - 0.0104, p.y + 0.0450, p.z - 0.0990, 0.0044, 0.0036, 0.022);
+      const nk = 1 - 0.82 * nos; r *= nk; g *= nk; b *= nk;
       // Cheek warmth + a cooler jaw/beard shadow, the two tones that keep a
       // face from looking plastic.
-      const cheek = _falloff(ax - 0.0500, p.y + 0.0230, p.z - 0.052, 0.030, 0.024, 0.045);
+      const cheek = _falloff(ax - 0.0500, p.y + 0.0230, p.z - 0.0670, 0.030, 0.024, 0.045);
       r *= 1 + 0.055 * cheek; g *= 1 - 0.010 * cheek; b *= 1 - 0.020 * cheek;
       const jaw = _sstep(-0.040, -0.075, p.y) * Math.max(0, p.z) * 12;
       const jk = 1 - 0.05 * Math.min(1, jaw); r *= jk; g *= jk * 0.995; b *= 1 - 0.02 * Math.min(1, jaw);
       // Brow hair root shading
-      const brow = _falloff(ax - 0.0330, p.y - FACE.browY - 0.001, p.z - 0.074, 0.026, 0.0060, 0.030);
+      const brow = _falloff(ax - 0.0330, p.y - FACE.browY - 0.001, p.z - 0.0885, 0.026, 0.0060, 0.034);
       const bk = 1 - 0.20 * brow; r *= bk; g *= bk * 0.96; b *= bk * 0.94;
+      // Nasolabial fold + a shadow in the crease under the lower lip. Real
+      // faces are read almost entirely off these two soft lines; without them
+      // the mouth floats on a blank plane.
+      const nlf = _falloff(ax - 0.0245, p.y + 0.0530, p.z - 0.0930, 0.0085, 0.0175, 0.040);
+      const nk2 = 1 - 0.10 * nlf; r *= nk2; g *= nk2 * 0.975; b *= nk2 * 0.97;
+      const sulcus = _falloff(p.x, p.y + 0.0775, p.z - 0.1045, 0.0210, 0.0060, 0.034);
+      const sk2 = 1 - 0.09 * sulcus; r *= sk2; g *= sk2 * 0.98; b *= sk2 * 0.975;
       // Shade the scalp under the hair and the jaw under a beard toward the
       // hair colour, so the shells' polygon edges land on matching skin.
       const toHair = (amt) => {
@@ -14562,6 +14825,9 @@ function buildHead(o) {
   });
   skull.position.y = HEAD_LIFT;
   grp.add(skull);
+  // Every mesh that carries the expression morphs. Driving them through one
+  // list keeps the beard in lockstep with the skin it grows out of.
+  const expressionMeshes = [skull];
   const face = new THREE.Group();
   face.position.copy(skull.position);
   grp.add(face);                                      // everything else shares the skull's frame
@@ -14642,10 +14908,14 @@ function buildHead(o) {
       FACE.eyeR * 1.06, 20, 10, 0, Math.PI * 2, from, to - from
     );
     const upper = new THREE.Mesh(lidGeo(0, Math.PI * 0.47), skinM);
-    upper.rotation.x = -0.155;                       // open: covers the top of the iris
+    // A relaxed eye is NOT wide open: the upper lid rests over the top ~1.5 mm
+    // of the iris. Parked at −0.155 the whole iris was exposed all round, which
+    // is the physiological signature of a startled stare — every screenshot of
+    // this character had it, calm or not.
+    upper.rotation.x = -0.055;
     socket.add(upper);
     const lower = new THREE.Mesh(lidGeo(Math.PI * 0.55, Math.PI), skinM);
-    lower.rotation.x = 0.170;                        // open: sits just under the iris
+    lower.rotation.x = 0.140;                        // open: sits just under the iris
     socket.add(lower);
     // Lash line — a dark rim at the upper lid margin. Tiny mesh, huge payoff:
     // it's what stops the eye reading as a bead pressed into dough.
@@ -14675,8 +14945,12 @@ function buildHead(o) {
       // Head-on it runs from just inside the eye to past its outer corner,
       // arching over the middle and dipping at the tail.
       (t) => [sx * (0.155 + t * 0.545), Math.PI * 0.5 - (0.150 + Math.sin(t * Math.PI) * 0.045 - t * 0.030)],
-      (t) => 0.030 + Math.sin(t * Math.PI) * 0.016,
-      0.0026, browM, 24
+      // Tapered, not a slab. A ribbon of constant half-width ends in two blunt
+      // square tips, which is exactly what made the brows read as stickers
+      // pressed onto the forehead. Real brows are thickest at the head, thin
+      // to nothing at the tail.
+      (t) => 0.010 + Math.pow(Math.sin(Math.pow(t, 0.72) * Math.PI), 0.55) * 0.026 * (1 - 0.35 * t),
+      0.0026, browM, 30
     );
     brow.position.copy(skull.position);
     brow.userData.baseY = brow.position.y;
@@ -14752,13 +15026,34 @@ function buildHead(o) {
   })();
 
   // --- ears ----------------------------------------------------------------
+  // Where is the side of the head, actually? Parked at a hard-coded x = 0.068
+  // the whole ear sat INSIDE the skull — the temple flattening and the jaw
+  // taper put the surface further out than the constant assumed, so the
+  // character simply had no visible ears from any angle. Measure it, the same
+  // way the eye socket depth is measured.
+  const earSurf = (() => {
+    let bx = 0.072, bz = -0.012, bd = Infinity;
+    for (let i = 0; i <= 64; i++) {
+      const th = Math.PI * 0.5 + (i / 64 - 0.5) * 0.9;
+      for (let j = 0; j <= 64; j++) {
+        const ph = Math.PI * 0.5 + (j / 64 - 0.5) * 0.7;
+        const q = headPoint(th, ph);
+        const d = Math.pow(q.y - FACE.earY, 2) + Math.pow(q.z + 0.014, 2) * 0.35;
+        if (d < bd) { bd = d; bx = Math.abs(q.x); bz = q.z; }
+      }
+    }
+    return { x: bx, z: bz };
+  })();
   for (const sx of [-1, 1]) {
     const ear = new THREE.Group();
-    ear.position.set(sx * 0.0680, FACE.earY, -0.012);
-    ear.rotation.y = sx * 0.30;
-    ear.rotation.z = sx * -0.12;
+    // Sunk 3 mm into the surface so the root never shows a seam, and pitched
+    // back ~10° like a real auricle rather than standing square off the skull.
+    ear.position.set(sx * (earSurf.x - 0.003), FACE.earY, earSurf.z - 0.004);
+    ear.rotation.y = sx * 0.34;
+    ear.rotation.z = sx * -0.14;
+    ear.rotation.x = -0.16;
     face.add(ear);
-    const helix = new THREE.Mesh(new THREE.TorusGeometry(0.0175, 0.0048, 8, 18, Math.PI * 1.55), skinM);
+    const helix = new THREE.Mesh(new THREE.TorusGeometry(0.0175, 0.0048, 8, 20, Math.PI * 1.55), skinM);
     helix.rotation.y = Math.PI / 2;
     helix.rotation.z = -0.5;
     helix.scale.set(1, 1.30, 1);
@@ -14766,6 +15061,20 @@ function buildHead(o) {
     const concha = new THREE.Mesh(new THREE.SphereGeometry(0.0135, 12, 10), skinM);
     concha.scale.set(0.34, 1.15, 0.85);
     ear.add(concha);
+    // Antihelix — the inner Y-shaped ridge. Without it the ear is a ring with
+    // a dish in it, which is exactly what a cartoon ear looks like.
+    const anti = new THREE.Mesh(new THREE.TorusGeometry(0.0098, 0.0028, 6, 14, Math.PI * 1.1), skinM);
+    anti.rotation.y = Math.PI / 2;
+    anti.rotation.z = -0.35;
+    anti.scale.set(1, 1.25, 0.8);
+    anti.position.set(sx * 0.0015, 0.0012, -0.0016);
+    ear.add(anti);
+    // Tragus — the little flap over the canal, and the one part of an ear the
+    // eye actually checks for at conversational distance.
+    const tragus = new THREE.Mesh(new THREE.SphereGeometry(0.0042, 8, 6), skinM);
+    tragus.scale.set(0.5, 1.25, 0.9);
+    tragus.position.set(sx * 0.0016, -0.0035, 0.0092);
+    ear.add(tragus);
     const lobe = new THREE.Mesh(new THREE.SphereGeometry(0.0072, 10, 8), skinM);
     lobe.scale.set(0.55, 1.1, 0.9);
     lobe.position.set(0, -0.0195, 0.0025);
@@ -14866,12 +15175,16 @@ function buildHead(o) {
       const beard = buildHeadShell(headPoint, beardM, {
         nu: o.lowDetail ? 52 : 76, nv: o.lowDetail ? 40 : 56,
         offset: fh === "stubble" ? 0.0016 : 0.0055, fade: true,
+        // The expression fields are functions of position, so the beard takes
+        // the very same morphs as the skin underneath it and rides the jaw
+        // instead of tearing off it.
+        morphs: true,
         cacheKey: "beardF|" + shape + "|" + fh,
         // Slightly tighter than the tinted zone so the shell's polygon edge
         // always lands on skin that is already beard-coloured.
         mask: (th, ph, p) => { const v = beardMask(p); return v > 0.30 ? (v - 0.30) / 0.70 : 0; },
       });
-      if (beard) { beard.position.copy(skull.position); grp.add(beard); }
+      if (beard) { beard.position.copy(skull.position); grp.add(beard); expressionMeshes.push(beard); }
     }
     if (fh === "beard" || fh === "moustache") {
       const stache = new THREE.Mesh(new THREE.SphereGeometry(0.020, 14, 10), fhM);
@@ -14955,10 +15268,41 @@ function buildHead(o) {
   // Blinks close by ROTATING the lids (real eyelids sweep across the globe),
   // gaze swivels the eyeballs, and fear widens the eyes + lifts the brows.
   const _gz = new THREE.Vector3();
+  // Morph plumbing. `_mi` is the index map, shared by every expression mesh
+  // (they were all built from the same field list, so the order matches).
+  const _mIdx = (skull.morphTargetDictionary) || {};
+  const _mCount = FACE_MORPHS.length;
+  const _mWant = new Float32Array(_mCount);
   grp.userData.face = {
     eyes,
     blink: 0, gazeX: 0, gazeY: 0, wide: 0, verge: 0,
-    fear: 0, relief: 0, talk: 0, jaw: 0,
+    fear: 0, relief: 0, talk: 0, jaw: 0, smile: 0, effort: 0,
+    // One place composes every muscle channel, because expressions ADD: a
+    // frightened face that then smiles in relief is both at once, and whichever
+    // setter ran last used to silently win.
+    _applyMorphs() {
+      const f = this.fear || 0, rl = this.relief || 0;
+      const open = Math.max(this.talk || 0, this.jaw || 0);
+      _mWant.fill(0);
+      const put = (name, v) => { const i = _mIdx[name]; if (i != null) _mWant[i] = Math.max(_mWant[i], Math.min(1, v)); };
+      put("jawOpen", open);
+      // Fear: brows up AND knitted, mouth drawn back, a touch of sneer at the
+      // top of the range. Raise without knit is surprise; knit without raise is
+      // anger. Fear is the corner where both are true.
+      put("browRaise", f * 0.85 + rl * 0.12);
+      put("browFurrow", f * 0.62 + (this.effort || 0) * 0.5);
+      put("mouthStretch", f * 0.70);
+      put("sneer", Math.max(0, f - 0.45) * 0.9);
+      put("squint", Math.max(rl * 0.55, (this.effort || 0) * 0.35, Math.max(0, f - 0.6) * 0.4));
+      // Relief reads as a real, small smile — the arousal-comes-down half of
+      // the story this whole game is about.
+      put("smile", Math.max(this.smile || 0, rl * 0.75));
+      for (const m of expressionMeshes) {
+        const inf = m.morphTargetInfluences;
+        if (!inf) continue;
+        for (let i = 0; i < inf.length && i < _mCount; i++) inf[i] = _mWant[i];
+      }
+    },
     setBlink(k) {
       this.blink = k;
       // Lids follow vertical gaze (clinical lid excursion primary→downgaze is
@@ -14968,9 +15312,9 @@ function buildHead(o) {
       const gy = this.gazeY || 0, rl = this.relief || 0;
       for (const e of eyes) {
         const kk = Math.min(1, k * e.blinkGain);
-        e.upper.rotation.x = -0.155 + (1.22 - this.wide * 0.10) * kk - this.wide * 0.20
+        e.upper.rotation.x = -0.055 + (1.12 - this.wide * 0.10) * kk - this.wide * 0.26
           + gy * 0.45 + rl * 0.05 + e.lidJit;
-        e.lower.rotation.x = 0.170 - 0.16 * kk + this.wide * 0.14
+        e.lower.rotation.x = 0.140 - 0.13 * kk + this.wide * 0.14
           - gy * 0.25 + rl * 0.10 - e.lidJit * 0.6;
       }
     },
@@ -15002,6 +15346,7 @@ function buildHead(o) {
     // composes them — otherwise whichever setter ran last silently won.
     _applyBrows() {
       const f = this.fear || 0, rl = this.relief || 0;
+      this._applyMorphs();
       for (const b of brows) {
         const sd = b.userData.side;
         // Inner ends lift and pull together — the distress shape. Rotating the
@@ -15021,8 +15366,12 @@ function buildHead(o) {
       const s = Math.max(0.001, open * 0.75);
       mouthCap.visible = open > 0.03;
       mouthCap.scale.y = s;
-      // A jaw drops; it does not open symmetrically about the lip line.
-      mouthCap.position.y = FACE.mouthY - MOUTH_HALF_H * s * 0.45;
+      // A jaw drops; it does not open symmetrically about the lip line. The cap
+      // has to travel with the jawOpen morph or the dark interior slides out
+      // from behind the lips.
+      mouthCap.position.y = FACE.mouthY - MOUTH_HALF_H * s * 0.45 - open * 0.0075;
+      mouthCap.position.z = (mouthCap.userData.baseZ || 0) - open * 0.0030;
+      this._applyMorphs();
     },
     // Fear, on the face. The whole game is about arousal going up and coming
     // back down, and the character used to walk up to a barking dog wearing the
@@ -15051,6 +15400,19 @@ function buildHead(o) {
     setTalk(k) {
       this.talk = Math.max(0, Math.min(1, k || 0));
       this._applyMouth();
+    },
+    // A voluntary smile, separate from relief — used when the guide praises
+    // you and when a creature finally accepts contact. 0..1.
+    setSmile(k) {
+      this.smile = Math.max(0, Math.min(1, k || 0));
+      this._applyMorphs();
+    },
+    // Physical exertion (reaching at full stretch, holding a rail hard). Reads
+    // as a brow knit plus a squint, and it is the difference between "the arm
+    // moved" and "the person is doing something". 0..1.
+    setEffort(k) {
+      this.effort = Math.max(0, Math.min(1, k || 0));
+      this._applyMorphs();
     },
   };
   grp.userData.brows = brows;
@@ -15494,12 +15856,20 @@ function buildHumanRig(o = {}) {
   let neckPart = null;
   {
     const pts = [];
+    // A neck is not a tube. It tucks in under the jaw, runs slightly concave
+    // down its length, then flares hard into the trapezius. The old six-point
+    // profile was near-cylindrical, which is what made the head look posted on
+    // a dowel from the side.
+    // Widths matter as much as the curve: a neck reads right at roughly 75% of
+    // the head's width at the jaw. At the old ~58% the head sat on a pale dowel,
+    // which is the single loudest doll cue in a side view.
     const prof = [
-      [1.452, .0400], [1.436, .0425], [1.412, .0455], [1.386, .0490],
-      [1.360, .0540], [1.340, .0620], [1.326, .0760],
+      [1.466, .0392], [1.458, .0442], [1.446, .0472], [1.430, .0492],
+      [1.410, .0505], [1.388, .0522], [1.366, .0552],
+      [1.348, .0614], [1.334, .0702], [1.324, .0812],
     ];
     for (const [wy, r] of prof) pts.push(new THREE.Vector2(r * H * LW, wy * H - L.neckY));
-    const neckMesh = new THREE.Mesh(new THREE.LatheGeometry(pts, 20), mSkin);
+    const neckMesh = new THREE.Mesh(new THREE.LatheGeometry(pts, 24), mSkin);
     neckMesh.castShadow = true;
     neckMesh.position.z = -0.004 * H;
     neck.add(neckMesh);
@@ -15555,7 +15925,7 @@ function buildHumanRig(o = {}) {
 // The old rig flexed elbows backwards; `_elbowFlex()` keeps the sign in one
 // place so it can't drift again.
 const _bV1 = new THREE.Vector3(), _bV2 = new THREE.Vector3(), _bV3 = new THREE.Vector3();
-const _bV4 = new THREE.Vector3(), _bV5 = new THREE.Vector3();
+const _bV4 = new THREE.Vector3(), _bV5 = new THREE.Vector3(), _bV6 = new THREE.Vector3();
 const _bM1 = new THREE.Matrix4(), _bQ1 = new THREE.Quaternion(), _bQ2 = new THREE.Quaternion();
 
 class Body {
@@ -15619,14 +15989,27 @@ class Body {
     this.group.userData.noPick = true;
     this._build();
     scene.add(this.group);
-    // ---- Character fill light (third-person only) ----
+    // ---- Character portrait rig (third-person only) ----
     // In a dim scene the avatar collapses into a dark silhouette and reads as a
-    // faceless blob. A soft, short-range warm light rides on the CAMERA side of
-    // the head each frame, so whatever face is turned toward the viewer stays
-    // clearly lit. Short distance + decay confine it to the avatar.
-    this.fillLight = new THREE.PointLight(0xfff1dc, 0, 3.2, 2.0);
-    this.fillLight.visible = false;
-    scene.add(this.fillLight);
+    // faceless blob, so it carries its own short-range lights. But ONE lamp
+    // parked on the camera axis is worse than none: light coming from where you
+    // are looking casts no shadow you can see, so the nose, the brow and the
+    // lip all go flat and a carefully sculpted head renders as a painted mask.
+    // That is a three-point rig's whole job — key off-axis for form, a weak
+    // opposite fill so the shadow side keeps detail, and a rim to lift the head
+    // off the background. Short distance + decay confine all three to the body.
+    // Held CLOSE (≈45 cm) with a hard 1.15 m cutoff instead of far and bright.
+    // Same illumination on the face, but the floor and the walls are outside
+    // the range entirely — a wider lamp was washing a white pool across the
+    // room around the player's feet.
+    this.keyLight = new THREE.PointLight(0xfff1dc, 0, 1.15, 2.0);
+    this.faceFill = new THREE.PointLight(0xcfe0f2, 0, 1.05, 2.0);
+    this.rimLight = new THREE.PointLight(0xffe3c4, 0, 1.00, 2.0);
+    this.fillLight = this.keyLight;                 // back-compat alias
+    for (const L of [this.keyLight, this.faceFill, this.rimLight]) {
+      L.visible = false;
+      scene.add(L);
+    }
     // ---- relief beat ----
     // Any scene can announce "the tension just broke" with one event; the face
     // decides for itself whether that is believable yet (see the fear block in
@@ -15742,10 +16125,33 @@ class Body {
     // underside of your own throat.
     const np = this.head && this.head.userData.neckPart;
     if (np) np.visible = (mode === "tp");
-    if (this.fillLight) {
-      this.fillLight.visible = (mode === "tp");
-      this.fillLight.intensity = (mode === "tp") ? 5.0 : 0;
+    const tp = (mode === "tp");
+    if (this.keyLight) {
+      // Full-strength values, before the ambient scaling in _rigStrength().
+      // Roughly a 4:1 key-to-fill ratio, which is where a face stops looking
+      // either flat or half-missing.
+      this.keyLight.visible = tp;
+      this.faceFill.visible = tp;
+      this.rimLight.visible = tp;
+      if (!tp) { this.keyLight.intensity = this.faceFill.intensity = this.rimLight.intensity = 0; }
     }
+  }
+
+  // How brightly lit is the scene the avatar is standing in? Sampled at 2 Hz —
+  // scenes swap their lighting on a day/night context change, so this can't be
+  // measured once at mount.
+  _rigStrength(t) {
+    if (this._rigK == null || t - (this._rigT || -9) > 0.5) {
+      this._rigT = t;
+      let amb = 0;
+      const own = [this.keyLight, this.faceFill, this.rimLight];
+      this.scene.traverse((o) => {
+        if (!o.isLight || own.indexOf(o) >= 0) return;
+        if (o.isAmbientLight || o.isHemisphereLight) amb += o.intensity;
+      });
+      this._rigK = Math.max(0.42, Math.min(1, 1.25 - amb * 0.62));
+    }
+    return this._rigK;
   }
 
   // ---------- two-bone arm IK ----------
@@ -15808,11 +16214,30 @@ class Body {
     // scene whose eye height wasn't exactly headY above its floor.
     if (this.opts.groundY != null) ay = this.opts.groundY;
     this.group.position.set(ax, ay, az);
-    if (this.fillLight && this.fillLight.visible) {
+    if (this.keyLight && this.keyLight.visible) {
+      // A rig sized for a pitch-black cellar over-lights a sunlit room, so it
+      // scales with how much soft light the scene already provides. Ambient and
+      // hemisphere only: a scene's directional intensity says nothing about how
+      // bright it LOOKS (dusk here runs a 3.0 sun through a dark palette and a
+      // low exposure), while the sky/ambient term tracks the fill on a face.
+      const rk = this._rigStrength(t);
+      this.keyLight.intensity  = 1.55 * rk;
+      this.faceFill.intensity  = 0.40 * rk;
+      this.rimLight.intensity  = 0.72 * rk;
       const hx = ax, hy = ay + this.opts.headY - 0.05, hz = az;
-      let ldx = cam.position.x - hx, ldz = cam.position.z - hz;
+      const ldx = cam.position.x - hx, ldz = cam.position.z - hz;
       const ldl = Math.hypot(ldx, ldz) || 1;
-      this.fillLight.position.set(hx + (ldx / ldl) * 0.75, hy + 0.5, hz + (ldz / ldl) * 0.75);
+      const ux = ldx / ldl, uz = ldz / ldl;           // head → camera, on the ground plane
+      const px = -uz, pz = ux;                        // and its left-hand perpendicular
+      // Key: 40° off the viewing axis and above the brow. Off-axis is the whole
+      // point — this is the only source that puts a shadow under the nose and
+      // the lower lip, which is how a viewer reads a face as three-dimensional.
+      this.keyLight.position.set(hx + (ux * 0.28 + px * 0.24), hy + 0.24, hz + (uz * 0.28 + pz * 0.24));
+      // Fill: opposite side, weak and cool, just enough that the shadow half
+      // keeps its detail instead of clipping to black.
+      this.faceFill.position.set(hx + (ux * 0.34 - px * 0.30), hy + 0.05, hz + (uz * 0.34 - pz * 0.30));
+      // Rim: behind and above, to peel the head and shoulders off the room.
+      this.rimLight.position.set(hx - ux * 0.36 - px * 0.14, hy + 0.30, hz - uz * 0.36 - pz * 0.14);
     }
     const dtB = Math.min(0.05, Math.max(0.001, t - (this._lastBodyT || t)));
 
@@ -15940,6 +16365,19 @@ class Body {
       if (this.face && this.face.setRelief) {
         const gate = (this._fearFalling || this._fearSm < 0.12) ? 1 : 0.25;
         this.face.setRelief(this._reliefPulse * gate * (1 - this._fearSm * 0.6));
+      }
+      // ---- contact on the face ----
+      // Reaching at full stretch is work, and it shows: brow knit and a squint.
+      // Landing the hand on a living thing you were afraid of is the beat this
+      // whole scene exists for — the face used to stay perfectly blank through
+      // it, which is exactly what makes contact read as two props overlapping
+      // rather than one person touching another. The smile only comes once
+      // arousal has actually come down; a grin on a terrified face is worse
+      // than no expression at all.
+      if (this.face.setEffort) this.face.setEffort(this._contactStrain || 0);
+      if (this.face.setSmile) {
+        const settled = Math.max(0, 1 - this._fearSm * 1.6);
+        this.face.setSmile((this._contactLanded || 0) * settled * 0.7);
       }
       // ---- talking ----
       // window.PhobiaTalk is the same 0/1 hold-to-speak signal the speaking
@@ -16132,8 +16570,33 @@ class Body {
       // Below the shoulder → drop into a crouch; out in front → hinge forward.
       const lowness = _hsat((shY - contact.world.y) / 0.75);
       contact.autoCrouch = _hsat(over / 0.40) * lowness * contact.k;
-      contact.autoLean   = _hsat(over / 0.42) * (0.78 + 0.22 * (1 - lowness)) * contact.k;
+      // Measured at a real pet: shoulder→target 0.67 m against a 0.52 m arm,
+      // with the crouch already saturated. The torso has to finish the job, so
+      // the hinge is allowed to commit further than it used to.
+      contact.autoLean   = _hsat(over / 0.42) * (0.94 + 0.16 * (1 - lowness)) * contact.k;
+      // How hard is this reach, and has it actually LANDED? Both feed the face
+      // below: reaching out to your limit is visible work, and the moment a
+      // frightened hand lands on a warm animal is the emotional beat this whole
+      // scene exists for. Touching something used to leave the face blank.
+      //
+      // `strain` can use the geometric estimate, but "landed" cannot: `shY` is
+      // the UNCROUCHED shoulder, and the crouch + hip hinge below are exactly
+      // what closes the last 30 cm. Judged from that estimate the hand never
+      // counts as landed even while the palm is visibly on the animal. So it is
+      // measured from where the wrist actually ended up last frame, after the
+      // whole body has had its say.
+      // The band is set from the rig's own numbers: the palm sits ~5.5 cm past
+      // the wrist, so a wrist within ~11 cm of the surface point IS a hand
+      // resting on it, and 20 cm is a hand still on its way.
+      contact.strain = _hsat(over / 0.30) * contact.k;
+      const gap = this._contactGap == null ? 9 : this._contactGap;
+      contact.landed = _hsat((0.20 - gap) / 0.09) * contact.k;
     }
+    if (!contact) this._contactGap = null;
+    this._contactStrain = (this._contactStrain || 0)
+      + ((contact ? contact.strain : 0) - (this._contactStrain || 0)) * Math.min(1, dtB * 4);
+    this._contactLanded = (this._contactLanded || 0)
+      + ((contact ? contact.landed : 0) - (this._contactLanded || 0)) * Math.min(1, dtB * 2.2);
     if (this._reachAssist == null) this._reachAssist = { crouch: 0, lean: 0 };
     const assistRate = Math.min(1, dtB * 5);
     this._reachAssist.crouch += ((contact ? contact.autoCrouch : 0) - this._reachAssist.crouch) * assistRate;
@@ -16478,7 +16941,11 @@ class Body {
       const naturalZ = side * 0.10 + Math.sin(armPhase * 0.5) * 0.04 * walkAmt + idleSway;
       // The forearm TRAILS the upper arm by ~0.5 rad of phase (whip-like
       // follow-through) — an elbow that bends in sync reads as one rigid rod.
-      const passiveBend = 0.26 + Math.max(0, Math.sin(armPhase - 0.5)) * 0.26 * walkAmt + idleSway * 0.5;
+      // A walking arm carries 20–40° of elbow flexion, most of it on the
+      // FORWARD swing; parked near 15° the whole cycle the arms read as two
+      // straight sticks hinged at the shoulder.
+      const passiveBend = 0.34 + Math.max(0, Math.sin(armPhase - 0.5)) * 0.34 * walkAmt
+        + fearK * 0.22 + idleSway * 0.5;
       const elbX =
           elbowTarget   * gestureWeight
         + reachElbow    * reachWeight
@@ -16496,8 +16963,13 @@ class Body {
         // itself — not the wrist joint — is what lands on the object.
         const n = contact.normal;
         const tgt = _bV3.copy(contact.world);
-        if (n) tgt.addScaledVector(n, 0.055);
-        else tgt.y += 0.055;
+        // One palm-depth off the surface, less a compliance press that breathes
+        // with the stroke: a hand resting on an animal sinks into it and the
+        // pressure varies. Holding a fixed stand-off is what makes a pet look
+        // like a hand hovering a centimetre above a statue.
+        const give = 0.055 - (contact.landed || 0) * (0.014 + 0.006 * Math.sin(t * 3.1));
+        if (n) tgt.addScaledVector(n, give);
+        else tgt.y += give;
         this.chest.updateMatrixWorld();
         this.chest.worldToLocal(tgt);
         if (this._armIK(arm, tgt, k)) {
@@ -16518,8 +16990,36 @@ class Body {
           wantCurl = contact.curl;
           wantSpread = contact.grip === "flat" ? 0.65 : 0;
         }
+        // Where did the wrist ACTUALLY end up? This is the honest measure of
+        // whether the hand is on the object, and next frame's `contact.landed`
+        // reads it (see the contact block above). Measured OUTSIDE the IK's
+        // success branch on purpose: a solver that reports failure on an
+        // out-of-range target still leaves the arm stretched toward it, and
+        // gating on success froze the gap at whatever it was when the reach
+        // began — permanently "not touching" however close the hand got.
+        // The whole chain has to be current, not just the wrist: the IK just
+        // rewrote the shoulder and elbow rotations, and Object3D.updateMatrix-
+        // World() recomputes a node from its PARENT'S cached world matrix — so
+        // asking the wrist alone returns a position built on stale ancestors,
+        // and the measured gap sat ~0.28 m while the palm was demonstrably
+        // 0.055 m from the coat.
+        this.group.updateMatrixWorld(true);
+        _bV6.setFromMatrixPosition(arm.wrist.matrixWorld);
+        const gapNow = _bV6.distanceTo(contact.world);
+        this._contactGap = this._contactGap == null
+          ? gapNow : this._contactGap + (gapNow - this._contactGap) * Math.min(1, dtB * 8);
       } else if (gestureWeight > 0.3 && side > 0) {
         wantCurl = gesture === "grab" ? 0.7 : 0.18;
+      } else {
+        // A hand doing nothing is NOT a flat plane with the fingers splayed —
+        // that is the pose of someone signalling "stop", and it is what made
+        // the character's hands read as claws hanging off the wrists. At rest
+        // the fingers fall into a soft curl under their own tendon tension,
+        // it tightens toward a half fist under fear, and it tightens further
+        // at the front of each arm swing.
+        const swingTight = Math.max(0, Math.sin(armPhase)) * 0.10 * walkAmt;
+        wantCurl = 0.26 + fearK * 0.30 + swingTight;
+        wantSpread = 0.10 * (1 - fearK);
       }
       hk.curl += (wantCurl - hk.curl) * Math.min(1, dtB * 8);
       hk.spread += (wantSpread - hk.spread) * Math.min(1, dtB * 8);
@@ -16656,7 +17156,9 @@ class Body {
       });
       this._dustPuffs = null;
     }
-    if (this.fillLight && this.fillLight.parent) this.fillLight.parent.remove(this.fillLight);
+    for (const L of [this.keyLight, this.faceFill, this.rimLight]) {
+      if (L && L.parent) L.parent.remove(L);
+    }
     if (this.group.parent) this.group.parent.remove(this.group);
     if (this.rig && this.rig.skeleton) this.rig.skeleton.dispose();
     this.group.traverse(o => {
@@ -17246,7 +17748,12 @@ class Hands {
     // Rest pose in camera space (−Z forward, −Y down). Not flat-palms-down
     // fingers-dead-ahead: real relaxed hands sit lower and wider, droop at the
     // wrist, turn slightly inward and roll a few degrees toward thumbs-up.
-    root.position.set(side * 0.175, -0.185, -0.31);
+    // At z −0.31 a 60° vertical FOV shows ±0.179 m, so y −0.185 put the hands
+    // entirely BELOW the bottom edge: the first-person view had two pale slivers
+    // clipped by the frame and nothing else. Raised and pushed out a little so
+    // the whole hand and a length of forearm sit in the lower third, which is
+    // where a first-person player expects to find their own hands.
+    root.position.set(side * 0.185, -0.148, -0.335);
     root.rotation.set(0.24, side * -0.10, side * -0.24);
     root.userData = {
       side,
@@ -17332,6 +17839,28 @@ class Hands {
       this._lagY = (this._lagY || 0) + (pitchVel * -0.011 - (this._lagY || 0)) * Math.min(1, d * 6.5);
     }
 
+    // Recomputed from scratch each frame by whichever hand is reaching; a
+    // stale value here would leave "you are touching it" true forever.
+    this.contactK = 0;
+
+    // ---- Frame the rest pose against the ACTUAL viewport ----
+    // A hand parked at a fixed ±0.185 m is only in shot at one aspect ratio.
+    // Measured on a 1.04-aspect stage the pair projected to x = −3% and 105% —
+    // both hands entirely outside the frame, which is why first person looked
+    // like it had no hands at all. The stage is a responsive element and the
+    // scene adapts its fov, so the rest pose has to be derived from the
+    // camera's own frustum rather than guessed once at build time.
+    if (this.camera && this.camera.isPerspectiveCamera) {
+      const spec = this._restSpec || (this._restSpec = { z: -0.337, xFrac: 0.70, yFrac: -0.80 });
+      const halfH = Math.abs(spec.z) * Math.tan((this.camera.fov * Math.PI / 180) / 2);
+      const halfW = halfH * (this.camera.aspect || 1);
+      const bx = Math.max(0.105, Math.min(0.205, halfW * spec.xFrac));
+      const by = Math.max(-0.205, Math.min(-0.105, halfH * spec.yFrac));
+      for (const h of [this.left, this.right]) {
+        const bp = h.userData.basePos;
+        bp.set(h.userData.side * bx, by, spec.z);
+      }
+    }
     [this.left, this.right].forEach((hand) => {
       const side = hand.userData.side;
       const base = hand.userData.basePos;
@@ -17511,6 +18040,10 @@ class Hands {
         if (overshoot > 0) { arm.multiplyScalar(maxR / armLen); local.copy(sh).add(arm); }
         // 1 when the hand is essentially on the surface, fading as it falls short.
         const contactK = Math.max(0, Math.min(1, 1 - overshoot / 0.25));
+        // Published so the scene loop can tell that first person has ACTUALLY
+        // made contact — third person measures this off the body's wrist, and
+        // without this the whole event-beat channel was blind in first person.
+        this.contactK = Math.max(this.contactK || 0, contactK * rk);
         // Fingers (-Z) point at the target; palm (+Y local) faces the surface
         // normal so the hand lies flat on / wraps the surface.
         const reachDir = this._rcDir.copy(local).sub(sh);
@@ -17527,6 +18060,23 @@ class Hands {
         yAxis.normalize();
         const xAxis = this._rcX.crossVectors(yAxis, zAxis).normalize();
         const q = this._rcQ.setFromRotationMatrix(this._rcMat.makeBasis(xAxis, yAxis, zAxis));
+        // ---- contact compliance ----
+        // Skin, fur and padded rails all GIVE. A hand that halts on the exact
+        // mathematical surface point reads as a decal laid over the object, so
+        // the palm sinks a centimetre or so in, the pressure breathes with the
+        // stroke, and the arm's momentum spends itself in one small damped
+        // bounce the moment it lands instead of stopping like a servo.
+        {
+          const ud = hand.userData;
+          const nowOn = contactK > 0.7 ? 1 : 0;
+          if (nowOn && !(ud._onSurface || 0)) ud._settle = 1;
+          ud._onSurface = nowOn;
+          ud._settle = Math.max(0, (ud._settle || 0) - d * 3.4);
+          const press = contactK * (0.013 + 0.005 * Math.sin(t * 3.1 + side * 1.7));
+          const bounce = ud._settle > 0
+            ? Math.sin(ud._settle * Math.PI * 2) * ud._settle * ud._settle * 0.022 : 0;
+          local.addScaledVector(nrm, bounce - press);
+        }
         // Approach ARC + soft landing: the hand comes in slightly from above
         // and decelerates onto the surface (fast while far, gentle at
         // contact) — the straight full-speed beeline read as a robotic poke.
@@ -18003,6 +18553,8 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // Initialise the unified Fear state for this scene + rung. Scenes will
     // feed inputs (proximity, gaze) inside their own update() callbacks.
     if (window.PhobiaFear) window.PhobiaFear.setScene(phobiaKey, levelIdx);
+    // Event beats are once-per-rung, so a fresh rung gets to speak them again.
+    if (window.PhobiaNarrator && PhobiaNarrator.resetEvents) PhobiaNarrator.resetEvents();
     // One context per mount — the hour, weather and dressing this visit gets.
     sceneCtx = sceneContext(phobiaKey, levelIdx, true);
     // Survives unmount so the rate view can still record it (see currentContext).
@@ -18584,6 +19136,14 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         body.update(t, w.phase, w.amount, controls, hands);
       }
     } catch (e) { console.warn("body.update:", e); }
+    // ---- Event beats ----
+    // The narrator's normal tick is a poll on an 8-second gap, so the moments
+    // that actually land — it came at you, you touched it, it startled you and
+    // you stayed — either got missed or got commented on long after they were
+    // over. Detected centrally here rather than per scene so every rung of
+    // every phobia gets them from the one set of signals the engine already
+    // publishes (PhobiaThreat, fear, and the contact the body/hands measure).
+    try { detectEventBeats(t, dt); } catch (e) { console.warn("event beats:", e); }
     // Update the spatial-audio listener so HRTF panning tracks the camera.
     // We sample the camera's forward + up vectors every frame so any sound
     // played via PhobiaAudio.spatial(pos) is correctly localised.
@@ -18613,6 +19173,61 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       }
     } catch (e) {
       console.warn("render:", e);
+    }
+  }
+
+  // Discrete narration beats, derived from signals the scenes already publish.
+  // Deliberately conservative: each beat fires once per rung (the narrator's own
+  // dedupe), and each needs its condition to HOLD for a beat rather than clip a
+  // single frame, so a creature that jitters across a threshold stays quiet.
+  const _beat = { threatT: 0, calmT: 0, wasThreat: false, contactT: 0, nearT: 0, prevFear: 0, spikeT: 0, creature: null };
+  function detectEventBeats(t, dt) {
+    const N = window.PhobiaNarrator;
+    if (!N || !N.event || !phobiaKey) return;
+    const d = Math.min(0.1, dt || 0.016);
+    const fear = window.PhobiaFear ? PhobiaFear.get() : 0;
+    const threat = window.PhobiaThreat || null;
+
+    // contact — the hand is genuinely resting on the thing, in either view.
+    const landed = Math.max(
+      (body && body._contactLanded) || 0,
+      (hands && hands.contactK) || 0
+    );
+    _beat.contactT = landed > 0.55 ? _beat.contactT + d : 0;
+    if (_beat.contactT > 0.6) N.event(phobiaKey, "contact");
+
+    // startle — a real jump in arousal while something is actively threatening.
+    const dF = fear - _beat.prevFear;
+    _beat.prevFear = fear;
+    if (threat && dF > 1.2) _beat.spikeT = 0.9;
+    _beat.spikeT = Math.max(0, _beat.spikeT - d);
+    if (_beat.spikeT > 0 && fear > 45) N.event(phobiaKey, "startle");
+
+    // settle — it was threatening for a while, and now it has not been for a
+    // few seconds. Only worth saying if the player held their ground for it.
+    if (threat) { _beat.threatT += d; _beat.calmT = 0; _beat.wasThreat = _beat.wasThreat || _beat.threatT > 1.5; }
+    else { _beat.calmT += d; _beat.threatT = 0; }
+    if (_beat.wasThreat && _beat.calmT > 3.0) { N.event(phobiaKey, "settle"); _beat.wasThreat = false; }
+
+    // approach — the creature closed on a stationary player. Moving toward it
+    // yourself is walking, not being approached, and the walking bank has that.
+    // Creatures are found the way every other probe in this file finds them:
+    // the group carrying userData.parts.mixer. Cached, and re-looked-up only
+    // while nothing has been found (creature GLTFs load asynchronously).
+    if (controls) {
+      if (!_beat.creature || !_beat.creature.parent) {
+        _beat.creature = null;
+        scene.traverse((o) => {
+          if (!_beat.creature && o.userData && o.userData.parts && o.userData.parts.mixer) _beat.creature = o;
+        });
+      }
+      const c = _beat.creature;
+      if (c) {
+        const dist = Math.hypot(c.position.x - controls.position.x, c.position.z - controls.position.z);
+        const still = !controls.isMovingForward || !controls.isMovingForward();
+        _beat.nearT = (dist < 2.2 && still) ? _beat.nearT + d : 0;
+        if (_beat.nearT > 1.0) N.event(phobiaKey, "approach");
+      }
     }
   }
 
@@ -20203,6 +20818,12 @@ function setupHeights(scene, camera, level) {
   // escalation: solid ground low down, glass over the void up high.
   const hasGlass = h >= 0.45;
   const glassDepth = hasGlass ? Math.min(1.8, platDepth * 0.42) : 0;
+  // Glass-skywalk crossing state. These were never declared: reading `_onGlass`
+  // threw a ReferenceError on the FIRST frame of the top rung, and the render
+  // loop's try/catch swallowed it — so everything after that line in the
+  // heights update (edge vertigo, rail grip, narration) silently never ran.
+  let _onGlass = false;
+  let _glassCrossed = false;
   const concreteDepth = platDepth - glassDepth;
   const concreteCenterZ = platCenterZ + glassDepth / 2;   // front edge retreats to make room
   const platform = new THREE.Mesh(new THREE.BoxGeometry(platLen, 0.25, concreteDepth), platMat);
@@ -23382,6 +24003,16 @@ class DogController {
     // Scalar locomotion velocity. The dog accelerates into a gait and brakes
     // for a turn rather than changing from idle to full speed in one frame.
     this._moveSpeed = 0;
+    // ---- Meet an offered hand ----
+    // A friendly dog closes the last step ITSELF. Measured on a real pet, the
+    // player's arm ends up ~20 cm short: they can only get so close before the
+    // dog's own footprint stops them, the crouch is already at full squat, and
+    // the hand hangs in the air beside the animal. Waiting to be touched is the
+    // one thing a dog that wants attention never does — so the scene raises
+    // handInvite and the dog walks in far enough to be reached.
+    this.handInvite = 0;
+    this.handMeetDist = 0.48;
+    this._handMeetCool = 0;
     // Idle "alive" extras: occasional weight-shift + independent ear flicks
     // so a standing dog isn't a statue between clips. (No blink: the models
     // ship a single skinned mesh with no eye nodes to close.)
@@ -23677,6 +24308,25 @@ class DogController {
       if (dist > this.followRadius + 0.55) {
         const k = (dist - this.followRadius) / dist;
         this.walkTo(this.dog.position.x + dx * k, this.dog.position.z + dz * k, { follow: true });
+      }
+    }
+    // ---- Come and meet an offered hand ----
+    // Same guards as follow: a commanded sit stays sat, a barking or locked
+    // dog is busy, and the cooldown stops this re-issuing a walk every frame.
+    if (this.handInvite > 0 && this.playerPos
+        && this.state !== "walking" && this.state !== "galloping"
+        && this.state !== "bark" && this.state !== "eat"
+        && this.state !== "sit" && this.state !== "lay"
+        && this.mood !== "aggressive"
+        && !(this._moveLockT > 0) && t > this._handMeetCool) {
+      const pp = this.playerPos;
+      const dx = pp.x - this.dog.position.x;
+      const dz = pp.z - this.dog.position.z;
+      const dist = Math.hypot(dx, dz) || 1;
+      if (dist > this.handMeetDist + 0.12) {
+        const k = (dist - this.handMeetDist) / dist;
+        this.walkTo(this.dog.position.x + dx * k, this.dog.position.z + dz * k, {});
+        this._handMeetCool = t + 1.0;
       }
     }
     // While walking a FOLLOW leg, keep the target pinned to the player's live
@@ -25262,6 +25912,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   // Scratch vectors for driving the FP hand onto the real dog (no per-frame GC).
   const _petPt = new THREE.Vector3();
   const _petN  = new THREE.Vector3();
+  const _petProbe = new THREE.Vector3();   // scratch for the reachability scan
   // Shared threat focus (the avatar's gaze fixates an active threat): ONE
   // reused object written per frame — never re-allocated.
   const threatPos = { x: 0, y: 0, z: 0 };
@@ -26116,17 +26767,41 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         const dz = controls.position.z - dog.position.z;
         const inv = 1 / (dist || 1);
         const tpx = dx * inv, tpz = dz * inv;          // unit vector dog → player
-        // Resolve a contact bone once (Back = withers; fall back along the spine).
-        if (parts._petBone === undefined && parts.model) {
-          parts._petBone = null;
-          const prefer = ["Back", "Torso2", "Torso", "Head"];
+        // Candidate contact bones, withers first and then forward along the
+        // spine to the neck and head. Collected once; CHOSEN every frame.
+        if (parts._petBones === undefined && parts.model) {
+          const prefer = ["Back", "Torso3", "Torso2", "Torso", "Neck1", "Neck2", "Head"];
           const found = {};
-          parts.model.traverse(o => {
-            if (o.isBone && prefer.includes(o.name)) found[o.name] = o;
-          });
-          for (const n of prefer) { if (found[n]) { parts._petBone = found[n]; break; } }
+          parts.model.traverse(o => { if (o.isBone && prefer.includes(o.name)) found[o.name] = o; });
+          parts._petBones = prefer.map(n => found[n]).filter(Boolean);
+          parts._petBone = parts._petBones[0] || null;
         }
-        const bone = parts._petBone;
+        // Which part of this dog can the arm actually get to? A lying dog puts
+        // its back about 10 cm off the floor — measured, the player's shoulder
+        // ends up 0.72 m from it against a 0.52 m arm, so the hand hangs in the
+        // air beside the animal no matter how deep the crouch goes. A person
+        // petting a dog lying down reaches its neck and head instead, which sit
+        // 20 cm higher. So the target is picked by reachability each frame,
+        // with a standing preference for the withers.
+        const bone = (() => {
+          const list = parts._petBones;
+          if (!list || !list.length) return parts._petBone;
+          const shY = controls.position.y - 0.34;         // eye → shoulder
+          const ARM = 0.52;
+          let best = list[0], bestCost = Infinity;
+          for (let i = 0; i < list.length; i++) {
+            list[i].getWorldPosition(_petProbe);
+            const need = Math.hypot(
+              Math.hypot(_petProbe.x - controls.position.x, _petProbe.z - controls.position.z),
+              shY - _petProbe.y);
+            // Shortfall dominates; the small index term keeps the withers the
+            // default whenever two candidates are equally reachable.
+            const cost = Math.max(0, need - ARM) + i * 0.012;
+            if (cost < bestCost) { bestCost = cost; best = list[i]; }
+          }
+          parts._petBone = best;
+          return best;
+        })();
         if (bone) {
           bone.getWorldPosition(_petPt);
           // Stroke along the spine while actively petting: nudge toward the
@@ -26199,6 +26874,22 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       // the camera floats metres behind the avatar, and follow/watch angles
       // computed against it were visibly wrong (dog staring past you).
       dogCtrl.playerPos = controls ? controls.position : null;
+      // ---- Offered hand → the dog closes the last step ----
+      // The player standing quietly inside the invite band IS the offer. It is
+      // also the only intent signal available: the reach target itself is only
+      // set once they are already in contact range, so keying off that would be
+      // circular. Barking rungs and an aggressive mood never invite.
+      {
+        const pp = controls && controls.position;
+        const invSurf = pp ? playerDogSurfaceDist(pp) : 99;
+        const still = !controls || !controls.isMovingForward || !controls.isMovingForward();
+        dogCtrl.handInvite = (intensity !== "barking"
+          && dogCtrl.mood !== "aggressive"
+          && dog.userData.ready
+          && invSurf < PET_INVITE_SURFACE
+          && invSurf > PET_CONTACT_SURFACE * 0.55
+          && still) ? 1 : 0;
+      }
       dogCtrl.update(t, d);
 
       // Complete an invited pet only after the dog has actually reached the
