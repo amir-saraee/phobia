@@ -5198,6 +5198,93 @@ const PhobiaAudio = (() => {
     };
   }
 
+  // Applause — a procedural burst of many hand-claps: individual 10–30 ms
+  // noise ticks scattered front-loaded through one buffer, band-passed to the
+  // palm-smack register, swelling fast and thinning out over the tail.
+  function applause(intensity = 0.7) {
+    const c = ensureCtx(); if (!c) return;
+    const dur = 2.8 + intensity * 2.2;
+    const sr = c.sampleRate;
+    const n = Math.floor(dur * sr);
+    const buf = c.createBuffer(1, n, sr);
+    const data = buf.getChannelData(0);
+    const claps = Math.floor(160 + intensity * 260);
+    for (let i = 0; i < claps; i++) {
+      const at = Math.pow(Math.random(), 0.62) * dur;      // dense start, thinning tail
+      const start = Math.floor(at * sr);
+      const decay = (0.010 + Math.random() * 0.020) * sr;  // 10–30 ms smack
+      const len = Math.floor(decay * 3);
+      const amp = 0.10 + Math.random() * 0.14;
+      for (let s = 0; s < len && start + s < n; s++) {
+        data[start + s] += (Math.random() * 2 - 1) * amp * Math.exp(-s / decay);
+      }
+    }
+    const src = c.createBufferSource(); src.buffer = buf;
+    const bp = c.createBiquadFilter();
+    bp.type = "bandpass"; bp.frequency.value = 1900; bp.Q.value = 0.45;
+    const g = c.createGain();
+    const now = c.currentTime;
+    const peak = 0.28 + intensity * 0.28;
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(peak, now + 0.3);
+    g.gain.setValueAtTime(peak, now + dur * 0.5);
+    g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    src.connect(bp).connect(g).connect(master);
+    src.start(now); src.stop(now + dur + 0.1);
+  }
+
+  // Single crowd one-shot from a REAL seat position — a cough or a clothes/
+  // chair shuffle, HRTF-panned so the hall is audibly occupied around you.
+  function crowdOneShot(pos, kind = "cough", vol = 0.6) {
+    const c = ensureCtx(); if (!c) return;
+    const out = spatial(pos, { refDistance: 3, maxDistance: 60, rolloffFactor: 1.0 });
+    const now = c.currentTime;
+    const isCough = kind === "cough";
+    const src = c.createBufferSource();
+    src.buffer = noiseBuffer(isCough ? 0.3 : 0.55);
+    const bp = c.createBiquadFilter();
+    if (isCough) { bp.type = "bandpass"; bp.frequency.value = 380 + Math.random() * 320; bp.Q.value = 2; }
+    else { bp.type = "lowpass"; bp.frequency.value = 900 + Math.random() * 600; bp.Q.value = 0.6; }
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime((isCough ? 0.16 : 0.10) * vol, now + (isCough ? 0.02 : 0.10));
+    g.gain.exponentialRampToValueAtTime(0.001, now + (isCough ? 0.22 : 0.5));
+    src.connect(bp).connect(g).connect(out);
+    src.start(now); src.stop(now + 0.6);
+  }
+
+  // The user's OWN voice while the speak button is held — never words, just
+  // the muffled through-the-skull cadence of speech: band-passed pink noise
+  // with two detuned syllable LFOs beating so the phrasing wanders instead of
+  // ticking like a metronome tremolo.
+  function startSpeechMurmur() {
+    const c = ensureCtx(); if (!c) return { set() {}, stop() {} };
+    const src = c.createBufferSource(); src.buffer = pinkNoiseBuffer(4); src.loop = true;
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 230; bp.Q.value = 1.1;
+    const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 950;
+    const am = c.createGain(); am.gain.value = 0.55;
+    const l1 = c.createOscillator(); l1.frequency.value = 3.2;
+    const l2 = c.createOscillator(); l2.frequency.value = 4.6;
+    const l1g = c.createGain(); l1g.gain.value = 0.28;
+    const l2g = c.createGain(); l2g.gain.value = 0.17;
+    l1.connect(l1g).connect(am.gain); l2.connect(l2g).connect(am.gain);
+    const g = c.createGain(); g.gain.value = 0;
+    src.connect(bp).connect(lp).connect(am).connect(g).connect(master);
+    src.start(); l1.start(); l2.start();
+    let level = -1;
+    return {
+      set(v) {
+        if (v === level) return;
+        level = v;
+        g.gain.setTargetAtTime(v * 0.05, c.currentTime, 0.12);
+      },
+      stop() {
+        try { g.gain.setTargetAtTime(0, c.currentTime, 0.15); } catch {}
+        setTimeout(() => { try { src.stop(); l1.stop(); l2.stop(); } catch {} }, 800);
+      },
+    };
+  }
+
   // Thunder — single low rolling rumble, optionally with a sharp crack at the
   // front. When `pos` is provided, the sound is HRTF-panned from that world
   // location (so a bolt off to the left actually rumbles from your left).
@@ -5300,6 +5387,40 @@ const PhobiaAudio = (() => {
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
     osc.connect(g).connect(out);
     osc.start(now); osc.stop(now + 0.04);
+  }
+
+  // Metal rattle — a shaken steel railing. Irregular bandpass-noise knocks
+  // (segments banging in their brackets) over a pair of decaying ring-mode
+  // sines, so the rail clanks and then sings. Replaces the old shake sound,
+  // which reused the dog-bark synth — the railing audibly barked.
+  function metalRattle(intensity = 0.5, pos = null) {
+    const c = ensureCtx(); if (!c) return;
+    const out = spatial(pos, { refDistance: 0.8, maxDistance: 14 });
+    const now = c.currentTime;
+    const knocks = 4 + Math.floor(Math.random() * 3);
+    let at = now;
+    for (let i = 0; i < knocks; i++) {
+      at += 0.04 + Math.random() * 0.05;
+      const ns = c.createBufferSource(); ns.buffer = noiseBuffer(0.06);
+      const bp = c.createBiquadFilter(); bp.type = "bandpass";
+      bp.frequency.value = 900 + Math.random() * 900; bp.Q.value = 2.5;
+      const ng = c.createGain();
+      ng.gain.setValueAtTime(0.0001, at);
+      ng.gain.exponentialRampToValueAtTime(0.14 * intensity, at + 0.002);
+      ng.gain.exponentialRampToValueAtTime(0.001, at + 0.055);
+      ns.connect(bp).connect(ng).connect(out);
+      ns.start(at); ns.stop(at + 0.07);
+    }
+    // The hollow tube rings on after the knocks stop
+    for (const f of [1180 + Math.random() * 120, 1770 + Math.random() * 160]) {
+      const osc = c.createOscillator(); osc.type = "sine"; osc.frequency.value = f;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.035 * intensity, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0005, now + 0.5);
+      osc.connect(g).connect(out);
+      osc.start(now); osc.stop(now + 0.55);
+    }
   }
 
   // Single footstep — short low thump that varies by surface.
@@ -6028,6 +6149,8 @@ const PhobiaAudio = (() => {
     startBarking, startSkittering, startMRI, startBreathing, startHeartbeat,
     startVertigoHeartbeat,
     startEngineDrone, startHiss, startAudienceMurmur, startAmbientPad,
+    // Auditorium foley (additive)
+    applause, crowdOneShot, startSpeechMurmur,
     startRain, startDrivingDrone,
     hissOnce, startSlither, skitterBurst,
     // Snake foley (additive)
@@ -14533,35 +14656,13 @@ function buildHead(o) {
     lash.rotation.x = Math.PI / 2;              // lies IN the lid-margin plane
     lash.position.y = FACE.eyeR * 0.19;         // the margin circle's height on the globe
     upper.add(lash);
-    // `lag`: a fixed per-side lid offset. Perfectly mirrored lids are a doll
-    // cue at conversation range — no real face is symmetric to the millimetre.
-    eyes.push({ group: socket, globe, upper, lower, iris, pupil, side: sx, lag: sx * 0.008 });
+    // A fixed per-side lid offset and blink gain. Perfect bilateral symmetry is
+    // a subtle doll cue at close range; real lids never sit or close identically.
+    eyes.push({
+      group: socket, globe, upper, lower, iris, pupil, side: sx,
+      lidJit: sx * 0.008, blinkGain: 1 + sx * 0.035,
+    });
   }
-
-  // --- mouth ---------------------------------------------------------------
-  // Everything else about the mouth is paint on a rigid shell, so this dark cap
-  // at the lip seam is the only thing that can OPEN. Flat (invisible) when
-  // closed; setTalk() scales it. Sample the sculpted surface for its depth for
-  // the same reason the eyes do — a constant floats off a retuned face.
-  const mouthSurfZ = (() => {
-    let best = 0.0845, bd = Infinity;
-    for (let j = 0; j <= 120; j++) {
-      const ph = 1.20 + (j / 120) * 1.10;
-      const q = headPoint(0, ph);
-      if (q.z <= 0) continue;
-      const d = Math.abs(q.y - FACE.mouthY);
-      if (d < bd) { bd = d; best = q.z; }
-    }
-    return best;
-  })();
-  const mouthCap = new THREE.Mesh(
-    new THREE.SphereGeometry(0.0130, 14, 10),
-    new THREE.MeshBasicMaterial({ color: 0x1a0a0a })
-  );
-  mouthCap.scale.set(1.55, 0.0001, 0.40);
-  mouthCap.position.set(0, FACE.mouthY - 0.0030, mouthSurfZ - 0.0040);
-  mouthCap.visible = false;
-  face.add(mouthCap);
 
   // --- eyebrows ------------------------------------------------------------
   // Cut from the SAME sculpted surface as the skull and offset a hair's width
@@ -14579,10 +14680,76 @@ function buildHead(o) {
     );
     brow.position.copy(skull.position);
     brow.userData.baseY = brow.position.y;
+    brow.userData.baseX = brow.position.x;
     brow.userData.side = sx;
     grp.add(brow);
     brows.push(brow);
   }
+
+  // --- mouth opening -------------------------------------------------------
+  // The lips are paint, so the character used to deliver a whole speech with a
+  // sealed face. An opening has to be real geometry — and a flat disc laid on
+  // THIS face floats ~2 cm proud at the corners (the lip line runs from z 0.099
+  // at the centre to z 0.075 at the corners), so the patch is cut from the SAME
+  // sculpted surface as the skull, exactly like the brows. Vertices are authored
+  // relative to the lip seam, so scale.y = 0 collapses the patch onto the
+  // painted seam and the mouth is genuinely shut.
+  const MOUTH_HALF_H = 0.0125;
+  const mouthCap = (() => {
+    // phi runs down the skull and theta across it, both monotonic through the
+    // lip region, so two bisections give the patch's extent on any head shape.
+    const solveY = (th, ty) => {
+      let lo = 0.9, hi = 2.3;
+      for (let i = 0; i < 24; i++) {
+        const m = (lo + hi) * 0.5;
+        if (headPoint(th, m).y > ty) lo = m; else hi = m;
+      }
+      return (lo + hi) * 0.5;
+    };
+    const solveX = (ph, tx) => {
+      let lo = 0, hi = 1.2;
+      for (let i = 0; i < 24; i++) {
+        const m = (lo + hi) * 0.5;
+        if (headPoint(m, ph).x < tx) lo = m; else hi = m;
+      }
+      return (lo + hi) * 0.5;
+    };
+    const ph0 = solveY(0, FACE.mouthY);
+    const dph = solveY(0, FACE.mouthY - MOUTH_HALF_H) - ph0;
+    const dth = solveX(ph0, 0.0225);
+    const NA = 18, NR = 3, LIFT = 0.0009;   // 0.9 mm proud — never z-fights the seam
+    const pos = [], idx = [];
+    const c0 = headPoint(0, ph0);
+    pos.push(0, c0.y - FACE.mouthY, c0.z + LIFT);
+    for (let r = 1; r <= NR; r++) {
+      const rr = r / NR;
+      for (let i = 0; i < NA; i++) {
+        const a = (i / NA) * Math.PI * 2;
+        const q = headPoint(dth * rr * Math.cos(a), ph0 + dph * rr * Math.sin(a));
+        pos.push(q.x, q.y - FACE.mouthY, q.z + LIFT);
+      }
+    }
+    for (let i = 0; i < NA; i++) idx.push(0, 1 + ((i + 1) % NA), 1 + i);
+    for (let r = 0; r < NR - 1; r++) {
+      const a0 = 1 + r * NA, b0 = a0 + NA;
+      for (let i = 0; i < NA; i++) {
+        const j = (i + 1) % NA;
+        idx.push(a0 + i, a0 + j, b0 + j, a0 + i, b0 + j, b0 + i);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+      color: 0x2a0d10, roughness: 0.92, metalness: 0, side: THREE.DoubleSide,
+    }));
+    m.position.set(0, FACE.mouthY, 0);
+    m.scale.y = 0.001;
+    m.visible = false;
+    face.add(m);
+    return m;
+  })();
 
   // --- ears ----------------------------------------------------------------
   for (const sx of [-1, 1]) {
@@ -14790,21 +14957,33 @@ function buildHead(o) {
   const _gz = new THREE.Vector3();
   grp.userData.face = {
     eyes,
-    blink: 0, gazeX: 0, gazeY: 0, wide: 0,
+    blink: 0, gazeX: 0, gazeY: 0, wide: 0, verge: 0,
+    fear: 0, relief: 0, talk: 0, jaw: 0,
     setBlink(k) {
       this.blink = k;
+      // Lids follow vertical gaze (clinical lid excursion primary→downgaze is
+      // ~1 mm): fully raised lids over downward-rotated globes is the look of a
+      // doll staring at the floor. Relief relaxes the aperture and raises the
+      // LOWER lid — the Duchenne cue that separates "calm" from "blank".
+      const gy = this.gazeY || 0, rl = this.relief || 0;
       for (const e of eyes) {
-        e.upper.rotation.x = -0.155 + (1.22 - this.wide * 0.10) * k - this.wide * 0.20;
-        e.lower.rotation.x = 0.170 - 0.16 * k + this.wide * 0.14;
+        const kk = Math.min(1, k * e.blinkGain);
+        e.upper.rotation.x = -0.155 + (1.22 - this.wide * 0.10) * kk - this.wide * 0.20
+          + gy * 0.45 + rl * 0.05 + e.lidJit;
+        e.lower.rotation.x = 0.170 - 0.16 * kk + this.wide * 0.14
+          - gy * 0.25 + rl * 0.10 - e.lidJit * 0.6;
       }
     },
-    // dir: unit-ish direction in HEAD-local space the eyes should follow.
-    setGaze(x, y) {
-      this.gazeX = x; this.gazeY = y;
+    // Eye rotation in HEAD-local space. `verge` converges both globes toward
+    // the midline for a near target — parallel eyes at 40 cm are the classic
+    // thousand-yard stare through whatever the character is touching.
+    setGaze(x, y, verge = 0) {
+      this.gazeX = x; this.gazeY = y; this.verge = verge;
       for (const e of eyes) {
-        e.globe.rotation.y = x;
+        e.globe.rotation.y = x - e.side * verge;
         e.globe.rotation.x = y;
       }
+      this.setBlink(this.blink);
     },
     lookAtWorld(target, headObj) {
       if (!target || !headObj) return;
@@ -14814,23 +14993,64 @@ function buildHead(o) {
       const d = Math.max(0.15, _gz.length());
       this.setGaze(
         Math.max(-0.42, Math.min(0.42, Math.atan2(_gz.x, Math.max(0.05, _gz.z)))),
-        Math.max(-0.30, Math.min(0.30, Math.asin(Math.max(-1, Math.min(1, _gz.y / d))) * -1))
+        Math.max(-0.30, Math.min(0.30, Math.asin(Math.max(-1, Math.min(1, _gz.y / d))) * -1)),
+        Math.min(0.12, 0.032 / d)
       );
     },
     setWide(k) { this.wide = k; this.setBlink(this.blink); },
+    // Brows carry both the fear shape and the relief release, so one place
+    // composes them — otherwise whichever setter ran last silently won.
+    _applyBrows() {
+      const f = this.fear || 0, rl = this.relief || 0;
+      for (const b of brows) {
+        const sd = b.userData.side;
+        // Inner ends lift and pull together — the distress shape. Rotating the
+        // ribbon about the head's centre raises whichever end is further out,
+        // so the sign flips per side to lift the INNER end. Relief rolls it the
+        // other way, past neutral.
+        b.rotation.z = -sd * f * 0.30 + sd * rl * 0.08;
+        b.position.y = b.userData.baseY + f * 0.010 - rl * 0.004;
+        // AU4, the brow KNIT: without it a wide-eyed raised brow reads as
+        // surprise, not fear — the knit is the only thing separating them.
+        b.position.x = b.userData.baseX - sd * f * 0.0045;
+      }
+    },
+    // Mouth aperture. Talking wins; a frightened face keeps its lips parted.
+    _applyMouth() {
+      const open = Math.max(this.talk || 0, this.jaw || 0);
+      const s = Math.max(0.001, open * 0.75);
+      mouthCap.visible = open > 0.03;
+      mouthCap.scale.y = s;
+      // A jaw drops; it does not open symmetrically about the lip line.
+      mouthCap.position.y = FACE.mouthY - MOUTH_HALF_H * s * 0.45;
+    },
     // Fear, on the face. The whole game is about arousal going up and coming
     // back down, and the character used to walk up to a barking dog wearing the
     // same expression it has on the title screen. 0..1.
     setFear(k) {
       this.fear = k;
       this.setWide(k * 0.95);
-      for (const b of brows) {
-        // Inner ends lift and pull together — the distress shape. Rotating the
-        // ribbon about the head's centre raises whichever end is further out,
-        // so the sign flips per side to lift the INNER end.
-        b.rotation.z = -b.userData.side * k * 0.30;
-        b.position.y = b.userData.baseY + k * 0.010;
-      }
+      this._applyBrows();
+      this.jaw = k * 0.22;                    // AU26 — lips part under real fear
+      this._applyMouth();
+      // Pupils dilate with arousal — the strongest close-range physiological
+      // tell there is, and the mesh has been sitting here unused. Scale in the
+      // socket plane only: scaling depth too would push the black cap out
+      // through the cornea.
+      const ps = Math.min(1.35, 1 + 0.30 * k);
+      for (const e of eyes) e.pupil.scale.set(ps, ps, 1);
+    },
+    // Relief: the arousal-comes-down half of the story the therapy loop tells.
+    // Brows past neutral, lids relaxed, lower lid raised (Duchenne). 0..1.
+    setRelief(k) {
+      this.relief = Math.max(0, Math.min(1, k || 0));
+      this._applyBrows();
+      this.setBlink(this.blink);
+    },
+    // Speech aperture, 0..1. Driven in phoneme pulses, not a smooth ramp.
+    setTalk(k) {
+      this.talk = Math.max(0, Math.min(1, k || 0));
+      this._applyMouth();
     },
   };
   grp.userData.brows = brows;
@@ -15407,6 +15627,25 @@ class Body {
     this.fillLight = new THREE.PointLight(0xfff1dc, 0, 3.2, 2.0);
     this.fillLight.visible = false;
     scene.add(this.fillLight);
+    // ---- relief beat ----
+    // Any scene can announce "the tension just broke" with one event; the face
+    // decides for itself whether that is believable yet (see the fear block in
+    // update — it only shows while arousal is actually falling).
+    this._reliefPulse = 0;
+    this._onRelief = () => { this._reliefPulse = 1; };
+    try { window.addEventListener("mira-relief", this._onRelief); } catch {}
+    // Threat fixation. Scenes publish window.PhobiaThreat = {x,y,z} while a
+    // creature is actively threatening; setGazeTarget() is the direct call for
+    // anything that would rather push than publish.
+    this._threatTarget = new THREE.Vector3();
+    this._threatAt = -1e9;
+  }
+
+  // A world point the eyes should monitor while frightened. Pass null to clear.
+  setGazeTarget(v) {
+    if (!v) { this._threatAt = -1e9; return; }
+    this._threatTarget.set(v.x, v.y, v.z);
+    this._threatAt = (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000;
   }
 
   _build() {
@@ -15683,8 +15922,46 @@ class Body {
         if (window.PhobiaFear && window.PhobiaFear.get) fearRaw = window.PhobiaFear.get() / 100;
       } catch {}
       if (this._fearSm == null) this._fearSm = 0;
-      this._fearSm += (Math.max(0, Math.min(1, fearRaw)) - this._fearSm) * Math.min(1, dtB * 1.6);
+      const clamped = Math.max(0, Math.min(1, fearRaw));
+      // Fast onset, slow decay. A symmetric lerp put the face ~0.6 s behind a
+      // lunge and then let it relax exactly as fast as it startled, which is
+      // the one thing real expressions never do.
+      const rate = clamped > this._fearSm ? 6.0 : 0.9;
+      const prevFear = this._fearSm;
+      this._fearSm += (clamped - this._fearSm) * Math.min(1, dtB * rate);
+      this._fearFalling = this._fearSm < prevFear - 1e-4;
       if (this.face && this.face.setFear) this.face.setFear(this._fearSm);
+      // ---- relief pulse ----
+      // Scenes dispatch 'mira-relief' on a completion / calm beat. It only
+      // reads as relief while arousal is on the way DOWN, so the pulse is
+      // gated on a falling fear signal rather than fired blind.
+      if (this._reliefPulse == null) this._reliefPulse = 0;
+      if (this._reliefPulse > 0) this._reliefPulse = Math.max(0, this._reliefPulse - dtB / 3.0);
+      if (this.face && this.face.setRelief) {
+        const gate = (this._fearFalling || this._fearSm < 0.12) ? 1 : 0.25;
+        this.face.setRelief(this._reliefPulse * gate * (1 - this._fearSm * 0.6));
+      }
+      // ---- talking ----
+      // window.PhobiaTalk is the same 0/1 hold-to-speak signal the speaking
+      // rung already tracks. Real speech is phoneme pulses, not a held vowel,
+      // so the aperture is re-drawn on its own 90–150 ms clock.
+      if (this.face && this.face.setTalk) {
+        let talkRaw = 0;
+        try { talkRaw = Math.max(0, Math.min(1, +window.PhobiaTalk || 0)); } catch {}
+        if (talkRaw > 0.02) {
+          if (this._talkNextAt == null || t > this._talkNextAt) {
+            this._talkOpen = (0.25 + Math.random() * 0.75) * talkRaw;
+            this._talkNextAt = t + 0.09 + Math.random() * 0.06;
+          }
+        } else {
+          this._talkOpen = 0;
+          this._talkNextAt = null;
+        }
+        // Ease between phonemes so the jaw travels instead of teleporting.
+        this._talkSm = (this._talkSm || 0)
+          + ((this._talkOpen || 0) - (this._talkSm || 0)) * Math.min(1, dtB * 22);
+        this.face.setTalk(this._talkSm);
+      }
     }
     const fearK = this._fearSm || 0;
     // Breathing quickens and shallows with arousal — the oldest tell there is.
@@ -15975,10 +16252,17 @@ class Body {
     this._nextHeadTurnAt = this._nextHeadTurnAt || (t + 4 + Math.random() * 6);
     this._headTurnAmount = this._headTurnAmount || 0;
     this._headTurnTarget = this._headTurnTarget || 0;
-    if (idleFactor > 0.7 && t > this._nextHeadTurnAt) {
+    if (idleFactor > 0.7 && fearK < 0.55 && t > this._nextHeadTurnAt) {
       this._headTurnTarget = (Math.random() - 0.5) * 0.6;
       this._nextHeadTurnAt = t + 5 + Math.random() * 7;
-      setTimeout(() => { this._headTurnTarget = 0; }, 1500);
+      // Sim time, not wall time. A setTimeout kept firing through pause and a
+      // throttled tab, so a glance could snap back the instant the tab woke —
+      // a twitch instead of a look. Anxious people also hold glances shorter.
+      this._headTurnUntil = t + 1.5 * (1 - fearK * 0.45);
+    }
+    if (this._headTurnUntil != null && t > this._headTurnUntil) {
+      this._headTurnTarget = 0;
+      this._headTurnUntil = null;
     }
     this._headTurnAmount += (this._headTurnTarget - this._headTurnAmount) * Math.min(1, dtB * 2.4);
     if (this.head) {
@@ -16004,19 +16288,93 @@ class Body {
     // Eyes lead the head: the pupils flick toward whatever the character is
     // reaching for / walking toward slightly before the head follows.
     if (this.face && this.face.setGaze) {
-      let gx = 0, gy = 0;
+      // ---- what the eyes WANT: reach > threat > idle ----
+      // window.PhobiaThreat is the live creature position a scene publishes
+      // while something is actively threatening. A stale point (nothing set it
+      // this half-second) means calm — otherwise the avatar keeps staring at
+      // where the dog used to be long after it wandered off.
+      const nowW = (typeof performance !== "undefined" ? performance.now() : Date.now()) * 0.001;
+      try {
+        const th = window.PhobiaThreat;
+        if (th && Number.isFinite(th.x)) {
+          this._threatTarget.set(th.x, th.y, th.z);
+          this._threatAt = nowW;
+        }
+      } catch {}
+      const threatLive = (nowW - this._threatAt) < 0.5 && fearK > 0.2;
+      let pt = null;
       if (hands && hands._reach && hands._reachStrength > 0.15 && hands._reachWorld) {
-        this._gazeTarget = this._gazeTarget || new THREE.Vector3();
-        this._gazeTarget.copy(hands._reachWorld);
-        this.face.lookAtWorld(this._gazeTarget, this.head);
+        pt = hands._reachWorld;
+        this._nextGlanceAt = null;
+      } else if (threatLive) {
+        pt = this._threatTarget;
       } else {
-        gx = (this._headAimYaw || 0) * 0.45 + Math.sin(t * 0.31) * 0.05;
-        gy = -(this._headAimPitch || 0) * 0.35;
-        this.face.setGaze(
-          Math.max(-0.35, Math.min(0.35, gx)),
-          Math.max(-0.22, Math.min(0.22, gy))
-        );
+        this._nextGlanceAt = null;
       }
+      // Monitoring, not a doll stare: a 1–2 s glance away every 4–6 s.
+      let glX = 0, glY = 0;
+      if (pt === this._threatTarget) {
+        if (this._nextGlanceAt == null) this._nextGlanceAt = t + 4 + Math.random() * 2;
+        if (t > this._nextGlanceAt) {
+          this._glanceUntil = t + 1 + Math.random();
+          this._nextGlanceAt = this._glanceUntil + 4 + Math.random() * 2;
+          this._glanceX = (Math.random() < 0.5 ? -1 : 1) * (0.20 + Math.random() * 0.14);
+          this._glanceY = (Math.random() - 0.6) * 0.18;
+        }
+        if (this._glanceUntil != null && t < this._glanceUntil) {
+          glX = this._glanceX || 0; glY = this._glanceY || 0;
+        }
+      }
+      let wantX, wantY, wantV = 0;
+      if (pt) {
+        this._gazeTarget = this._gazeTarget || new THREE.Vector3();
+        this._gzL = this._gzL || new THREE.Vector3();
+        this._gazeTarget.copy(pt);
+        this.head.updateMatrixWorld();
+        const g = this._gzL.copy(this._gazeTarget);
+        this.head.worldToLocal(g);
+        const dd = Math.max(0.15, g.length());
+        wantX = Math.max(-0.42, Math.min(0.42, Math.atan2(g.x, Math.max(0.05, g.z))));
+        wantY = Math.max(-0.30, Math.min(0.30, -Math.asin(Math.max(-1, Math.min(1, g.y / dd)))));
+        wantV = Math.min(0.12, 0.032 / dd);      // converge on a near target
+      } else {
+        wantX = Math.max(-0.35, Math.min(0.35,
+          (this._headAimYaw || 0) * 0.45 + Math.sin(t * 0.31) * 0.05));
+        wantY = Math.max(-0.22, Math.min(0.22, -(this._headAimPitch || 0) * 0.35));
+      }
+      wantX = Math.max(-0.42, Math.min(0.42, wantX + glX));
+      wantY = Math.max(-0.30, Math.min(0.30, wantY + glY));
+      // ---- saccades ----
+      // Real eyes STEP between held fixations; feeding a continuously moving
+      // value straight to setGaze is what makes procedural eyes glide like a
+      // camera gimbal. Commit a point, hold it for a fixation, then jump.
+      if (this._gazeCX == null) { this._gazeCX = wantX; this._gazeCY = wantY; this._gazeDwell = 0; }
+      this._gazeDwell -= dtB;
+      const gErr = Math.hypot(wantX - this._gazeCX, wantY - this._gazeCY);
+      if (this._gazeDwell <= 0 || gErr > 0.05) {
+        // Blink-saccade coupling: a large committed jump usually hides behind
+        // a blink, and it is the cheapest realism win available here.
+        if (gErr > 0.25 && this._blinkPhase <= 0 && Math.random() < 0.6) this._blinkPhase = 1;
+        this._gazeCX = wantX; this._gazeCY = wantY;
+        this._gazeDwell = 0.22 + Math.random() * 0.45;      // ~3 shifts/s
+      }
+      // Fixational micro-movement: without it the eyes read as glass beads.
+      if (this._msNext == null || t > this._msNext) {
+        const ma = Math.random() * Math.PI * 2;
+        const mm = 0.005 + Math.random() * 0.005;
+        this._msX = Math.cos(ma) * mm; this._msY = Math.sin(ma) * mm * 0.6;
+        this._msNext = t + 0.5 + Math.random() * 0.5;
+      }
+      const sac = Math.min(1, dtB * 32);                    // ~30 ms — a step
+      if (this._gazeSX == null) { this._gazeSX = this._gazeCX; this._gazeSY = this._gazeCY; this._gazeSV = wantV; }
+      this._gazeSX += (this._gazeCX - this._gazeSX) * sac;
+      this._gazeSY += (this._gazeCY - this._gazeSY) * sac;
+      this._gazeSV += (wantV - this._gazeSV) * Math.min(1, dtB * 8);
+      this.face.setGaze(
+        this._gazeSX + (this._msX || 0),
+        this._gazeSY + (this._msY || 0),
+        this._gazeSV
+      );
     }
 
     // ---------- Footsteps + dust ----------
@@ -16198,19 +16556,27 @@ class Body {
     // ~12 blinks/minute, each a fast close and a slower open — lids that snap
     // symmetrically read as a shutter, not an eye.
     if (this.face && this.face.setBlink) {
+      // Anticipatory anxiety and acute threat pull in OPPOSITE directions:
+      // rising unease blinks faster, but at the moment of real danger people
+      // freeze and STOP blinking (the wide-eyed stare). A monotonic speed-up
+      // put a nervous flutter on the most terrified face in the game and
+      // fought the widened lids setWide was drawing.
+      const frozen = fearK > 0.7;
       this._blinkTimer -= dtB;
       if (this._blinkTimer < 0 && this._blinkPhase <= 0) {
         this._blinkPhase = 1;
-        // ~12 blinks/min at rest, roughly doubling under high arousal.
         const calm = 2.5 + Math.random() * 4;
-        this._blinkTimer = calm * (1 - fearK * 0.55);
+        this._blinkTimer = frozen
+          ? calm * 1.6                                   // long stares
+          : calm * (1 - Math.min(0.5, fearK) * 0.55);    // anxious flutter
       }
       if (this._blinkPhase > 0) {
-        this._blinkPhase -= dtB / 0.16;
+        // Between long stares the blinks that DO happen are quick half-blinks.
+        this._blinkPhase -= dtB / (frozen ? 0.11 : 0.16);
         const p = 1 - Math.max(0, this._blinkPhase);
         // p: 0→1 across the blink; close fast (first 35%), open slower.
         const k = p < 0.35 ? p / 0.35 : Math.max(0, 1 - (p - 0.35) / 0.65);
-        this.face.setBlink(k * k * (3 - 2 * k));
+        this.face.setBlink(k * k * (3 - 2 * k) * (frozen ? 0.7 : 1));
         if (this._blinkPhase <= 0) this.face.setBlink(0);
       }
     }
@@ -16278,6 +16644,10 @@ class Body {
   }
 
   dispose() {
+    if (this._onRelief) {
+      try { window.removeEventListener("mira-relief", this._onRelief); } catch {}
+      this._onRelief = null;
+    }
     if (this._dustPuffs) {
       this._dustPuffs.forEach(puff => {
         if (puff.mesh && puff.mesh.parent) puff.mesh.parent.remove(puff.mesh);
@@ -21011,6 +21381,26 @@ function setupHeights(scene, camera, level) {
         windParticles.material.opacity = 0.22 + Math.min(0.45, h * 0.3 + gNow * 0.3);
       }
 
+      // ---- Glass skywalk underfoot ----
+      // Stepping from concrete onto the pane over the void must FEEL like a
+      // material change: footsteps go bright and glassy, fear ticks up (fed
+      // into the proximity input below), and the first-ever crossing lands a
+      // small flinch + a faint creak from the panel.
+      if (hasGlass && controls) {
+        const onGlass = controls.position.z < (-0.5 + glassDepth);
+        if (onGlass !== _onGlass) {
+          _onGlass = onGlass;
+          controls.opts.surface = onGlass ? "glass" : "hard";
+          if (onGlass && !_glassCrossed) {
+            _glassCrossed = true;
+            if (controls.kickShake) controls.kickShake(0.02);
+            if (window.PhobiaAudio && window.PhobiaAudio.indicatorClick) {
+              try { window.PhobiaAudio.indicatorClick({ x: controls.position.x, y: platTopY, z: controls.position.z }); } catch {}
+            }
+          }
+        }
+      }
+
       // ---- Edge-proximity vertigo intensity ----
       // Combines two factors: (a) how close the user is to the railing, and
       // (b) how steeply they're peering down. Both rise from 0 to 1 as the
@@ -21669,20 +22059,21 @@ function setupWater(scene, camera, level) {
   if (fill > 0.45) {
     const seaweedCount = 8 + Math.floor(fill * 12);
     for (let i = 0; i < seaweedCount; i++) {
-      const wh = 0.6 + Math.random() * 0.4;
+      const strandH = 0.6 + Math.random() * 0.4;
       const w = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.10, wh),
+        new THREE.PlaneGeometry(0.10, strandH),
         new THREE.MeshStandardMaterial({
           color: 0x3a7a4a, roughness: 1.0, side: THREE.DoubleSide,
           transparent: true, opacity: 0.85,
         })
       );
-      // Pivot at the base: the sway rotation must tilt the strand FROM the
-      // sand — a centre pivot swung the root up off the bottom.
-      w.geometry.translate(0, wh / 2, 0);
+      // Pivot at the BASE: the sway rotation below tilts the tip while the
+      // root stays planted (a centre pivot swung the whole strip and lifted
+      // the root off the sand every half-cycle).
+      w.geometry.translate(0, strandH / 2, 0);
       w.position.set(
         (Math.random() - 0.5) * 18,
-        bottomDepth - 0.1,
+        bottomDepth - 0.05,
         -2 - Math.random() * 12
       );
       w.rotation.y = Math.random() * Math.PI;
@@ -21767,6 +22158,14 @@ function setupWater(scene, camera, level) {
   // Splash ripple sources triggered by clicking the water surface
   const splashes = []; // { mesh, t0 } — t0 stamped in scene-time (see waterT)
   let waterT = 0;      // latest scene-time from update(); lets onClick (no `t` in scope) stamp splashes in the same clock
+  // The body displaces water: a persistent bow-wave ring rides with the player
+  // while they're in it, and each ~0.4 s of wading pushes out a fresh ring +
+  // per-step splash (see update()). Without these the body ghosted through the
+  // plane — 2.2 m deep and the surface never once reacted.
+  let wadeRing = null;
+  let wadeStepT = 0;
+  // Surfacing leaves water on the lens for a couple of seconds (droplet decay)
+  let prevSubmersion = 0, dripT = 0;
   let waterControls = null;
   function wireWaterCmds() {
     const bar = document.querySelector('.scene-cmd-bar[data-scene="water"]');
@@ -21827,7 +22226,12 @@ function setupWater(scene, camera, level) {
       "backdrop-filter:blur(1.6px);-webkit-backdrop-filter:blur(1.6px);";
     stage.appendChild(uwOverlay);
     breathHud2 = document.createElement("div");
-    breathHud2.className = "trust-hud";
+    // Distinct class + nudged down: the wade-depth HUD builder grabs the first
+    // bare ".trust-hud" it finds — without the marker class it adopted THIS
+    // element (both spawn on the same 80 ms timer), so the depth readout wrote
+    // into the breath HUD and stayed invisible at the surface (opacity 0).
+    breathHud2.className = "trust-hud breath-hud";
+    breathHud2.style.top = "128px";
     breathHud2.style.opacity = "0";
     breathHud2.innerHTML = '<div class="trust-row"><span class="trust-name">Breath</span>' +
       '<span class="trust-pct"></span></div><div class="trust-bar"><div class="trust-bar-fill" style="background:#5fd0e8"></div></div>';
@@ -21847,7 +22251,7 @@ function setupWater(scene, camera, level) {
   setTimeout(() => {
     const stage = document.getElementById("stage");
     if (!stage) return;
-    let hud = stage.querySelector(".trust-hud");
+    let hud = stage.querySelector(".trust-hud:not(.breath-hud)");
     if (!hud) {
       hud = document.createElement("div");
       hud.className = "trust-hud";
@@ -21871,9 +22275,13 @@ function setupWater(scene, camera, level) {
   const pebbles = [];
   let heldPebble = null;
   let pebbleActionAt = -1;   // timestamp of the last pebble pickup/throw (suppresses the generic tap-splash)
-  let heldPebbleMesh = null;     // visible mesh in user's hand (camera-attached)
-  let pickupAnim = null;         // crouch+reach beat between click and stone-in-hand
-  let wadeRing = null, wadeStepT = 0;   // bow-wave ring + per-stride ripple timer
+  let heldPebbleMesh = null;     // visible mesh in user's hand (anchored to the FP right hand)
+  // Pickup is a short embodied sequence, not a teleport: the eye dips
+  // (setEyeDrop), the right hand reaches to the stone on the sand
+  // (setReachTarget), THEN the stone comes up in the fingers. Phase 0 = idle,
+  // 1 = dipping/reaching, 2 = stone in hand, rising.
+  let pickupPhase = 0, pickupT = 0;
+  const pickupPt = new THREE.Vector3();
   function buildPebble(rxBase, ryBase, rzBase) {
     const geo = new THREE.SphereGeometry(0.06 + Math.random() * 0.05, 10, 8);
     const mat = new THREE.MeshStandardMaterial({
@@ -21913,7 +22321,7 @@ function setupWater(scene, camera, level) {
   // Build the visible held-pebble mesh once, reused per pickup.
   function showHeldPebble(sourcePebble) {
     if (heldPebbleMesh) {
-      camera.remove(heldPebbleMesh);
+      if (heldPebbleMesh.parent) heldPebbleMesh.parent.remove(heldPebbleMesh);
       heldPebbleMesh = null;
     }
     // Clone the source pebble's material color so the held one matches
@@ -21924,14 +22332,21 @@ function setupWater(scene, camera, level) {
     });
     heldPebbleMesh = new THREE.Mesh(heldGeo, heldMat);
     heldPebbleMesh.scale.set(1, 0.55, 1.1);
-    // Position in front-right of camera (right hand position)
-    heldPebbleMesh.position.set(0.16, -0.20, -0.32);
-    camera.add(heldPebbleMesh);
-    if (!scene.children.includes(camera)) scene.add(camera);
+    // Anchor to the FP right hand so the fingers visually hold it — it rides
+    // every reach/gesture the hand makes (and hides with the hands in TP).
+    // Falls back to the old camera offset if the hands rig isn't up.
+    if (active && active.hands && active.hands.right) {
+      heldPebbleMesh.position.set(0, -0.055, -0.10);
+      active.hands.right.add(heldPebbleMesh);
+    } else {
+      heldPebbleMesh.position.set(0.16, -0.20, -0.32);
+      camera.add(heldPebbleMesh);
+      if (!scene.children.includes(camera)) scene.add(camera);
+    }
   }
   function hideHeldPebble() {
     if (heldPebbleMesh) {
-      camera.remove(heldPebbleMesh);
+      if (heldPebbleMesh.parent) heldPebbleMesh.parent.remove(heldPebbleMesh);
       heldPebbleMesh.geometry.dispose();
       heldPebbleMesh.material.dispose();
       heldPebbleMesh = null;
@@ -21972,9 +22387,10 @@ function setupWater(scene, camera, level) {
         // second tap can't double-grab mid-reach.
         heldPebble = target;
         pebbleActionAt = performance.now();
-        const wp = new THREE.Vector3();
-        target.getWorldPosition(wp);
-        pickupAnim = { t: 0, dur: 0.6, target, wp, grabbed: false };
+        // Start the crouch-and-reach sequence (runs in update()) — the stone
+        // stays on the sand until the hand actually gets there.
+        pickupPhase = 1; pickupT = 0;
+        pickupPt.copy(target.position);
         if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
         if (window.PhobiaVoice && Math.random() < 0.4) {
           window.PhobiaVoice.speak("A small stone in your hand. Notice the weight.");
@@ -21984,8 +22400,8 @@ function setupWater(scene, camera, level) {
       // Second check: if holding a pebble + clicked anywhere on the water
       // surface, throw it. Default click already spawns a splash ring; the
       // pebble adds a real arcing throw with a heavier splash on landing.
-      // (heldPebbleMesh only exists once the pickup reach has completed —
-      // no throwing a stone the hand hasn't closed around yet.)
+      // (heldPebbleMesh exists only once the pickup reach has closed the
+      // fingers around the stone — no throwing mid-crouch.)
       if (heldPebble && heldPebbleMesh) {
         pebbleActionAt = performance.now();
         // Compute target world position from the click ray hitting y=waterY
@@ -22057,12 +22473,13 @@ function setupWater(scene, camera, level) {
     interact(controls) {
       const z = controls ? controls.position.z : shoreZ;
       const k = Math.max(0, Math.min(1, (shoreZ - z) / (shoreZ - deepZ)));
-      // Same slope-vs-waterline reconciliation as update(): whichever is
-      // deeper is what the eye sees on the body.
-      const visD = controls ? Math.max(0, waterY - (controls.position.y - 1.0)) : 0;
-      const depth = Math.max(k * maxDepth, visD);
-      if (depth > 0.05) {
-        return { gesture: "paddle", hint: `${depthLabel(depth)} · click to splash · walk back any time` };
+      const depth = k * maxDepth;
+      // Same visible-waterline coupling as update(): the hint must agree with
+      // where the surface actually laps the body, not just the wade slope.
+      const visDepth = Math.max(0, waterY - ((controls ? controls.position.y : 0) - 1.0));
+      const effDepth = Math.max(depth, visDepth);
+      if (effDepth > 0.05) {
+        return { gesture: "paddle", hint: `${depthLabel(effDepth)} · click to splash · walk back any time` };
       }
       return { gesture: "rest", hint: "walk forward to wade in · click to splash" };
     },
@@ -22103,20 +22520,20 @@ function setupWater(scene, camera, level) {
       const k = Math.max(0, Math.min(1, (shoreZ - z) / (shoreZ - deepZ)));
       const depth = k * maxDepth;
       if (controls) controls.position.y = -depth;
-      // Depth as the EYE sees it. The water plane sits at waterY regardless
-      // of the wade slope, so on the deep rungs the surface can stand well up
-      // the body while the slope-derived depth still reads zero (the fill=1.0
-      // spawn is visibly waist-deep on the flooded beach, HUD said "On
-      // shore"). Label, entry splash, fear, footfalls and posture all follow
-      // whichever is deeper so nothing contradicts the visible waterline.
-      // Eye height ≈ 1.0 m (beach at −1, spawn eye line at 0).
-      const visDepth = controls ? Math.max(0, waterY - (controls.position.y - 1.0)) : 0;
+      const dW = dt || 0.016;
+      // Depth the EYE actually sees. The water plane sits at waterY while the
+      // feet stand 1 m below the eye (beach at y=-1, spawn eye at 0) — on the
+      // deep rungs the surface visibly laps the chest at the shoreline while
+      // the slope-derived depth still reads 0. Label, entry splash, footstep
+      // surface, fear and posture all follow whichever of the two is wetter,
+      // so the HUD never says "On shore" with water at your chin.
+      const visDepth = Math.max(0, waterY - ((controls ? controls.position.y : 0) - 1.0));
       const effDepth = Math.max(depth, visDepth);
-      // Footfalls match what the feet are actually in — dry sand until the
-      // water is genuinely at the ankles, splash after.
+      // Footsteps match the ground: splashy only once you're actually in the
+      // water — the dry sand at spawn crunches soft instead of wading audibly.
       if (controls) controls.opts.surface = effDepth > 0.05 ? "splash" : "soft";
       // First time the user actually steps into the water → splash + voice cue
-      if (lastWaterEntryZ === null && effDepth > 0.05 && controls) {
+      if (lastWaterEntryZ === null && controls && effDepth > 0.05) {
         lastWaterEntryZ = z;
         if (window.PhobiaAudio && window.PhobiaAudio.splash) {
           try { window.PhobiaAudio.splash(0.5, { x: controls.position.x, y: waterY, z }); } catch {}
@@ -22124,6 +22541,66 @@ function setupWater(scene, camera, level) {
         if (window.PhobiaVoice) window.PhobiaVoice.speak("First step. The water meets your skin. Notice that you can step back any time.");
       } else if (lastWaterEntryZ !== null && effDepth <= 0.02) {
         lastWaterEntryZ = null;
+      }
+
+      // ---- The body displaces water ----
+      // A pulsing bow-wave ring rides at the waterline around the body, and
+      // while there's movement input a fresh expanding ring + a small step
+      // splash fire every ~0.4 s. The surface finally reacts to being waded
+      // through instead of letting the body pass like a ghost.
+      if (controls && effDepth > 0.08) {
+        if (!wadeRing) {
+          wadeRing = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.34, 32), splashMat.clone());
+          wadeRing.rotation.x = -Math.PI / 2;
+          scene.add(wadeRing);
+        }
+        wadeRing.visible = true;
+        wadeRing.position.set(controls.position.x, waterY + 0.015, controls.position.z);
+        wadeRing.scale.setScalar(1 + Math.sin(t * 2) * 0.12 + Math.min(0.8, effDepth * 0.3));
+        wadeRing.material.opacity = 0.22 + Math.sin(t * 2) * 0.06;
+        wadeStepT -= dW;
+        if (wadeStepT <= 0 && controls.hasMoveInput && controls.hasMoveInput()) {
+          wadeStepT = 0.4;
+          const ring = new THREE.Mesh(splashGeo, splashMat.clone());
+          ring.rotation.x = -Math.PI / 2;
+          ring.position.set(controls.position.x, waterY + 0.01, controls.position.z);
+          scene.add(ring);
+          splashes.push({ mesh: ring, t0: t });
+          if (window.PhobiaAudio && window.PhobiaAudio.splash) {
+            try { window.PhobiaAudio.splash(0.15 + effDepth * 0.2, { x: controls.position.x, y: waterY, z: controls.position.z }); } catch {}
+          }
+        }
+      } else if (wadeRing) {
+        wadeRing.visible = false;
+      }
+
+      // ---- Pebble pickup: crouch + reach, then lift ----
+      // Timeline: eye dips + right hand drives to the stone (0.30 s), fingers
+      // close (stone leaves the sand and appears in the hand, 0.22 s), body
+      // rises (0.25 s). setEyeDrop / setReachTarget do the embodied work.
+      if (pickupPhase > 0 && controls) {
+        pickupT += dW;
+        const DIP = 0.30, HOLD = 0.22, RISE = 0.25;
+        if (controls.setEyeDrop) {
+          const dropK = pickupT < DIP ? (pickupT / DIP)
+                      : pickupT < DIP + HOLD ? 1
+                      : Math.max(0, 1 - (pickupT - DIP - HOLD) / RISE);
+          controls.setEyeDrop(dropK * 0.45);
+        }
+        if (active && active.hands && active.hands.setReachTarget && pickupT < DIP + HOLD) {
+          active.hands.setReachTarget(pickupPt, { hand: "right", grip: "wrap", curl: 1.2, maxReach: 0.9 });
+        }
+        if (pickupPhase === 1 && pickupT >= DIP + HOLD * 0.5) {
+          pickupPhase = 2;
+          if (heldPebble) { heldPebble.visible = false; showHeldPebble(heldPebble); }
+        }
+        if (pickupT >= DIP + HOLD && active && active.hands && active.hands.clearReachTarget) {
+          active.hands.clearReachTarget();
+        }
+        if (pickupT >= DIP + HOLD + RISE) {
+          pickupPhase = 0;
+          if (controls.setEyeDrop) controls.setEyeDrop(0);
+        }
       }
 
       // ---- Feed fear state from water depth + walking forward ----
@@ -22141,26 +22618,24 @@ function setupWater(scene, camera, level) {
       }
 
       // ---- Submersion + breath (the drowning beat) ----
-      const dW = dt || 0.016;
       submersion = Math.max(0, Math.min(1, (depth - HEAD_DEPTH) / 0.5));
-      if (uwOverlay) uwOverlay.style.opacity = String(submersion * 0.95);
-      // Surfacing leaves water on the lens — ~2 s of fading drip/blur instead
-      // of the overlay snapping bone-dry the frame the eye clears the surface.
-      if (_prevSub > 0.05 && submersion <= 0.05) _dripT = 2.0;
-      _prevSub = submersion;
-      if (submersion <= 0.05 && _dripT > 0 && uwOverlay) {
-        _dripT = Math.max(0, _dripT - dW);
-        const dk = _dripT / 2.0;
-        uwOverlay.style.opacity = String(dk * 0.35);
-        const dripBlur = "blur(" + (dk * 1.6).toFixed(2) + "px)";
-        uwOverlay.style.backdropFilter = dripBlur;
-        uwOverlay.style.webkitBackdropFilter = dripBlur;
-        uwOverlay._dripped = true;
-      } else if (submersion > 0.05 && uwOverlay && uwOverlay._dripped) {
-        // Back under: restore the full submerged blur the drip decayed
-        uwOverlay._dripped = false;
-        uwOverlay.style.backdropFilter = "blur(1.6px)";
-        uwOverlay.style.webkitBackdropFilter = "blur(1.6px)";
+      // Surfacing leaves water on the lens: when the head comes up, droplets
+      // and blur linger for ~2 s and drain away, instead of the overlay
+      // snapping bone-dry in one 0.2 s transition.
+      if (prevSubmersion >= 0.05 && submersion < 0.05) dripT = 2.0;
+      prevSubmersion = submersion;
+      if (uwOverlay) {
+        if (submersion >= 0.05) {
+          uwOverlay.style.opacity = String(submersion * 0.95);
+          uwOverlay.style.backdropFilter = uwOverlay.style.webkitBackdropFilter = "blur(1.6px)";
+        } else if (dripT > 0) {
+          dripT = Math.max(0, dripT - dW);
+          uwOverlay.style.opacity = String(dripT * 0.15);
+          const bl = "blur(" + (dripT * 1.2).toFixed(2) + "px)";
+          uwOverlay.style.backdropFilter = uwOverlay.style.webkitBackdropFilter = bl;
+        } else {
+          uwOverlay.style.opacity = "0";
+        }
       }
       // Murky underwater fog only while the head is actually under — the shore
       // stays clear (the old static murky fog drowned the whole scene at spawn).
@@ -22172,7 +22647,7 @@ function setupWater(scene, camera, level) {
         if (window.PhobiaFear) window.PhobiaFear.setInput("proximity", Math.min(1, 0.85 + (1 - breath) * 0.15));
         if (breath < 0.35 && !breathWarned) {
           breathWarned = true;
-          if (window.PhobiaVoice) window.PhobiaVoice.speak("You're under. Your chest tightens for air. Rise back up — the surface is right there.", { urgent: true });
+          if (window.PhobiaVoice) window.PhobiaVoice.speak("You're under. Your chest tightens for air. Rise back up — the surface is right there.", { urgent: true, audible: true });
         }
         // Out of air: gently draw the player back toward shallower water so the
         // state resolves ("time to come up") instead of parking at a stuck 0%.
@@ -22180,7 +22655,7 @@ function setupWater(scene, camera, level) {
           if (controls) controls.position.z += dW * 1.1;          // drift toward shore
           if (!breathReliefShown) {
             breathReliefShown = true;
-            if (window.PhobiaVoice) window.PhobiaVoice.speak("Let yourself rise. Head above water. You can breathe.", { urgent: true });
+            if (window.PhobiaVoice) window.PhobiaVoice.speak("Let yourself rise. Head above water. You can breathe.", { urgent: true, audible: true });
           }
         }
         camera.position.y += Math.sin(t * 0.8) * 0.04;            // buoyant lift
@@ -22207,18 +22682,18 @@ function setupWater(scene, camera, level) {
       //   over-head: swimming pose — full forward, arms paddling (not modelled here)
       // Slow the walk cycle in deep water to read as "fighting current".
       if (active && active.body && active.body.setPosture && controls) {
-        const armSpread = Math.min(1.0, depth * 0.5);              // 0..1
-        const lean = Math.min(0.45, depth * 0.18);                  // mild forward lean
-        const crouch = depth > 0.6 ? Math.min(0.4, (depth - 0.6) * 0.35) : 0;
+        const armSpread = Math.min(1.0, effDepth * 0.5);            // 0..1
+        const lean = Math.min(0.45, effDepth * 0.18);                // mild forward lean
+        const crouch = effDepth > 0.6 ? Math.min(0.4, (effDepth - 0.6) * 0.35) : 0;
         const reach = 0;                                            // no railing to grab
         active.body.setPosture({ armSpread, lean, crouch, reach });
       }
-      // Update HUD
+      // Update HUD — visible-waterline depth, so the label agrees with the eye
       if (wadeDepthHud) {
-        wadeDepthHud.querySelector(".trust-name").textContent = depthLabel(depth);
-        wadeDepthHud.querySelector(".trust-pct").textContent = depth.toFixed(2) + " m";
+        wadeDepthHud.querySelector(".trust-name").textContent = depthLabel(effDepth);
+        wadeDepthHud.querySelector(".trust-pct").textContent = effDepth.toFixed(2) + " m";
         wadeDepthHud.querySelector(".trust-bar-fill").style.width =
-          Math.round((depth / 2.0) * 100) + "%";
+          Math.round((effDepth / 2.0) * 100) + "%";
       }
       // Gentle bob — stronger at deep levels (additive on top of user look).
       // Apply AFTER setting controls.position.y so bob is a small add-on.
@@ -22227,15 +22702,26 @@ function setupWater(scene, camera, level) {
       camera.rotation.z += Math.sin(t * 0.7) * 0.008 * fill;
       // Animate fish — swim back and forth, dart when scared
       const dtFish = dt || 0.016;
+      // 60 fps-tuned per-frame amounts (fish wiggle, bubble rise/sway below)
+      // scale by dt so a 120 Hz display doesn't run the water twice as fast.
+      const fpsAdj = dtFish * 60;
       for (const f of fish) {
         const speedMult = 1 + f.userData.scared * 4;
-        f.position.x += f.userData.vx * f.userData.dir * speedMult * dtFish;
+        if (f.position.x > 14 && f.userData.dir !== -1) { f.userData.dir = -1; f.userData.turnT = 0.4; }
+        if (f.position.x < -14 && f.userData.dir !== 1) { f.userData.dir = 1; f.userData.turnT = 0.4; }
+        // Ease the flip over ~0.4 s: the body sweeps edge-on through the turn
+        // (and forward speed dips with it) instead of popping 180° in a frame.
+        const faceSx = f.userData.dir > 0 ? 1.6 : -1.6;
+        if (f.userData.turnT > 0) {
+          f.userData.turnT = Math.max(0, f.userData.turnT - dtFish);
+          f.scale.x = faceSx * (1 - (f.userData.turnT / 0.4) * 2);
+        } else {
+          f.scale.x = faceSx;   // mirror along the (now long) X axis to face the swim direction
+        }
+        const swimEase = Math.min(1, Math.abs(f.scale.x) / 1.6 + 0.1);
+        f.position.x += f.userData.vx * f.userData.dir * speedMult * swimEase * dtFish;
         // Wiggle a touch
-        f.position.y += Math.sin(t * 4 + f.position.x * 0.3) * 0.002;
-        if (f.position.x > 14) f.userData.dir = -1;
-        if (f.position.x < -14) f.userData.dir = 1;
-        // Mirror the geometry to face the swim direction
-        f.scale.x = f.userData.dir > 0 ? 1.6 : -1.6;   // mirror along the (now long) X axis to face the swim direction
+        f.position.y += Math.sin(t * 4 + f.position.x * 0.3) * 0.002 * fpsAdj;
         // Decay scared state
         f.userData.scared = Math.max(0, f.userData.scared - dtFish * 1.5);
       }
@@ -22258,8 +22744,8 @@ function setupWater(scene, camera, level) {
       if (bubbles) {
         const pos = bubbles.geometry.attributes.position;
         for (let i = 0; i < pos.count; i++) {
-          pos.array[i * 3 + 1] += 0.04;
-          pos.array[i * 3] += Math.sin(t + i) * 0.005;
+          pos.array[i * 3 + 1] += 0.04 * fpsAdj;
+          pos.array[i * 3] += Math.sin(t + i) * 0.005 * fpsAdj;
           if (pos.array[i * 3 + 1] > waterY + 0.5) {
             pos.array[i * 3 + 1] = waterY - 12;
           }
@@ -22327,9 +22813,15 @@ function setupWater(scene, camera, level) {
         stage.querySelectorAll(".trust-hud").forEach(h => h.remove());
       }
       if (uwOverlay && uwOverlay.parentNode) uwOverlay.parentNode.removeChild(uwOverlay);
+      if (wadeRing) {
+        scene.remove(wadeRing);
+        wadeRing.geometry.dispose();
+        wadeRing.material.dispose();
+        wadeRing = null;
+      }
       // Clean up held pebble + flying pebble + scattered pebbles on unmount
       if (heldPebbleMesh) {
-        camera.remove(heldPebbleMesh);
+        if (heldPebbleMesh.parent) heldPebbleMesh.parent.remove(heldPebbleMesh);
         heldPebbleMesh.geometry.dispose();
         heldPebbleMesh.material.dispose();
         heldPebbleMesh = null;
@@ -22851,6 +23343,30 @@ class DogController {
     // ---- Emotional body language: "relaxed" | "alert" | "aggressive".
     // Drives the tail carriage/wag pattern + ear pose matrix in _bodyLife.
     this.mood = "relaxed";
+    // ---- Tail tuck (fear/appeasement): scene sets 0..1. Overrides the mood
+    // carriage — a yielding or startled dog drops the tail between the hocks
+    // and the wag collapses to a fast, tight appeasement tick.
+    this.tuck = 0; this._tuckSm = 0;
+    // ---- Panting: scene sets 0..1 from calm/exertion. No jaw bone ships on
+    // these rigs, so the pant reads through the body (chest flutter + nose
+    // bob) at the same level that drives the pant audio.
+    this.pant = 0; this._pantSm = 0; this._pantPhase = 0;
+    // ---- Growl pulse: the warning growl coils the body around the sound
+    // (head drops, wag freezes, quiver doubles) for its duration.
+    this._growlT = 0; this._growlSm = 0;
+    // ---- Greeting beat: the invited dog ARRIVES (call/follow catch-up) —
+    // happy clip + tail burst instead of a pathfinding stop.
+    this._greetT = 0; this._lastGreetAt = -99;
+    // ---- Temperament style (scene sets from the day's temperament): energy
+    // scales the resting wag baseline, restless the idle fidget cadence.
+    this.energy = 1; this.restless = 1;
+    // ---- One-shot rising punctuation: shake-off after a lie, bow-stretch
+    // after a long rest. stand() arms them; _bodyLife plays them out.
+    this._shakePulse = 0; this._stretchPulse = 0; this._restT = 0;
+    // ---- Independent ear flicks (one side at a time, on its own clock).
+    this._earFlickT = 4 + Math.random() * 6; this._earFlickA = 0; this._earFlickSide = 1;
+    // ---- Multi-bark burst: one visual head-toss per audible bark.
+    this._burstN = 0; this._burstGap = 0.18; this._burstT = 0;
     // ---- Procedural bark (head-toss) — reserves the Attack clip for the
     // actual lunge snap; alert-rung spontaneous barks use this instead.
     this._barkPulse = 0;
@@ -22866,8 +23382,9 @@ class DogController {
     // Scalar locomotion velocity. The dog accelerates into a gait and brakes
     // for a turn rather than changing from idle to full speed in one frame.
     this._moveSpeed = 0;
-    // Idle "alive" extras: occasional weight-shift + blink so a standing dog
-    // isn't a statue between clips.
+    // Idle "alive" extras: occasional weight-shift + independent ear flicks
+    // so a standing dog isn't a statue between clips. (No blink: the models
+    // ship a single skinned mesh with no eye nodes to close.)
     this._idleShiftT = 2 + Math.random() * 4; this._idleShift = 0; this._idleShiftDir = 1;
     // Start the resting clip as soon as the model is available.
     if (dog.userData.ready) {
@@ -22979,7 +23496,15 @@ class DogController {
     this._playOnce("Attack");
   }
   sit() { this.stopMove(); this.setState("sit"); }
-  stand() { this.setState("idle"); }
+  stand() {
+    // Rising punctuation: dogs almost always shake after getting up from a
+    // lie, and bow-stretch after a long rest — without it the rise reads as
+    // tween playback. Armed here, played out in _bodyLife.
+    if (this._layAmt > 0.5 && Math.random() < 0.6) this._shakePulse = 1;
+    else if ((this._restT || 0) > 30) this._stretchPulse = 1;
+    this._restT = 0;
+    this.setState("idle");
+  }
   lay() { this.stopMove(); this.setState("lay"); }
   rear(a = 1.0) { this._rearImpulse = Math.max(this._rearImpulse, a); }
   eat() { this.eatPhase = 1.0; this.prevState = "sit"; this.state = "eat"; this._playOnce("Eating"); }
@@ -22992,6 +23517,25 @@ class DogController {
   // bark audio. Cheap, repeatable, and it keeps the Attack clip special —
   // the full rear-up now only ever means a real snap.
   barkSmall() { this._barkPulse = 1.0; }
+  // Multi-bark burst: one head-toss per audible bark. dogVocal plays `count`
+  // barks at `gap` seconds — barkSmall() alone fired ONCE per burst, so the
+  // second and third audible barks played over a settling head.
+  barkBurst(count = 1, gap = 0.18) {
+    this.barkSmall();
+    this._burstN = Math.max(0, count - 1);
+    this._burstGap = gap;
+    this._burstT = gap;
+  }
+  // Growl visual: for the growl's duration the body coils around the sound —
+  // extra head drop, frozen wag, doubled quiver, ears pinned harder.
+  growlPulse(dur = 0.9) { this._growlT = Math.max(this._growlT || 0, dur); }
+  // Arrival greeting: the dog you invited arrives — happy clip beat + tail
+  // burst so the moment reads as a greeting, not a waypoint reached.
+  greet(dur = 2.5) {
+    this._greetT = Math.max(this._greetT || 0, dur);
+    this.tailWag += 6;
+    if (this.state === "idle") this.setState("happy");
+  }
   // Full-speed charge toward (x,z) using the Gallop clip. Same grounded
   // locomotion as walkTo — timeScale follows actual ground speed so the
   // bounds plant instead of sliding.
@@ -23157,8 +23701,16 @@ class DogController {
           this.setState("walking");
         }
       } else {
-        // Close enough — stop instead of orbiting the follow ring.
+        // Close enough — stop instead of orbiting the follow ring. Arriving
+        // at the person who invited it is a greeting, not a waypoint: burst
+        // the tail + happy clip (cooldown keeps a trailing follower from
+        // grinning at every catch-up).
+        const wasFollow = this._followWalk;
         this.stopMove();
+        if (wasFollow && t - this._lastGreetAt > 20) {
+          this._lastGreetAt = t;
+          this.greet(2.0);
+        }
       }
     }
 
@@ -23326,6 +23878,19 @@ class DogController {
     }
     // Track time spent sitting (scene's auto-lay-down uses this).
     if (this.state === "sit") this._sitTimer += d;
+    // Total rest time (sit OR lie) — stand() reads it for the bow-stretch.
+    if (this.state === "sit" || this.state === "lay") this._restT = (this._restT || 0) + d;
+    // ---- Greeting beat countdown ----
+    if (this._greetT > 0) {
+      this._greetT = Math.max(0, this._greetT - d);
+      this.tailWag += d * 6;
+      if (this._greetT <= 0 && this.state === "happy") this.setState("idle");
+    }
+    // ---- Bark burst: re-arm the head-toss for each remaining audible bark.
+    if (this._burstN > 0) {
+      this._burstT -= d;
+      if (this._burstT <= 0) { this._burstN--; this._burstT = this._burstGap; this.barkSmall(); }
+    }
 
     // ---- Turn-in-place step shuffle ----
     // A dog pivoting on the spot takes little steps — rotating the group over
@@ -23470,22 +24035,42 @@ class DogController {
     // ---- Tail language ----
     // Carriage + wag pattern come from the emotional mood, not just "how
     // happy": relaxed = loose mid-height wag; alert = tail HIGH and stiff
-    // with a short fast tick; aggressive = low, fast, tight — the flag of a
-    // dog about to make a decision. Real body language IS the therapy
-    // content, so these must be readable at a glance.
+    // with a short fast tick; aggressive (offensive threat) = tail HIGH and
+    // stiff with a fast tight tick, weight forward. A LOW fast wag is the
+    // FEARFUL-appeasing flag — commonly misread as friendly, which is the
+    // classic dog-bite antecedent — and lives in the tuck channel below.
+    // Real body language IS the therapy content, so these must be readable
+    // at a glance.
     this._wagImpulse = Math.min(2.5, this._wagImpulse + (this.tailWag || 0));
     this.tailWag = 0;
     this._wagImpulse *= Math.pow(0.35, d);
+    this._growlSm += ((this._growlT > 0 ? 1 : 0) - this._growlSm) * Math.min(1, d * 10);
+    if (this._growlT > 0) this._growlT = Math.max(0, this._growlT - d);
     let wagAmp, wagFreq, tailLift;
     if (this.mood === "aggressive") {
-      wagAmp = 0.25; wagFreq = 13; tailLift = -0.20;             // low + fast
+      wagAmp = 0.15; wagFreq = 13; tailLift = 0.35;              // high + stiff, fast tick
     } else if (this.mood === "alert") {
       wagAmp = 0.10; wagFreq = 8; tailLift = 0.38;               // high + stiff
     } else {
-      const calmWag = resting ? 0.10 + this.happy * 0.25 : 0.04;
+      const calmWag = resting ? (0.10 + this.happy * 0.25) * (0.7 + 0.3 * this.energy) : 0.04;
       wagAmp = Math.min(1, calmWag + this._petAmountSm * 0.8 + this._wagImpulse * 0.5);
       wagFreq = 5 + wagAmp * 11; tailLift = 0;
     }
+    // Tucked tail (fear/appeasement) overrides the mood carriage: deep drop
+    // on Tail1, wag collapsed to a fast tight tick, ears eased back, body a
+    // touch lower. Eases in fast, releases slowly — fear doesn't snap off.
+    this._tuckSm += ((this.tuck || 0) - this._tuckSm) * Math.min(1, d * ((this.tuck || 0) > this._tuckSm ? 6 : 1.1));
+    if (this._tuckSm > 0.01) {
+      const tk = this._tuckSm;
+      tailLift = tailLift * (1 - tk) - 0.55 * tk;
+      wagAmp *= 1 - tk * 0.9;
+      wagFreq = Math.max(wagFreq, 12);
+      for (const e of rig.earsL) e.rotation.x -= 0.25 * tk;
+      for (const e of rig.earsR) e.rotation.x -= 0.25 * tk;
+      this._poseYOff -= 0.03 * tk * (this.parts.height || 0.6);
+    }
+    // Growl freeze: the wag dies while the body coils around the sound.
+    wagAmp *= 1 - this._growlSm * 0.9;
     this._wagPhase += d * wagFreq;
     for (let i = 0; i < rig.tail.length; i++) {
       // Whip: amplitude grows toward the tip, with a slight phase lag per joint.
@@ -23499,6 +24084,30 @@ class DogController {
     const br = Math.sin(this._breathPhase);
     for (const b of rig.chest) b.rotation.x += br * 0.012 * breatheK;
     if (rig.neck) rig.neck.rotation.x -= br * 0.007 * breatheK;   // keep head level
+
+    // ---- Panting ---- (these rigs ship no jaw bone, so the pant that the
+    // audio timer plays reads through the body instead: a fast shallow chest
+    // flutter + a soft nose-bob at the pant rate, harder with exertion)
+    this._pantSm += ((this.pant || 0) - this._pantSm) * Math.min(1, d * 2.5);
+    if (this._pantSm > 0.02) {
+      this._pantPhase += d * (16 + this._pantSm * 10);            // ~2.5-4 Hz
+      const pk = Math.sin(this._pantPhase) * this._pantSm;
+      if (rig.chest[0]) rig.chest[0].rotation.x += pk * 0.010;
+      if (rig.neck) rig.neck.rotation.x += pk * 0.012;
+      if (rig.head) rig.head.rotation.x += pk * 0.022;
+    }
+
+    // ---- Walking scent-scan ----
+    // headPitch requests (sniff trips) lower the head DURING the walk leg
+    // too — the Idle_2_HeadLow clip swap only covers idle, so the trot to a
+    // scent used to stay head-high while the sniff audio already played.
+    if (this._headLowSm > 0.02 && this.state === "walking") {
+      const hl = this._headLowSm;
+      const chain = rig.neckChain.length ? rig.neckChain : (rig.neck ? [rig.neck] : []);
+      const per = chain.length ? 0.35 / chain.length : 0;
+      for (const nb of chain) nb.rotation.x -= per * hl;
+      if (rig.head) rig.head.rotation.x -= 0.40 * hl;
+    }
 
     // ---- Ground correction ----
     // Two regimes. MOVING: each gait rides at its own height (the live Walk
@@ -23557,7 +24166,8 @@ class DogController {
       // part of the key so the barking crouch re-grounds too.
       const poseKey = this.state
         + (this._coilSm > 0.4 ? "+coil" : "")
-        + (this._aggSm > 0.4 ? "+agg" : "");
+        + (this._aggSm > 0.4 ? "+agg" : "")
+        + (this._tuckSm > 0.4 ? "+tuck" : "");
       if (this._restKey !== poseKey) {
         this._restKey = poseKey;
         this._restCal = { t: 0, minLocal: Infinity, done: false };
@@ -23622,6 +24232,27 @@ class DogController {
       + (this._walkAmtSm > 0.01 ? Math.sin(bobP) * 0.06 * this._walkAmtSm : 0);
     for (let i = 0; i < rig.earsL.length; i++) rig.earsL[i].rotation.x += earOsc * (0.5 + i * 0.3) + earPerk;
     for (let i = 0; i < rig.earsR.length; i++) rig.earsR[i].rotation.x += earOsc * (0.5 + i * 0.3) + earPerk;
+    // Asymmetric orienting: the leading ear rotates toward the gaze target —
+    // permanently mirrored ears are a persistent puppet tell in close-up.
+    const earGy = this._gazeYawSm * this._gazeWSm;
+    if (Math.abs(earGy) > 0.02) {
+      for (const e of rig.earsL) e.rotation.z += Math.max(0, Math.min(1, earGy)) * 0.12;
+      for (const e of rig.earsR) e.rotation.z -= Math.max(0, Math.min(1, -earGy)) * 0.12;
+    }
+    // Independent flick: one ear at a time, on its own 4-10 s clock at rest.
+    if (resting) {
+      this._earFlickT -= d;
+      if (this._earFlickT <= 0) {
+        this._earFlickT = 4 + Math.random() * 6;
+        this._earFlickSide = Math.random() < 0.5 ? -1 : 1;
+        this._earFlickA = 1;
+      }
+    }
+    if (this._earFlickA > 0) {
+      const fa = Math.sin(this._earFlickA * Math.PI) * 0.3;      // 0.25 s pulse
+      this._earFlickA = Math.max(0, this._earFlickA - d * 4);
+      for (const e of (this._earFlickSide < 0 ? rig.earsL : rig.earsR)) e.rotation.x += fa;
+    }
 
     // ---- Procedural bark (head toss) ----
     // Sharp rise, quick settle: the head snaps up-and-back with the chest
@@ -23636,6 +24267,33 @@ class DogController {
       // Ears flick with the toss
       for (const e of rig.earsL) e.rotation.x += toss * 0.2;
       for (const e of rig.earsR) e.rotation.x += toss * 0.2;
+    }
+
+    // ---- Shake-off (one-shot) ----
+    // Whole-body roll wave, head leading, ears flapping — dogs shake to
+    // reset after rising from a lie or when tension breaks. ~0.8 s at ~9 Hz.
+    if (this._shakePulse > 0.001) {
+      const sp = this._shakePulse;
+      this._shakePulse = Math.max(0, sp - d / 0.8);
+      const osc = Math.sin(t * 56) * 0.18 * sp;
+      for (let i = 0; i < rig.chest.length; i++) rig.chest[i].rotation.z += osc * (0.45 + i * 0.25);
+      if (rig.neck) rig.neck.rotation.z += osc * 1.1;
+      if (rig.head) rig.head.rotation.z += osc * 1.5;
+      for (const e of rig.earsL) e.rotation.x += Math.sin(t * 56 + 1.4) * 0.30 * sp;
+      for (const e of rig.earsR) e.rotation.x += Math.sin(t * 56 + 2.8) * 0.30 * sp;
+    }
+    // ---- Bow-stretch (one-shot) ----
+    // After a long rest: chest dips front-down (play-bow shape — the +x
+    // front-down signs measured on this rig, see the sit block) with the
+    // head up, over ~1.2 s.
+    if (this._stretchPulse > 0.001) {
+      const env = Math.sin((1 - this._stretchPulse) * Math.PI);
+      this._stretchPulse = Math.max(0, this._stretchPulse - d / 1.2);
+      if (rig.chest[0]) rig.chest[0].rotation.x += 0.28 * env;
+      if (rig.chest[1]) rig.chest[1].rotation.x += 0.22 * env;
+      if (rig.neck) rig.neck.rotation.x += 0.12 * env;
+      if (rig.head) rig.head.rotation.x += 0.30 * env;
+      this._poseYOff -= 0.05 * env * (this.parts.height || 0.6);
     }
 
     // ---- Coil (pre-charge telegraph) ----
@@ -23702,10 +24360,12 @@ class DogController {
     this._rearImpulse = Math.max(0, this._rearImpulse - d * 2.2);   // ~0.45s pulse
     this._rearSm += (this._rearImpulse - this._rearSm) * Math.min(1, d * 14);
     const agg = this._aggSm, rear = this._rearSm;
-    if (agg > 0.01 || rear > 0.01) {
-      const quiver = Math.sin(t * 34) * 0.012 * agg;                  // taut muscle tremble
+    if (agg > 0.01 || rear > 0.01 || this._growlSm > 0.01) {
+      // Growl doubles the taut-muscle tremble and drops the head further —
+      // the body visibly coils around the sound for its duration.
+      const quiver = Math.sin(t * 34) * 0.012 * Math.max(agg, this._growlSm * 0.5) * (1 + this._growlSm);
       if (rig.head) {
-        rig.head.rotation.x += -0.5 * agg * 0.45 + rear * 0.7 + quiver; // low+forward, then UP on rear
+        rig.head.rotation.x += -0.5 * agg * 0.45 - 0.15 * this._growlSm + rear * 0.7 + quiver; // low+forward, then UP on rear
       }
       if (rig.neck) {
         rig.neck.rotation.x += -0.28 * agg + rear * 0.5;               // extend/lower neck, raise on rear
@@ -23715,9 +24375,11 @@ class DogController {
         rig.chest[i].rotation.x += 0.05 * agg + quiver * 0.4;
       }
       this._poseYOff += (0.03 * agg + 0.05 * rear);
-      // Ears pinned back/down (folds them against the head) — the universal "back off" signal.
-      for (let i = 0; i < rig.earsL.length; i++) rig.earsL[i].rotation.x -= (0.5 + i * 0.3) * agg * 0.6;
-      for (let i = 0; i < rig.earsR.length; i++) rig.earsR[i].rotation.x -= (0.5 + i * 0.3) * agg * 0.6;
+      // Ears pinned back/down (folds them against the head) — the universal
+      // "back off" signal; the growl pins them a notch harder.
+      const earPin = agg * 0.6 + this._growlSm * 0.2;
+      for (let i = 0; i < rig.earsL.length; i++) rig.earsL[i].rotation.x -= (0.5 + i * 0.3) * earPin;
+      for (let i = 0; i < rig.earsR.length; i++) rig.earsR[i].rotation.x -= (0.5 + i * 0.3) * earPin;
     }
 
     // ---- Lean-into-pet ----
@@ -23749,7 +24411,7 @@ class DogController {
     // ---- Idle micro-motion ---- (only when genuinely at rest + not aggressive)
     if (resting && agg < 0.05) {
       this._idleShiftT -= d;
-      if (this._idleShiftT <= 0) { this._idleShiftT = 3 + Math.random() * 5; this._idleShiftDir *= -1; }
+      if (this._idleShiftT <= 0) { this._idleShiftT = (3 + Math.random() * 5) / (this.restless || 1); this._idleShiftDir *= -1; }
       // ease a tiny weight shift side-to-side; reads as a living, breathing stance
       const target = this._idleShiftDir * 0.012;
       this._idleShift += (target - this._idleShift) * Math.min(1, d * 1.5);
@@ -24600,10 +25262,28 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   // Scratch vectors for driving the FP hand onto the real dog (no per-frame GC).
   const _petPt = new THREE.Vector3();
   const _petN  = new THREE.Vector3();
+  // Shared threat focus (the avatar's gaze fixates an active threat): ONE
+  // reused object written per frame — never re-allocated.
+  const threatPos = { x: 0, y: 0, z: 0 };
+  const _threatV = new THREE.Vector3();
   // Ambient breathing/panting so the dog reads as alive between cues, plus an
   // "exertion" level that rises with barking/warning and speeds the breath.
   let dogPantTimer = 1.2;
   let dogExertion = 0;
+  // Player kinematics toward the dog (charge-startle + bump response): the
+  // dog previously could not tell a sprint from a creep. Velocity is the
+  // player's own, projected on the player→dog line — closure caused by the
+  // DOG moving (fetch return, call) must never read as a charge.
+  const _prevPP = { x: 0, z: 0, t: -1 };
+  let _apprSm = 0, _pvxSm = 0, _pvzSm = 0, _pSpdSm = 0;
+  let startleT = 0, startleCDUntil = 0, startlePrompted = false;
+  let _bumpCDUntil = 0;
+  // Arrival-greeting + banana-walk bookkeeping (call/auto-approach), and the
+  // ball delivery show-off beat.
+  let callGreetPending = false, callGreetDeadline = 0;
+  let arcApproachTgt = null;      // { x, z, until } — second leg of a curved approach
+  let ballShowUntil = 0;
+  let _settleSniffed = false;     // calming-signal ground-sniff, once per settle
   let storedActiveControls = null;
   // Auto-approach scheduling — initialised on first update tick once `t` is
   // known, then reset to a future time after each approach attempt.
@@ -24664,7 +25344,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     const pr = dogCtrl.playerRadius || 0.30;
     return standOff + pr + (dogCtrl.radius || 0.35);
   }
-  function walkToPlayer(standOff = 0.55) {
+  function walkToPlayer(standOff = 0.55, opts) {
     const pp = (storedActiveControls && storedActiveControls.position)
       || (dogsControls && dogsControls.position) || camera.position;
     const dx = pp.x - dog.position.x, dz = pp.z - dog.position.z;
@@ -24673,11 +25353,26 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     const k = Math.max(0, (dist - centerOff) / dist);
     dogCtrl._moveLockT = Math.max(dogCtrl._moveLockT || 0, 6);
     const tx = dog.position.x + dx * k, tz = dog.position.z + dz * k;
+    arcApproachTgt = null;   // a direct leg cancels any pending curve
     // A dog called from across the room comes at a happy run, not a march —
     // gallop the long legs, walk the short ones. Never run at the player
     // while the rung wants menace kept at bay.
-    if (dist - centerOff > 3.0 && dogCtrl.mood !== "aggressive") dogCtrl.gallopTo(tx, tz);
-    else dogCtrl.walkTo(tx, tz, { force: true });
+    if (dist - centerOff > 3.0 && dogCtrl.mood !== "aggressive") {
+      dogCtrl.gallopTo(tx, tz);
+    } else if (opts && opts.arc && dist - centerOff > 1.6) {
+      // Banana walk: dogs greet on a CURVE — a straight head-on approach is
+      // confrontational in dog language. Swing out ~35-45° for the first
+      // leg; the update loop converges the second leg on arrival.
+      const swing = (Math.random() < 0.5 ? 1 : -1) * (0.61 + Math.random() * 0.17);
+      const legAng = Math.atan2(dx, dz) + swing;
+      const legLen = (dist - centerOff) * 0.55;
+      const way = dogCtrl._resolve(dog.position.x + Math.sin(legAng) * legLen,
+                                   dog.position.z + Math.cos(legAng) * legLen);
+      dogCtrl.walkTo(way.x, way.z, { force: true });
+      arcApproachTgt = { x: tx, z: tz, until: 0 };
+    } else {
+      dogCtrl.walkTo(tx, tz, { force: true });
+    }
   }
   function completePet() {
     petRequestT = 0;
@@ -24869,6 +25564,12 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   // wag pattern all key off this (see DogController._bodyLife).
   dogCtrl.setMood(intensity === "barking" ? "aggressive"
                 : intensity === "alert"   ? "alert" : "relaxed");
+  // Temperament shows in the BODY, not just the timers: a sleepy dog walks a
+  // touch slower and wags lazier; a bright-eyed one swings more and fidgets
+  // on a shorter clock. Bounded like every other temperament multiplier.
+  dogCtrl.walkSpeed *= 0.9 + temper.interest * 0.1 - (temper.id === "sleepy" ? 0.12 : 0);
+  dogCtrl.energy = temper.interest;
+  dogCtrl.restless = temper.restless;
   // Per-rung follow distance (trust shrinks it in setTrust below).
   dogCtrl.followRadius = B.followRadius ?? 1.5;
   // Paw strikes on the wood floor, from the controller's gait phases.
@@ -25189,6 +25890,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         completePet();
       } else if (surf <= PET_INVITE_SURFACE) {
         petRequestT = 4.5;
+        arcApproachTgt = null;   // the pet invite reroutes any pending curve
         if (dogCtrl.mood !== "aggressive") {
           const pr = dogCtrl.playerRadius || 0.30;
           const stopAt = PET_CONTACT_SURFACE * 0.85 + pr + (dogCtrl.radius || 0.35);
@@ -25201,8 +25903,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       } else {
         // Call the dog over — and CONFIRM it visibly, since the voice may be
         // muted and a far click otherwise feels like it did nothing.
-        walkToPlayer(0.55);
-        if (window.PhobiaVoice) window.PhobiaVoice.speak("Come here.");
+        walkToPlayer(0.55, { arc: true });
+        callGreetPending = true; callGreetDeadline = 0;
+        if (window.PhobiaVoice) window.PhobiaVoice.speak("Come here.", { speaker: "you" });
         if (window.PhobiaFX && window.PhobiaFX.contextPrompt) {
           window.PhobiaFX.contextPrompt(`${dogName} is coming to you…`, 2500);
         }
@@ -25221,8 +25924,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     // Literal speak() calls so the voice pre-render extractor sees these
     // lines — a ternary argument fell back to browser TTS mid-scene.
     if (window.PhobiaVoice) {
-      if (kind === "treat") window.PhobiaVoice.speak("Treat.");
-      else window.PhobiaVoice.speak("Go fetch.");
+      if (kind === "treat") window.PhobiaVoice.speak("Treat.", { speaker: "you" });
+      else window.PhobiaVoice.speak("Go fetch.", { speaker: "you" });
     }
   }
 
@@ -25279,7 +25982,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     switch (cmd) {
       case "sit":
         dogCtrl.sit();
-        if (window.PhobiaVoice) window.PhobiaVoice.speak("Easy now. Settle.");
+        if (window.PhobiaVoice) window.PhobiaVoice.speak("Easy now. Settle.", { speaker: "you" });
         break;
       case "stand":
         dogCtrl.stand();
@@ -25290,7 +25993,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         if (window.PhobiaVoice) {
           window.PhobiaVoice.speak(trust > 0.7
             ? `Settle, ${dogName}. Good dog.`
-            : `Lay down, ${dogName}.`);
+            : `Lay down, ${dogName}.`, { speaker: "you" });
         }
         break;
       case "treat":
@@ -25304,16 +26007,17 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         throwItem(cmd === "treat" ? "treat" : "ball", tx, tz);
         fetchPhase = "flying";
         if (window.PhobiaVoice) {
-          if (cmd === "treat") window.PhobiaVoice.speak("Treat.");
-          else window.PhobiaVoice.speak("Go fetch.");
+          if (cmd === "treat") window.PhobiaVoice.speak("Treat.", { speaker: "you" });
+          else window.PhobiaVoice.speak("Go fetch.", { speaker: "you" });
         }
         break;
       }
       case "call": {
         // Calls the dog to you by name — approach along the dog→player vector
         // so the dog stops in front of you from any angle (not a fixed +Z offset).
-        walkToPlayer(0.65);
-        if (window.PhobiaVoice) window.PhobiaVoice.speak("Come here.");
+        walkToPlayer(0.65, { arc: true });
+        callGreetPending = true; callGreetDeadline = 0;
+        if (window.PhobiaVoice) window.PhobiaVoice.speak("Come here.", { speaker: "you" });
         break;
       }
       case "bark":
@@ -25324,7 +26028,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         } else if (window.PhobiaAudio) {
           window.PhobiaAudio.bark(0.85);
         }
-        setTimeout(() => dogCtrl.barkSmall(), 250);
+        // Same frame as the audio — the fixed 250 ms delay made the toss
+        // visibly lag the sound.
+        dogCtrl.barkSmall();
         break;
     }
   }
@@ -25506,6 +26212,33 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           completePet();
         } else if (inviteSurf > PET_INVITE_SURFACE + 0.8) {
           petRequestT = 0;
+        }
+      }
+
+      // ---- Banana-walk second leg ----
+      // The swing-out leg landed; converge on the real stand-off point. A
+      // deadline (or the fetch machine taking over) drops a stale curve.
+      if (arcApproachTgt) {
+        if (!arcApproachTgt.until) arcApproachTgt.until = t + 7;
+        if (t > arcApproachTgt.until || fetchPhase !== "idle") {
+          arcApproachTgt = null;
+        } else if (dogCtrl.state === "idle") {
+          dogCtrl._moveLockT = Math.max(dogCtrl._moveLockT, 5);
+          dogCtrl.walkTo(arcApproachTgt.x, arcApproachTgt.z, { force: true });
+          arcApproachTgt = null;
+        }
+      }
+      // ---- The invited dog ARRIVES ----
+      // A visible greeting beat (happy clip + tail burst) instead of a
+      // pathfinding stop. Follow catch-ups greet from inside the controller.
+      if (callGreetPending && controls) {
+        if (!callGreetDeadline) callGreetDeadline = t + 9;
+        if (t > callGreetDeadline) {
+          callGreetPending = false; callGreetDeadline = 0;
+        } else if (!arcApproachTgt && dogCtrl.state === "idle"
+            && playerDogSurfaceDist(controls.position) < PET_INVITE_SURFACE) {
+          callGreetPending = false; callGreetDeadline = 0;
+          dogCtrl.greet(2.5);
         }
       }
 
@@ -28556,17 +29289,21 @@ function setupFlying(scene, camera, level, levelIdx, ctx) {
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
-  // The sky shader lives on a big plane OUT past the wing, not on the window
-  // disc itself: an opaque sky disc at the aperture depth-occluded the whole
-  // wing/engine assembly, so the "wing of the plane I'm on" could never render.
-  const sky = new THREE.Mesh(new THREE.PlaneGeometry(10, 7), skyMat);
-  sky.position.set(-7, 0.3, -4);
-  sky.rotation.y = Math.PI / 2;
-  scene.add(sky);
-  // The window disc is now just glass — a faint sheen you see THROUGH.
+  // The sky lives on a BIG backdrop plane well outside the fuselage, so the
+  // wing/engine hang IN FRONT of it and are actually seen through the porthole
+  // (the sky used to be an opaque disc ON the aperture, depth-occluding the
+  // entire wing assembly built beyond it).
+  const skyPlane = new THREE.Mesh(new THREE.PlaneGeometry(24, 14), skyMat);
+  skyPlane.position.set(-7, 0.3, -4);
+  skyPlane.rotation.y = Math.PI / 2;
+  scene.add(skyPlane);
+  // The porthole itself is now just a barely-there acrylic sheen.
   const windowGlass = new THREE.Mesh(
     new THREE.CircleGeometry(0.42, 24),
-    new THREE.MeshBasicMaterial({ color: 0xdbe9f4, transparent: true, opacity: 0.08, depthWrite: false })
+    new THREE.MeshStandardMaterial({
+      color: 0xdce8f4, transparent: true, opacity: 0.08,
+      roughness: 0.08, metalness: 0.1, depthWrite: false,
+    })
   );
   windowGlass.position.copy(windowFrame.position);
   windowGlass.position.x += 0.01;
@@ -28586,8 +29323,8 @@ function setupFlying(scene, camera, level, levelIdx, ctx) {
   // toward the fuselage and whose tip extends out past the engine, so it reads
   // as "the wing of the plane I'm on" rather than a floating strut.
   const wingMetal = new THREE.MeshStandardMaterial({ color: 0xc8c8d0, metalness: 0.55, roughness: 0.35 });
-  const wing = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.07, 0.6), wingMetal);
-  wing.position.set(-3.0, -0.02, -4.3);   // root ≈ x-1.65 (by the fuselage) → tip ≈ x-4.35 (past engine)
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.07, 0.6), wingMetal);
+  wing.position.set(-3.25, -0.02, -4.3);  // root ≈ x-2.1 (just outside the fuselage) → tip ≈ x-4.4 (past engine)
   wing.rotation.z = -0.04;                // slight dihedral
   wing.rotation.y = 0.10;                 // slight sweep
   scene.add(wing);
@@ -28640,8 +29377,37 @@ function setupFlying(scene, camera, level, levelIdx, ctx) {
     armrest.position.set(sx, -0.4, 0.2);
     scene.add(armrest);
   }
+  // Your own lap — the single most tactile anchor of sitting in a plane seat.
+  // Two trousered thighs run forward below the tray line with the lap belt
+  // cinched across them into a metal buckle. World-anchored (not camera-
+  // childed) so it stays put like a body while you look around.
+  const trouserMat = new THREE.MeshStandardMaterial({ color: 0x3a3f4e, roughness: 0.9 });
+  for (const sx of [-0.14, 0.14]) {
+    const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.34, 8, 12), trouserMat);
+    thigh.position.set(sx, -0.50, -0.26);
+    thigh.rotation.x = Math.PI / 2 - 0.14;   // knee drops slightly toward the floor
+    thigh.castShadow = true;
+    scene.add(thigh);
+  }
+  const beltMat = new THREE.MeshStandardMaterial({ color: 0x2e3138, roughness: 0.7 });
+  for (const sx of [-1, 1]) {
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.022, 0.08), beltMat);
+    strap.position.set(sx * 0.21, -0.46, -0.28);
+    strap.rotation.z = sx * 0.28;     // angled down toward the seat sides
+    strap.rotation.x = -0.28;         // lying across the top of the thighs
+    scene.add(strap);
+  }
+  const buckle = new THREE.Mesh(
+    new THREE.BoxGeometry(0.10, 0.035, 0.065),
+    new THREE.MeshStandardMaterial({ color: 0xb8bcc4, metalness: 0.8, roughness: 0.3 })
+  );
+  buckle.position.set(0, -0.465, -0.28);
+  buckle.rotation.x = -0.28;
+  scene.add(buckle);
 
-  // Seatbelt sign in front (lights up at higher stages)
+  // Seatbelt sign on the ceiling PSU, tilted down at the seat (lights up at
+  // higher stages). It used to hang on the seat-back at eye level, where no
+  // aircraft has ever mounted one.
   const sign = new THREE.Mesh(
     new THREE.PlaneGeometry(0.3, 0.12),
     new THREE.MeshStandardMaterial({
@@ -28649,8 +29415,16 @@ function setupFlying(scene, camera, level, levelIdx, ctx) {
       emissiveIntensity: stage > 0.6 ? 1 : 0,
     })
   );
-  sign.position.set(0, 0.85, -1.2);
+  sign.position.set(0, 1.15, -1.35);
+  sign.rotation.x = 0.65;
   scene.add(sign);
+  const signPanel = new THREE.Mesh(
+    new THREE.BoxGeometry(0.38, 0.18, 0.03),
+    new THREE.MeshStandardMaterial({ color: 0xb9bcc4, roughness: 0.6 })
+  );
+  signPanel.position.set(0, 1.162, -1.368);
+  signPanel.rotation.x = 0.65;
+  scene.add(signPanel);
 
   camera.fov = 60;
   camera.updateProjectionMatrix();
@@ -28666,9 +29440,17 @@ function setupFlying(scene, camera, level, levelIdx, ctx) {
   let calmCycles = 0;          // completed cycles since scene mount
   let calmTurbulence = 0;      // 0..1 instantaneous damping
   let calmFloor = 0;           // 0..0.6 persistent damping that grows with cycles
+  // Armrest grip. Press-and-hold like breath: while held the FP hands wrap
+  // the REAL armrest tops and the squeeze feeds a small calm bonus — so the
+  // "Squeeze for ten seconds" instruction physically does what it promises.
+  let gripHeld = false;
+  let gripT = 0;               // seconds into the current squeeze
   // Air-pocket "stomach drop" + banking lurch state (damped springs).
   let dropPos = 0, dropVel = 0, nextPocket = 5 + Math.random() * 7;
   let bankAmt = 0, bankVel = 0, nextBank = 8 + Math.random() * 10;
+  // Reach scratch points (armrest tops / tray surface) — no per-frame allocs
+  const _armGripPt = new THREE.Vector3();
+  const _trayRestPt = new THREE.Vector3();
   function wireFlyingCmds() {
     const bar = document.querySelector('.scene-cmd-bar[data-scene="flying"]');
     if (!bar || bar.dataset.wired === "1") return;
@@ -28691,9 +29473,28 @@ function setupFlying(scene, camera, level, levelIdx, ctx) {
       btnBreath.addEventListener("pointerleave", release);
       btnBreath.addEventListener("pointercancel", release);
     }
+    // Grip is press-and-hold too — squeezing is a sustained act, not a click
+    const btnGrip = bar.querySelector('[data-cmd="grip"]');
+    if (btnGrip) {
+      const gpress = (e) => {
+        e.stopPropagation();
+        gripHeld = true;
+        gripT = 0;
+        btnGrip.classList.add("pressed");
+        if (window.PhobiaVoice) window.PhobiaVoice.speak("Squeeze for ten seconds. Release. Squeeze. Release.");
+      };
+      const grelease = () => {
+        gripHeld = false;
+        btnGrip.classList.remove("pressed");
+      };
+      btnGrip.addEventListener("pointerdown", gpress);
+      btnGrip.addEventListener("pointerup", grelease);
+      btnGrip.addEventListener("pointerleave", grelease);
+      btnGrip.addEventListener("pointercancel", grelease);
+    }
     // The other buttons stay one-shot
     bar.querySelectorAll("[data-cmd]").forEach(btn => {
-      if (btn.dataset.cmd === "breath") return;
+      if (btn.dataset.cmd === "breath" || btn.dataset.cmd === "grip") return;
       btn.onclick = (e) => {
         e.stopPropagation();
         const c = flyingControls; if (!c) return;
@@ -28708,8 +29509,6 @@ function setupFlying(scene, camera, level, levelIdx, ctx) {
             c.pitch = fromP + (toP - fromP) * k;
           }, 16);
           if (window.PhobiaVoice) window.PhobiaVoice.speak("Look at the sky. The plane is held by air, like a fish in water.");
-        } else if (btn.dataset.cmd === "grip") {
-          if (window.PhobiaVoice) window.PhobiaVoice.speak("Squeeze for ten seconds. Release. Squeeze. Release.");
         } else if (btn.dataset.cmd === "tray") {
           trayTargetAngle = (trayTargetAngle <= -Math.PI / 4) ? 0 : -Math.PI / 2;
           if (window.PhobiaVoice) {
@@ -28769,9 +29568,30 @@ function setupFlying(scene, camera, level, levelIdx, ctx) {
     },
     hands: { sleeveColor: 0x2c4a6e },
     bloom: { strength: 0.45, threshold: 0.85 },
-    interact(controls) {
+    interact(controls, hands) {
+      // Real contact for the named affordances: gripping wraps the hands on
+      // the ACTUAL armrest tops (world ±0.55, top −0.2), and a lowered tray
+      // offers the promised palm rest — no more clenching mid-air.
+      if (hands && hands.setReachTarget) {
+        const wantGrip = gripHeld || (!breathHeld && controls.pitch < -0.2);
+        const trayDown = trayTargetAngle === 0 && Math.abs(trayPivot.rotation.x) < 0.1;
+        if (wantGrip) {
+          _armGripPt.set(0, -0.22, 0.15);
+          hands.setReachTarget(_armGripPt, { hand: "both", grip: "wrap", normal: _UP, spread: 0.55, maxReach: 0.72 });
+        } else if (trayDown) {
+          _trayRestPt.set(0, -0.27, -0.95);
+          hands.setReachTarget(_trayRestPt, { hand: "both", grip: "flat", normal: _UP, spread: 0.14, maxReach: 0.95 });
+        } else {
+          hands.clearReachTarget();
+        }
+      }
       if (breathHeld) {
         return { gesture: "rest", hint: "breathing · 4 in · 6 out · let the cabin settle" };
+      }
+      if (gripHeld) {
+        return { gesture: "grab", hint: gripT < 10
+          ? `squeezing the armrests · ${Math.max(0, 10 - gripT).toFixed(0)}s · then release`
+          : "release · shake the hands out · squeeze again when ready" };
       }
       if (controls.pitch < -0.2) return { gesture: "grab", hint: "grip the armrests · or hold Space to breathe" };
       return { gesture: "rest", hint: "press & hold the breath button to settle the cabin" };
@@ -28803,6 +29623,15 @@ function setupFlying(scene, camera, level, levelIdx, ctx) {
         // even after the user releases the button).
         calmTurbulence = Math.max(calmFloor, calmTurbulence - d * 0.4);
         breathT = Math.max(0, breathT - d * 1.2);   // wind back to ready
+      }
+      // ---- Armrest squeeze: proprioceptive grounding ----
+      // A held squeeze earns a modest, capped damping of its own (weaker than
+      // the breath cycle — squeezing is a bridge, breathing is the skill).
+      if (gripHeld) {
+        gripT += d;
+        calmTurbulence = Math.max(calmTurbulence, Math.min(0.42, 0.22 + gripT * 0.02));
+      } else {
+        gripT = Math.max(0, gripT - d * 3);
       }
       // ---- Update breath HUD ----
       if (breathHud) {
@@ -28915,22 +29744,28 @@ function setupNeedles(scene, camera, level, levelIdx, ctx) {
   back.position.set(0, 2, -8);
   scene.add(back);
 
-  // Wall mirror — clinical bathroom-style mirror to the right.
-  // The user sees themselves reflected as the syringe approaches.
+  // Wall mirror — clinical bathroom-style mirror to the right. Angled at the
+  // nurse + instrument tray rather than square at the user: the user has no
+  // rendered body, so a face-on mirror reflected an uncanny empty room. Aimed
+  // at the procedure it doubles the exposure content instead.
   if (!IS_LOW_POWER) {
     const mirror = new Reflector(
       new THREE.PlaneGeometry(1.4, 1.6),
       { textureWidth: 512, textureHeight: 512, color: 0x9ab0c0 }
     );
     mirror.position.set(3.5, 0.3, -3);
-    mirror.rotation.y = -Math.PI / 2;       // faces the user
+    // Normal points from the wall toward the tray/nurse spot (x 0.5, z tracks
+    // the rung's tray distance — same formula as trayZ below).
+    const mirrorAim = Math.atan2(0.5 - 3.5, (-3.5 + proximity * 2.5) + 3);
+    mirror.rotation.y = mirrorAim;
     scene.add(mirror);
-    // Frame around the mirror
+    // Frame around the mirror (thin axis stays along the mirror normal)
     const frame = new THREE.Mesh(
       new THREE.BoxGeometry(0.05, 1.7, 1.5),
       new THREE.MeshStandardMaterial({ color: 0xb8c0c8, metalness: 0.4, roughness: 0.4 })
     );
-    frame.position.set(3.55, 0.3, -3);
+    frame.position.set(3.5 - Math.sin(mirrorAim) * 0.04, 0.3, -3 - Math.cos(mirrorAim) * 0.04);
+    frame.rotation.y = mirrorAim + Math.PI / 2;
     scene.add(frame);
   }
   const left = new THREE.Mesh(new THREE.PlaneGeometry(20, 8), wallMat);
@@ -29238,21 +30073,28 @@ function setupNeedles(scene, camera, level, levelIdx, ctx) {
   leftHand.scale.set(0.85, 0.55, 1.1);
   leftHand.position.set(0, -0.62, 0);
   nurseLeftArm.add(leftHand);
-  // Trousers + shoes
+  // Trousers + shoes. Each leg hangs from a hip Group (same trick as
+  // nurseRightArmRoot) so the approach can swing them in a real gait instead
+  // of sliding the whole figure across the linoleum like a statue on casters.
+  const nurseLegs = [];
   for (const sx of [-1, 1]) {
+    const hip = new THREE.Group();
+    hip.position.set(sx * 0.10, 0.35, 0);
+    nurseGroup.add(hip);
     const leg = new THREE.Mesh(
       new THREE.CapsuleGeometry(0.085, 0.55, 8, 12), trimMat
     );
-    leg.position.set(sx * 0.10, 0.05, 0);
+    leg.position.set(0, -0.30, 0);
     leg.castShadow = true;
-    nurseGroup.add(leg);
+    hip.add(leg);
     const shoe = new THREE.Mesh(
       new THREE.BoxGeometry(0.10, 0.06, 0.20),
       new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 })
     );
-    shoe.position.set(sx * 0.10, -0.30, 0.05);
+    shoe.position.set(0, -0.65, 0.05);
     shoe.castShadow = true;
-    nurseGroup.add(shoe);
+    hip.add(shoe);
+    nurseLegs.push(hip);
   }
   // Position the nurse so they're holding the syringe — a step behind it
   // so it appears in their right hand. The nurse stands at the same Z as
@@ -29372,13 +30214,38 @@ function setupNeedles(scene, camera, level, levelIdx, ctx) {
     );
     thumbSeg.position.y = -0.03;
     thumbJoint.add(thumbSeg);
+
+    // The arm doesn't float: a padded rest under the forearm (the blood-draw
+    // chair's arm board) on a post to the floor, and a rolled gown-sleeve
+    // cuff capping the bare proximal end of the cylinder.
+    armGroup.updateMatrixWorld(true);
+    const _restMid = armGroup.localToWorld(new THREE.Vector3(0, -0.02, 0));
+    const _restA = armGroup.localToWorld(new THREE.Vector3(0, 0.18, 0));
+    const _restB = armGroup.localToWorld(new THREE.Vector3(0, -0.20, 0));
+    const restYaw = Math.atan2(-(_restB.z - _restA.z), _restB.x - _restA.x);
+    const padMat = new THREE.MeshStandardMaterial({ color: 0x39496b, roughness: 0.9 });
+    const armRest = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.2), padMat);
+    armRest.position.set(_restMid.x, _restMid.y - 0.095, _restMid.z);
+    armRest.rotation.y = restYaw;
+    armRest.castShadow = true;
+    scene.add(armRest);
+    const postH = (armRest.position.y - 0.03) + 1;   // down to the floor at y=-1
+    const restPost = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, postH, 10), cartMat);
+    restPost.position.set(_restMid.x, -1 + postH / 2, _restMid.z);
+    restPost.castShadow = true;
+    scene.add(restPost);
+    const cuffRoll = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.075, 0.075, 0.07, 16),
+      new THREE.MeshStandardMaterial({ color: 0x9a9aa6, roughness: 0.95 })
+    );
+    cuffRoll.position.y = 0.185;
+    armGroup.add(cuffRoll);
   }
 
   camera.fov = 55;
   camera.updateProjectionMatrix();
 
   let needlesControls = null;
-  let lookAwayT = 0;       // 0..1 — fades back to 0 over time
 
   // ----- Press-and-hold to clench fist (real human action) -----
   // The nurse's instruction: "Make a fist." Pressing the screen clenches the
@@ -29400,6 +30267,19 @@ function setupNeedles(scene, camera, level, levelIdx, ctx) {
   let injectPhase = "approach"; // approach | in | withdraw | done
   let injectHoldT = 0;
   let withdrawAmt = 0;
+  let deliver = 0;              // 0..1 — plunger travel; the medicine visibly leaves the barrel
+  // Needle-tip → patch contact geometry. The bite is gated on the REAL tip
+  // touching the swab patch; a corrective servo on the nurse's position walks
+  // the tip the last centimetres so contact is physical, not a timer.
+  const _ndlTip = new THREE.Vector3(0.5, -0.35, -3.5 + proximity * 2.5);
+  const _ndlPatch = new THREE.Vector3();
+  const _ndlErr = new THREE.Vector3();
+  const _nurseFix = new THREE.Vector3();
+  let tipDist = 1;
+  // Gait state for the approach walk
+  let prevAdv = 0, walkPhase = 0, gaitAmt = 0;
+  // Shared threat point for the avatar's gaze fixation (one object, mutated)
+  const _threatPt = { x: 0, y: 0, z: 0 };
   // (injectionPatch is declared near the top of setupNeedles — the arm-view
   // rungs assign it during scene BUILD, well before this block runs. With the
   // declaration here, those rungs died on a TDZ ReferenceError and silently
@@ -29503,8 +30383,10 @@ function setupNeedles(scene, camera, level, levelIdx, ctx) {
         e.stopPropagation();
         const c = needlesControls; if (!c) return;
         if (btn.dataset.cmd === "look-away") {
-          // Tween yaw to look at the wall instead of the syringe
-          const fromY = c.yaw, toY = -1.0, fromP = c.pitch, toP = 0.0;
+          // Tween yaw to the window/blinds on the LEFT wall. It used to aim
+          // right (yaw −1.0), which is almost exactly the bearing the nurse
+          // approaches from — "look away" pointed the eyes AT the syringe.
+          const fromY = c.yaw, toY = 1.1, fromP = c.pitch, toP = 0.0;
           let k = 0;
           const id = setInterval(() => {
             k += 0.05;
@@ -29539,13 +30421,19 @@ function setupNeedles(scene, camera, level, levelIdx, ctx) {
       lookSpeed: 0.003,
       cameraModeLocked: "fp",          // looking at your own arm — FP only
     },
-    hands: { sleeveColor: 0x9a9aa6 }, // light hospital-gown grey
+    // The camera hand pair only exists on the LOW rungs, where the
+    // world-anchored injection arm hasn't been built yet. From proximity>0.35
+    // the scene owns its own arm+fist — a second floating pair made THREE
+    // player hands on screen (setupSnakes omits `hands` for the same reason).
+    hands: proximity > 0.35 ? undefined : { sleeveColor: 0x9a9aa6 }, // light hospital-gown grey
     bloom: { strength: 0.25, threshold: 0.95 },
     surface: "hard",   // clinic linoleum
     interact() {
       if (proximity <= 0.35) return { gesture: "rest" };
+      // "rest", never "grab": the fist is made by the world-anchored arm —
+      // a phantom bar-clench from the camera pair belongs to nobody.
       return {
-        gesture: "grab",
+        gesture: "rest",
         hint: fistHeld
           ? "holding the fist · slow exhale · release whenever you need"
           : "press and hold to make a fist · let the needle approach at your pace",
@@ -29578,16 +30466,29 @@ function setupNeedles(scene, camera, level, levelIdx, ctx) {
         const phaseK = injectPhase === "approach" ? 0.8
           : (injectPhase === "in" ? 1.0 : 0.45);
         window.PhobiaFear.setInput("proximity", (0.2 + proximity * 0.6) * phaseK);
-        window.PhobiaFear.setInput("gaze", (1 - lookAwayT) * (0.3 + proximity * 0.4));
+        // Gaze from REAL facing (snakes convention: camera-minus-target,
+        // yaw==bearing when looking at it). The old lookAwayT was declared
+        // but never written, so turning the head gave zero relief and the
+        // "this reduces reported pain" line was false in-model.
+        const cpx = controls && controls.position ? controls.position.x : 0;
+        const cpz = controls && controls.position ? controls.position.z : 0;
+        const dirToN = Math.atan2(cpx - _ndlTip.x, cpz - _ndlTip.z);
+        const yawN = controls ? controls.yaw : 0;
+        const yawDeltaN = Math.abs(((yawN - dirToN + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+        const gazeAlignN = Math.max(0, 1 - yawDeltaN / 1.0);
+        window.PhobiaFear.setInput("gaze", gazeAlignN * (0.3 + proximity * 0.4));
       }
       // ---- Injection phase machine: approach → PRICK → hold → withdraw → reset
-      const CONTACT = 0.86;          // needleAdvance at which the tip bites skin
+      const CONTACT = 0.86;          // earliest needleAdvance at which the tip may bite
       if (injectPhase === "approach") {
         // Hold the fist → the needle approaches; RELEASE → it eases back off.
         // The agency is real: you can always push it away before the bite.
         if (fistHeld) needleAdvance = Math.min(1, needleAdvance + d * 0.12);
         else          needleAdvance = Math.max(0, needleAdvance - d * 0.16);
-        if (needleAdvance >= CONTACT) {
+        // The prick fires only when the measured tip actually MEETS the swab
+        // patch (the servo below walks it home over the last stretch) — the
+        // bare 0.86 timer could bite with the needle hovering well off the arm.
+        if (needleAdvance >= CONTACT && (!injectionPatch || tipDist < 0.02)) {
           injectPhase = "in";
           injectHoldT = 0;
           // THE moment the scene was missing — the prick actually happens:
@@ -29596,9 +30497,11 @@ function setupNeedles(scene, camera, level, levelIdx, ctx) {
           if (window.PhobiaVoice) window.PhobiaVoice.speak("That's the needle in. The sharp part is already over. Slow breath out.");
         }
       } else if (injectPhase === "in") {
-        // Seat the needle the last sliver, then hold "in the arm" for a beat.
+        // Seat the needle the last sliver, then hold "in the arm" for a beat
+        // while the plunger drives the dose home.
         needleAdvance = Math.min(1, needleAdvance + d * 0.20);
         injectHoldT += d;
+        deliver = Math.min(1, injectHoldT / 1.1);
         if (injectHoldT > 1.1) injectPhase = "withdraw";
       } else if (injectPhase === "withdraw") {
         withdrawAmt = Math.min(1, withdrawAmt + d * 1.5);
@@ -29611,7 +30514,7 @@ function setupNeedles(scene, camera, level, levelIdx, ctx) {
         // Reset for a clean second rep once the user releases the fist. (The
         // old code never reset — after one go the needle was stuck retracted.)
         if (!fistHeld) {
-          needleAdvance = 0; withdrawAmt = 0; injectHoldT = 0;
+          needleAdvance = 0; withdrawAmt = 0; injectHoldT = 0; deliver = 0;
           injectPhase = "approach";
           if (injectionPatch) injectionPatch.material.color.setHex(0xfff8d8);
         }
@@ -29623,22 +30526,67 @@ function setupNeedles(scene, camera, level, levelIdx, ctx) {
       nurseGroup.position.x = nurseBaseX + (nurseApproachX - nurseBaseX) * adv;
       nurseGroup.position.y = nurseBaseY + (nurseApproachY - nurseBaseY) * adv;
       nurseGroup.position.z = nurseBaseZ + (nurseApproachZ - nurseBaseZ) * adv;
+      // ---- Approach gait ----
+      // While the lerp is actually MOVING her, bob the body and swing the
+      // legs in antiphase from the hips (free arm counter-swings a touch);
+      // the stepping settles out as she arrives so the hand stays steady.
+      const dAdv = adv - prevAdv; prevAdv = adv;
+      const moving = Math.abs(dAdv) > 0.0004;
+      if (moving) walkPhase += Math.min(0.05, Math.abs(dAdv)) * 35;
+      gaitAmt += ((moving ? 1 : 0) - gaitAmt) * Math.min(1, d * 8);
+      const settleK = Math.max(0, 1 - Math.max(0, adv - 0.7) / 0.25);
+      const gait = gaitAmt * settleK;
+      nurseGroup.position.y += Math.abs(Math.sin(walkPhase)) * 0.02 * gait;
+      nurseLegs[0].rotation.x =  Math.sin(walkPhase) * 0.25 * gait;
+      nurseLegs[1].rotation.x = -Math.sin(walkPhase) * 0.25 * gait;
+      nurseLeftArm.rotation.x = Math.sin(walkPhase) * 0.12 * gait;
       // Nurse turns to face the user as they approach
       nurseGroup.rotation.y = -0.4 + adv * -0.4;
+      // ---- Tip-onto-patch servo ----
+      // Apply the persistent corrective, then measure the REAL needle tip
+      // against the patch and grow the corrective toward closing the gap as
+      // adv→1. It relaxes away as she retreats, so she returns to base clean.
+      nurseGroup.position.add(_nurseFix);
+      if (injectionPatch) {
+        nurseGroup.updateMatrixWorld(true);
+        _ndlTip.set(0.15, 0, 0);
+        syringe.localToWorld(_ndlTip);
+        injectionPatch.getWorldPosition(_ndlPatch);
+        _ndlErr.subVectors(_ndlPatch, _ndlTip);
+        tipDist = _ndlErr.length();
+        const want = adv * adv;
+        _nurseFix.addScaledVector(_ndlErr, Math.min(1, d * 6) * want);
+        _nurseFix.multiplyScalar(Math.max(0, 1 - d * 2 * (1 - want)));
+        if (_nurseFix.lengthSq() > 0.36) _nurseFix.setLength(0.6);
+      }
+      // The avatar's gaze fixates the tip while it bears down; calm → null.
+      if (injectionPatch && (injectPhase === "in" || (injectPhase === "approach" && needleAdvance > 0.2))) {
+        _threatPt.x = _ndlTip.x; _threatPt.y = _ndlTip.y; _threatPt.z = _ndlTip.z;
+        window.PhobiaThreat = _threatPt;
+      } else {
+        window.PhobiaThreat = null;
+      }
       // Skin dimples inward as the needle presses (a touch before the bite),
       // easing back as it withdraws — the recognisable "skin tenting" cue.
       if (injectionPatch) {
         const press = Math.max(0, (needleAdvance - 0.65) / 0.35) * (1 - withdraw);
         injectionPatch.position.y = 0.04 - press * 0.018;
       }
-      // Plunger depresses as it seats; returns as it withdraws.
-      plunger.position.x = -0.10 + Math.max(0, adv - 0.95) * 0.4 * 0.05;
+      // Plunger drives home during the "in" beat and the liquid column drains
+      // ahead of it — its needle-end face stays fixed at the barrel exit — so
+      // the medicine is visibly delivered (the old travel was ~1 mm and the
+      // liquid never moved).
+      plunger.position.x = -0.10 + deliver * 0.055;
+      const liqLv = 1 - deliver * 0.7;
+      liquid.scale.y = liqLv;
+      liquid.position.x = 0.01 - 0.05 * liqLv;
       refreshNeedleHud();
       // Subtle breathing camera at higher rungs (slows when holding the fist)
       const breath = fistHeld ? 0.6 : 1.0;
       camera.position.y += Math.sin(t * 1.4) * 0.01 * (0.5 + proximity) * breath;
     },
     dispose() {
+      window.PhobiaThreat = null;
       if (needleKeyDown) window.removeEventListener("keydown", needleKeyDown);
       if (needleKeyUp)   window.removeEventListener("keyup", needleKeyUp);
       const stage = document.getElementById("stage");
@@ -29668,10 +30616,11 @@ class SnakeController {
     this.jawTarget = 0; this._jaw = 0;
     this._tongueT = -1; this._tongueNext = 1.5; this._tongueFast = false;
     this._poseYOff = 0; this._rig = null; this._needsGround = false;
-    // Post-mixer head tracking (scene computes/smooths the yaw and hands it
-    // over; applied HERE, inside the additive-layer safety net — the scene
+    this.surfY = 0;   // scene-fed surface lift (riding up onto the basking rock)
+    // Post-mixer head tracking (scene computes/smooths the yaw/pitch and hands
+    // them over; applied HERE, inside the additive-layer safety net — the scene
     // used to += the neck/head bones directly, outside any protection).
-    this.headYaw = 0;
+    this.headYaw = 0; this.headPitch = 0;
     this.suspend = true;
   }
   setRear(r) { this.rearTarget = Math.max(0, Math.min(1, r)); }
@@ -29746,13 +30695,25 @@ class SnakeController {
     }
     if (rig.neck) rig.neck.rotation.y += Math.sin(this._slitherPhase + 0.4) * SL * 0.5 * this._slitherAmtSm;
 
-    // ---- Cobra rear ---- lift the forebody (Neck+Head pitch) + a small root lift.
+    // ---- Breath ---- a slow ripple down the forebody, so a settled bask is
+    // never statue-still between tongue flicks (quicker when reared/agitated).
+    this._breathPhase += d * (this._rear > 0.3 ? 2.4 : 1.5);
+    const br = Math.sin(this._breathPhase);
+    if (rig.chest) rig.chest.rotation.x += br * 0.008;
+    if (rig.body) rig.body.rotation.x -= br * 0.005;
+
+    // ---- Cobra rear ---- lift the front third into an S: neck+head pitch up,
+    // chest joins the lift, body counter-curves so the belly stays planted —
+    // plus a slow hypnotic weave while held and a real root lift.
     this._rear += (this.rearTarget - this._rear) * Math.min(1, d * 4);
     if (this._rear > 0.01) {
       const r = this._rear;
       if (rig.neck) rig.neck.rotation.x -= 0.35 * r;
       if (rig.head) rig.head.rotation.x -= 0.25 * r;
-      this._poseYOff += 0.05 * r * this.height;
+      if (rig.chest) rig.chest.rotation.x -= 0.22 * r;
+      if (rig.body) rig.body.rotation.x += 0.10 * r;
+      if (rig.neck) rig.neck.rotation.z += Math.sin(t * 1.3) * 0.05 * r;
+      this._poseYOff += 0.10 * r * this.height;
     }
 
     // ---- Jaw ---- open the LowerMouth (hinges on local x; bind ~-0.38).
@@ -29798,14 +30759,19 @@ class SnakeController {
       }
     }
 
-    // ---- Head tracking (scene-fed yaw, applied inside the safety net) ----
+    // ---- Head tracking (scene-fed yaw+pitch, applied inside the safety net) ----
     if (Math.abs(this.headYaw) > 0.001) {
       if (rig.neck) rig.neck.rotation.y += this.headYaw * 0.5;
       if (rig.head) rig.head.rotation.y += this.headYaw * 0.5;
     }
+    if (Math.abs(this.headPitch) > 0.001) {
+      // + = look UP (same sign convention as the rear: rotation.x < 0 pitches up).
+      if (rig.neck) rig.neck.rotation.x -= this.headPitch * 0.5;
+      if (rig.head) rig.head.rotation.x -= this.headPitch * 0.5;
+    }
 
-    // ---- Single absolute y-write (belly plant + pose offset) ----
-    this.snake.position.y += (this.baseY + poseYPrev - this.snake.position.y) * Math.min(1, d * 6);
+    // ---- Single absolute y-write (belly plant + pose offset + surface lift) ----
+    this.snake.position.y += (this.baseY + poseYPrev + this.surfY - this.snake.position.y) * Math.min(1, d * 6);
 
     // ---- Additive-layer safety net (bookend) ----
     for (const r of this._lifeBones) {
@@ -29825,6 +30791,11 @@ const SNAKE_TEMPERAMENTS = [
   { id: "roaming",  label: "restless", baskMul: 0.82, tongueMul: 0.96, roamMul: 1.22, hissMul: 1.00, crossMul: 1.18 },
   { id: "settled",  label: "settled",  baskMul: 1.14, tongueMul: 1.08, roamMul: 0.88, hissMul: 1.10, crossMul: 0.90 },
 ];
+
+// Threat beacon target — ONE module-scope object, mutated in place each frame
+// (window.PhobiaThreat points here while the snake is telegraphing/lunging so
+// the avatar's gaze fixates the head; nulled when it stands down).
+const _snakeThreatPos = { x: 0, y: 0, z: 0 };
 
 function setupSnakes(scene, camera, level, levelIdx, ctx) {
   const size = level.size;
@@ -30106,6 +31077,9 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     target: null,                // wander/retreat destination {x, z}
     crossing: false,             // current wander leg crosses the path
     headYaw: 0,                  // smoothed head-tracking offset (radians)
+    headPitch: 0,                // smoothed head-tracking pitch (+ = look up)
+    scanTarget: 0,               // idle head-scan bearing while basking
+    scanNext: 4 + Math.random() * 6,
     defenseCooldown: 0,
     defensiveSpoken: false,
     lastWarnHiss: -99,
@@ -30114,6 +31088,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     strikePhase: "none",  // none | telegraph | lunge | recoil
     strikeT: 0,
     striking: false,
+    _lungeFrom: null,     // coil root position — the recoil snaps back here
     jawTarget: 0,
     strikeFired: false,
     sniffing: false,
@@ -30175,6 +31150,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     if (state === "bask") {
       { const bd = B.baskDur || (size >= 0.6 ? [2.0, 6.0] : [3.5, 9.5]); snakeCtl.baskDur = bd[0] + Math.random() * (bd[1] - bd[0]); }
       snakeCtl.target = null;
+      snakeCtl.scanTarget = 0; snakeCtl.scanNext = 3 + Math.random() * 5;   // idle head-scan cadence (stateT-relative)
       if (hasRig) sp.play("Idle", 0.5);
     } else if (state === "wander") {
       snakeCtl.target = snakePickWanderTarget(controls);
@@ -30309,9 +31285,11 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
         // RETREAT CANCELS — the disconfirming window (mirror the spider coil-cancel).
         if (playerDist > 1.9 || approachSpeed < -0.2) {
           snakeCtl.strikePhase = "recoil"; snakeCtl.strikeT = 0; snakeCtl.jawTarget = 0;
+          snakeCtl._lungeFrom = null;   // no lunge happened — nothing to snap back from
           if (!retreatPraised && window.PhobiaVoice) { retreatPraised = true; window.PhobiaVoice.speak("You backed off, and it stood down. Slow reads as safe."); }
         } else if (snakeCtl.strikeT > TELE_DUR) {
           snakeCtl.strikePhase = "lunge"; snakeCtl.strikeT = 0; snakeCtl.jawTarget = 1.0; snakeCtl.strikeFired = false;
+          snakeCtl._lungeFrom = { x: snake.position.x, z: snake.position.z };
           const sp2 = snake.userData.parts; if (sp2 && sp2.play) sp2.play("Attack", 0.05, { once: true, timeScale: 1.3 });
           headAnchor.getWorldPosition(_snkV1);
           if (window.PhobiaAudio) { if (window.PhobiaAudio.snakeStrike) window.PhobiaAudio.snakeStrike(_snkV1); else if (window.PhobiaAudio.hissOnce) window.PhobiaAudio.hissOnce(_snkV1, 1.0); }
@@ -30339,14 +31317,22 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           }
         }
         if (snakeCtl.strikeT > LUNGE_DUR) { snakeCtl.strikePhase = "recoil"; snakeCtl.strikeT = 0; snakeCtl.jawTarget = 0; snakeCtl.strikeFired = false;
-          if (!holdPraised && window.PhobiaVoice) { holdPraised = true; window.PhobiaVoice.speak("It struck, and stopped. Nothing reached you. That is the fear, not the danger."); }
+          if (!holdPraised && window.PhobiaVoice) { holdPraised = true; window.PhobiaVoice.speak("It struck, and stopped. Nothing reached you. That is the fear, not the danger.", { audible: true, praise: true }); }
         }
       } else { // recoil
         snakeCtl.striking = false; snakeCtl.jawTarget = 0;
+        // The snap-back: a strike recoils to the coil FASTER than it extended
+        // (pull the root home at ~d*9 vs the 3.2 m/s advance) — without it the
+        // snake froze at full extension and the strike read as a shove.
+        if (snakeCtl._lungeFrom) {
+          const kk = Math.min(1, dtN * 9);
+          snake.position.x += (snakeCtl._lungeFrom.x - snake.position.x) * kk;
+          snake.position.z += (snakeCtl._lungeFrom.z - snake.position.z) * kk;
+        }
         // Gate on the PHASE timer (reset to 0 on recoil entry), not stateT —
         // stateT already ≈0.85 (telegraph+lunge) here, so the old `stateT>0.72`
         // fired on the first recoil frame and the pull-back pose was skipped.
-        if (snakeCtl.strikeT > 0.35) { snakeCtl.strikePhase = "none"; snakeEnter("retreat", controls); }
+        if (snakeCtl.strikeT > 0.35) { snakeCtl.strikePhase = "none"; snakeCtl._lungeFrom = null; snakeEnter("retreat", controls); }
       }
     }
 
@@ -30419,8 +31405,16 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     const slAmp = (st === "wander" || st === "retreat" || st === "defensive" || snakeCtl.striking) ? 1.0 : 0.35;
     snakeCtl.ctrl.setSlither(slAmp * Math.min(1, 0.5 + size * 0.6));
     snakeCtl.ctrl._slitherSpeed = Math.min(1, snakeCtl.speed / SNAKE_REF_SPEED);
-    const rearAmt = (st === "watch" || st === "defensive" || snakeCtl.striking) ? (0.6 + 0.4 * size) : (sniffing ? 0.5 : 0);
+    let rearAmt = (st === "watch" || st === "defensive" || snakeCtl.striking) ? (0.6 + 0.4 * size) : (sniffing ? 0.5 : 0);
+    // Strike recoil visibly RE-COILS: the rear collapses 0.9→0.4 across the
+    // beat, so the forebody gathers back before the retreat slither.
+    if (snakeCtl.strikePhase === "recoil") rearAmt = 0.9 - 0.5 * Math.min(1, snakeCtl.strikeT / 0.35);
     snakeCtl.ctrl.setRear(B.rear === false ? Math.min(rearAmt, sniffing ? 0.5 : 0) : rearAmt);
+    // The basking rock stands 9 cm proud of the grass — ride the belly up onto
+    // the slab near its centre and ease back off while wandering (fed into the
+    // controller's single absolute y-write, never a second y path).
+    { const rockD = Math.hypot(snake.position.x - rock.position.x, snake.position.z - rock.position.z);
+      snakeCtl.ctrl.surfY = rockD < 1.5 ? 0.09 * clamp01((1.5 - rockD) / 0.4) : 0; }
     snakeCtl.ctrl.setJaw(snakeCtl.jawTarget || 0);
     snakeCtl.ctrl._tongueFast = sniffing || st === "watch" || snakeCtl.striking;
     if (hasRig) snakeCtl.ctrl.update(t, dtN);
@@ -30432,17 +31426,50 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     };
 
     // --- Head tracking while watching (composes on the rear pitch) ---
-    // The smoothed yaw is handed to the controller, which applies it INSIDE
-    // its additive-layer safety net — the direct bone += here compounded on
-    // flat keyframe spans exactly like the dog's old vibration bug.
+    // The smoothed yaw+pitch are handed to the controller, which applies them
+    // INSIDE its additive-layer safety net — the direct bone += here compounded
+    // on flat keyframe spans exactly like the dog's old vibration bug.
     const trackWeight = (snakeCtl.state === "watch" || snakeCtl.state === "defensive") ? 1 : 0;
-    if (hasRig && (trackWeight > 0 || Math.abs(snakeCtl.headYaw) > 0.001) && controls && sp.neckBone) {
+    if (hasRig && trackWeight > 0 && controls && sp.neckBone) {
       const worldYaw = Math.atan2(controls.position.x - snake.position.x, controls.position.z - snake.position.z);
       let rel = worldYaw - snake.rotation.y;
       rel = Math.atan2(Math.sin(rel), Math.cos(rel));
       const clamped = Math.max(-0.55, Math.min(0.55, rel)) * trackWeight;
       snakeCtl.headYaw += (clamped - snakeCtl.headYaw) * Math.min(1, dtN * 4);
+      // Pitch too: the reared head meets the player's FACE — up when loomed
+      // over at close range, level when they back off (yaw-only tracking left
+      // it staring at shins).
+      let headY = snake.position.y + 0.3;
+      if (sp.headBone) { sp.headBone.getWorldPosition(_snkV1); headY = _snkV1.y; }
+      const relPitch = Math.max(-0.5, Math.min(0.6, Math.atan2(controls.position.y - headY, Math.max(0.3, playerDist))));
+      snakeCtl.headPitch += (relPitch * trackWeight - snakeCtl.headPitch) * Math.min(1, dtN * 4);
       snakeCtl.ctrl.headYaw = snakeCtl.headYaw;
+      snakeCtl.ctrl.headPitch = snakeCtl.headPitch;
+    } else if (hasRig) {
+      // Idle scan — a basking snake periodically sweeps its head to a new
+      // bearing and tongue-tastes the air, so the distant snake reads alive
+      // long before the watch-distance tracking kicks in.
+      if (snakeCtl.state === "bask" && snakeCtl.stateT > snakeCtl.scanNext) {
+        snakeCtl.scanTarget = (Math.random() - 0.5) * 0.9;
+        snakeCtl.scanNext = snakeCtl.stateT + 5 + Math.random() * 7;
+        snakeCtl.ctrl.requestTongueFlick(false);   // look, then taste
+      }
+      const scanTo = snakeCtl.state === "bask" ? snakeCtl.scanTarget : 0;
+      snakeCtl.headYaw += (scanTo - snakeCtl.headYaw) * Math.min(1, dtN * 1.2);
+      snakeCtl.headPitch += (0 - snakeCtl.headPitch) * Math.min(1, dtN * 2);
+      snakeCtl.ctrl.headYaw = snakeCtl.headYaw;
+      snakeCtl.ctrl.headPitch = snakeCtl.headPitch;
+    }
+
+    // --- Threat beacon (avatar gaze fixation) ---
+    // Live only through the telegraph + lunge; recoil is the stand-down. ONE
+    // module-scope object mutated in place — no per-frame allocation.
+    if (snakeCtl.state === "defensive" && snakeCtl.strikePhase !== "recoil") {
+      headAnchor.getWorldPosition(_snkV1);
+      _snakeThreatPos.x = _snkV1.x; _snakeThreatPos.y = _snkV1.y; _snakeThreatPos.z = _snkV1.z;
+      window.PhobiaThreat = _snakeThreatPos;
+    } else if (window.PhobiaThreat === _snakeThreatPos) {
+      window.PhobiaThreat = null;
     }
 
     // --- Slither rustle tracks the moving body ---
@@ -30695,6 +31722,12 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
             leaf.position.y = -0.95;
             leaf.rotation.x = -Math.PI / 2;   // lay flat on the ground
             leaf.userData.settled = true;
+            // A novel object landed: tongue-taste it (twice — the same
+            // chemosensing beat the extend-hand mechanic teaches).
+            if (snakeCtl.ctrl && Math.hypot(leaf.position.x - snake.position.x, leaf.position.z - snake.position.z) < 4) {
+              snakeCtl.ctrl.requestTongueFlick(true);
+              sceneTimers.push(setTimeout(() => { try { snakeCtl.ctrl.requestTongueFlick(true); } catch {} }, 900));
+            }
             // After 4 s, fade away
             sceneTimers.push(setTimeout(() => {
               if (!leaf) return;
@@ -30778,6 +31811,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       try { if (moodChipOff) moodChipOff(); } catch {}
       try { liveAudio.forEach(h => h && h.stop && h.stop()); } catch {}
       try { window.__holdCelebrationGate = null; window.__rungHoldComplete = false; } catch {}
+      try { if (window.PhobiaThreat === _snakeThreatPos) window.PhobiaThreat = null; } catch {}
       try { const bar = document.querySelector('.scene-cmd-bar[data-scene="snakes"]'); if (bar) bar.dataset.wired = ""; } catch {}
       try { snake.userData.disposed = true; if (snake.userData.parts && snake.userData.parts.mixer) snake.userData.parts.mixer.stopAllAction(); } catch {}
       // Stop the moving slither rustle (it's a looping source, not a one-shot).
@@ -30869,7 +31903,11 @@ function setupSpeaking(scene, camera, level, levelIdx, ctx) {
   );
   podTop.position.y = 0.025;
   podium.add(podTop);
-  podium.position.set(0, -0.4, -0.6);
+  // y=-0.015 stands the lectern ON the stage (podBox bottom −1.015 meets the
+  // stage top at −1.0) with podTop's surface at y=0.035 — exactly under the
+  // mic/glass/notes bases below. It was sunk to −0.4, a knee-high stump with
+  // all three props floating 0.4 m above it in the dead centre of the view.
+  podium.position.set(0, -0.015, -0.6);
   scene.add(podium);
 
   // Microphone on podium
@@ -30934,6 +31972,9 @@ function setupSpeaking(scene, camera, level, levelIdx, ctx) {
     if (sipPhase > 0.05) return;       // already sipping
     sipPhase = 1.0;
     sipsTaken++;
+    // The right hand actually picks the glass up (see interact()) — pulse
+    // the action so the reach reads as a deliberate grab, not a drift.
+    if (skHands && skHands.fireAction) skHands.fireAction();
     waterLevel = Math.max(0.10, waterLevel - 0.18);
     if (window.PhobiaAudio && window.PhobiaAudio.indicatorClick) {
       try { window.PhobiaAudio.indicatorClick(); } catch {}
@@ -31140,18 +32181,45 @@ function setupSpeaking(scene, camera, level, levelIdx, ctx) {
   }
 
   // crowd 0 = "Empty room / practising alone" → spawn no audience at all.
+  // Every grid seat gets a CHAIR (instanced — three draw calls for the whole
+  // hall), occupied or not: empty chairs sell a real auditorium. Rows rake
+  // upward like one, members sit ON the seat pans, and the torso overlapping
+  // the pan reads as hips/thighs (the figures used to be legless torsos
+  // standing directly on a flat void).
+  const ROW_RAKE = 0.07;
   if (crowd > 0) {
-    for (let row = 0; row < numRows && audienceMembers.length < MAX_AUDIENCE; row++) {
-      const colCount = 2 + Math.floor(crowd * 9);
+    const colCount = 2 + Math.floor(crowd * 9);
+    const seatTotal = numRows * (colCount * 2 + 1);
+    const chairMat = new THREE.MeshStandardMaterial({ color: 0x323848, roughness: 0.9 });
+    const chairSeat = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.05, 0.45), chairMat, seatTotal);
+    const chairBack = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.5, 0.04), chairMat, seatTotal);
+    const chairLegs = new THREE.InstancedMesh(new THREE.BoxGeometry(0.04, 0.42, 0.40), chairMat, seatTotal * 2);
+    const _cm = new THREE.Matrix4();
+    let seatIdx = 0, legIdx = 0;
+    for (let row = 0; row < numRows; row++) {
       for (let col = -colCount; col <= colCount; col++) {
-        if (audienceMembers.length >= MAX_AUDIENCE) break;
+        const sx = col * seatSpacing;
+        const sy = baseY + row * ROW_RAKE;
+        const sz = -3 - row * rowSpacing;
+        chairSeat.setMatrixAt(seatIdx, _cm.makeTranslation(sx, sy + 0.425, sz));
+        chairBack.setMatrixAt(seatIdx, _cm.makeTranslation(sx, sy + 0.70, sz - 0.225));
+        seatIdx++;
+        for (const lx of [-0.23, 0.23]) {
+          chairLegs.setMatrixAt(legIdx++, _cm.makeTranslation(sx + lx, sy + 0.21, sz));
+        }
+        // Fill the seat with a person (same odds + cap as before)
+        if (audienceMembers.length >= MAX_AUDIENCE) continue;
         if (Math.random() > Math.min(0.9, 0.3 + crowd * 0.75)) continue;
         const m = buildAudienceMember();
-        m.root.position.set(col * seatSpacing, baseY, -3 - row * rowSpacing);
+        m.root.position.set(sx, sy + 0.42, sz);
         audience.add(m.root);
         audienceMembers.push(m);
       }
     }
+    chairSeat.instanceMatrix.needsUpdate = true;
+    chairBack.instanceMatrix.needsUpdate = true;
+    chairLegs.instanceMatrix.needsUpdate = true;
+    audience.add(chairSeat, chairBack, chairLegs);
   }
   scene.add(audience);
 
@@ -31171,6 +32239,11 @@ function setupSpeaking(scene, camera, level, levelIdx, ctx) {
   let pauseSilence = 0;            // 0..1 — temporary "pause" silence
   // (confidence is declared earlier, near the water glass, to avoid a TDZ in takeSip)
   let speakingControls = null;
+  let applauseT = 0;               // >0 — the room is applauding; everyone looks up
+  let nextCrowdFx = 5 + Math.random() * 8;   // next positioned cough/shuffle
+  let murmurVoice = null;          // the user's own muffled speech (lazy — needs an unlocked ctx)
+  let skHands = null;              // Hands rig captured from interact() for the sip carry
+  const _lectPt = new THREE.Vector3();
   function wireSpeakingCmds() {
     const bar = document.querySelector('.scene-cmd-bar[data-scene="speaking"]');
     if (!bar || bar.dataset.wired === "1") return;
