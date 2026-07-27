@@ -4012,6 +4012,11 @@ const PhobiaAudio = (() => {
     const c = ensureCtx();
     const outBus = opts.creature ? creatureBus : master;
     if (!c || !pos) return outBus;
+    // A position with a missing or NaN coordinate makes the PannerNode throw
+    // ("non-finite value"), which aborts the caller mid-graph and the sound is
+    // silently never heard. Cheap to check, and it turns a whole dead sound
+    // into a merely unpanned one.
+    if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !Number.isFinite(pos.z)) return outBus;
     const panner = c.createPanner();
     panner.panningModel = "HRTF";
     panner.distanceModel = "inverse";
@@ -4072,6 +4077,91 @@ const PhobiaAudio = (() => {
       return input;
     }
     return panner;
+  }
+
+  // ---- Output calibration ----
+  // Every one-shot below is white or pink noise pushed through a narrow filter,
+  // and the gain constants were all written as if the filter were transparent.
+  // It is not: a lowpass at 250 Hz throws away ~97% of white noise's energy, a
+  // bandpass at Q 2 rather less, so the level a sound ACTUALLY reaches depends
+  // on its filter and not on the number its author picked. Measured across the
+  // library that put 52 dB between the loudest and quietest one-shot — a splash
+  // at −1.9 dBFS (already at the edge of clipping once anything else plays) and
+  // the player's own footsteps at −41 to −48 dB, which is inaudible. The whole
+  // spider and snake foley layer sat 30–46 dB down, which is why those scenes
+  // sounded empty.
+  //
+  // Rather than re-derive every envelope, each sound gets one calibrated trim.
+  // `was` is the peak that sound measured at its nominal call with no distance
+  // attenuation; `want` is where it belongs in the mix. Re-measure and update
+  // `was` if you change a sound's synthesis.
+  //
+  // The target bands:
+  //   startle / impact   ≈ 0.26–0.30  (−11 dBFS)  bark, thunder, strike, splash
+  //   strong event       ≈ 0.12–0.16  (−17 dBFS)  growl, hiss, rattle, bounce
+  //   player foley       ≈ 0.04–0.075 (−24 dBFS)  footsteps — heard constantly
+  //   creature intimacy  ≈ 0.032–0.055(−27 dBFS)  pant, sniff, skitter, tongue
+  //   incidental         ≈ 0.026–0.045(−30 dBFS)  crowd, UI, indicator
+  const SFX_CAL = {
+    // impact / startle
+    splash:        [0.8016, 0.28],
+    bark:          [0.4287, 0.30],
+    thunder:       [0.50410, 0.30],
+    snakeStrike:   [0.1298, 0.26],
+    // strong events
+    growl:         [0.1623, 0.16],
+    snakeHiss:     [0.0945, 0.14],
+    hissOnce:      [0.0827, 0.14],
+    ballBounce:    [0.1077, 0.13],
+    metalRattle:   [0.0669, 0.13],
+    doorCreak:     [0.0557, 0.12],
+    windHowl:      [0.1003, 0.15],
+    // player foley — the most-heard sounds in the game
+    footstep_hard:   [0.01581, 0.070],
+    footstep_wood:   [0.02148, 0.068],
+    footstep_soft:   [0.00408, 0.042],
+    footstep_grass:  [0.02000, 0.050],
+    footstep_splash: [0.02336, 0.078],
+    footstep_glass:  [0.01493, 0.062],
+    // creature intimacy
+    dogWhine:      [0.0608, 0.058],
+    dogPant:       [0.0144, 0.040],
+    dogSniff:      [0.0132, 0.044],
+    dogFootfall:   [0.0234, 0.046],
+    dogMouthGrab:  [0.0438, 0.052],
+    dogLapping:    [0.0300, 0.044],
+    skitterBurst:  [0.0325, 0.050],
+    skitterTicks:  [0.0146, 0.044],
+    bristleRustle: [0.0416, 0.040],
+    chitinTik:     [0.0443, 0.046],
+    webPluck:      [0.0020, 0.042],
+    tongueFlick:   [0.0050, 0.046],
+    // incidental
+    crowdCough:    [0.0322, 0.030],
+    crowdShuffle:  [0.0167, 0.026],
+    crowdOneShot:  [0.0322, 0.030],
+    indicatorClick:[0.0343, 0.046],
+    applause:      [0.0545, 0.090],
+    ui:            [0.0199, 0.034],
+  };
+  // Ambient BEDS are calibrated the same way but at their own start() gains,
+  // because they are continuous and set the floor everything else sits on.
+  // Measured in isolation they ran from rain at −25.1 dB RMS to the auditorium
+  // murmur at −47.5: a 22 dB spread, so a volume set in one realm was wrong in
+  // the next. They now sit inside a −30…−36 window. Re-measure after changing
+  // any start* gain — the bed level is what every one-shot above is judged
+  // against.
+  // Wrap spatial() with the calibrated trim. Unknown names pass straight
+  // through, so a new sound is never silently rescaled by accident.
+  function sfxOut(name, pos, opts = {}) {
+    const c = ensureCtx(); if (!c) return null;
+    const out = spatial(pos, opts);
+    const cal = SFX_CAL[name];
+    if (!cal || !out) return out;
+    const g = c.createGain();
+    g.gain.value = cal[1] / cal[0];
+    g.connect(out);
+    return g;
   }
 
   // ---- Procedural room reverb ----
@@ -4192,7 +4282,7 @@ const PhobiaAudio = (() => {
   function startWind(intensity = 0.6) {
     return startLoop({
       baseFreq: 220 + intensity * 700, q: 0.9,
-      gain: 0.18 + intensity * 0.22, lfoRate: 0.28, lfoDepth: 250 * intensity, pink: true,
+      gain: 0.119 + intensity * 0.145, lfoRate: 0.28, lfoDepth: 250 * intensity, pink: true,
     });
   }
   function startWaterLap(intensity = 0.5) {
@@ -4200,12 +4290,12 @@ const PhobiaAudio = (() => {
     // recedes like laps on a shore, instead of steady bright hiss.
     return startLoop({
       baseFreq: 480 + intensity * 900, q: 0.7,
-      gain: 0.18 + intensity * 0.18, lfoRate: 0.22, lfoDepth: 520 * intensity, pink: true,
+      gain: 0.131 + intensity * 0.131, lfoRate: 0.22, lfoDepth: 520 * intensity, pink: true,
     });
   }
   function startUnderwater() {
     return startLoop({
-      baseFreq: 220, q: 1.2, gain: 0.45, lfoRate: 0.18, lfoDepth: 60, pink: true,
+      baseFreq: 220, q: 1.2, gain: 0.248, lfoRate: 0.18, lfoDepth: 60, pink: true,
     });
   }
   function startRoomTone(intensity = 0.4) {
@@ -4430,7 +4520,7 @@ const PhobiaAudio = (() => {
   // effect being that heights' rattle doesn't duck either, which is fine.
   function bark(intensity = 1.0, pos = null, opts = {}) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, Object.assign({
+    const out = sfxOut("bark", pos, Object.assign({
       refDistance: 1.5, maxDistance: 30, rolloffFactor: 1.6, creature: true,
     }, opts));
     const now = c.currentTime;
@@ -4547,7 +4637,7 @@ const PhobiaAudio = (() => {
   // when the user can see them move — sight and sound agreeing is what sells it.
   function skitterBurst(pos = null, duration = 0.4, intensity = 1.0) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 1.0, maxDistance: 20, rolloffFactor: 1.9 });
+    const out = sfxOut("skitterBurst", pos, { refDistance: 1.0, maxDistance: 20, rolloffFactor: 1.9 });
     const nb = noiseBuffer(1);
     const now = c.currentTime;
     const k = Math.max(0.2, Math.min(1, intensity));
@@ -4577,7 +4667,7 @@ const PhobiaAudio = (() => {
     const c = ensureCtx(); if (!c) return;
     const duration = opts.duration || 0.35, legRate = opts.legRate || 42;
     const k = Math.max(0.2, Math.min(1, opts.intensity == null ? 1 : opts.intensity));
-    const out = spatial(pos, { refDistance: 1.0, maxDistance: 22, rolloffFactor: 1.9, creature: true, air: true, reverb: 0.14 });
+    const out = sfxOut("skitterTicks", pos, { refDistance: 1.0, maxDistance: 22, rolloffFactor: 1.9, creature: true, air: true, reverb: 0.14 });
     const nb = noiseBuffer(1);
     const now = c.currentTime;
     let when = now, tick = 0;
@@ -4613,7 +4703,7 @@ const PhobiaAudio = (() => {
   function bristleRustle(pos = null, opts = {}) {
     const c = ensureCtx(); if (!c) return;
     const intensity = opts.intensity == null ? 0.6 : opts.intensity;
-    const out = spatial(pos, { refDistance: 1.2, maxDistance: 18, creature: true, air: true, reverb: 0.12 });
+    const out = sfxOut("bristleRustle", pos, { refDistance: 1.2, maxDistance: 18, creature: true, air: true, reverb: 0.12 });
     const now = c.currentTime, dur = 0.12 + Math.random() * 0.06;
     const nb = noiseBuffer(dur + 0.05);
     const src = c.createBufferSource(); src.buffer = nb;
@@ -4632,7 +4722,7 @@ const PhobiaAudio = (() => {
   function chitinTik(pos = null, opts = {}) {
     const c = ensureCtx(); if (!c) return;
     const intensity = opts.intensity == null ? 1 : opts.intensity;
-    const out = spatial(pos, { refDistance: 0.8, maxDistance: 20, rolloffFactor: 2.0, creature: true, reverb: 0.18 });
+    const out = sfxOut("chitinTik", pos, { refDistance: 0.8, maxDistance: 20, rolloffFactor: 2.0, creature: true, reverb: 0.18 });
     const now = c.currentTime;
     const nb = noiseBuffer(0.05);
     const src = c.createBufferSource(); src.buffer = nb;
@@ -4650,7 +4740,7 @@ const PhobiaAudio = (() => {
   function webPluck(pos = null, opts = {}) {
     const c = ensureCtx(); if (!c) return;
     const intensity = opts.intensity == null ? 0.5 : opts.intensity;
-    const out = spatial(pos, { refDistance: 1.5, maxDistance: 16, creature: true, reverb: 0.22, air: true });
+    const out = sfxOut("webPluck", pos, { refDistance: 1.5, maxDistance: 16, creature: true, reverb: 0.22, air: true });
     const now = c.currentTime, f = 180 + Math.random() * 90;
     const o = c.createOscillator(); o.type = "triangle";
     o.frequency.setValueAtTime(f, now); o.frequency.exponentialRampToValueAtTime(f * 0.86, now + 0.4);
@@ -4663,7 +4753,7 @@ const PhobiaAudio = (() => {
   function startCellarAmbient(opts = {}) {
     const c = ensureCtx(); if (!c) return { stop() {} };
     const intensity = opts.intensity == null ? 0.4 : opts.intensity;
-    const hum = startLoop({ baseFreq: 70 + intensity * 30, q: 1.3, gain: 0.09 + intensity * 0.10, lfoRate: 0.08, lfoDepth: 24, pink: true });
+    const hum = startLoop({ baseFreq: 70 + intensity * 30, q: 1.3, gain: 0.131 + intensity * 0.146, lfoRate: 0.08, lfoDepth: 24, pink: true });
     let alive = true, timer = null;
     const drip = () => {
       if (!alive) return;
@@ -4774,7 +4864,7 @@ const PhobiaAudio = (() => {
   }
 
   function startCityHum() {
-    return startLoop({ baseFreq: 130, q: 1.0, gain: 0.13, lfoRate: 0.05, lfoDepth: 20, pink: true });
+    return startLoop({ baseFreq: 130, q: 1.0, gain: 0.186, lfoRate: 0.05, lfoDepth: 20, pink: true });
   }
 
   // Calm ambient pad — 3 sine voices, low-pass + slow LFO. Used as a background
@@ -4883,7 +4973,7 @@ const PhobiaAudio = (() => {
   // Single splash — used when user paddles the water
   function splash(intensity = 1.0, pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 1, maxDistance: 30, rolloffFactor: 1.2 });
+    const out = sfxOut("splash", pos, { refDistance: 1, maxDistance: 30, rolloffFactor: 1.2 });
     const now = c.currentTime;
     // Main wash — bandpass noise, quick attack ramp (was an instant click).
     const src = c.createBufferSource(); src.buffer = noiseBuffer(0.5);
@@ -4953,7 +5043,7 @@ const PhobiaAudio = (() => {
   // throws a warning display at a player who rushed in.
   function hissOnce(pos = null, intensity = 1.0) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 1.0, maxDistance: 30 });
+    const out = sfxOut("hissOnce", pos, { refDistance: 1.0, maxDistance: 30 });
     const now = c.currentTime;
     const dur = 0.9 + Math.random() * 0.4;
     const buf = noiseBuffer(dur);
@@ -5021,7 +5111,7 @@ const PhobiaAudio = (() => {
     const c = ensureCtx(); if (!c) return;
     const intensity = Math.max(0.2, Math.min(1, opts.intensity == null ? 0.6 : opts.intensity));
     const dur = (opts.dur != null ? opts.dur : 0.85 + Math.random() * 0.35) * (0.7 + 0.3 * intensity);
-    const out = spatial(pos, { refDistance: 1.0, maxDistance: 26, rolloffFactor: 1.7, creature: true, air: true });
+    const out = sfxOut("snakeHiss", pos, { refDistance: 1.0, maxDistance: 26, rolloffFactor: 1.7, creature: true, air: true });
     const now = c.currentTime;
     const nb = noiseBuffer(dur + 0.1);
     const src = c.createBufferSource(); src.buffer = nb;
@@ -5087,7 +5177,7 @@ const PhobiaAudio = (() => {
   function tongueFlick(pos = null, opts = {}) {
     const c = ensureCtx(); if (!c) return;
     const k = Math.max(0.2, Math.min(1, opts.intensity == null ? 0.5 : opts.intensity));
-    const out = spatial(pos, { refDistance: 0.8, maxDistance: 12, rolloffFactor: 2.2, creature: true, air: true });
+    const out = sfxOut("tongueFlick", pos, { refDistance: 0.8, maxDistance: 12, rolloffFactor: 2.2, creature: true, air: true });
     const now = c.currentTime;
     const nb = noiseBuffer(0.03);
     const src = c.createBufferSource(); src.buffer = nb;
@@ -5103,7 +5193,7 @@ const PhobiaAudio = (() => {
   function snakeStrike(pos = null, opts = {}) {
     const c = ensureCtx(); if (!c) return;
     const k = Math.max(0.4, Math.min(1, opts.intensity == null ? 1 : opts.intensity));
-    const out = spatial(pos, { refDistance: 0.7, maxDistance: 22, rolloffFactor: 2.0, creature: true, air: true });
+    const out = sfxOut("snakeStrike", pos, { refDistance: 0.7, maxDistance: 22, rolloffFactor: 2.0, creature: true, air: true });
     const now = c.currentTime;
     const nb = noiseBuffer(0.18);
     const w = c.createBufferSource(); w.buffer = nb;
@@ -5125,7 +5215,7 @@ const PhobiaAudio = (() => {
   function startClearingAmbient(opts = {}) {
     const c = ensureCtx(); if (!c) return { stop() {} };
     const intensity = opts.intensity == null ? 0.4 : opts.intensity;
-    const breeze = startLoop({ baseFreq: 380 + intensity * 260, q: 0.7, gain: 0.05 + intensity * 0.05, lfoRate: 0.16, lfoDepth: 180 * intensity, pink: true });
+    const breeze = startLoop({ baseFreq: 380 + intensity * 260, q: 0.7, gain: 0.119 + intensity * 0.119, lfoRate: 0.16, lfoDepth: 180 * intensity, pink: true });
     let alive = true, birdTimer = null, cicTimer = null;
     const bird = () => {
       if (!alive) return; const now = c.currentTime;
@@ -5169,7 +5259,7 @@ const PhobiaAudio = (() => {
     lfo.connect(lfoG).connect(lp.frequency);
     const g = c.createGain();
     g.gain.value = 0;
-    g.gain.linearRampToValueAtTime(0.06 + crowd * 0.10, c.currentTime + 1.5);
+    g.gain.linearRampToValueAtTime(0.18 + crowd * 0.30, c.currentTime + 1.5);
     src.connect(lp).connect(g).connect(master);
     src.start(); lfo.start();
     // Periodic cough / throat-clear — breathy filtered NOISE, not a sawtooth buzz.
@@ -5203,6 +5293,7 @@ const PhobiaAudio = (() => {
   // palm-smack register, swelling fast and thinning out over the tail.
   function applause(intensity = 0.7) {
     const c = ensureCtx(); if (!c) return;
+    const out = sfxOut("applause", null);
     const dur = 2.8 + intensity * 2.2;
     const sr = c.sampleRate;
     const n = Math.floor(dur * sr);
@@ -5229,7 +5320,7 @@ const PhobiaAudio = (() => {
     g.gain.exponentialRampToValueAtTime(peak, now + 0.3);
     g.gain.setValueAtTime(peak, now + dur * 0.5);
     g.gain.exponentialRampToValueAtTime(0.001, now + dur);
-    src.connect(bp).connect(g).connect(master);
+    src.connect(bp).connect(g).connect(out);
     src.start(now); src.stop(now + dur + 0.1);
   }
 
@@ -5237,7 +5328,7 @@ const PhobiaAudio = (() => {
   // chair shuffle, HRTF-panned so the hall is audibly occupied around you.
   function crowdOneShot(pos, kind = "cough", vol = 0.6) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 3, maxDistance: 60, rolloffFactor: 1.0 });
+    const out = sfxOut("crowdOneShot", pos, { refDistance: 3, maxDistance: 60, rolloffFactor: 1.0 });
     const now = c.currentTime;
     const isCough = kind === "cough";
     const src = c.createBufferSource();
@@ -5290,15 +5381,19 @@ const PhobiaAudio = (() => {
   // location (so a bolt off to the left actually rumbles from your left).
   function thunder(intensity = 0.6, withCrack = true, pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 8, maxDistance: 200, rolloffFactor: 0.6 });
+    const out = sfxOut("thunder", pos, { refDistance: 8, maxDistance: 200, rolloffFactor: 0.6 });
     const now = c.currentTime;
-    // Sharp crack at the front — very brief, high noise
+    // The crack keeps almost all of white noise's energy (it is only
+    // highpassed), while the rumble throws ~99% of it away in a 200 Hz
+    // lowpass. Written with comparable gain constants the crack buried the
+    // rumble completely — measured centroid 1263 Hz, which is a hiss, not
+    // thunder. The rumble's gain now compensates for what its filter removes.
     if (withCrack) {
       const crack = noiseBuffer(0.18);
       const src = c.createBufferSource(); src.buffer = crack;
       const hp = c.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 800;
       const g = c.createGain();
-      g.gain.setValueAtTime(0.55 * intensity, now);
+      g.gain.setValueAtTime(0.26 * intensity, now);
       g.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
       src.connect(hp).connect(g).connect(out);
       src.start(now); src.stop(now + 0.2);
@@ -5310,17 +5405,27 @@ const PhobiaAudio = (() => {
     const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 200; lp.Q.value = 0.6;
     const rg = c.createGain();
     rg.gain.setValueAtTime(0, now + 0.05);
-    rg.gain.linearRampToValueAtTime(0.45 * intensity, now + 0.25);
+    rg.gain.linearRampToValueAtTime(5.2 * intensity, now + 0.25);
     rg.gain.exponentialRampToValueAtTime(0.001, now + dur);
     rsrc.connect(lp).connect(rg).connect(out);
     rsrc.start(now + 0.05); rsrc.stop(now + dur + 0.1);
+    // A second, even lower body so the strike has weight under the rumble —
+    // real thunder has most of its energy below 100 Hz.
+    const sub = c.createBufferSource(); sub.buffer = rumbleBuf;
+    const slp = c.createBiquadFilter(); slp.type = "lowpass"; slp.frequency.value = 80; slp.Q.value = 0.7;
+    const sg = c.createGain();
+    sg.gain.setValueAtTime(0, now + 0.04);
+    sg.gain.linearRampToValueAtTime(9.0 * intensity, now + 0.35);
+    sg.gain.exponentialRampToValueAtTime(0.001, now + dur * 0.9);
+    sub.connect(slp).connect(sg).connect(out);
+    sub.start(now + 0.04); sub.stop(now + dur + 0.1);
   }
 
   // Rain — looped white noise with low-pass to feel like real rain
   function startRain(intensity = 0.6) {
     return startLoop({
       baseFreq: 4000 - intensity * 1500, q: 0.4,
-      gain: 0.16 + intensity * 0.20, lfoRate: 0.12, lfoDepth: 600 * intensity,
+      gain: 0.080 + intensity * 0.100, lfoRate: 0.12, lfoDepth: 600 * intensity,
       type: "lowpass",
     });
   }
@@ -5368,7 +5473,7 @@ const PhobiaAudio = (() => {
   // Indicator click (subtle tick)
   function indicatorClick(pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 0.5, maxDistance: 6 });
+    const out = sfxOut("indicatorClick", pos, { refDistance: 0.5, maxDistance: 6 });
     const now = c.currentTime;
     // Crisp relay "tk": a short bandpass-noise snap + a faint tonal body, with
     // an attack ramp — instead of a pure 1500 Hz square beep.
@@ -5389,80 +5494,78 @@ const PhobiaAudio = (() => {
     osc.start(now); osc.stop(now + 0.04);
   }
 
-  // Metal rattle — a shaken steel railing. Irregular bandpass-noise knocks
-  // (segments banging in their brackets) over a pair of decaying ring-mode
-  // sines, so the rail clanks and then sings. Replaces the old shake sound,
-  // which reused the dog-bark synth — the railing audibly barked.
-  function metalRattle(intensity = 0.5, pos = null) {
-    const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 0.8, maxDistance: 14 });
-    const now = c.currentTime;
-    const knocks = 4 + Math.floor(Math.random() * 3);
-    let at = now;
-    for (let i = 0; i < knocks; i++) {
-      at += 0.04 + Math.random() * 0.05;
-      const ns = c.createBufferSource(); ns.buffer = noiseBuffer(0.06);
-      const bp = c.createBiquadFilter(); bp.type = "bandpass";
-      bp.frequency.value = 900 + Math.random() * 900; bp.Q.value = 2.5;
-      const ng = c.createGain();
-      ng.gain.setValueAtTime(0.0001, at);
-      ng.gain.exponentialRampToValueAtTime(0.14 * intensity, at + 0.002);
-      ng.gain.exponentialRampToValueAtTime(0.001, at + 0.055);
-      ns.connect(bp).connect(ng).connect(out);
-      ns.start(at); ns.stop(at + 0.07);
-    }
-    // The hollow tube rings on after the knocks stop
-    for (const f of [1180 + Math.random() * 120, 1770 + Math.random() * 160]) {
-      const osc = c.createOscillator(); osc.type = "sine"; osc.frequency.value = f;
-      const g = c.createGain();
-      g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(0.035 * intensity, now + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0005, now + 0.5);
-      osc.connect(g).connect(out);
-      osc.start(now); osc.stop(now + 0.55);
-    }
-  }
-
   // Single footstep — short low thump that varies by surface.
   // surface: "hard" (concrete / tile) · "wood" · "soft" (carpet / dirt) · "grass" · "splash" (shallow water) · "glass" (skywalk pane)
+  // Concrete, floorboards and carpet used to be three lowpasses inside the same
+  // octave — measured centroids 235 / 227 / 226 Hz, i.e. three names for one
+  // dull thud. The surface you are walking on is one of the few things a player
+  // hears on every single step, so each one gets its own body, its own brightness
+  // and its own resonance. And a real step is TWO contacts: the heel lands, then
+  // the foot rolls onto the ball ~45 ms later, softer. One thump is the sound of
+  // dropping a box.
+  const FOOT_SURFACES = {
+    hard:   { type: "lowpass",  hz: 520,  hzJit: 140, q: 0.8, dur: 0.11, gain: 0.20,
+              click: { hz: 3000, amp: 0.05, dur: 0.014 }, roll: 0.042, rollAmp: 0.42 },
+    wood:   { type: "bandpass", hz: 430,  hzJit: 120, q: 1.0, dur: 0.13, gain: 0.24,
+              click: { hz: 1900, amp: 0.03, dur: 0.016 }, roll: 0.050, rollAmp: 0.50,
+              // hollow board — two low modes ringing under the knock
+              modes: [[186, 0.030, 0.13], [428, 0.018, 0.10]] },
+    soft:   { type: "lowpass",  hz: 165,  hzJit: 45,  q: 0.6, dur: 0.15, gain: 0.16,
+              roll: 0.056, rollAmp: 0.34 },
+    grass:  { type: "bandpass", hz: 1500, hzJit: 500, q: 0.5, dur: 0.17, gain: 0.13,
+              roll: 0.060, rollAmp: 0.62 },
+    splash: { type: "bandpass", hz: 1100, hzJit: 700, q: 0.4, dur: 0.21, gain: 0.17,
+              roll: 0.055, rollAmp: 0.55 },
+    glass:  { type: "bandpass", hz: 1850, hzJit: 500, q: 2.0, dur: 0.09, gain: 0.15,
+              click: { hz: 4200, amp: 0.05, dur: 0.010 }, roll: 0.038, rollAmp: 0.40,
+              // the pane itself ringing under the sole
+              modes: [[1660, 0.012, 0.20], [3120, 0.007, 0.15]] },
+  };
   function footstep(softness = 0.35, surface = "hard") {
     const c = ensureCtx(); if (!c) return;
     const now = c.currentTime;
-    const dur = surface === "splash" ? 0.20 : surface === "glass" ? 0.09 : 0.13;
-    const buf = noiseBuffer(dur);
-    const src = c.createBufferSource();
-    src.buffer = buf;
-    const filter = c.createBiquadFilter();
-    // Surface profiles
-    let cutoff, q, type = "lowpass", gain = 0.18;
-    switch (surface) {
-      case "wood":
-        cutoff = 180 + Math.random() * 70;  q = 1.2; gain = 0.20; break;
-      case "soft":
-        cutoff = 130 + Math.random() * 40;  q = 0.6; gain = 0.12; break;
-      case "grass":
-        cutoff = 280 + Math.random() * 120; q = 0.5; gain = 0.10;
-        // Grass uses high-pass for the rustling component
-        type = "bandpass"; break;
-      case "splash":
-        cutoff = 900 + Math.random() * 700; q = 0.4; gain = 0.16;
-        type = "bandpass"; break;
-      case "glass":
-        // Bright short tap — a hard sole on a glass pane over the void
-        cutoff = 1500 + Math.random() * 600; q = 2.0; gain = 0.14;
-        type = "bandpass"; break;
-      case "hard":
-      default:
-        cutoff = 220 + Math.random() * 90; q = 0.7; gain = 0.18; break;
+    const S = FOOT_SURFACES[surface] || FOOT_SURFACES.hard;
+    const out = sfxOut("footstep_" + (FOOT_SURFACES[surface] ? surface : "hard"), null);
+    const k = Math.max(0.05, softness);
+    // One foot-to-ground contact: filtered noise body, plus an optional bright
+    // transient for surfaces that actually snap (tile, glass — not carpet).
+    const contact = (at, amp) => {
+      const src = c.createBufferSource(); src.buffer = noiseBuffer(S.dur);
+      const f = c.createBiquadFilter();
+      f.type = S.type;
+      f.frequency.value = S.hz + (Math.random() - 0.5) * S.hzJit;
+      f.Q.value = S.q;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(Math.max(0.0002, S.gain * k * amp), at + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.001, at + S.dur);
+      src.connect(f).connect(g).connect(out);
+      src.start(at); src.stop(at + S.dur + 0.02);
+      if (S.click) {
+        const cs = c.createBufferSource(); cs.buffer = noiseBuffer(S.click.dur);
+        const hp = c.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = S.click.hz;
+        const cg = c.createGain();
+        cg.gain.setValueAtTime(Math.max(0.0002, S.click.amp * k * amp), at);
+        cg.gain.exponentialRampToValueAtTime(0.0004, at + S.click.dur);
+        cs.connect(hp).connect(cg).connect(out);
+        cs.start(at); cs.stop(at + S.click.dur + 0.01);
+      }
+    };
+    contact(now, 1.0);
+    contact(now + S.roll * (0.85 + Math.random() * 0.3), S.rollAmp);
+    // Resonant body — floorboards and a glass pane ring; carpet does not.
+    if (S.modes) {
+      for (const [hz, amp, decay] of S.modes) {
+        const o = c.createOscillator(); o.type = "sine";
+        o.frequency.value = hz * (0.97 + Math.random() * 0.06);
+        const g = c.createGain();
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(Math.max(0.0002, amp * k), now + 0.004);
+        g.gain.exponentialRampToValueAtTime(0.0004, now + decay);
+        o.connect(g).connect(out);
+        o.start(now); o.stop(now + decay + 0.02);
+      }
     }
-    filter.type = type; filter.frequency.value = cutoff; filter.Q.value = q;
-    const peak = Math.max(0.0002, gain * softness);
-    const g = c.createGain();
-    g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(peak, now + 0.002);   // ~2 ms attack keeps the impact, drops the onset click
-    g.gain.exponentialRampToValueAtTime(0.001, now + dur);
-    src.connect(filter).connect(g).connect(master);
-    src.start(now); src.stop(now + dur + 0.02);
   }
 
   // Metal rattle — one clattery hit of a shaken steel railing: a bandpass
@@ -5471,7 +5574,7 @@ const PhobiaAudio = (() => {
   // with any creature sound. Call it a few times at 40–90 ms gaps for a shake.
   function metalRattle(intensity = 1.0, pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 0.8, maxDistance: 12 });
+    const out = sfxOut("metalRattle", pos, { refDistance: 0.8, maxDistance: 12 });
     const now = c.currentTime;
     // Clatter snap — the 900–1800 Hz body of rattling tube steel
     const ns = c.createBufferSource(); ns.buffer = noiseBuffer(0.08);
@@ -5507,7 +5610,7 @@ const PhobiaAudio = (() => {
   // making a "hmm" while it watches you. Higher pitch + slight wobble.
   function dogWhine(intensity = 0.6, pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 1.2, maxDistance: 18, creature: true, reverb: 0.15 });
+    const out = sfxOut("dogWhine", pos, { refDistance: 1.2, maxDistance: 18, creature: true, reverb: 0.15 });
     const now = c.currentTime;
     const dur = 0.55 + Math.random() * 0.20;
     const f0 = 650 + Math.random() * 150;
@@ -5565,7 +5668,7 @@ const PhobiaAudio = (() => {
   // a quick voiced "puh" out.
   function dogPant(intensity = 0.5, pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 1.0, maxDistance: 8, creature: true, reverb: 0.08 });
+    const out = sfxOut("dogPant", pos, { refDistance: 1.0, maxDistance: 8, creature: true, reverb: 0.08 });
     const now = c.currentTime;
     // Inhale — band-passed noise, soft envelope. Randomized center per call
     // so a pant train doesn't sound like a sample loop.
@@ -5615,7 +5718,7 @@ const PhobiaAudio = (() => {
   // sniffing the floor / a treat / the air.
   function dogSniff(intensity = 0.5, pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 0.8, maxDistance: 8, creature: true });
+    const out = sfxOut("dogSniff", pos, { refDistance: 0.8, maxDistance: 8, creature: true });
     const N = 4 + Math.floor(Math.random() * 3);
     for (let i = 0; i < N; i++) {
       const t0 = c.currentTime + i * (0.10 + Math.random() * 0.04);
@@ -5643,7 +5746,7 @@ const PhobiaAudio = (() => {
   // a flat human footstep on a 0.5 s bucket, on the wrong bus.)
   function dogFootfall(strength = 0.5, pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 1.2, maxDistance: 20, rolloffFactor: 1.5, creature: true, reverb: 0.15 });
+    const out = sfxOut("dogFootfall", pos, { refDistance: 1.2, maxDistance: 20, rolloffFactor: 1.5, creature: true, reverb: 0.15 });
     const t0 = c.currentTime;
     const tick = (at, gain) => {
       const buf = noiseBuffer(0.05);
@@ -5692,7 +5795,7 @@ const PhobiaAudio = (() => {
   // creature vocal, so it correctly ducks under the therapist voice).
   function ballBounce(v = 0.5, pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 1.2, maxDistance: 18, reverb: 0.2 });
+    const out = sfxOut("ballBounce", pos, { refDistance: 1.2, maxDistance: 18, reverb: 0.2 });
     const t0 = c.currentTime;
     const o = c.createOscillator();
     o.type = "sine";
@@ -5721,7 +5824,7 @@ const PhobiaAudio = (() => {
   // Jaw pickup: two damped chomps + a soft thump.
   function dogMouthGrab(pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 1.0, maxDistance: 10, creature: true, reverb: 0.1 });
+    const out = sfxOut("dogMouthGrab", pos, { refDistance: 1.0, maxDistance: 10, creature: true, reverb: 0.1 });
     const t0 = c.currentTime;
     const chomp = (at, gain) => {
       const buf = noiseBuffer(0.04);
@@ -5754,7 +5857,7 @@ const PhobiaAudio = (() => {
     const c = ensureCtx(); if (!c) return { stop() {} };
     const lapG = c.createGain();
     lapG.gain.value = 1;
-    const out = spatial(pos, { refDistance: 1.0, maxDistance: 10, creature: true, reverb: 0.12 });
+    const out = sfxOut("dogLapping", pos, { refDistance: 1.0, maxDistance: 10, creature: true, reverb: 0.12 });
     lapG.connect(out);
     const srcs = [];
     const t0 = c.currentTime;
@@ -5806,7 +5909,7 @@ const PhobiaAudio = (() => {
   // instead of arriving in eerie silence.
   function growl(intensity = 0.8, pos = null, dur = 1.0) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 1.5, maxDistance: 26, rolloffFactor: 1.6, creature: true, reverb: 0.18 });
+    const out = sfxOut("growl", pos, { refDistance: 1.5, maxDistance: 26, rolloffFactor: 1.6, creature: true, reverb: 0.18 });
     const now = c.currentTime;
     // Voiced body: sawtooth + a detuned SUBHARMONIC saw an octave down —
     // the "two pitches at once" roughness of a real threat growl.
@@ -5871,7 +5974,7 @@ const PhobiaAudio = (() => {
   // spatialised to an audience member's position so the murmur bed has bodies.
   function crowdCough(intensity = 0.4, pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 2.5, maxDistance: 30, rolloffFactor: 1.3, reverb: 0.3 });
+    const out = sfxOut("crowdCough", pos, { refDistance: 2.5, maxDistance: 30, rolloffFactor: 1.3, reverb: 0.3 });
     const now = c.currentTime;
     const bursts = Math.random() < 0.6 ? 2 : 1;
     for (let i = 0; i < bursts; i++) {
@@ -5895,7 +5998,7 @@ const PhobiaAudio = (() => {
   // still" texture between coughs.
   function crowdShuffle(intensity = 0.35, pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 2.5, maxDistance: 26, rolloffFactor: 1.3, reverb: 0.25 });
+    const out = sfxOut("crowdShuffle", pos, { refDistance: 2.5, maxDistance: 26, rolloffFactor: 1.3, reverb: 0.25 });
     const now = c.currentTime;
     const dur = 0.5 + Math.random() * 0.5;
     const src = c.createBufferSource(); src.buffer = noiseBuffer(dur + 0.1);
@@ -5909,48 +6012,13 @@ const PhobiaAudio = (() => {
     src.start(now); src.stop(now + dur + 0.05);
   }
 
-  // ---- Applause ----
-  // The end-of-speech payoff: a broadband clap wash that swells and dies, with
-  // discrete clap transients on top so it reads as hands, not rain. Intensity
-  // sets how many pairs of hands and how long they keep going.
-  function applause(intensity = 0.7, dur = null) {
-    const c = ensureCtx(); if (!c) return;
-    const now = c.currentTime;
-    const D = dur || (2.2 + intensity * 2.2);
-    const wash = c.createBufferSource(); wash.buffer = noiseBuffer(D + 0.5);
-    const washBp = c.createBiquadFilter();
-    washBp.type = "bandpass"; washBp.frequency.value = 1500; washBp.Q.value = 0.5;
-    const washG = c.createGain();
-    washG.gain.setValueAtTime(0, now);
-    washG.gain.linearRampToValueAtTime(0.12 * intensity, now + 0.35);
-    washG.gain.setValueAtTime(0.12 * intensity, now + D * 0.7);
-    washG.gain.exponentialRampToValueAtTime(0.001, now + D);
-    wash.connect(washBp).connect(washG).connect(master);
-    wash.start(now); wash.stop(now + D + 0.1);
-    // Discrete claps, densest mid-swell (sin envelope over the duration)
-    const clapBuf = noiseBuffer(0.15);
-    const claps = Math.min(70, Math.floor(28 + intensity * 45));
-    for (let i = 0; i < claps; i++) {
-      const at = now + Math.random() * D;
-      const env = Math.pow(Math.sin(Math.PI * Math.min(1, (at - now) / D)), 0.8);
-      const s = c.createBufferSource(); s.buffer = clapBuf;
-      const bp = c.createBiquadFilter();
-      bp.type = "bandpass"; bp.frequency.value = 900 + Math.random() * 1800; bp.Q.value = 1.5;
-      const g = c.createGain();
-      g.gain.setValueAtTime(0, at);
-      g.gain.linearRampToValueAtTime((0.05 + Math.random() * 0.05) * intensity * env, at + 0.004);
-      g.gain.exponentialRampToValueAtTime(0.001, at + 0.05 + Math.random() * 0.04);
-      s.connect(bp).connect(g).connect(master);
-      s.start(at); s.stop(at + 0.12);
-    }
-  }
-
   // ---- Wind howl (gust) ----
   // A single low-frequency-modulated noise sweep that layers on top of the
   // continuous wind. Heights uses this as the user nears the railing or
   // tilts their pitch downward — the visceral "the wind is real" cue.
   function windHowl(intensity = 0.6) {
     const c = ensureCtx(); if (!c) return;
+    const out = sfxOut("windHowl", null);
     const now = c.currentTime;
     const dur = 1.4 + Math.random() * 0.8;
     const buf = noiseBuffer(dur);
@@ -5965,7 +6033,7 @@ const PhobiaAudio = (() => {
     g.gain.setValueAtTime(0, now);
     g.gain.linearRampToValueAtTime(0.16 + intensity * 0.20, now + dur * 0.35);
     g.gain.exponentialRampToValueAtTime(0.001, now + dur);
-    src.connect(bp).connect(g).connect(master);
+    src.connect(bp).connect(g).connect(out);
     src.start(now); src.stop(now + dur + 0.02);
   }
 
@@ -6020,7 +6088,7 @@ const PhobiaAudio = (() => {
   // Door creak — used at the start of the enclosed scene's tighter rungs
   function doorCreak(pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = spatial(pos, { refDistance: 1, maxDistance: 12 });
+    const out = sfxOut("doorCreak", pos, { refDistance: 1, maxDistance: 12 });
     const now = c.currentTime;
     const dur = 0.7;
     // Stick-slip creak: a woody mid tone that creeps in pitch, GATED by a fast
@@ -6104,6 +6172,7 @@ const PhobiaAudio = (() => {
   // never as noise. All routed through master so the mute toggle covers them.
   function ui(kind = "whoosh", volMul = 1) {
     const c = ensureCtx(); if (!c) return;
+    const out = sfxOut("ui", null);
     const now = c.currentTime;
     const bell = (freq, t0, dur = 0.7, vol = 0.055) => {
       vol *= volMul;
@@ -6114,7 +6183,7 @@ const PhobiaAudio = (() => {
       g.gain.exponentialRampToValueAtTime(vol, t0 + 0.012);
       g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
       g2.gain.value = 0.35;
-      osc.connect(g); shimmer.connect(g2).connect(g); g.connect(master);
+      osc.connect(g); shimmer.connect(g2).connect(g); g.connect(out);
       osc.start(t0); osc.stop(t0 + dur + 0.05);
       shimmer.start(t0); shimmer.stop(t0 + dur + 0.05);
     };
@@ -6137,7 +6206,7 @@ const PhobiaAudio = (() => {
       g.gain.setValueAtTime(0.0001, now);
       g.gain.exponentialRampToValueAtTime(0.075 * volMul, now + 0.16);
       g.gain.exponentialRampToValueAtTime(0.0008, now + 0.5);
-      src.connect(bp).connect(g).connect(master);
+      src.connect(bp).connect(g).connect(out);
       src.start(now); src.stop(now + 0.6);
     }
   }
@@ -6164,7 +6233,7 @@ const PhobiaAudio = (() => {
     dogVocal, preloadDogSamples,
     dogWhine, dogPant, dogSniff, growl,
     // Crowd foley + applause (speaking scene)
-    crowdCough, crowdShuffle, applause,
+    crowdCough, crowdShuffle,
     // Dog movement foley
     dogFootfall, ballBounce, dogMouthGrab, dogLapping,
     // Room acoustics
