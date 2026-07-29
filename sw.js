@@ -11,7 +11,7 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v10.2-real-voice";
+const VERSION = "mira-v11-world-sound";
 const SHELL = [
   "./",
   "./index.html",
@@ -26,10 +26,9 @@ const SHELL = [
   "./assets/models/Husky.gltf",
   "./assets/models/Spider.glb",
   "./assets/models/Snake.glb",
-  // Recorded therapist-voice manifest (clips themselves are cached as they
-  // play via the runtime network-first handler; a missing clip falls back to
-  // live TTS, so partial caches degrade gracefully offline).
-  "./assets/voice/manifest.json",
+  // (The recorded therapist-voice manifest is no longer precached: the spoken
+  // guide track is retired — guidance is captions/tips only, and the world's
+  // own audio is synthesized or sampled below.)
   // Dog vocal sample bank manifest (samples cache at runtime like voice
   // clips; a missing/uncached sample falls back to synthesis per-kind).
   "./assets/audio/dog/manifest.json",

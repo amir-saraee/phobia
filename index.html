@@ -25973,6 +25973,88 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   fbRight.userData.noCollide = true;
   scene.add(fbRight);
 
+  // ---------- Wall décor (a lived-in room, not a test chamber) ----------
+  // Two framed prints + curtains flanking the window. All noCollide, none
+  // cast shadow (the wall/ceiling flags GATE the key light — décor must not
+  // join that game). Prints are painted procedurally so no assets ship.
+  {
+    const makePrintTex = (variant) => {
+      const c = document.createElement("canvas");
+      c.width = 128; c.height = 160;
+      const g = c.getContext("2d");
+      if (variant === 0) {
+        // Soft dune bands — echoes the room's warm plaster palette.
+        g.fillStyle = "#e8ddca"; g.fillRect(0, 0, 128, 160);
+        g.fillStyle = "#c9b393"; g.beginPath();
+        g.moveTo(0, 95); g.quadraticCurveTo(45, 70, 128, 100); g.lineTo(128, 160); g.lineTo(0, 160); g.fill();
+        g.fillStyle = "#a98d6d"; g.beginPath();
+        g.moveTo(0, 125); g.quadraticCurveTo(70, 105, 128, 130); g.lineTo(128, 160); g.lineTo(0, 160); g.fill();
+        g.fillStyle = "#e4c9a2"; g.beginPath(); g.arc(92, 42, 17, 0, Math.PI * 2); g.fill();
+      } else {
+        // A leaning sprig in a jar — quiet, domestic.
+        g.fillStyle = "#dfe4da"; g.fillRect(0, 0, 128, 160);
+        g.strokeStyle = "#6f7f66"; g.lineWidth = 3; g.beginPath();
+        g.moveTo(64, 135); g.quadraticCurveTo(58, 85, 74, 48); g.stroke();
+        g.fillStyle = "#87997c";
+        for (const [px, py, r] of [[76, 50, 8], [64, 68, 7], [78, 84, 7], [62, 100, 6]]) {
+          g.beginPath(); g.ellipse(px, py, r, r * 1.7, 0.6, 0, Math.PI * 2); g.fill();
+        }
+        g.fillStyle = "#b9c4bb"; g.fillRect(50, 128, 28, 20);
+      }
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    };
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.6 });
+    const hangPrint = (variant, w, h, x, y, z, rotY) => {
+      const grp = new THREE.Group();
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.06, h + 0.06, 0.035), frameMat);
+      const art = new THREE.Mesh(
+        new THREE.PlaneGeometry(w, h),
+        new THREE.MeshStandardMaterial({ map: makePrintTex(variant), roughness: 0.9 })
+      );
+      art.position.z = 0.022;
+      grp.add(frame); grp.add(art);
+      grp.position.set(x, y, z);
+      grp.rotation.y = rotY;
+      grp.traverse((o) => { o.userData.noCollide = true; o.receiveShadow = true; });
+      scene.add(grp);
+    };
+    // Right wall (faces −x into the room) and window wall right segment.
+    hangPrint(0, 0.52, 0.65, ROOM.x1 - 0.09, 0.42, -1.6, -Math.PI / 2);
+    hangPrint(1, 0.42, 0.55, 1.9, 0.5, ROOM.z0 + 0.09, 0);
+    // Curtains: a rod + two softly-waved panels flanking the window opening
+    // (x ∈ [-3.2,-1.2] on the back wall). Vertex-waved planes — cloth enough
+    // at this art level, zero runtime cost.
+    const rod = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.018, 0.018, 2.75, 8),
+      new THREE.MeshStandardMaterial({ color: 0x6b5a42, metalness: 0.4, roughness: 0.5 })
+    );
+    rod.rotation.z = Math.PI / 2;
+    rod.position.set(-2.2, 1.52, ROOM.z0 + 0.10);
+    rod.userData.noCollide = true;
+    scene.add(rod);
+    const curtainMat = new THREE.MeshStandardMaterial({
+      color: 0xd8cdb9, roughness: 0.95, side: THREE.DoubleSide,
+    });
+    for (const cxp of [-3.38, -1.02]) {
+      const geo = new THREE.PlaneGeometry(0.42, 2.25, 8, 1);
+      const pos = geo.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        // Gentle folds: z ripples across width, deeper toward the hem.
+        const u = pos.getX(i) / 0.42;
+        const vHem = 0.5 - pos.getY(i) / 2.25;
+        pos.setZ(i, Math.sin(u * Math.PI * 4) * 0.035 * (0.55 + vHem * 0.45));
+      }
+      geo.computeVertexNormals();
+      const panel = new THREE.Mesh(geo, curtainMat);
+      panel.position.set(cxp, 1.52 - 2.25 / 2, ROOM.z0 + 0.10);
+      panel.userData.noCollide = true;
+      panel.receiveShadow = true;
+      scene.add(panel);
+    }
+  }
+
   // ---------- Window on the near wall (bright daylight) ----------
   // Relocated from a wall 16 m away (lost in fog) to the room shell itself:
   // now a real window 5-6 m from the player with a parallax backdrop behind
@@ -26259,16 +26341,19 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   );
   jar.position.set(tblX, -0.02, tblZ);
   scene.add(jar);
-  // Biscuits inside (a few small bone shapes, just spheres for simplicity)
+  // Biscuits inside (a few small bone shapes, just spheres for simplicity).
+  // Positioned relative to the JAR (tblX/tblZ) — they were hardcoded to an
+  // old fixed table spot, so whenever the scene context moved the table the
+  // biscuits stayed behind, levitating a metre up in the middle of the room.
   for (let i = 0; i < 4; i++) {
     const biscuit = new THREE.Mesh(
       new THREE.SphereGeometry(0.05, 8, 6),
       new THREE.MeshStandardMaterial({ color: 0xc59060, roughness: 0.7 })
     );
     biscuit.position.set(
-      -2.6 + (Math.random() - 0.5) * 0.12,
+      tblX + (Math.random() - 0.5) * 0.12,
       -0.10 + i * 0.025,
-      -2.5 + (Math.random() - 0.5) * 0.12
+      tblZ + (Math.random() - 0.5) * 0.12
     );
     scene.add(biscuit);
   }
