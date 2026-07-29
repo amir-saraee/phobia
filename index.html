@@ -13037,6 +13037,10 @@ function buildCreature(url, opts = {}) {
         o.castShadow = true;
         o.receiveShadow = true;
         o.frustumCulled = false;
+        // Same crease-limited smoothing as the dogs: chitin and scale plates
+        // curve under light instead of reading as folded paper; leg joints
+        // and fangs keep their edges (see smoothCreaseNormals by buildDog).
+        smoothCreaseNormals(o.geometry, Math.cos(Math.PI / 3));
       }
     });
     // Per-traveller colouring, if the caller asked for one. Materials are
