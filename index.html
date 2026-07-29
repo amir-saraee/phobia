@@ -6790,6 +6790,10 @@ window.PhobiaNarrator = PhobiaNarrator;
 // readable on screen even with no audio. Once the user explicitly toggles it
 // (either way), their preference persists in localStorage.
 const PhobiaVoice = (() => {
+  // The spoken guide track is RETIRED: guidance is captions/tips only, and
+  // the soundscape belongs to the world (creature, room, weather, foley).
+  // Flip to true to re-enable the recorded-clip/TTS delivery below.
+  const VOICE_TRACK = false;
   const synth = typeof window !== "undefined" && window.speechSynthesis;
   let voice = null;
   // Default: guide AUDIBLE. A scared first-time user needs Mira talking them
@@ -6998,13 +7002,12 @@ const PhobiaVoice = (() => {
         window.PhobiaFX.promptGate("voice", text);
       }
     } catch {}
-    // ---- Guidance is visual-first, audible at the moments that matter ----
-    // Every guidance line renders as the on-screen caption/tip dispatched
-    // above. Ambient commentary stays caption-only (spoken play-by-play reads
-    // as nagging), but event-critical beats — panic support, grounding, rung
-    // intros, strike aftermath, habituation praise — pass opts.audible and are
-    // actually spoken, unless the user muted the guide (🗣️ pill / Settings).
-    // opts.force (the Settings "hear it" sample) bypasses the mute check.
+    // ---- Guidance is VISUAL-ONLY: the spoken voice track is retired ----
+    // All guidance renders as the on-screen caption/tip dispatched above and
+    // nothing is ever synthesized or played — the world (dog, room, weather)
+    // is the only thing the player hears. The recorded-clip/TTS machinery
+    // below is kept intact behind this gate in case a voice track returns.
+    if (!VOICE_TRACK) return;
     if (!text) return;
     // The player's own lines ("Come here.", "Treat.") are captioned as the
     // player, never voiced — Mira's voice speaking YOUR commands breaks the
@@ -14016,7 +14019,9 @@ class FPControls {
   getWalkState() {
     return {
       phase: this._walkPhase || 0,
-      amount: Math.max(this._walkAmt || 0, (this._shuffleAmt || 0) * 0.45),
+      // Shuffle weight raised (0.45→0.62): a turn-in-place is real alternating
+      // footwork, and at the old weight the legs barely acknowledged a pivot.
+      amount: Math.max(this._walkAmt || 0, (this._shuffleAmt || 0) * 0.62),
       fwd: this._moveFwd == null ? 1 : this._moveFwd,
       side: this._moveSide || 0,
       shuffle: this._shuffleAmt || 0,
@@ -14117,6 +14122,11 @@ class FPControls {
       this.tpBlend = mode === "tp" ? 1 : 0;
     }
     try { localStorage.setItem("fobia.cameraMode", mode); } catch {}
+    // Keep the avatar coherent with the camera on EVERY mode change: the
+    // renderer registers this to sync the body's head visibility and the FP
+    // hands. Syncing only in the toggle-button handler left any direct
+    // setCameraMode caller with a headless body plus floating hands.
+    try { if (this.onCameraModeChange) this.onCameraModeChange(this.cameraMode); } catch {}
   }
   // Set the list of meshes the TP camera should collide against. Scenes
   // populate this with their walls / building structures / large props so
@@ -14546,6 +14556,40 @@ const FACE_MORPHS = [
       o.y += 0.0034 * upper; o.z -= 0.0016 * upper;
       const fold = _falloff(Math.abs(x) - 0.0240, y + 0.0500, z - 0.0930, 0.0070, 0.0150, 0.036);
       o.z -= 0.0038 * fold;
+    } },
+  // AU18, the lip pucker ("OO" viseme): the lips push FORWARD and the corners
+  // draw inward toward a rounded aperture. Without it, speech can only ever
+  // open and stretch — every rounded vowel reads as the same jaw flap.
+  { name: "mouthPucker", apply(x, y, z, o) {
+      const sgn = Math.sign(x || 1);
+      // Both lips come forward and slightly together.
+      const lips = _falloff(x, y + 0.0665, z - 0.1000, 0.0225, 0.0140, 0.034);
+      o.z += 0.0105 * lips;
+      o.x -= sgn * 0.0065 * lips * Math.min(1, Math.abs(x) / 0.020);
+      // Corners pull toward the midline (the round aperture, not the wide one).
+      const corner = _falloff(Math.abs(x) - 0.0250, y - FACE.mouthY, z - 0.0800, 0.0160, 0.0130, 0.042);
+      o.x -= sgn * 0.0090 * corner;
+      o.z += 0.0035 * corner;
+      // Chin dimpling under the puckered lower lip.
+      const chin = _falloff(x, y + 0.0840, z - 0.1000, 0.0190, 0.0110, 0.034);
+      o.z += 0.0020 * chin;
+    } },
+  // Asymmetric AU12, LEFT side only: the half-smile of a private thought —
+  // relief, amusement, the moment a fear first turns into "maybe I can".
+  // A full symmetric smile on command reads as a mask; the lopsided one is
+  // the expression that makes a face feel like somebody's home.
+  { name: "smileL", apply(x, y, z, o) {
+      const side = _sstep(0.002, 0.014, x);            // 0 on the right, 1 on the left
+      if (side <= 0) return;
+      const corner = _falloff(Math.abs(x) - 0.0250, y - FACE.mouthY, z - 0.0800, 0.0175, 0.0135, 0.045) * side;
+      o.y += 0.0115 * corner;
+      o.x += 0.0075 * corner;
+      o.z -= 0.0030 * corner;
+      const cheek = _falloff(Math.abs(x) - 0.0430, y + 0.0210, z - 0.0780, 0.0230, 0.0190, 0.050) * side;
+      o.y += 0.0045 * cheek; o.z += 0.0035 * cheek;
+      // Slight asymmetric squint partner: the left lower lid rides up a touch.
+      const lid = _falloff(Math.abs(x) - FACE.eyeX, y - FACE.eyeY + 0.0135, z - 0.0730, 0.0260, 0.0105, 0.040) * side;
+      o.y += 0.0030 * lid;
     } },
 ];
 
@@ -15346,6 +15390,11 @@ function buildHead(o) {
     eyes,
     blink: 0, gazeX: 0, gazeY: 0, wide: 0, verge: 0,
     fear: 0, relief: 0, talk: 0, jaw: 0, smile: 0, effort: 0,
+    // Speech is more than aperture: `talkWide` is the stretched "EE" corner
+    // pull, `talkRound` the puckered "OO" — the viseme driver sets all three.
+    talkWide: 0, talkRound: 0,
+    // Asymmetric micro-smile (idle liveliness + relief beats), left corner.
+    halfSmile: 0,
     // One place composes every muscle channel, because expressions ADD: a
     // frightened face that then smiles in relief is both at once, and whichever
     // setter ran last used to silently win.
@@ -15360,12 +15409,18 @@ function buildHead(o) {
       // anger. Fear is the corner where both are true.
       put("browRaise", f * 0.85 + rl * 0.12);
       put("browFurrow", f * 0.62 + (this.effort || 0) * 0.5);
-      put("mouthStretch", f * 0.70);
+      // Speech shares the stretch channel with fear — an "EE" mid-sentence and
+      // a grimace both draw the corners back, so they compose instead of fight.
+      put("mouthStretch", Math.max(f * 0.70, (this.talkWide || 0) * 0.85));
+      // The rounded viseme only reads when the face isn't stretching — fear
+      // and "EE" both suppress a pucker in real speech too.
+      put("mouthPucker", (this.talkRound || 0) * (1 - Math.max(f, this.talkWide || 0) * 0.8));
       put("sneer", Math.max(0, f - 0.45) * 0.9);
       put("squint", Math.max(rl * 0.55, (this.effort || 0) * 0.35, Math.max(0, f - 0.6) * 0.4));
       // Relief reads as a real, small smile — the arousal-comes-down half of
       // the story this whole game is about.
       put("smile", Math.max(this.smile || 0, rl * 0.75));
+      put("smileL", (this.halfSmile || 0) * (1 - f * 0.7));
       for (const m of expressionMeshes) {
         const inf = m.morphTargetInfluences;
         if (!inf) continue;
@@ -15416,14 +15471,20 @@ function buildHead(o) {
     _applyBrows() {
       const f = this.fear || 0, rl = this.relief || 0;
       this._applyMorphs();
+      // One-sided flash (the "oh!" lift): only on the +x brow so it pairs
+      // with the half-smile side. Fear overrides it — a startled face raises
+      // BOTH brows and never just one.
+      const flash = (this._browFlash || 0) * (1 - f);
       for (const b of brows) {
         const sd = b.userData.side;
         // Inner ends lift and pull together — the distress shape. Rotating the
         // ribbon about the head's centre raises whichever end is further out,
         // so the sign flips per side to lift the INNER end. Relief rolls it the
         // other way, past neutral.
-        b.rotation.z = -sd * f * 0.30 + sd * rl * 0.08;
-        b.position.y = b.userData.baseY + f * 0.010 - rl * 0.004;
+        b.rotation.z = -sd * f * 0.30 + sd * rl * 0.08
+          + (sd > 0 ? -flash * 0.06 : 0);
+        b.position.y = b.userData.baseY + f * 0.010 - rl * 0.004
+          + (sd > 0 ? flash * 0.0055 : 0);
         // AU4, the brow KNIT: without it a wide-eyed raised brow reads as
         // surprise, not fear — the knit is the only thing separating them.
         b.position.x = b.userData.baseX - sd * f * 0.0045;
@@ -15469,6 +15530,28 @@ function buildHead(o) {
     setTalk(k) {
       this.talk = Math.max(0, Math.min(1, k || 0));
       this._applyMouth();
+    },
+    // Full viseme state: aperture plus mouth SHAPE (0 corners-back "EE",
+    // 1 lips-pursed "OO"). The viseme random-walk in the body drives this;
+    // plain setTalk callers leave the shape channels untouched.
+    setTalkShape(open, wide, round) {
+      this.talk = Math.max(0, Math.min(1, open || 0));
+      this.talkWide = Math.max(0, Math.min(1, wide || 0));
+      this.talkRound = Math.max(0, Math.min(1, round || 0));
+      this._applyMouth();
+    },
+    // Asymmetric micro-smile (left corner), 0..1 — the idle "somebody's
+    // home" cue and the small private smile of a relief beat.
+    setHalfSmile(k) {
+      this.halfSmile = Math.max(0, Math.min(1, k || 0));
+      this._applyMorphs();
+    },
+    // A one-brow lift, 0..1 (same side as the half-smile) — paired with
+    // setHalfSmile it's the universal "oh, interesting" flash. The body's
+    // micro-expression driver sets the envelope every frame.
+    setBrowFlash(k) {
+      this._browFlash = Math.max(0, Math.min(1, k || 0));
+      this._applyBrows();
     },
     // A voluntary smile, separate from relief — used when the guide praises
     // you and when a creature finally accepts contact. 0..1.
@@ -16360,13 +16443,17 @@ class Body {
       let offTarget = 0;
       if (this.cameraMode === "tp" && controls.getWalkState) {
         const wsT = controls.getWalkState();
-        if (wsT.amount > 0.2 && Math.hypot(wsT.fwd, wsT.side) > 0.2) {
-          let aT = Math.atan2(wsT.side, wsT.fwd);
-          if (Math.abs(aT) > Math.PI / 2 + 0.05) aT = Math.atan2(-wsT.side, -wsT.fwd);
-          offTarget = aT;
-        } else if (hands && hands._reach && hands._reachStrength > 0.3 && hands._reachWorld) {
-          // Standing still with a live reach target: square the body up to the
-          // thing being touched, even if the camera looks elsewhere.
+        // A live touch OWNS the facing: while the hand is on something (petting
+        // the dog, gripping the rail), adjust steps must stay squared to it —
+        // stepping sideways around a dog you're touching is a SIDE-STEP, not a
+        // spin-away-and-walk. Only a committed stride (amount > 0.75) breaks
+        // the square-up; the reach lifecycle drops the hand soon after anyway.
+        // Gate on the ANALOG pace (speedNorm), not the binary walk amount —
+        // amount saturates to 1 on any input, so it can't tell an adjust
+        // step from a committed stride.
+        const reachLock = hands && hands._reach && hands._reachStrength > 0.3
+          && hands._reachWorld && (wsT.speedNorm == null || wsT.speedNorm < 0.7);
+        if (reachLock) {
           const rdx = hands._reachWorld.x - this.group.position.x;
           const rdz = hands._reachWorld.z - this.group.position.z;
           if (rdx * rdx + rdz * rdz > 0.04) {
@@ -16375,6 +16462,10 @@ class Body {
             while (aR < -Math.PI) aR += Math.PI * 2;
             offTarget = Math.max(-2.4, Math.min(2.4, aR));
           }
+        } else if (wsT.amount > 0.2 && Math.hypot(wsT.fwd, wsT.side) > 0.2) {
+          let aT = Math.atan2(wsT.side, wsT.fwd);
+          if (Math.abs(aT) > Math.PI / 2 + 0.05) aT = Math.atan2(-wsT.side, -wsT.fwd);
+          offTarget = aT;
         }
       }
       if (this._travelOff == null) this._travelOff = 0;
@@ -16448,26 +16539,93 @@ class Body {
         const settled = Math.max(0, 1 - this._fearSm * 1.6);
         this.face.setSmile((this._contactLanded || 0) * settled * 0.7);
       }
-      // ---- talking ----
+      // ---- talking (viseme random-walk) ----
       // window.PhobiaTalk is the same 0/1 hold-to-speak signal the speaking
-      // rung already tracks. Real speech is phoneme pulses, not a held vowel,
-      // so the aperture is re-drawn on its own 90–150 ms clock.
-      if (this.face && this.face.setTalk) {
+      // rung already tracks. Real speech is a walk through mouth SHAPES, not
+      // a jaw pumping at one amplitude: open "AA", stretched "EE", rounded
+      // "OO", and the closed-consonant beat between them. Each viseme lives
+      // 90–160 ms and never repeats back-to-back — the rhythm of real speech.
+      if (this.face && this.face.setTalkShape) {
         let talkRaw = 0;
         try { talkRaw = Math.max(0, Math.min(1, +window.PhobiaTalk || 0)); } catch {}
         if (talkRaw > 0.02) {
           if (this._talkNextAt == null || t > this._talkNextAt) {
-            this._talkOpen = (0.25 + Math.random() * 0.75) * talkRaw;
-            this._talkNextAt = t + 0.09 + Math.random() * 0.06;
+            // Weighted viseme pick (no immediate repeat): AA leads, EE and OO
+            // share the middles, M rests between bursts.
+            const VISEMES = [
+              { open: 0.62, wide: 0.05, round: 0.0,  w: 0.38 },   // AA
+              { open: 0.30, wide: 0.85, round: 0.0,  w: 0.24 },   // EE
+              { open: 0.38, wide: 0.0,  round: 0.9,  w: 0.20 },   // OO
+              { open: 0.06, wide: 0.15, round: 0.10, w: 0.18 },   // M/beat
+            ];
+            let pick = this._talkVis != null ? this._talkVis : 0, guard = 0;
+            if (Math.random() < 0.72) {
+              const r = Math.random();
+              let acc = 0;
+              for (let i = 0; i < VISEMES.length; i++) {
+                acc += VISEMES[i].w;
+                if (r <= acc) { pick = i; break; }
+              }
+              while (pick === this._talkVis && guard++ < 4) pick = Math.floor(Math.random() * VISEMES.length);
+            }
+            this._talkVis = pick;
+            const v = VISEMES[pick];
+            // Per-phoneme jitter so no two "AA"s land at the same aperture.
+            this._talkOpen  = (v.open  * (0.8 + Math.random() * 0.4)) * talkRaw;
+            this._talkWideT = v.wide   * (0.75 + Math.random() * 0.35) * talkRaw;
+            this._talkRoundT = v.round * (0.75 + Math.random() * 0.35) * talkRaw;
+            this._talkNextAt = t + 0.09 + Math.random() * 0.07;
           }
         } else {
-          this._talkOpen = 0;
-          this._talkNextAt = null;
+          this._talkOpen = 0; this._talkWideT = 0; this._talkRoundT = 0;
+          this._talkNextAt = null; this._talkVis = null;
         }
-        // Ease between phonemes so the jaw travels instead of teleporting.
+        // Ease between phonemes so the jaw travels instead of teleporting;
+        // the shape muscles follow a touch slower than the jaw (real lips lag
+        // the mandible by a fraction of a syllable).
         this._talkSm = (this._talkSm || 0)
           + ((this._talkOpen || 0) - (this._talkSm || 0)) * Math.min(1, dtB * 22);
-        this.face.setTalk(this._talkSm);
+        this._talkWideSm = (this._talkWideSm || 0)
+          + ((this._talkWideT || 0) - (this._talkWideSm || 0)) * Math.min(1, dtB * 13);
+        this._talkRoundSm = (this._talkRoundSm || 0)
+          + ((this._talkRoundT || 0) - (this._talkRoundSm || 0)) * Math.min(1, dtB * 13);
+        this.face.setTalkShape(this._talkSm, this._talkWideSm, this._talkRoundSm);
+      }
+      // ---- micro-expressions (idle liveliness) ----
+      // A calm, idle face is never perfectly blank: every few seconds a small
+      // asymmetric beat — a left half-smile with a one-brow lift — plays out
+      // over ~1 s. Gated on low fear: a startled face raises both brows and
+      // never smirks. Relief beats (arousal on the way down) borrow the same
+      // channel at full weight, so the "I actually did it" smile arrives
+      // lopsided and earned instead of masked on.
+      if (this.face && this.face.setHalfSmile) {
+        const calm = (this._fearSm || 0) < 0.22 && idleFactor > 0.55;
+        const relieved = this._reliefPulse > 0.25;
+        if (this._microNextAt == null) this._microNextAt = t + 5 + Math.random() * 7;
+        if (relieved && !this._reliefMicroFired) {
+          this._reliefMicroFired = true;
+          this._microT = 1;                       // fire immediately, stronger
+          this._microAmp = 1;
+        } else if (!relieved) {
+          this._reliefMicroFired = false;
+        }
+        if (calm && t > this._microNextAt) {
+          this._microNextAt = t + 7 + Math.random() * 9;
+          this._microT = 1;
+          this._microAmp = 0.45 + Math.random() * 0.3;
+        }
+        let halfSmile = 0, browFlash = 0;
+        if (this._microT > 0) {
+          this._microT = Math.max(0, this._microT - dtB / 1.05);
+          const env = Math.sin((1 - this._microT) * Math.PI);   // 0→1→0
+          const amp = this._microAmp || 0.5;
+          halfSmile = env * amp;
+          browFlash = env * 0.75 * amp;
+        }
+        this._halfSmileSm = (this._halfSmileSm || 0)
+          + (halfSmile - (this._halfSmileSm || 0)) * Math.min(1, dtB * 10);
+        this.face.setHalfSmile(this._halfSmileSm);
+        if (this.face.setBrowFlash) this.face.setBrowFlash(browFlash);
       }
     }
     const fearK = this._fearSm || 0;
@@ -16500,6 +16658,9 @@ class Body {
       // Metres per step, straight from the phase engine — the gait sizes its
       // leg swing to this so the planted foot matches the ground.
       if (ws.stride) this._strideLen = ws.stride;
+      // Turn-in-place footwork signal (no translation, just yaw rate) — the
+      // legs need to know it's a pivot, because the direction vector is ~0.
+      this._wsShuffle = ws.shuffle || 0;
       const off = this._travelOff || 0;
       if (Math.abs(off) > 0.001) {
         const c = Math.cos(off), s = Math.sin(off);
@@ -16509,6 +16670,14 @@ class Body {
       if (ws.amount > walkAmt) walkAmt = ws.amount;
     }
     const fwdShare = Math.abs(gaitFwd);
+    const sideShare = Math.abs(gaitSide);
+    // How much does LATERAL travel dominate? 0 on a forward walk or a 45°
+    // diagonal, 1 on a committed strafe. Below it the legs run the ordinary
+    // sagittal cycle; at full strafe the pattern switches to a real side-step
+    // (the old code stretched the forward cycle sideways — the classic
+    // "gliding crab" tell).
+    const latDom = _hsat((sideShare - fwdShare) / 0.25) * sideShare;
+    const shufK = Math.max(0, (this._wsShuffle || 0) - walkAmt * 0.5);
     // Body-local travel this frame: how far forward and how far sideways the
     // character actually moved along its own axes. The planted foot gives back
     // exactly this, which is what makes sliding impossible rather than merely
@@ -16541,6 +16710,17 @@ class Body {
       // s: 0 at heel strike (foot furthest forward), rising through stance.
       let s = ((th - Math.PI / 2) / (Math.PI * 2)) % 1;
       if (s < 0) s += 1;
+      // Side-step roles: on a committed strafe the leg on the side of travel
+      // LEADS (steps out, lands early, shuffles low) while the trailing leg
+      // CROSSES in front of it — travelling further than the body did, with
+      // a real knee lift. Blended by latDom so diagonals sit between the two
+      // patterns. Latched per leg so stance and swing agree at footfall.
+      const leadLeg = (leg.side > 0) === (gaitSide > 0);
+      if (s >= STANCE || leg._latAmp == null) {
+        leg._latAmp = latDom > 0.001
+          ? (leadLeg ? 0.55 + 0.30 * latDom : 0.55 + 1.10 * latDom)
+          : 0.55;
+      }
       let alongF, alongS, kneeSwing, swingT = 0;
       if (s < STANCE) {
         if (leg._plantS == null || s < leg._plantS) {     // a fresh footfall
@@ -16556,23 +16736,28 @@ class Body {
         leg._plantF  += (leg._hipStepF != null ? leg._hipStepF : this._stepFwd);
         leg._plantSd += (leg._hipStepS != null ? leg._hipStepS : this._stepSide);
         alongF = half * leg._dirF - leg._plantF;
-        alongS = half * leg._dirS * 0.55 - leg._plantSd;
+        alongS = half * leg._dirS * leg._latAmp - leg._plantSd;
         kneeSwing = 0;
       } else {
         leg._plantS = null;
         swingT = (s - STANCE) / (1 - STANCE);             // 0..1
         const e = 0.5 - 0.5 * Math.cos(Math.PI * swingT);
         alongF = (-half + 2 * half * e) * gaitFwd;
-        alongS = (-half + 2 * half * e) * gaitSide * 0.55;
+        alongS = (-half + 2 * half * e) * gaitSide * leg._latAmp;
         kneeSwing = Math.sin(Math.PI * swingT);
       }
-      // Knee clears the ground at mid-swing; sidesteps use a smaller lift
-      // (nobody folds a knee to shuffle).
-      const kneeFlex = (kneeSwing * (0.28 + 0.62 * fwdShare) + 0.04) * walkAmt;
+      // Knee clears the ground at mid-swing. The crossing leg of a side-step
+      // lifts almost like a forward stride; the leading leg stays low (that's
+      // how people shuffle sideways). Turning in place lifts both — a pivot
+      // is alternating knee-ups, not frozen-leg spinning.
+      const latLift = latDom > 0.001 ? (leadLeg ? 0.42 : 0.95) * sideShare : 0;
+      const kneeFlex = (kneeSwing * Math.max(0.28 + 0.62 * fwdShare, latLift) + 0.04
+        + shufK * 0.30 * kneeSwing) * walkAmt;
       // Stance-phase knee YIELD: a real knee never locks straight under load —
       // it gives ~8° as the body's weight rolls over the planted leg.
       const stanceYield = (s < STANCE
-        ? Math.sin(Math.PI * (s / STANCE)) : 0) * 0.13 * walkAmt * fwdShare;
+        ? Math.sin(Math.PI * (s / STANCE)) : 0) * 0.13 * walkAmt
+        * Math.max(fwdShare, sideShare * 0.7);
       const kx = kneeFlex + stanceYield;
       // Solve the hip from the FULL two-segment chain, not from the leg length:
       // a bent knee shortens the leg, and treating it as straight injects a few
@@ -16583,7 +16768,12 @@ class Body {
         Math.asin(Math.max(-0.97, Math.min(0.97, -alongF / Math.max(1e-4, R)))) - psi;
       leg.hip.rotation.z =
         Math.asin(Math.max(-0.85, Math.min(0.85, alongS / legLen)));
-      leg.hip.rotation.y = 0;
+      // Crossing-leg twist: on a strafe the trailing thigh rotates across the
+      // midline during swing instead of describing a wide outward arc — the
+      // visible "cross" that separates a side-step from a sideways glide.
+      leg.hip.rotation.y = (!leadLeg && latDom > 0.001 && swingT > 0)
+        ? latDom * Math.sign(gaitSide) * Math.sin(Math.PI * swingT) * 0.30
+        : 0;
       leg.knee.rotation.x = kx;
       // Foot: level the sole against the leg rotation, then add a heel-toe
       // roll — toe up as it reaches forward, heel peel as it pushes off behind.
@@ -16688,7 +16878,11 @@ class Body {
     // CHAIN the chest inherits the pelvis, so its local yaw must overshoot to
     // land the shoulders on the opposite side.
     if (this._hipTwist === undefined) this._hipTwist = 0;
-    const hipTwistTarget = Math.sin(walkPhase) * walkAmt * fwdShare;
+    // Pelvis leads the stride while the thorax counter-rotates — in ANY travel
+    // direction. Side-steps and pivots get the same counter-twist (scaled a
+    // touch softer), which the old fwd-only gate froze out.
+    const hipTwistTarget = Math.sin(walkPhase) * walkAmt
+      * Math.max(fwdShare, sideShare * 0.8, shufK * 0.6);
     this._hipTwist += (hipTwistTarget - this._hipTwist) * Math.min(1, dtB * 15);
     const pelvisYaw = -this._hipTwist * 0.085;
     const gaitRoll = weightRoll;
@@ -16815,6 +17009,30 @@ class Body {
         const tr = (fearK - 0.25) * 0.0075;
         this.head.rotation.y += Math.sin(t * 23.0) * tr;
         this.head.rotation.x += Math.sin(t * 19.7 + 1.3) * tr * 0.7;
+      }
+    }
+    // ---- Whole-body startle jerk (event-driven, additive) ----
+    // The camera flinch (kickShake) is FP-only, so in third person a close
+    // bark used to leave the avatar statuesque while the fear meter jumped —
+    // the one moment the body should visibly answer. Fast attack (~80 ms),
+    // ~0.55 s release: shoulders/chest recoil, chin tucks, a tiny lateral
+    // jolt — the "jumped out of their skin" silhouette, scaled by amp.
+    if ((this._startleT || 0) > 0.001) {
+      this._startleT = Math.max(0, this._startleT - dtB / 0.55);
+      const sT = this._startleT;
+      const atk = Math.min(1, (1 - sT) * 7);           // sharp rise
+      const env = atk * sT * sT * (this._startleAmp || 0.5);
+      if (this.spine) this.spine.rotation.x -= env * 0.10;   // recoil rearward
+      if (this.chest) this.chest.rotation.x -= env * 0.12;
+      if (this.head) {
+        this.head.rotation.x -= env * 0.30;                  // chin tuck
+        this.head.rotation.z += env * 0.06 * (this._startleDir || 1);
+      }
+      // The flinch-jitter of the first tenth-second, felt through the neck.
+      if (sT > 0.72) {
+        const j = (sT - 0.72) * 0.10 * (this._startleAmp || 0.5);
+        this.head.rotation.y += Math.sin(t * 47.0) * j;
+        this.head.rotation.x += Math.sin(t * 41.3 + 0.7) * j;
       }
     }
     // Eyes lead the head: the pupils flick toward whatever the character is
@@ -17210,6 +17428,21 @@ class Body {
     if (opts.armSpread  != null) p.armSpread  = Math.max(0, Math.min(1, opts.armSpread));
     if (opts.reach      != null) p.reach      = Math.max(0, Math.min(1, opts.reach));
     if (opts.reachHeight != null) p.reachHeight = Math.max(0, Math.min(1, opts.reachHeight));
+  }
+
+  // Event-driven whole-body flinch (the TP twin of the camera's kickShake):
+  // a sharp bark, a lunge, a clang — the avatar's shoulders jump, chin tucks,
+  // then it releases over ~0.55 s. amp 0..1. Retriggers only harder, never
+  // softer, so overlapping events don't visibly reset a big jerk to a small
+  // one. The face rides along: a brief arousal bump widens the eyes through
+  // the ordinary fear channel.
+  startle(amp = 0.5) {
+    const a = Math.max(0, Math.min(1, amp));
+    if (a <= (this._startleT || 0) * (this._startleAmp || 0)) return;
+    this._startleT = 1;
+    this._startleAmp = a;
+    this._startleDir = Math.random() < 0.5 ? -1 : 1;
+    this._fearSm = Math.min(1, (this._fearSm || 0) + a * 0.22);
   }
 
   dispose() {
@@ -18966,6 +19199,16 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         body.setCameraMode(controls.cameraMode);
         if (hands && hands.setCameraMode) hands.setCameraMode(controls.cameraMode);
       }
+      // …and keep them synced through every later mode change, no matter who
+      // calls controls.setCameraMode (toggle button, scene code, debug).
+      if (controls) {
+        controls.onCameraModeChange = (m) => {
+          try {
+            if (body) body.setCameraMode(m);
+            if (hands && hands.setCameraMode) hands.setCameraMode(m);
+          } catch {}
+        };
+      }
       // Anchor the body to the player's feet immediately. The per-frame
       // body.update() already does this, but running it once now means the body
       // is correctly placed on frame 0 — no 1-frame flash of the body (and its
@@ -19766,6 +20009,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // visible grip feedback when the user touches an interactive object.
   window.PhobiaFX = window.PhobiaFX || {};
   window.PhobiaFX.firePulse = () => { if (hands) hands.fireAction(); };
+  // Whole-body flinch for scenes to fire on sharp events (bark, lunge,
+  // clang). Reaches the TP avatar; the FP camera has its own kickShake.
+  window.PhobiaFX.bodyStartle = (amp) => { try { if (body && body.startle) body.startle(amp); } catch {} };
   // Positive haptic — until now the ONLY thing a phone let you FEEL was the fear
   // heartbeat. Give bravery/affection/completion their own gentle taps (short +
   // distinct from the fear pulse) so success is physiological, not just text.
@@ -24050,9 +24296,15 @@ class DogController {
     // ---- Temperament style (scene sets from the day's temperament): energy
     // scales the resting wag baseline, restless the idle fidget cadence.
     this.energy = 1; this.restless = 1;
+    // ---- Excitement (gentle-approach ramp): the scene raises 0..1 as the
+    // player closes in calmly. Ears perk and the resting wag builds — the
+    // dog visibly watches you come, instead of only reacting on arrival.
+    this.excitement = 0; this._excSm = 0;
     // ---- One-shot rising punctuation: shake-off after a lie, bow-stretch
     // after a long rest. stand() arms them; _bodyLife plays them out.
     this._shakePulse = 0; this._stretchPulse = 0; this._restT = 0;
+    // ---- Head-cock one-shot: the "hm?" tilt that answers a voice.
+    this._cockT = 0; this._cockDur = 0.9; this._cockDir = 1;
     // ---- Independent ear flicks (one side at a time, on its own clock).
     this._earFlickT = 4 + Math.random() * 6; this._earFlickA = 0; this._earFlickSide = 1;
     // ---- Multi-bark burst: one visual head-toss per audible bark.
@@ -24142,6 +24394,60 @@ class DogController {
     a.timeScale = 1;
     a.fadeIn(0.12).play();
     this._action = a;
+  }
+  // Play a clip once, then cross-fade into a LOOPING clip near its end. A
+  // bare _playOnce clamps on the last frame (the rig visibly freezes for a
+  // beat); launches and flinches need to hand back to a gait or idle.
+  _playOnceThen(name, nextName) {
+    const acts = this.parts.actions;
+    if (!acts || !acts[name]) { if (nextName) this._play(nextName, 0.2); return; }
+    this._playOnce(name);
+    const a = acts[name];
+    this._onceThen = {
+      action: a,
+      next: nextName || "Idle",
+      dur: (a.getClip && a.getClip()) ? a.getClip().duration : 1,
+    };
+  }
+  // Startle flinch: the dog you rush at recoils — the pack's Idle_HitReact
+  // clips (otherwise unused) are exactly that head/body duck, then back to
+  // neutral. Only meaningful from a standing/sitting pose.
+  flinch() {
+    if (this.state !== "idle" && this.state !== "sit") return false;
+    const pick = Math.random() < 0.5 ? "Idle_HitReact1" : "Idle_HitReact2";
+    if (!this._has(pick)) return false;
+    this._playOnceThen(pick, this._clipForState(this.state));
+    return true;
+  }
+  // Fetch launch: a real dog breaks into a chase with a bounding leap, not a
+  // standing start. Gallop_Jump once, then the Gallop loop owns the run.
+  jumpLaunch() {
+    if (!this._has("Gallop_Jump")) return false;
+    this._playOnceThen("Gallop_Jump", "Gallop");
+    return true;
+  }
+  // Head-cock: the one-ear-up tilt a dog answers a voice with. Purely
+  // procedural (no clip), so it plays over any resting pose; refuses while
+  // moving — a trotting dog turns its whole body, it doesn't tilt.
+  headCock(dur = 0.9) {
+    if (this.state === "walking" || this.state === "galloping"
+        || this.state === "bark" || this.state === "eat") return false;
+    if (this._cockT > 0.05) return true;         // already mid-tilt
+    this._cockT = 1;
+    this._cockDur = dur;
+    this._cockDir = Math.random() < 0.5 ? -1 : 1;
+    return true;
+  }
+  // Play-bow: the universal "throw it!" invitation. The bow-stretch pulse is
+  // already this exact shape (chest dips front-down, head up — signs measured
+  // on this rig), so the invite reuses it and adds the tail: a bow with a
+  // still tail is a stretch, a bow with the tail GOING is a request to play.
+  playBow() {
+    if (this.state === "walking" || this.state === "galloping"
+        || this.state === "bark" || this.state === "eat" || this.state === "lay") return false;
+    this._stretchPulse = Math.max(this._stretchPulse, 1);
+    this.tailWag += 5;
+    return true;
   }
 
   setState(s) {
@@ -24502,7 +24808,9 @@ class DogController {
           }
         }
         // Ground the feet to actual speed. Blocked → timeScale 0 (no treadmill).
-        if (this._action) {
+        // Skipped while a one-shot (launch/flinch) owns the action — its
+        // playback rate is authored, not ground-driven.
+        if (this._action && !this._onceThen) {
           const actualSpeed = moved / Math.max(0.0001, d);
           // Prefer the model-measured stride constants (world units at the
           // true render scale) over the scene's height-based guesses.
@@ -24568,7 +24876,9 @@ class DogController {
     // single-frame poke doesn't stick the head down forever.
     const wantLow = this.headPitch > 0.35 ? 1 : 0;
     this._headLowSm += (wantLow - this._headLowSm) * Math.min(1, d * 6);
-    if (this.state === "idle" && this._has("Idle_2_HeadLow")) {
+    // (Skipped while a one-shot owns the action — the head-low swap used to
+    // stomp a just-started flinch in the same frame it began.)
+    if (this.state === "idle" && this._has("Idle_2_HeadLow") && !this._onceThen) {
       const low = this.parts.actions["Idle_2_HeadLow"];
       if (this._headLowSm > 0.5 && this._action !== low) this._play("Idle_2_HeadLow", 0.25);
       else if (this._headLowSm <= 0.5 && this._action === low) this._play("Idle", 0.25);
@@ -24637,6 +24947,21 @@ class DogController {
         }
       } else if (this._shufOn) {
         this._shufOn = false;   // Walk became the main action — it owns itself now
+      }
+    }
+    // One-shot → loop handoff: near the end of a launch/flinch clip, fade
+    // into the follow-up loop so the rig never sits on a clamped last frame.
+    // An INTERRUPTED one-shot (something else already faded a new action in —
+    // e.g. the startle scramble's walkTo) only clears the bookkeeping: playing
+    // ot.next here would stomp the interrupter and strand the dog gliding on
+    // a non-locomotion clip.
+    if (this._onceThen) {
+      const ot = this._onceThen;
+      if (!this._action || this._action !== ot.action) {
+        this._onceThen = null;
+      } else if (ot.action.time >= ot.dur - 0.22) {
+        this._onceThen = null;
+        this._play(ot.next, 0.25);
       }
     }
     p.mixer.update(d);
@@ -24766,12 +25091,15 @@ class DogController {
     this._growlSm += ((this._growlT > 0 ? 1 : 0) - this._growlSm) * Math.min(1, d * 10);
     if (this._growlT > 0) this._growlT = Math.max(0, this._growlT - d);
     let wagAmp, wagFreq, tailLift;
+    this._excSm += ((this.excitement || 0) - this._excSm) * Math.min(1, d * 3);
     if (this.mood === "aggressive") {
       wagAmp = 0.15; wagFreq = 13; tailLift = 0.35;              // high + stiff, fast tick
     } else if (this.mood === "alert") {
       wagAmp = 0.10; wagFreq = 8; tailLift = 0.38;               // high + stiff
     } else {
-      const calmWag = resting ? (0.10 + this.happy * 0.25) * (0.7 + 0.3 * this.energy) : 0.04;
+      // Excitement lifts the resting wag — the approach is the reward.
+      const calmWag = (resting ? (0.10 + this.happy * 0.25) * (0.7 + 0.3 * this.energy) : 0.04)
+        + this._excSm * 0.20;
       wagAmp = Math.min(1, calmWag + this._petAmountSm * 0.8 + this._wagImpulse * 0.5);
       wagFreq = 5 + wagAmp * 11; tailLift = 0;
     }
@@ -24870,7 +25198,9 @@ class DogController {
         }
         if (minY < Infinity) cal.minLocal = Math.min(cal.minLocal, minY - this.dog.position.y);
         cal.t += d;
-        if (cal.t > 1.1 && isFinite(cal.minLocal)) { cal.done = true; cal.adj = -cal.minLocal; }
+        // Same poseYOff cancellation as the rest latch below — a walk sampled
+        // mid-tuck would otherwise bake the tuck's drop into the gait floor.
+        if (cal.t > 1.1 && isFinite(cal.minLocal)) { cal.done = true; cal.adj = -cal.minLocal - poseYPrev; }
       }
       if (cal.adj != null) this._groundAdj = cal.adj;
       this._groundProbeT = 0.20;   // fresh rest-probe shortly after stopping
@@ -24912,7 +25242,12 @@ class DogController {
           if (rc.t > 1.1 && isFinite(rc.minLocal)) {
             rc.done = true;
             const H = this.parts.height || 0.6;
-            this._groundAdj = Math.max(-0.35 * H, Math.min(0.6 * H, -rc.minLocal));
+            // The applied height is baseY + poseYOff + adj, but minLocal is
+            // pose-relative (current y subtracted out) — so the latch must
+            // cancel poseYOff too. Latching just -minLocal buried every
+            // offset pose by exactly its poseYOff: the sitting dog sat 9 cm
+            // into the floor and its front legs "ended" at the boards.
+            this._groundAdj = Math.max(-0.35 * H, Math.min(0.6 * H, -rc.minLocal - poseYPrev));
           }
         }
       }
@@ -24945,8 +25280,9 @@ class DogController {
     }
 
     // ---- Ears ---- (gentle sway + a bounce while trotting; perked hard
-    // forward when alert — the "ears up, watching" of the rung description)
-    const earPerk = this.mood === "alert" ? 0.16 : 0;
+    // forward when alert — the "ears up, watching" of the rung description.
+    // Excitement perks them a notch even on a relaxed dog.)
+    const earPerk = (this.mood === "alert" ? 0.16 : 0) + this._excSm * 0.11;
     const earOsc = Math.sin(this._wagPhase * 0.5) * 0.025
       + (this._walkAmtSm > 0.01 ? Math.sin(bobP) * 0.06 * this._walkAmtSm : 0);
     for (let i = 0; i < rig.earsL.length; i++) rig.earsL[i].rotation.x += earOsc * (0.5 + i * 0.3) + earPerk;
@@ -25001,6 +25337,22 @@ class DogController {
       for (const e of rig.earsL) e.rotation.x += Math.sin(t * 56 + 1.4) * 0.30 * sp;
       for (const e of rig.earsR) e.rotation.x += Math.sin(t * 56 + 2.8) * 0.30 * sp;
     }
+    // ---- Head-cock (one-shot) ----
+    // The listening tilt: head rolls to one side, chin lifts a touch, the
+    // high-side ear pricks while the other flops. Asymmetry is the whole
+    // point — a symmetric ear move reads as wind, not attention.
+    if (this._cockT > 0.001) {
+      const env = Math.sin((1 - this._cockT) * Math.PI);
+      this._cockT = Math.max(0, this._cockT - d / (this._cockDur || 0.9));
+      const dir = this._cockDir;
+      if (rig.head) {
+        rig.head.rotation.z += 0.40 * env * dir;
+        rig.head.rotation.x += 0.06 * env;              // chin up: "I'm listening"
+      }
+      if (rig.neck) rig.neck.rotation.z += 0.13 * env * dir;
+      for (const e of rig.earsL) e.rotation.x += (dir > 0 ? 0.20 : -0.09) * env;
+      for (const e of rig.earsR) e.rotation.x += (dir > 0 ? -0.09 : 0.20) * env;
+    }
     // ---- Bow-stretch (one-shot) ----
     // After a long rest: chest dips front-down (play-bow shape — the +x
     // front-down signs measured on this rig, see the sit block) with the
@@ -25053,12 +25405,15 @@ class DogController {
       // Spine signs MEASURED on the live rig (probe: rotate, read world y):
       // pelvis/chest +x pitches the FRONT DOWN on these Quaternius dogs — the
       // old +pelvis/−chest combination produced a play-bow (head at floor,
-      // rear in the air) whenever a sit was commanded. The forelegs are NOT
-      // an FK chain on this rig (leg-bone rotations barely move the paw), so
-      // a big pelvis pivot floats the front paws in the air: keep the pivot
-      // SMALL and get the head-up posture from the chest/neck bones, which
-      // raise the head without touching the legs.
-      if (rig.pelvis) rig.pelvis.rotation.x -= 0.12 * s * (1 - l);
+      // rear in the air) whenever a sit was commanded.
+      // Pivot depth RE-MEASURED after the ground-latch poseYOff fix: −0.31
+      // levels the front paws with the rump bottom (probe: spread 8.4 cm at
+      // −0.12, ~0 at −0.31), so the clamp plants BOTH ends on the boards —
+      // the old small pivot left the rump hovering once the paws grounded.
+      // (The pivot mostly LIFTS the front rather than sinking the rear, which
+      // is why the pre-clamp code kept it small — grounding is the clamp's
+      // job now, the pivot's job is closing the front↔rear spread.)
+      if (rig.pelvis) rig.pelvis.rotation.x -= 0.31 * s * (1 - l);
       if (rig.chest[1]) rig.chest[1].rotation.x += 0.34 * s * (1 - l);
       if (rig.chest[0]) rig.chest[0].rotation.x += 0.20 * s * (1 - l);
       if (rig.neck) rig.neck.rotation.x += 0.22 * s * (1 - l);
@@ -25677,14 +26032,16 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   );
   bedBase.rotation.x = -Math.PI / 2;
   bedBase.scale.set(1, 1, 0.72);
-  bedBase.position.y = -0.89;
+  // Sunk 2.5 cm below tangent contact: a fabric bolster SQUASHES against the
+  // boards — the mathematical single-line touch read as hovering.
+  bedBase.position.y = -0.915;
   bedBase.castShadow = true;
   dogBed.add(bedBase);
   const bedCushion = new THREE.Mesh(
     new THREE.CylinderGeometry(0.46, 0.49, 0.10, 20),
     new THREE.MeshStandardMaterial({ color: 0x9bb0c7, roughness: 0.95, normalMap: fabricNormal })
   );
-  bedCushion.position.y = -0.93;
+  bedCushion.position.y = -0.945;   // follows the bolster's squash
   dogBed.add(bedCushion);
   dogBed.position.set(dx(2.6), 0, dz(-2.5));
   scene.add(dogBed);
@@ -25701,7 +26058,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     new THREE.MeshStandardMaterial({ color: 0xcfd4d8, metalness: 0.9, roughness: 0.25, envMapIntensity: 1.2 })
   );
   const bowlX = dx(2.0), bowlZ = dz(-1.3);
-  bowl.position.set(bowlX, -0.99, bowlZ);
+  // Base EXACTLY on the boards (floor top = −1.0) — the old −0.99 left a
+  // 1 cm float that read clearly at dog-height camera angles.
+  bowl.position.set(bowlX, -1.0, bowlZ);
   bowl.castShadow = true;
   scene.add(bowl);
   const water = new THREE.Mesh(
@@ -25709,7 +26068,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     new THREE.MeshStandardMaterial({ color: 0x5d8dab, roughness: 0.04, metalness: 0.0, transparent: true, opacity: 0.88, envMapIntensity: 1.6 })
   );
   water.rotation.x = -Math.PI / 2;
-  water.position.set(bowlX, -0.90, bowlZ);
+  water.position.set(bowlX, -0.91, bowlZ);   // follows the bowl's 1 cm drop
   scene.add(water);
 
   // Treat jar on a side table — visible "where the treats come from"
@@ -25966,6 +26325,18 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     const pr = (dogsControls && dogsControls.bodyRadius) || dogCtrl.playerRadius || 0.30;
     return bodySurfaceDist(pp.x, pp.z, dog.position.x, dog.position.z, pr, dogCtrl.radius || 0.35);
   }
+  // Whole-body flinch on the avatar, scaled by how close the bark landed:
+  // a bark at arm's length jolts the shoulders; across the room it barely
+  // registers. (The FP camera has its own kickShake — this reaches the
+  // third-person body, which used to stand statuesque through every bark.)
+  function bodyJolt(base) {
+    try {
+      const pp = (storedActiveControls && storedActiveControls.position) || camera.position;
+      const dd = Math.hypot(dog.position.x - pp.x, dog.position.z - pp.z);
+      const prox = Math.max(0.2, Math.min(1, 1.25 - dd / 6));
+      if (window.PhobiaFX && window.PhobiaFX.bodyStartle) window.PhobiaFX.bodyStartle(base * prox);
+    } catch {}
+  }
   let petRequestT = 0;
   // Spontaneous barks are scheduled by the per-rung escalation arc (below);
   // Infinity = not yet armed. (The barking rung owns its own warning cadence.)
@@ -25998,6 +26369,18 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   let _apprSm = 0, _pvxSm = 0, _pvzSm = 0, _pSpdSm = 0;
   let startleT = 0, startleCDUntil = 0, startlePrompted = false;
   let _bumpCDUntil = 0;
+  let _excSm = 0;                     // gentle-approach excitement ramp (0..1)
+  // Deferred startle scramble: the duck-flinch plays FIRST (a stationary
+  // clip), THEN the recoil step — walkTo flips state to walking, and
+  // flinch() refuses from walking, so firing both same-frame killed the duck.
+  let startleHop = null;              // { x, z, at }
+  // Scene clock mirror + the deferred come-here walk (call → head-cock →
+  // walk); commandDog runs outside update() and has no `t` of its own.
+  let sceneNow = 0;
+  let callWalkAt = 0;
+  // One play-bow per windup — edge-triggered so holding the ball doesn't
+  // re-bow every frame.
+  let bowedThisWindup = false;
   // Arrival-greeting + banana-walk bookkeeping (call/auto-approach), and the
   // ball delivery show-off beat.
   let callGreetPending = false, callGreetDeadline = 0;
@@ -26733,10 +27116,16 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         break;
       }
       case "call": {
-        // Calls the dog to you by name — approach along the dog→player vector
-        // so the dog stops in front of you from any angle (not a fixed +Z offset).
-        walkToPlayer(0.65, { arc: true });
-        callGreetPending = true; callGreetDeadline = 0;
+        // Calls the dog to you by name. A resting dog ANSWERS first — the
+        // head-cock "hm?" tilt — and only then commits to the trot; a dog
+        // already on its feet just comes. The walk itself approaches along
+        // the dog→player vector so it stops in front of you from any angle.
+        if (dogCtrl.headCock(0.85)) {
+          callWalkAt = sceneNow + 0.7;
+        } else {
+          walkToPlayer(0.65, { arc: true });
+          callGreetPending = true; callGreetDeadline = 0;
+        }
         if (window.PhobiaVoice) window.PhobiaVoice.speak("Come here.", { speaker: "you" });
         break;
       }
@@ -26824,6 +27213,12 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         return { gesture: "rest", hint: dist < 4.0
           ? `${dogName} is barking. Soften your gaze and step back slowly — it settles when you give space.`
           : `Watch from here. Soften your gaze. Step closer only when you're ready.` };
+      }
+      // Mid-windup the throw rides IN the hand — wrap the fingers around the
+      // item instead of leaving them open beside a floating ball. Both the
+      // FP hands and the TP body read this gesture (curl + grip pose).
+      if (item && item.state === "windup") {
+        return { gesture: "grab", hint: "" };
       }
       // Within reach, drive the ACTUAL right hand onto a live bone on the dog
       // (Back / Torso / Head) so petting tracks the posed body — not a fixed
@@ -26934,6 +27329,14 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     update(t, controls, dt) {
       if (controls) { dogsControls = controls; storedActiveControls = controls; }
       const d = dt || 0.016;
+      sceneNow = t;
+      // Deferred come-here: the head-cock answers the call first ("hm?"),
+      // THEN the dog commits to the walk — voice → tilt → trot, in that order.
+      if (callWalkAt && t >= callWalkAt) {
+        callWalkAt = 0;
+        walkToPlayer(0.65, { arc: true });
+        callGreetPending = true; callGreetDeadline = 0;
+      }
       petPulse = Math.max(0, petPulse - d);
       // Drive the dog's lean-into-pet from the petPulse so the dog actually
       // reacts to contact instead of just absorbing clicks silently.
@@ -26958,6 +27361,148 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           && invSurf < PET_INVITE_SURFACE
           && invSurf > PET_CONTACT_SURFACE * 0.55
           && still) ? 1 : 0;
+      }
+
+      // ---- Player kinematics: HOW you move toward the dog matters ----
+      // The dog reads your body's velocity, not just your position. Velocity
+      // is the player's OWN, projected on the player→dog line — closure caused
+      // by the DOG moving (a fetch return, a call) must never read as a
+      // charge. Two responses grow from the same signal:
+      //   • A fast, direct close STARTLES the dog: it recoils a step, ducks
+      //     (flinch clip), tail tucks, and a small dog whines while a big
+      //     alert dog answers with a warning bark instead.
+      //   • A slow, calm close is an INVITATION: the dog visibly perks up as
+      //     it watches you come (ears, building wag) — the quiet reward for
+      //     approaching the way a nervous animal needs you to.
+      if (controls && dog.userData.ready) {
+        const pp = controls.position;
+        const pdx = dog.position.x - pp.x, pdz = dog.position.z - pp.z;
+        const pDist = Math.hypot(pdx, pdz) || 1;
+        if (_prevPP.t >= 0) {
+          // SIM time, not wall time: position integrates against the render
+          // loop's clamped dt, so dividing by wall-clock gaps under-reads
+          // velocity whenever a frame runs long (every threshold here would
+          // silently deflate on a 20 fps phone and the startle could never
+          // fire). `d` is the same clamped dt the movement itself used.
+          const idt = Math.max(0.008, Math.min(d, t - _prevPP.t));
+          _pvxSm += ((pp.x - _prevPP.x) / idt - _pvxSm) * Math.min(1, d * 8);
+          _pvzSm += ((pp.z - _prevPP.z) / idt - _pvzSm) * Math.min(1, d * 8);
+          // Closure: + when the player moves toward the dog.
+          _apprSm += ((_pvxSm * pdx + _pvzSm * pdz) / pDist - _apprSm) * Math.min(1, d * 5);
+          _pSpdSm += (Math.hypot(_pvxSm, _pvzSm) - _pSpdSm) * Math.min(1, d * 5);
+          // Inspection surface for the preview harness (read-only, cheap).
+          dogCtrl._dbg = { appr: _apprSm, spd: _pSpdSm, dist: pDist, exc: _excSm };
+          const busy = dogCtrl.state === "walking" || dogCtrl.state === "galloping"
+            || dogCtrl.state === "bark" || dogCtrl.state === "eat";
+          const friendly = intensity !== "barking" && dogCtrl.mood !== "aggressive"
+            && dogCtrl.state !== "bark" && dogCtrl.state !== "eat"
+            && fetchPhase === "idle";
+          const alertRung = intensity === "alert";
+          // Startle: brisk beeline within the dog's awareness bubble. Calm
+          // rungs flinch small; alert rungs answer bigger — but a lying dog
+          // (rung-3 start) never scrambles up for this.
+          const startleThresh = alertRung ? 1.75 : 1.30;
+          if (friendly && t > startleCDUntil && pDist < 3.4 && _apprSm > startleThresh) {
+            startleCDUntil = t + 9;
+            startleT = 1;
+            const lying = dogCtrl.state === "lay";
+            // Duck FIRST, scramble SECOND. flinch() only plays from a
+            // standing/sitting pose, so it must run before the recoil walk
+            // flips the state — then the step away lands mid-duck (0.45 s),
+            // cutting the clip at its sharpest point: duck → scramble.
+            const ducked = (!alertRung && !lying) ? dogCtrl.flinch() : false;
+            if (!lying && !busy) {
+              // Recoil: one quick step AWAY along the dog→player line.
+              const hop = dogCtrl._resolve(
+                dog.position.x - (pdx / pDist) * 0.55,
+                dog.position.z - (pdz / pDist) * 0.55
+              );
+              if (ducked) {
+                startleHop = { x: hop.x, z: hop.z, at: t + 0.45 };
+              } else {
+                dogCtrl.walkTo(hop.x, hop.z, { force: true });
+              }
+              dogCtrl._moveLockT = Math.max(dogCtrl._moveLockT || 0, 1.2);
+            }
+            if (alertRung) {
+              dogCtrl.barkSmall();
+              dogCtrl.aggression = Math.max(dogCtrl.aggression || 0, 0.42);
+              if (window.PhobiaAudio?.dogVocal) {
+                // dogPos/barkOpts (built later in update) aren't in scope here.
+                const sYaw = dog.rotation.y;
+                window.PhobiaAudio.dogVocal("bark", 0.55, {
+                  x: dog.position.x, y: dog.position.y + 0.7, z: dog.position.z,
+                }, {
+                  f0: dogF0, count: 1, gap: 0.18, air: true, reverb: 0.22,
+                  forward: { x: Math.sin(sYaw), y: 0, z: Math.cos(sYaw) },
+                  coneInnerAngle: 80, coneOuterAngle: 220, coneOuterGain: 0.30,
+                });
+              }
+            } else if (window.PhobiaAudio?.dogWhine) {
+              try {
+                window.PhobiaAudio.dogWhine(0.5, {
+                  x: dog.position.x, y: dog.position.y + dogHeight * 0.5, z: dog.position.z,
+                });
+              } catch {}
+            }
+            if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.18);
+            if (alertRung) bodyJolt(0.5);   // its answering bark hits YOUR body too
+            // The startle costs the approach its welcome: the dog needs a
+            // beat before it wants to close or wander again.
+            nextAutoApproach = Math.max(nextAutoApproach, t + 7);
+            nextWander = Math.max(nextWander, t + 5);
+            wanderSuppressUntil = Math.max(wanderSuppressUntil, t + 5);
+            if (!startlePrompted && window.PhobiaFX?.contextPrompt) {
+              startlePrompted = true;
+              window.PhobiaFX.contextPrompt(
+                alertRung
+                  ? `${dogName} answered a fast approach. Slow down — let it watch you come.`
+                  : `Quick moves startle dogs. Slow, easy steps — watch ${dogName} stay calm.`,
+                4600
+              );
+            }
+          }
+          // The deferred scramble: fires mid-duck, cancelling the flinch
+          // one-shot into the recoil step (the controller acts on walkTo
+          // directly; _moveLockT only pauses the scene's own scheduling).
+          if (startleHop && t >= startleHop.at) {
+            dogCtrl.walkTo(startleHop.x, startleHop.z, { force: true });
+            startleHop = null;
+          }
+          // Tail tuck while the startle plays out (decays over ~2.2 s). The
+          // `|| dogCtrl.tuck` term writes the final exact zero — otherwise the
+          // channel parks at the last sub-1% sample forever.
+          if (startleT > 0 || dogCtrl.tuck) {
+            startleT = Math.max(0, startleT - d / 2.2);
+            dogCtrl.tuck = (alertRung ? 0.30 : 0.75) * startleT;
+          }
+          // Bump: brushing the dog's body at speed makes it give way.
+          if (friendly && t > _bumpCDUntil && _pSpdSm > 0.55
+              && playerDogSurfaceDist(pp) < 0.06) {
+            _bumpCDUntil = t + 5;
+            if (!busy && dogCtrl.state !== "lay") {
+              // Sidestep off the collision line rather than back into the player.
+              const sx = dog.position.x + (pdz / pDist) * 0.45;
+              const sz = dog.position.z - (pdx / pDist) * 0.45;
+              const step = dogCtrl._resolve(sx, sz);
+              dogCtrl.walkTo(step.x, step.z, { force: true });
+              dogCtrl._moveLockT = Math.max(dogCtrl._moveLockT || 0, 1.0);
+              dogCtrl.flinch();
+            }
+          }
+          // Gentle-approach excitement ramp: near, slow (or quietly waiting),
+          // and not mid-startle — the dog perks as you close in.
+          const gentle = friendly && startleT <= 0
+            && pDist < 3.0 && _apprSm < 0.9 && _pSpdSm < 0.9;
+          _excSm += ((gentle ? Math.max(0.15, 1 - pDist / 3.2) : 0) - _excSm) * Math.min(1, d * 2.5);
+          dogCtrl.excitement = _excSm;
+          if (_excSm > 0.05) dogCtrl.tailWag += _excSm * d * 5;
+          dogCtrl.happy = Math.min(1, trust + _excSm * 0.45);
+        } else {
+          dogCtrl.excitement = 0;
+          dogCtrl.happy = trust;
+        }
+        _prevPP.x = pp.x; _prevPP.z = pp.z; _prevPP.t = t;
       }
       dogCtrl.update(t, d);
 
@@ -27106,19 +27651,35 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       }
 
       // ---- Ambient panting / breathing ----
-      // A real dog breathes audibly at rest and pants harder after exertion.
-      // Fire dogPant() on a self-scheduling timer, faster when keyed up.
+      // A real dog breathes audibly at rest and pants harder after exertion —
+      // and inside arm's reach it is a CONTINUOUS presence: the breath gaps
+      // close toward a real pant cycle (~2 breaths/s), the sound sits at
+      // muzzle height instead of the floor, and now and then the dog audibly
+      // sniffs YOU. This proximity layer is most of what "it's right here"
+      // feels like with your eyes on the meter instead of the dog.
       dogExertion = Math.max(0, dogExertion - d * 0.12);
       dogPantTimer -= d;
       if (dogPantTimer <= 0) {
         const calm = dogCtrl.state === "idle" || dogCtrl.state === "sit" || dogCtrl.state === "lay";
+        const ppB = (controls && controls.position) || camera.position;
+        const nearD = Math.hypot(dog.position.x - ppB.x, dog.position.z - ppB.z);
+        const near = Math.max(0, Math.min(1, (2.2 - nearD) / 1.7));   // 1 at ≤0.5 m → 0 past 2.2 m
         if ((calm || dogExertion > 0.2) && window.PhobiaAudio?.dogPant) {
           try {
-            if (window.PhobiaAudio.dogVocal) window.PhobiaAudio.dogVocal("pant", 0.3 + dogExertion * 0.55, dog.position);
-            else window.PhobiaAudio.dogPant(0.3 + dogExertion * 0.55, dog.position);
+            const muzzle = { x: dog.position.x, y: dog.position.y + dogHeight * 0.62, z: dog.position.z };
+            if (near > 0.55 && calm && Math.random() < 0.16 && window.PhobiaAudio.dogSniff) {
+              window.PhobiaAudio.dogSniff(0.4 + near * 0.3, muzzle);   // smelling you
+            } else if (window.PhobiaAudio.dogVocal) {
+              window.PhobiaAudio.dogVocal("pant", 0.3 + dogExertion * 0.55 + near * 0.12, muzzle);
+            } else {
+              window.PhobiaAudio.dogPant(0.3 + dogExertion * 0.55 + near * 0.12, muzzle);
+            }
           } catch {}
         }
-        dogPantTimer = (calm ? 1.1 + Math.random() * 0.9 : 0.5 + Math.random() * 0.4) / (1 + dogExertion * 1.5);
+        const baseGap = calm ? 1.1 + Math.random() * 0.9 : 0.5 + Math.random() * 0.4;
+        // ×(1−0.62·near): gaps shrink to ~0.42–0.76 s at contact range — a
+        // relaxed pant rhythm, still clear of the ~0.3 s one-shot length.
+        dogPantTimer = (baseGap * (1 - near * 0.62)) / (1 + dogExertion * 1.5);
       }
 
       // Keep the player from walking through the dog + key props. Furniture
@@ -27665,6 +28226,29 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       // Windup phase: animate the item in the user's hand toward release
       if (item && item.state === "windup") {
         tickWindup(d);
+        // The BALL in your hand is dog language: a trusting dog that spots
+        // the windup answers with a play-bow — chest down, rump up, tail
+        // going — the species-universal "throw it!". Once per windup, only
+        // from a settled pose, and only when the bond has started (a wary
+        // rung-3 dog watches; it doesn't beg).
+        if (!bowedThisWindup && item.kind === "ball" && trust > 0.3
+            && intensity !== "barking" && dogCtrl.mood !== "aggressive") {
+          bowedThisWindup = true;
+          if (dogCtrl.playBow()) {
+            // Bump the scene-side smoother (the kinematics block re-writes
+            // dogCtrl.excitement from it every frame).
+            _excSm = Math.max(_excSm, 0.6);
+            if (window.PhobiaAudio?.dogVocal) {
+              try {
+                window.PhobiaAudio.dogVocal("pant", 0.5, {
+                  x: dog.position.x, y: dog.position.y + dogHeight * 0.6, z: dog.position.z,
+                });
+              } catch {}
+            }
+          }
+        }
+      } else {
+        bowedThisWindup = false;
       }
       if (item && fetchPhase === "flying" && item.state === "flying") {
         const m = item.mesh;
@@ -27716,10 +28300,16 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
             fetchToItemT = 0;
             dogCtrl._moveLockT = 20;
             // The chase is the joy of fetch — sprint to the ball when it's a
-            // real run, trot when it landed nearby.
+            // real run, trot when it landed nearby. A long throw gets the
+            // bounding launch leap first (Gallop_Jump), not a standing start.
+            // The dog breaks OUT of its play-bow here: cut the bow overlay so
+            // the chest-dip doesn't ride the gallop.
+            dogCtrl._stretchPulse = 0;
             const chaseDist = Math.hypot(m.position.x - dog.position.x, m.position.z - dog.position.z);
-            if (chaseDist > 2.2) dogCtrl.gallopTo(m.position.x, m.position.z);
-            else dogCtrl.walkTo(m.position.x, m.position.z, { force: true });
+            if (chaseDist > 2.2) {
+              dogCtrl.gallopTo(m.position.x, m.position.z);
+              if (chaseDist > 2.6 && item.kind === "ball") dogCtrl.jumpLaunch();
+            } else dogCtrl.walkTo(m.position.x, m.position.z, { force: true });
           }
         }
       }
@@ -27784,7 +28374,22 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         // the dog arrived, idled, re-issued walk forever, then gave up at 8 s.
         const deliverDist = playerStandOffCenter(0.55) + 0.20;
         const giveUp = returnT > 8;
-        if (distToPlayer < deliverDist || giveUp) {
+        // ---- The show-off beat ----
+        // A dog that ran down a ball doesn't hand it over like a vending
+        // machine: it arrives, plants, and parades the prize for a beat —
+        // head up at you, tail going — THEN drops it. The pause is also the
+        // moment the "good dog!" lands, which is the whole point of fetch.
+        if (item.kind === "ball" && !giveUp && distToPlayer < deliverDist && !ballShowUntil) {
+          ballShowUntil = t + 1.15;
+          dogCtrl.stopMove();
+          dogCtrl.greet(1.1);
+          dogCtrl.tailWag += 5;
+        }
+        if (ballShowUntil && t < ballShowUntil && distToPlayer < deliverDist + 0.6) {
+          // Hold the pose, prize on display, eyes on you.
+          dogCtrl.lookAt3({ x: pp.x, y: pp.y, z: pp.z }, 1);
+        } else if (distToPlayer < deliverDist || giveUp) {
+          ballShowUntil = 0;
           const world = new THREE.Vector3();
           dog.userData.parts.jaw.getWorldPosition(world);
           dog.userData.parts.jaw.remove(item.mesh);
@@ -27824,6 +28429,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           // moved off the captured target (or the dog arrived at a stale spot
           // and idled). The old one-shot target left the dog frozen mid-room
           // holding the ball whenever the player kept walking.
+          ballShowUntil = 0;   // player moved mid-show-off: skip the parade
           returnTgt.x = pp.x; returnTgt.z = pp.z;
           walkToPlayer(0.55);
         }
@@ -27964,6 +28570,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
               window.PhobiaAudio.bark(0.6, dogPos, barkOpts);
             }
             if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.25);
+            bodyJolt(0.4);
             arousalFloor = Math.max(arousalFloor, 0.30);
             dogExertion = Math.min(1, dogExertion + 0.25);
             warningBarkCount++;
@@ -28015,6 +28622,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
               window.PhobiaAudio.bark(0.75 + 0.2 * starePressure, dogPos, barkOpts);
             }
             if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.35 + 0.25 * starePressure);
+            bodyJolt(0.6 + 0.2 * starePressure);
             arousalFloor = Math.max(arousalFloor, 0.45 + 0.35 * starePressure);
             dogExertion = Math.min(1, dogExertion + 0.35);
             warningBarkCount++;
@@ -28139,6 +28747,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
             window.PhobiaAudio.bark(0.7 * trustQuiet, dogPos, barkOpts);
           }
           if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.35);
+          bodyJolt(0.5);
           barkAt = t; barkDistSnap = pd;
           const stretch = (1 + Math.min(0.6, trust * 0.6)) * (esc.settled ? 1.6 : 1);
           nextSpontaneousBark = t + (B.barkEvery[0] + Math.random() * (B.barkEvery[1] - B.barkEvery[0])) * stretch;
