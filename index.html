@@ -14046,9 +14046,17 @@ class FPControls {
       // the legacy taller eye heights and aimed at the hips. The look-target
       // also pitches with the user's pitch so they can aim past the character.
       const lookYBase = this.position.y - 0.50;     // approx chest height
-      const lookX = this.position.x + sinY * 0.3;   // less yaw bias
+      // Velocity lead: frame where the character is GOING, not just where it
+      // is — a walking shot opens ~0.45 m of space ahead of the travel
+      // direction (the follow-cam grammar every TP game trains you on).
+      // Smoothed through _vel, so it eases in with the walk and settles
+      // back to a centered frame on stop.
+      const lvx = (this._vel ? this._vel.x : 0), lvz = (this._vel ? this._vel.z : 0);
+      const lead = Math.min(0.45, Math.hypot(lvx, lvz) * 0.32);
+      const lspd = Math.hypot(lvx, lvz) || 1;
+      const lookX = this.position.x + sinY * 0.3 + (lvx / lspd) * lead;
       const lookY = lookYBase + sinP * tpDist * 0.55;
-      const lookZ = this.position.z + cosY * 0.3;
+      const lookZ = this.position.z + cosY * 0.3 + (lvz / lspd) * lead;
       // Damp the look-target too so framing changes are smooth
       if (!this._tpSmoothLook) {
         this._tpSmoothLook = new THREE.Vector3(lookX, lookY, lookZ);
@@ -30098,6 +30106,11 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               spiderCtrl.pounceRear(1);
               if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.8 + 0.2 * closeness);
               if (controls.kickShake) controls.kickShake(0.05 + 0.04 * closeness);
+              // Whole-body flinch + caught breath — the TP twin of kickShake.
+              try {
+                if (window.PhobiaFX && window.PhobiaFX.bodyStartle) window.PhobiaFX.bodyStartle(0.6 + 0.3 * closeness);
+                if (window.PhobiaAudio && window.PhobiaAudio.breathCatch) window.PhobiaAudio.breathCatch(0.55 + 0.35 * closeness);
+              } catch {}
               if (controls.snapLookAt) controls.snapLookAt(spider.position.x, spider.position.y + 0.05, spider.position.z, 0.6);
               if (A && A.chitinTik) try { A.chitinTik({ x: spider.position.x, y: spider.position.y, z: spider.position.z }, { intensity: 0.9 }); } catch {}
               arousalFloor = 1.0;
@@ -32844,6 +32857,12 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           headAnchor.getWorldPosition(_snkV1);
           if (window.PhobiaAudio) { if (window.PhobiaAudio.snakeStrike) window.PhobiaAudio.snakeStrike(_snkV1); else if (window.PhobiaAudio.hissOnce) window.PhobiaAudio.hissOnce(_snkV1, 1.0); }
           if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.9);
+          // The strike hits the BODY too: whole-body flinch + the caught
+          // breath. kickShake below is FP-only; this reaches third person.
+          try {
+            if (window.PhobiaFX && window.PhobiaFX.bodyStartle) window.PhobiaFX.bodyStartle(0.85);
+            if (window.PhobiaAudio && window.PhobiaAudio.breathCatch) window.PhobiaAudio.breathCatch(0.85);
+          } catch {}
           arousalFloor = Math.max(arousalFloor, 0.8);
         }
       } else if (snakeCtl.strikePhase === "lunge") {
