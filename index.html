@@ -4117,17 +4117,19 @@ const PhobiaAudio = (() => {
     doorCreak:     [0.0557, 0.12],
     windHowl:      [0.1003, 0.15],
     // player foley — the most-heard sounds in the game
-    footstep_hard:   [0.01581, 0.070],
-    footstep_wood:   [0.02148, 0.068],
-    footstep_soft:   [0.00408, 0.042],
-    footstep_grass:  [0.02000, 0.050],
-    footstep_splash: [0.02336, 0.078],
-    footstep_glass:  [0.01493, 0.062],
+    footstep_hard:   [0.01581, 0.085],
+    footstep_wood:   [0.02148, 0.082],
+    footstep_soft:   [0.00408, 0.055],
+    footstep_grass:  [0.02000, 0.062],
+    footstep_splash: [0.02336, 0.090],
+    footstep_glass:  [0.01493, 0.075],
     // creature intimacy
-    dogWhine:      [0.0608, 0.058],
-    dogPant:       [0.0144, 0.040],
-    dogSniff:      [0.0132, 0.044],
-    dogFootfall:   [0.0234, 0.046],
+    dogWhine:      [0.0608, 0.070],
+    dogPant:       [0.0144, 0.052],
+    dogSniff:      [0.0132, 0.055],
+    dogFootfall:   [0.0234, 0.058],
+    dogSample:     [0.50, 0.42],      // recorded bark/growl/pant/woof trim
+    collarJingle:  [0.040, 0.048],
     dogMouthGrab:  [0.0438, 0.052],
     dogLapping:    [0.0300, 0.044],
     skitterBurst:  [0.0325, 0.050],
@@ -4372,17 +4374,23 @@ const PhobiaAudio = (() => {
     const src = c.createBufferSource();
     src.buffer = buf;
     src.playbackRate.value = Math.pow(2, (Math.random() * 2 - 1) / 12) * (opts.rate || 1);
-    const g = c.createGain();
-    g.gain.value = 0.9 * intensity;
-    const out = spatial(pos, {
+    // Route through SFX_CAL so recordings sit at the same loudness as synth
+    // fallbacks — raw 0.9*intensity was ~6 dB hotter and fought the mix.
+    const out = sfxOut(opts.cal || "dogSample", pos, {
       refDistance: 1.5, maxDistance: 30, rolloffFactor: 1.6, creature: true,
       air: opts.air, reverb: opts.reverb,
       forward: opts.forward, coneInnerAngle: opts.coneInnerAngle,
       coneOuterAngle: opts.coneOuterAngle, coneOuterGain: opts.coneOuterGain,
     });
+    if (!out) return;
+    const g = c.createGain();
+    const peak = Math.max(0.0002, 0.55 * intensity);
+    const when = opts.when || c.currentTime;
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(peak, when + 0.008);
     src.connect(g);
     g.connect(out);
-    src.start(opts.when || c.currentTime);
+    src.start(when);
   }
 
   // Formant-based bark synthesis — the fallback voice when no recording
@@ -5518,70 +5526,108 @@ const PhobiaAudio = (() => {
     osc.start(now); osc.stop(now + 0.04);
   }
 
-  // Single footstep — short low thump that varies by surface.
-  // surface: "hard" (concrete / tile) · "wood" · "soft" (carpet / dirt) · "grass" · "splash" (shallow water) · "glass" (skywalk pane)
-  // Concrete, floorboards and carpet used to be three lowpasses inside the same
-  // octave — measured centroids 235 / 227 / 226 Hz, i.e. three names for one
-  // dull thud. The surface you are walking on is one of the few things a player
-  // hears on every single step, so each one gets its own body, its own brightness
-  // and its own resonance. And a real step is TWO contacts: the heel lands, then
-  // the foot rolls onto the ball ~45 ms later, softer. One thump is the sound of
-  // dropping a box.
+  // Single footstep — layered heel + ball contact that varies by surface.
+  // surface: "hard" | "wood" | "soft" | "grass" | "splash" | "glass"
+  // opts.side: -1 left / +1 right (pitch + scuff bias)
+  // opts.speed: 0..1 walk pace (creep is quieter, darker; stomp is brighter)
+  // A real step is weight transfer: heel lands, foot rolls, ball presses,
+  // then a faint fabric/sole scuff. One filtered-noise thump is a dropped box.
   const FOOT_SURFACES = {
-    hard:   { type: "lowpass",  hz: 520,  hzJit: 140, q: 0.8, dur: 0.11, gain: 0.20,
-              click: { hz: 3000, amp: 0.05, dur: 0.014 }, roll: 0.042, rollAmp: 0.42 },
-    wood:   { type: "bandpass", hz: 430,  hzJit: 120, q: 1.0, dur: 0.13, gain: 0.24,
-              click: { hz: 1900, amp: 0.03, dur: 0.016 }, roll: 0.050, rollAmp: 0.50,
-              // hollow board — two low modes ringing under the knock
-              modes: [[186, 0.030, 0.13], [428, 0.018, 0.10]] },
-    soft:   { type: "lowpass",  hz: 165,  hzJit: 45,  q: 0.6, dur: 0.15, gain: 0.16,
-              roll: 0.056, rollAmp: 0.34 },
-    grass:  { type: "bandpass", hz: 1500, hzJit: 500, q: 0.5, dur: 0.17, gain: 0.13,
-              roll: 0.060, rollAmp: 0.62 },
-    splash: { type: "bandpass", hz: 1100, hzJit: 700, q: 0.4, dur: 0.21, gain: 0.17,
-              roll: 0.055, rollAmp: 0.55 },
-    glass:  { type: "bandpass", hz: 1850, hzJit: 500, q: 2.0, dur: 0.09, gain: 0.15,
-              click: { hz: 4200, amp: 0.05, dur: 0.010 }, roll: 0.038, rollAmp: 0.40,
-              // the pane itself ringing under the sole
-              modes: [[1660, 0.012, 0.20], [3120, 0.007, 0.15]] },
+    hard:   { type: "lowpass",  hz: 480,  hzJit: 120, q: 0.85, dur: 0.12, gain: 0.22,
+              click: { hz: 2800, amp: 0.055, dur: 0.016 }, roll: 0.045, rollAmp: 0.48,
+              thud: 95, thudAmp: 0.07, scuff: { hz: 2200, amp: 0.028, dur: 0.04 } },
+    wood:   { type: "bandpass", hz: 400,  hzJit: 100, q: 1.05, dur: 0.14, gain: 0.26,
+              click: { hz: 1700, amp: 0.035, dur: 0.018 }, roll: 0.052, rollAmp: 0.55,
+              thud: 88, thudAmp: 0.08, scuff: { hz: 1600, amp: 0.032, dur: 0.045 },
+              modes: [[175, 0.034, 0.14], [410, 0.020, 0.11], [820, 0.010, 0.08]] },
+    soft:   { type: "lowpass",  hz: 150,  hzJit: 40,  q: 0.55, dur: 0.16, gain: 0.20,
+              roll: 0.058, rollAmp: 0.38, thud: 70, thudAmp: 0.055,
+              scuff: { hz: 900, amp: 0.022, dur: 0.055 } },
+    grass:  { type: "bandpass", hz: 1400, hzJit: 450, q: 0.55, dur: 0.18, gain: 0.15,
+              roll: 0.062, rollAmp: 0.65, thud: 80, thudAmp: 0.04,
+              scuff: { hz: 2600, amp: 0.040, dur: 0.07 } },
+    splash: { type: "bandpass", hz: 1050, hzJit: 650, q: 0.42, dur: 0.22, gain: 0.19,
+              roll: 0.055, rollAmp: 0.58, thud: 90, thudAmp: 0.05 },
+    glass:  { type: "bandpass", hz: 1750, hzJit: 450, q: 2.1, dur: 0.10, gain: 0.16,
+              click: { hz: 4000, amp: 0.055, dur: 0.012 }, roll: 0.040, rollAmp: 0.42,
+              thud: 110, thudAmp: 0.045,
+              modes: [[1580, 0.014, 0.22], [3000, 0.008, 0.16]] },
   };
-  function footstep(softness = 0.35, surface = "hard") {
+  function footstep(softness = 0.35, surface = "hard", opts = {}) {
     const c = ensureCtx(); if (!c) return;
     const now = c.currentTime;
     const S = FOOT_SURFACES[surface] || FOOT_SURFACES.hard;
-    const out = sfxOut("footstep_" + (FOOT_SURFACES[surface] ? surface : "hard"), null);
-    const k = Math.max(0.05, softness);
-    // One foot-to-ground contact: filtered noise body, plus an optional bright
-    // transient for surfaces that actually snap (tile, glass — not carpet).
-    const contact = (at, amp) => {
+    const surName = FOOT_SURFACES[surface] ? surface : "hard";
+    const out = sfxOut("footstep_" + surName, null, { reverb: surName === "wood" ? 0.12 : 0.06 });
+    if (!out) return;
+    const speed = opts.speed == null ? 1 : Math.max(0.05, Math.min(1, opts.speed));
+    const side = opts.side || 0;                         // -1 L / +1 R
+    // Left slightly lower & duller, right a touch brighter — breaks the
+    // metronome twin-sample read that makes synth footsteps fake.
+    const sidePitch = 1 + side * 0.035;
+    const sideAmp = 1 + side * 0.04;
+    const k = Math.max(0.05, softness) * (0.55 + 0.45 * Math.pow(speed, 0.85)) * sideAmp;
+    const bright = 0.75 + 0.35 * speed;                  // creep = darker
+
+    const contact = (at, amp, isHeel) => {
       const src = c.createBufferSource(); src.buffer = noiseBuffer(S.dur);
       const f = c.createBiquadFilter();
       f.type = S.type;
-      f.frequency.value = S.hz + (Math.random() - 0.5) * S.hzJit;
+      f.frequency.value = (S.hz * bright * sidePitch) + (Math.random() - 0.5) * S.hzJit;
       f.Q.value = S.q;
       const g = c.createGain();
+      const peak = Math.max(0.0002, S.gain * k * amp * (isHeel ? 1 : 0.92));
       g.gain.setValueAtTime(0.0001, at);
-      g.gain.exponentialRampToValueAtTime(Math.max(0.0002, S.gain * k * amp), at + 0.002);
+      g.gain.exponentialRampToValueAtTime(peak, at + 0.0025);
       g.gain.exponentialRampToValueAtTime(0.001, at + S.dur);
       src.connect(f).connect(g).connect(out);
       src.start(at); src.stop(at + S.dur + 0.02);
-      if (S.click) {
+      if (S.click && isHeel) {
         const cs = c.createBufferSource(); cs.buffer = noiseBuffer(S.click.dur);
-        const hp = c.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = S.click.hz;
+        const hp = c.createBiquadFilter(); hp.type = "highpass";
+        hp.frequency.value = S.click.hz * bright * sidePitch;
         const cg = c.createGain();
-        cg.gain.setValueAtTime(Math.max(0.0002, S.click.amp * k * amp), at);
+        cg.gain.setValueAtTime(Math.max(0.0002, S.click.amp * k * amp * speed), at);
         cg.gain.exponentialRampToValueAtTime(0.0004, at + S.click.dur);
         cs.connect(hp).connect(cg).connect(out);
         cs.start(at); cs.stop(at + S.click.dur + 0.01);
       }
     };
-    contact(now, 1.0);
-    contact(now + S.roll * (0.85 + Math.random() * 0.3), S.rollAmp);
+    // Heel then ball — timing stretches a hair when creeping.
+    const rollT = S.roll * (0.9 + Math.random() * 0.25) * (1.15 - 0.15 * speed);
+    contact(now, 1.0, true);
+    contact(now + rollT, S.rollAmp, false);
+
+    // Low thud — the weight of the body arriving through the sole.
+    if (S.thud) {
+      const o = c.createOscillator(); o.type = "sine";
+      o.frequency.setValueAtTime(S.thud * sidePitch, now);
+      o.frequency.exponentialRampToValueAtTime(S.thud * 0.55, now + 0.07);
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(Math.max(0.0002, S.thudAmp * k), now + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0004, now + 0.09);
+      o.connect(g).connect(out);
+      o.start(now); o.stop(now + 0.11);
+    }
+    // Sole scuff after the ball lands — fabric/rubber drag.
+    if (S.scuff) {
+      const at = now + rollT * 0.7;
+      const ss = c.createBufferSource(); ss.buffer = noiseBuffer(S.scuff.dur);
+      const bp = c.createBiquadFilter();
+      bp.type = "bandpass"; bp.frequency.value = S.scuff.hz * sidePitch; bp.Q.value = 0.8;
+      const sg = c.createGain();
+      sg.gain.setValueAtTime(0.0001, at);
+      sg.gain.exponentialRampToValueAtTime(Math.max(0.0002, S.scuff.amp * k * 0.85), at + 0.008);
+      sg.gain.exponentialRampToValueAtTime(0.0004, at + S.scuff.dur);
+      ss.connect(bp).connect(sg).connect(out);
+      ss.start(at); ss.stop(at + S.scuff.dur + 0.02);
+    }
     // Resonant body — floorboards and a glass pane ring; carpet does not.
     if (S.modes) {
       for (const [hz, amp, decay] of S.modes) {
         const o = c.createOscillator(); o.type = "sine";
-        o.frequency.value = hz * (0.97 + Math.random() * 0.06);
+        o.frequency.value = hz * sidePitch * (0.97 + Math.random() * 0.06);
         const g = c.createGain();
         g.gain.setValueAtTime(0.0001, now);
         g.gain.exponentialRampToValueAtTime(Math.max(0.0002, amp * k), now + 0.004);
@@ -5630,132 +5676,135 @@ const PhobiaAudio = (() => {
   // Add these to the dogs scene's update loop so the dog has constant
   // texture, not just barks-or-silence.
 
-  // Soft whine — short rising-then-falling pure-tone, like a small dog
-  // making a "hmm" while it watches you. Higher pitch + slight wobble.
+  // Soft whine — short rising-then-falling tone with nasal formants and a
+  // breath layer. Higher pitch + vibrato + occasional crack = small-dog "hmm".
   function dogWhine(intensity = 0.6, pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = sfxOut("dogWhine", pos, { refDistance: 1.2, maxDistance: 18, creature: true, reverb: 0.15 });
+    const out = sfxOut("dogWhine", pos, { refDistance: 1.2, maxDistance: 18, creature: true, reverb: 0.18 });
+    if (!out) return;
     const now = c.currentTime;
-    const dur = 0.55 + Math.random() * 0.20;
-    const f0 = 650 + Math.random() * 150;
+    const dur = 0.60 + Math.random() * 0.28;
+    const f0 = 620 + Math.random() * 180;
     const osc = c.createOscillator();
     osc.type = "triangle";
-    osc.frequency.setValueAtTime(f0 * 0.75, now);
-    osc.frequency.linearRampToValueAtTime(f0, now + dur * 0.4);
-    // 50% of whines "crack" — the pitch jumps an octave-ish for a beat, the
-    // signature of a real dog whimper.
-    if (Math.random() < 0.5) {
-      osc.frequency.setValueAtTime(f0 * 1.5, now + dur * 0.55);
-      osc.frequency.setValueAtTime(f0 * 1.5, now + dur * 0.55 + 0.08);
+    osc.frequency.setValueAtTime(f0 * 0.72, now);
+    osc.frequency.linearRampToValueAtTime(f0 * 1.05, now + dur * 0.38);
+    if (Math.random() < 0.55) {
+      osc.frequency.setValueAtTime(f0 * 1.55, now + dur * 0.52);
+      osc.frequency.setValueAtTime(f0 * 1.45, now + dur * 0.52 + 0.07);
     }
-    osc.frequency.exponentialRampToValueAtTime(f0 * 0.8, now + dur);
-    // Slight vibrato so it sounds organic, not a synth tone
+    osc.frequency.exponentialRampToValueAtTime(f0 * 0.78, now + dur);
     const vib = c.createOscillator();
     const vibG = c.createGain();
-    vib.frequency.value = 6.5; vibG.gain.value = 12;
+    vib.frequency.value = 5.8 + Math.random() * 1.6;
+    vibG.gain.value = 14;
     vib.connect(vibG).connect(osc.frequency);
-    // Direct voice + a nasal resonance band, through a soft lowpass
+    // Second partial for body (not a pure videogame beep)
+    const osc2 = c.createOscillator();
+    osc2.type = "sawtooth";
+    osc2.frequency.value = f0 * 0.5;
+    const o2g = c.createGain(); o2g.gain.value = 0.12;
     const sum = c.createGain();
-    const direct = c.createGain(); direct.gain.value = 0.7;
+    const direct = c.createGain(); direct.gain.value = 0.65;
     const nasal = c.createBiquadFilter();
-    nasal.type = "bandpass"; nasal.frequency.value = 2400; nasal.Q.value = 6;
-    const nasalG = c.createGain(); nasalG.gain.value = 0.3;
+    nasal.type = "bandpass"; nasal.frequency.value = 2300 + Math.random() * 400; nasal.Q.value = 5.5;
+    const nasalG = c.createGain(); nasalG.gain.value = 0.35;
     osc.connect(direct); direct.connect(sum);
     osc.connect(nasal); nasal.connect(nasalG); nasalG.connect(sum);
+    osc2.connect(o2g); o2g.connect(sum);
     const lp = c.createBiquadFilter();
-    lp.type = "lowpass"; lp.frequency.value = 3800;
+    lp.type = "lowpass"; lp.frequency.value = 4200;
     const g = c.createGain();
     g.gain.setValueAtTime(0, now);
-    g.gain.linearRampToValueAtTime(0.18 * intensity, now + 0.08);
-    g.gain.linearRampToValueAtTime(0.14 * intensity, now + dur * 0.6);
+    g.gain.linearRampToValueAtTime(0.20 * intensity, now + 0.07);
+    g.gain.linearRampToValueAtTime(0.15 * intensity, now + dur * 0.55);
     g.gain.exponentialRampToValueAtTime(0.001, now + dur);
     sum.connect(lp); lp.connect(g); g.connect(out);
-    // Breath layer under the tone
     const nb = noiseBuffer(dur);
     if (nb) {
       const ns = c.createBufferSource(); ns.buffer = nb;
       const nbp = c.createBiquadFilter();
-      nbp.type = "bandpass"; nbp.frequency.value = 1600; nbp.Q.value = 1.2;
+      nbp.type = "bandpass"; nbp.frequency.value = 1500; nbp.Q.value = 1.1;
       const ng = c.createGain();
       ng.gain.setValueAtTime(0, now);
-      ng.gain.linearRampToValueAtTime(0.05 * intensity, now + 0.08);
+      ng.gain.linearRampToValueAtTime(0.06 * intensity, now + 0.08);
       ng.gain.exponentialRampToValueAtTime(0.001, now + dur);
       ns.connect(nbp); nbp.connect(ng); ng.connect(out);
       ns.start(now); ns.stop(now + dur + 0.02);
     }
-    osc.start(now); vib.start(now);
-    osc.stop(now + dur + 0.05); vib.stop(now + dur + 0.05);
+    osc.start(now); osc2.start(now); vib.start(now);
+    osc.stop(now + dur + 0.05); osc2.stop(now + dur + 0.05); vib.stop(now + dur + 0.05);
   }
 
-  // Soft pant — a single "haa-puh" breath. Used as an event the dog scene
-  // fires at ~2 Hz when calm. Two-stage: noisy in (longer, breathy) and
-  // a quick voiced "puh" out.
+  // Soft pant — inhale (breathy) + voiced exhale with wet lip flutter.
   function dogPant(intensity = 0.5, pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = sfxOut("dogPant", pos, { refDistance: 1.0, maxDistance: 8, creature: true, reverb: 0.08 });
+    const out = sfxOut("dogPant", pos, { refDistance: 1.0, maxDistance: 8, creature: true, reverb: 0.10 });
+    if (!out) return;
     const now = c.currentTime;
-    // Inhale — band-passed noise, soft envelope. Randomized center per call
-    // so a pant train doesn't sound like a sample loop.
+    // Inhale
     {
-      const dur = 0.18;
+      const dur = 0.20;
       const buf = noiseBuffer(dur);
-      const src = c.createBufferSource(); src.buffer = buf;
-      const bp = c.createBiquadFilter();
-      bp.type = "bandpass"; bp.frequency.value = 700 + Math.random() * 250; bp.Q.value = 0.9;
-      const g = c.createGain();
-      g.gain.setValueAtTime(0, now);
-      g.gain.linearRampToValueAtTime(0.10 * intensity, now + dur * 0.45);
-      g.gain.exponentialRampToValueAtTime(0.001, now + dur);
-      src.connect(bp).connect(g).connect(out);
-      src.start(now); src.stop(now + dur + 0.02);
-    }
-    // Exhale — a tiny voiced ping under the noise puff
-    {
-      const dur = 0.14;
-      const t0 = now + 0.16;
-      const buf = noiseBuffer(dur);
-      const src = c.createBufferSource(); src.buffer = buf;
-      const bp = c.createBiquadFilter();
-      bp.type = "bandpass"; bp.frequency.value = 950 + Math.random() * 300; bp.Q.value = 1.4;
-      const g = c.createGain();
-      g.gain.setValueAtTime(0, t0);
-      g.gain.linearRampToValueAtTime(0.12 * intensity, t0 + 0.04);
-      g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-      src.connect(bp).connect(g).connect(out);
-      src.start(t0); src.stop(t0 + dur + 0.02);
-      // Hard panting gains a faint voiced "huh" on the exhale
-      if (intensity > 0.55) {
-        const vo = c.createOscillator();
-        vo.type = "triangle";
-        vo.frequency.value = 190 + Math.random() * 60;
-        const vg = c.createGain();
-        vg.gain.setValueAtTime(0.0001, t0);
-        vg.gain.exponentialRampToValueAtTime(0.03 * intensity, t0 + 0.015);
-        vg.gain.exponentialRampToValueAtTime(0.001, t0 + 0.06);
-        vo.connect(vg); vg.connect(out);
-        vo.start(t0); vo.stop(t0 + 0.08);
+      if (buf) {
+        const src = c.createBufferSource(); src.buffer = buf;
+        const bp = c.createBiquadFilter();
+        bp.type = "bandpass"; bp.frequency.value = 650 + Math.random() * 280; bp.Q.value = 0.85;
+        const g = c.createGain();
+        g.gain.setValueAtTime(0, now);
+        g.gain.linearRampToValueAtTime(0.12 * intensity, now + dur * 0.4);
+        g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+        src.connect(bp).connect(g).connect(out);
+        src.start(now); src.stop(now + dur + 0.02);
       }
+    }
+    // Exhale — noise puff + faint voiced tone
+    {
+      const dur = 0.16;
+      const t0 = now + 0.17;
+      const buf = noiseBuffer(dur);
+      if (buf) {
+        const src = c.createBufferSource(); src.buffer = buf;
+        const bp = c.createBiquadFilter();
+        bp.type = "bandpass"; bp.frequency.value = 900 + Math.random() * 350; bp.Q.value = 1.3;
+        const g = c.createGain();
+        g.gain.setValueAtTime(0, t0);
+        g.gain.linearRampToValueAtTime(0.14 * intensity, t0 + 0.025);
+        g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+        src.connect(bp).connect(g).connect(out);
+        src.start(t0); src.stop(t0 + dur + 0.02);
+      }
+      const o = c.createOscillator(); o.type = "triangle";
+      o.frequency.value = 180 + Math.random() * 40;
+      const og = c.createGain();
+      og.gain.setValueAtTime(0.0001, t0);
+      og.gain.exponentialRampToValueAtTime(0.04 * intensity, t0 + 0.02);
+      og.gain.exponentialRampToValueAtTime(0.001, t0 + 0.12);
+      o.connect(og).connect(out);
+      o.start(t0); o.stop(t0 + 0.14);
     }
   }
 
-  // Sniff — rapid short breathy puffs, 4-6 in a burst. Used when the dog is
-  // sniffing the floor / a treat / the air.
+  // Sniff — rapid wet breathy puffs with pitch drift across the burst.
   function dogSniff(intensity = 0.5, pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = sfxOut("dogSniff", pos, { refDistance: 0.8, maxDistance: 8, creature: true });
-    const N = 4 + Math.floor(Math.random() * 3);
+    const out = sfxOut("dogSniff", pos, { refDistance: 0.8, maxDistance: 8, creature: true, reverb: 0.06 });
+    if (!out) return;
+    const N = 5 + Math.floor(Math.random() * 3);
     for (let i = 0; i < N; i++) {
-      const t0 = c.currentTime + i * (0.10 + Math.random() * 0.04);
-      const dur = 0.07;
+      const t0 = c.currentTime + i * (0.085 + Math.random() * 0.035);
+      const dur = 0.065 + Math.random() * 0.02;
       const buf = noiseBuffer(dur);
+      if (!buf) continue;
       const src = c.createBufferSource(); src.buffer = buf;
       const bp = c.createBiquadFilter();
       bp.type = "bandpass";
-      bp.frequency.value = 1400 + Math.random() * 400;
-      bp.Q.value = 1.6;
+      bp.frequency.value = 1200 + i * 80 + Math.random() * 350;
+      bp.Q.value = 1.5;
       const g = c.createGain();
+      const peak = (0.07 + (i % 2) * 0.025) * intensity;
       g.gain.setValueAtTime(0, t0);
-      g.gain.linearRampToValueAtTime(0.08 * intensity, t0 + 0.02);
+      g.gain.linearRampToValueAtTime(peak, t0 + 0.015);
       g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
       src.connect(bp).connect(g).connect(out);
       src.start(t0); src.stop(t0 + dur + 0.01);
@@ -5766,53 +5815,56 @@ const PhobiaAudio = (() => {
   // One paw strike on wood: claw tick + pad thump + board resonance. Driven
   // by DogController's gait-phase events, so footfall RATE and STRENGTH both
   // encode the dog's real speed — the charge becomes a hard, accelerating
-  // click-train approaching through the HRTF panner. (The old system played
-  // a flat human footstep on a 0.5 s bucket, on the wrong bus.)
+  // click-train approaching through the HRTF panner.
   function dogFootfall(strength = 0.5, pos = null) {
     const c = ensureCtx(); if (!c) return;
-    const out = sfxOut("dogFootfall", pos, { refDistance: 1.2, maxDistance: 20, rolloffFactor: 1.5, creature: true, reverb: 0.15 });
+    const out = sfxOut("dogFootfall", pos, { refDistance: 1.2, maxDistance: 20, rolloffFactor: 1.5, creature: true, reverb: 0.18 });
+    if (!out) return;
     const t0 = c.currentTime;
-    const tick = (at, gain) => {
+    const tick = (at, gain, hz) => {
       const buf = noiseBuffer(0.05);
       if (!buf) return;
       const src = c.createBufferSource(); src.buffer = buf;
       const bp = c.createBiquadFilter();
       bp.type = "bandpass";
-      bp.frequency.value = 3400 + Math.random() * 1200;
-      bp.Q.value = 1.3;
+      bp.frequency.value = hz;
+      bp.Q.value = 1.4;
       const g = c.createGain();
       g.gain.setValueAtTime(0.0001, at);
       g.gain.exponentialRampToValueAtTime(gain, at + 0.001);
-      g.gain.exponentialRampToValueAtTime(0.001, at + 0.014);
+      g.gain.exponentialRampToValueAtTime(0.001, at + 0.016);
       src.connect(bp); bp.connect(g); g.connect(out);
       src.start(at); src.stop(at + 0.05);
     };
-    tick(t0, 0.09 * strength);
-    if (strength > 0.6) tick(t0 + 0.012, 0.05 * strength);   // multiple claws land
+    tick(t0, 0.10 * strength, 3200 + Math.random() * 900);
+    tick(t0 + 0.008, 0.06 * strength, 4100 + Math.random() * 800);
+    if (strength > 0.55) tick(t0 + 0.016, 0.045 * strength, 2800 + Math.random() * 600);
     // Pad thump
-    const pb = noiseBuffer(0.1);
+    const pb = noiseBuffer(0.11);
     if (pb) {
       const src = c.createBufferSource(); src.buffer = pb;
       const lp = c.createBiquadFilter();
       lp.type = "lowpass";
-      lp.frequency.value = 240 + Math.random() * 80;
-      lp.Q.value = 1.0;
+      lp.frequency.value = 220 + Math.random() * 90;
+      lp.Q.value = 1.1;
       const g = c.createGain();
       g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(0.16 * strength, t0 + 0.002);
-      g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.06);
+      g.gain.exponentialRampToValueAtTime(0.18 * strength, t0 + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.07);
       src.connect(lp); lp.connect(g); g.connect(out);
-      src.start(t0); src.stop(t0 + 0.1);
+      src.start(t0); src.stop(t0 + 0.11);
     }
-    // Wood board body
-    const bo = c.createOscillator();
-    bo.type = "sine"; bo.frequency.value = 95;
-    const bg = c.createGain();
-    bg.gain.setValueAtTime(0.0001, t0);
-    bg.gain.exponentialRampToValueAtTime(0.05 * strength, t0 + 0.003);
-    bg.gain.exponentialRampToValueAtTime(0.001, t0 + 0.09);
-    bo.connect(bg); bg.connect(out);
-    bo.start(t0); bo.stop(t0 + 0.1);
+    // Wood board body + a higher partial
+    for (const [hz, amp, decay] of [[92, 0.055, 0.10], [185, 0.025, 0.08]]) {
+      const bo = c.createOscillator();
+      bo.type = "sine"; bo.frequency.value = hz * (0.97 + Math.random() * 0.06);
+      const bg = c.createGain();
+      bg.gain.setValueAtTime(0.0001, t0);
+      bg.gain.exponentialRampToValueAtTime(amp * strength, t0 + 0.003);
+      bg.gain.exponentialRampToValueAtTime(0.001, t0 + decay);
+      bo.connect(bg); bg.connect(out);
+      bo.start(t0); bo.stop(t0 + decay + 0.02);
+    }
   }
 
   // Rubber ball on wood. v = normalized impact 0..1. Master bus (it's not a
@@ -13647,11 +13699,11 @@ class FPControls {
       }
     }
     // ---- Acceleration: a body with mass, not a hovering camera ----
-    // Velocity eases toward the input direction × speed. Real walking takes
-    // ~0.25 s to reach pace and ~0.18 s to stop; instant start/stop was the
-    // single biggest "video-game glide" tell. The brief post-release glide
-    // is deliberately NOT counted as walking, so the legs settle while the
-    // last few centimetres bleed off.
+    // Real walking: ~0.35 s to reach pace, ~0.22 s to stop, and a REVERSE
+    // takes longer still (you plant and push the other way). Instant
+    // start/stop and instant 180s were the biggest "video-game glide" tells.
+    // Strafe is also a touch slower than forward — humans don't side-step
+    // at full walk speed.
     const isLean = this.opts.mode === "lookOnly";
     let maxSpeed = (isLean ? 0.85 : this.opts.speed) * moveMag;
     // ---- Fear-modulated gait (opt-in) ----
@@ -13689,13 +13741,42 @@ class FPControls {
     }
     if (!this._vel) this._vel = { x: 0, z: 0 };
     const hasInput = ix !== 0 || iz !== 0;
-    const velRate = hasInput ? 10 : 14;
-    // Exponential response is frame-rate independent. The old dt*rate
-    // approximation made starts and stops feel different at 30, 60 and 120 Hz.
+    // Strafe penalty: committed sideways travel is ~72% of forward pace.
+    if (hasInput) {
+      const sY = Math.sin(this.yaw), cY = Math.cos(this.yaw);
+      const fwdShare = Math.abs(-(ix * sY + iz * cY));
+      const sideShare = Math.abs(ix * cY - iz * sY);
+      const total = fwdShare + sideShare || 1;
+      maxSpeed *= 0.72 + 0.28 * (fwdShare / total);
+      // Turning while moving: a hard mouse-look mid-stride costs a little
+      // pace — you don't hold full walk speed through a 90° spin.
+      const yawRate = dt > 0 ? Math.abs(this.yaw - (this._prevYawMove ?? this.yaw)) / dt : 0;
+      this._prevYawMove = this.yaw;
+      if (yawRate > 1.2) maxSpeed *= Math.max(0.72, 1 - (yawRate - 1.2) * 0.08);
+    }
+    // Direction agreement + first-step impulse.
+    // From standstill, a brief "push into the step" spikes accel so the first
+    // stride commits; reversing brakes hard first; continuing is smoother.
+    let velRate;
+    const vLen0 = Math.hypot(this._vel.x, this._vel.z);
+    if (!hasInput) {
+      // Two-phase stop: hard initial brake, then soft settle (no ice-slide).
+      velRate = vLen0 > 0.55 ? 18 : 12;
+    } else {
+      let dot = 1;
+      if (vLen0 > 0.08) {
+        dot = (this._vel.x * ix + this._vel.z * iz) / vLen0;
+      }
+      if (dot < -0.1) velRate = 3.6;                  // reverse: plant & push
+      else if (dot < 0.4) velRate = 5.5;              // sharp cut
+      else if (vLen0 < 0.12) velRate = 11.0;          // first-step impulse
+      else velRate = 7.2;                             // cruise
+    }
+    // Exponential response is frame-rate independent.
     const velAlpha = 1 - Math.exp(-velRate * dt);
     this._vel.x += (ix * maxSpeed - this._vel.x) * velAlpha;
     this._vel.z += (iz * maxSpeed - this._vel.z) * velAlpha;
-    if (!hasInput && Math.hypot(this._vel.x, this._vel.z) < 0.02) {
+    if (!hasInput && Math.hypot(this._vel.x, this._vel.z) < 0.012) {
       this._vel.x = 0; this._vel.z = 0;
     }
     // Normalized velocity (0..1 of full pace), smoothed — scales bob/sway
@@ -13804,7 +13885,7 @@ class FPControls {
     movingNow = movingNow && _movedDist > 1e-4;
     if (this._walkAmt == null) this._walkAmt = 0;
     if (this._walkPhase == null) this._walkPhase = 0;
-    this._walkAmt += ((movingNow ? 1 : 0) - this._walkAmt) * Math.min(1, dt * 5);
+    this._walkAmt += ((movingNow ? 1 : 0) - this._walkAmt) * Math.min(1, dt * (movingNow ? 5.5 : 4.0));
     // Travel direction in BODY-LOCAL space: fwd ∈ [-1,1] (+ = the way you
     // face), side ∈ [-1,1] (+ = your right). The gait engine reads this to
     // step backward when you back up and scissor sideways when you strafe —
@@ -13816,7 +13897,7 @@ class FPControls {
       // shortens it too — creeping with full-length slow-motion strides read
       // as floating; real cautious steps are SMALL steps (the gait engine
       // scales the leg swing to match, so the feet still don't slide).
-      const creepK = 0.55 + 0.45 * (this._speedNorm == null ? 1 : this._speedNorm);
+      const creepK = 0.50 + 0.50 * (this._speedNorm == null ? 1 : this._speedNorm);
       const stride = (this._fearGaitOn ? 0.62 * (1 - 0.25 * this._fearRampSm) : 0.62) * creepK;
       this._strideLen = stride;
       this._walkPhase += (_movedDist / stride) * Math.PI;   // distance-driven stride
@@ -13825,23 +13906,25 @@ class FPControls {
       const sY = Math.sin(this.yaw), cY = Math.cos(this.yaw);
       const fwd = -(wx * sY + wz * cY);          // camera forward = (-sinY, -cosY)
       const side = wx * cY - wz * sY;            // camera right   = ( cosY, -sinY)
-      this._moveFwd  += (fwd  - this._moveFwd ) * Math.min(1, dt * 10);
-      this._moveSide += (side - this._moveSide) * Math.min(1, dt * 10);
+      this._moveFwd  += (fwd  - this._moveFwd ) * Math.min(1, dt * 12);
+      this._moveSide += (side - this._moveSide) * Math.min(1, dt * 12);
     }
     // Turn-in-place shuffle: spinning on the spot is foot WORK — feed a small
     // alternating step so the body doesn't pirouette on frozen legs.
+    // Threshold lowered so a normal look-turn still gets footwork.
     const yawDeltaAbs = Math.abs(this.yaw - (this._prevYawShuf ?? this.yaw));
     this._prevYawShuf = this.yaw;
-    const turningInPlace = !movingNow && dt > 0 && (yawDeltaAbs / dt) > 0.9;
+    const yawRate = dt > 0 ? yawDeltaAbs / dt : 0;
+    const turningInPlace = !movingNow && yawRate > 0.55;
     if (this._shuffleAmt == null) this._shuffleAmt = 0;
-    this._shuffleAmt += ((turningInPlace ? 1 : 0) - this._shuffleAmt) * Math.min(1, dt * 6);
+    this._shuffleAmt += ((turningInPlace ? 1 : 0) - this._shuffleAmt) * Math.min(1, dt * 7);
     if (this._shuffleAmt > 0.02 && !movingNow) {
-      this._walkPhase += yawDeltaAbs * 1.6;               // feet alternate with the turn
+      this._walkPhase += yawDeltaAbs * (1.8 + Math.min(1.2, yawRate * 0.35));
     } else if (!movingNow && this._walkAmt > 0.03) {
       // Settle step: ease the stride to the nearest feet-together pose
       // instead of freezing mid-swing when the player stops.
       const rest = Math.round(this._walkPhase / Math.PI) * Math.PI;
-      this._walkPhase += (rest - this._walkPhase) * Math.min(1, dt * 9);
+      this._walkPhase += (rest - this._walkPhase) * Math.min(1, dt * 7);
     }
     this.moving = movingNow;
 
@@ -13877,25 +13960,32 @@ class FPControls {
     }
     const mScale = this._reduceMotion ? 0.3 : 1;
     const fpBobScale = (1 - this.tpBlend) * mScale;   // fades to 0 in TP
-    // Footfall-shaped bob: a stride isn't a sine — eye height dips sharply
-    // into each heel strike and floats over mid-stance. Sharpened |sin|,
-    // zero-mean so standing eye height is unchanged.
-    const plant = Math.pow(Math.abs(Math.sin(this._walkPhase)), 1.5);
-    // Bob amplitude scales with actual speed: a slow creep dips gently, a
-    // full stride identically to before (factor = 1.0 at speedNorm 1).
-    const snBob = 0.30 + 0.70 * this._speedNorm;
-    const bobY = (plant - 0.62) * 0.045 * this._walkAmt * fpBobScale * snBob;
-    // Breathing — always present, faster and deeper as fear rises. This is
-    // the user's own chest: the quietest channel the fear system speaks
-    // through, and the one that makes standing still feel inhabited.
+    // Footfall-shaped bob: sharp heel plant, float through mid-stance.
+    // cos^6 (was ^8) is still punchy but less of a single-frame spike —
+    // that spike read as camera jitter more than weight transfer.
+    const ph = this._walkPhase || 0;
+    const heel = Math.pow(Math.max(0, Math.cos(ph)), 6);
+    const float = Math.pow(Math.abs(Math.sin(ph)), 1.25);
+    const sideBias = 1 + 0.05 * Math.sin(ph);
+    const snBob = 0.25 + 0.75 * this._speedNorm;
+    const bobYRaw = (-heel * 0.028 + (float - 0.52) * 0.018)
+      * this._walkAmt * fpBobScale * snBob * sideBias;
+    // Smooth the vertical bob so high refresh rates don't stair-step it.
+    this._bobYSm = (this._bobYSm || 0) + (bobYRaw - (this._bobYSm || 0)) * Math.min(1, dt * 28);
+    const bobY = this._bobYSm;
+    // Head pitch into the plant — smoothed separately so it feels like neck
+    // compliance, not a locked camera keyframe.
+    const bobPitchRaw = -heel * 0.011 * this._walkAmt * fpBobScale * snBob;
+    this._bobPitch = (this._bobPitch || 0)
+      + (bobPitchRaw - (this._bobPitch || 0)) * Math.min(1, dt * 22);
+    // Breathing — always present, faster and deeper as fear rises.
     const fearK = (window.PhobiaFear ? window.PhobiaFear.get() : 0) / 100;
     this._breathT = (this._breathT || 0) + dt * (1.5 + fearK * 2.4);
-    const breathY = Math.sin(this._breathT) * (0.0035 + fearK * 0.0045)
-      * (1 - this._walkAmt * 0.7) * fpBobScale;
-    // Lateral sway rides the camera's LOCAL right vector — the old code
-    // swayed along world-X, which reversed whenever you faced ±x.
-    const swayAmt = Math.sin(this._walkPhase * 0.5) * 0.016 * this._walkAmt * fpBobScale
-      * (0.40 + 0.60 * this._speedNorm);
+    const breathY = Math.sin(this._breathT) * (0.0038 + fearK * 0.005)
+      * (1 - this._walkAmt * 0.65) * fpBobScale;
+    // Lateral sway on camera-local right, phase-offset from bob.
+    const swayAmt = Math.sin(ph * 0.5 + 0.2) * 0.018 * this._walkAmt * fpBobScale
+      * (0.35 + 0.65 * this._speedNorm);
     const rSinY = Math.sin(this.yaw), rCosY = Math.cos(this.yaw);
     // Crouch eye-drop: a scene (e.g. greeting a low dog) can ask the head to
     // dip so the player bends toward what they're reaching for. Only the FP eye
@@ -13911,27 +14001,29 @@ class FPControls {
     this._prevYawRoll = this.yaw;
     const strafe = ((this.keys.KeyD || this.keys.ArrowRight) ? 1 : 0)
                  - ((this.keys.KeyA || this.keys.ArrowLeft) ? 1 : 0);
-    const rollTarget = Math.max(-0.06, Math.min(0.06,
-      -yawVel * 0.012
-      - strafe * 0.02 * this._walkAmt
-      + Math.sin(this._walkPhase * 0.5) * 0.007 * this._walkAmt
+    const rollTarget = Math.max(-0.07, Math.min(0.07,
+      -yawVel * 0.018
+      - strafe * 0.028 * this._walkAmt
+      + Math.sin((this._walkPhase || 0) * 0.5) * 0.010 * this._walkAmt
     )) * fpBobScale;
-    this._camRoll = (this._camRoll || 0) + (rollTarget - this._camRoll) * Math.min(1, dt * 7);
+    this._camRoll = (this._camRoll || 0) + (rollTarget - this._camRoll) * Math.min(1, dt * 8);
 
     // TP target — orbit behind the player. Yaw drives orbit angle; pitch
     // tilts the camera up/down around the character.
     const sinY = Math.sin(this.yaw), cosY = Math.cos(this.yaw);
     const sinP = Math.sin(this.pitch), cosP = Math.cos(this.pitch);
     // Distance increases when looking up/down so the framing doesn't crunch
-    // against the character.
+    // against the character. Also pulls in slightly while walking so the
+    // body fills more of the frame (action framing vs idle portrait).
     const pitchAbs = Math.abs(this.pitch);
-    const distScale = 1.0 + pitchAbs * 0.20;
+    const walkPull = 1 - 0.08 * (this._walkAmt || 0) * (this._speedNorm || 0);
+    const distScale = (1.0 + pitchAbs * 0.22) * walkPull;
     const tpDist = this.tpDistance * distScale;
     // Vertical orbit — when pitch < 0 (looking down) the camera rises so it
     // looks DOWN at the character; pitch > 0 (looking up) the camera drops.
-    const tpHeight = this.tpHeight - sinP * 1.4;
-    // Over-the-shoulder lateral offset (player-local right). Right-vector
-    // in world: (cosY, 0, -sinY).
+    // A touch lower while walking so we see more of the gait.
+    const tpHeight = this.tpHeight - sinP * 1.4 - 0.08 * (this._walkAmt || 0);
+    // Over-the-shoulder lateral offset (player-local right).
     const sideX = cosY * this.tpShoulder;
     const sideZ = -sinY * this.tpShoulder;
     // Camera sits behind player along their facing direction (player faces
@@ -13982,21 +14074,22 @@ class FPControls {
     }
 
     // Damped follow — lag the actual camera position behind the target so
-    // quick yaw turns feel like a real handheld follow shot.
+    // quick yaw turns feel like a real handheld follow shot. Horizontal
+    // tracking is stiffer than vertical (a cameraman keeps pace on XZ, then
+    // eases height). Stiffer still while walking so the avatar doesn't skate.
     if (!this._tpSmoothPos || this.tpBlend < 0.05) {
       this._tpSmoothPos = new THREE.Vector3(safeTpX, safeTpY, safeTpZ);
     } else {
-      // Snap-in faster when the target is suddenly closer (collision detected)
-      // so the camera doesn't slowly drift through a wall before reacting.
       const dx = safeTpX - this._tpSmoothPos.x;
       const dy = safeTpY - this._tpSmoothPos.y;
       const dz = safeTpZ - this._tpSmoothPos.z;
       const distGap = Math.hypot(dx, dy, dz);
-      const stiff = distGap > 1.0 ? 14 : 7;
-      const k = Math.min(1, dt * stiff);
-      this._tpSmoothPos.x += dx * k;
-      this._tpSmoothPos.y += dy * k;
-      this._tpSmoothPos.z += dz * k;
+      const walkK = (this._walkAmt || 0) * (0.6 + 0.4 * (this._speedNorm || 0));
+      const horizStiff = distGap > 1.0 ? 16 : (8.5 + 6.5 * walkK);
+      const vertStiff  = distGap > 1.0 ? 12 : (5.5 + 3.5 * walkK);
+      this._tpSmoothPos.x += dx * Math.min(1, dt * horizStiff);
+      this._tpSmoothPos.z += dz * Math.min(1, dt * horizStiff);
+      this._tpSmoothPos.y += dy * Math.min(1, dt * vertStiff);
     }
     // Hard wall clamp on the SMOOTHED position. The pull-in above only
     // sanitises the TARGET — the damped follower itself sweeps an arc during
@@ -14039,29 +14132,34 @@ class FPControls {
     const cz = fpZ + (this._tpSmoothPos.z - fpZ) * this.tpBlend;
     this.camera.position.set(cx, cy, cz);
 
+    // FP head-pitch bob: dip into heel strike. Applied on top of look pitch
+    // only in first person (TP uses lookAt).
+    if (this.tpBlend < 0.5 && (this._bobPitch || 0) !== 0) {
+      this.camera.rotation.x += this._bobPitch * (1 - this.tpBlend);
+    }
+
     if (this.tpBlend > 0.001) {
       // Look at a target at roughly the character's chest height. With the
       // normalized eye line (eye = feet + 1.62, chest ≈ feet + 1.12) the
       // chest sits ~0.5 m below the eye — the old 0.75 offset was tuned for
       // the legacy taller eye heights and aimed at the hips. The look-target
       // also pitches with the user's pitch so they can aim past the character.
-      const lookYBase = this.position.y - 0.50;     // approx chest height
-      // Velocity lead: frame where the character is GOING, not just where it
-      // is — a walking shot opens ~0.45 m of space ahead of the travel
-      // direction (the follow-cam grammar every TP game trains you on).
-      // Smoothed through _vel, so it eases in with the walk and settles
-      // back to a centered frame on stop.
+      const lookYBase = this.position.y - 0.48;     // approx chest height
+      // Velocity lead: frame where the character is GOING. Stronger at pace,
+      // eased in so a first step doesn't yank the look target.
       const lvx = (this._vel ? this._vel.x : 0), lvz = (this._vel ? this._vel.z : 0);
-      const lead = Math.min(0.45, Math.hypot(lvx, lvz) * 0.32);
-      const lspd = Math.hypot(lvx, lvz) || 1;
-      const lookX = this.position.x + sinY * 0.3 + (lvx / lspd) * lead;
-      const lookY = lookYBase + sinP * tpDist * 0.55;
-      const lookZ = this.position.z + cosY * 0.3 + (lvz / lspd) * lead;
-      // Damp the look-target too so framing changes are smooth
+      const spd = Math.hypot(lvx, lvz);
+      const lead = Math.min(0.85, spd * 0.55) * (0.35 + 0.65 * (this._walkAmt || 0));
+      const lspd = spd || 1;
+      const lookX = this.position.x + sinY * 0.20 + (lvx / lspd) * lead;
+      const lookY = lookYBase + sinP * tpDist * 0.55 + 0.06 * (this._walkAmt || 0);
+      const lookZ = this.position.z + cosY * 0.20 + (lvz / lspd) * lead;
+      // Damp the look-target — a touch laggier than position so framing
+      // breathes instead of locking to the spine.
       if (!this._tpSmoothLook) {
         this._tpSmoothLook = new THREE.Vector3(lookX, lookY, lookZ);
       } else {
-        const k = Math.min(1, dt * 8.0);
+        const k = Math.min(1, dt * (5.5 + 3.0 * (this._walkAmt || 0)));
         this._tpSmoothLook.x += (lookX - this._tpSmoothLook.x) * k;
         this._tpSmoothLook.y += (lookY - this._tpSmoothLook.y) * k;
         this._tpSmoothLook.z += (lookZ - this._tpSmoothLook.z) * k;
@@ -14084,16 +14182,12 @@ class FPControls {
   getWalkState() {
     return {
       phase: this._walkPhase || 0,
-      // Shuffle weight raised (0.45→0.62): a turn-in-place is real alternating
-      // footwork, and at the old weight the legs barely acknowledged a pivot.
-      amount: Math.max(this._walkAmt || 0, (this._shuffleAmt || 0) * 0.62),
+      // Shuffle weight raised: a look-turn is real alternating footwork.
+      amount: Math.max(this._walkAmt || 0, (this._shuffleAmt || 0) * 0.72),
       fwd: this._moveFwd == null ? 1 : this._moveFwd,
       side: this._moveSide || 0,
       shuffle: this._shuffleAmt || 0,
       speedNorm: this._speedNorm == null ? 1 : this._speedNorm,
-      // Metres of ground covered per step. The gait engine sizes its leg swing
-      // to this — a swing amplitude picked independently is exactly how feet
-      // end up skating over the floor.
       stride: this._strideLen == null ? 0.62 : this._strideLen,
     };
   }
@@ -15454,7 +15548,7 @@ function buildHead(o) {
   grp.userData.face = {
     eyes,
     blink: 0, gazeX: 0, gazeY: 0, wide: 0, verge: 0,
-    fear: 0, relief: 0, talk: 0, jaw: 0, smile: 0, effort: 0,
+    fear: 0, relief: 0, talk: 0, jaw: 0, smile: 0, effort: 0, soft: 0,
     // Speech is more than aperture: `talkWide` is the stretched "EE" corner
     // pull, `talkRound` the puckered "OO" — the viseme driver sets all three.
     talkWide: 0, talkRound: 0,
@@ -15481,10 +15575,13 @@ function buildHead(o) {
       // and "EE" both suppress a pucker in real speech too.
       put("mouthPucker", (this.talkRound || 0) * (1 - Math.max(f, this.talkWide || 0) * 0.8));
       put("sneer", Math.max(0, f - 0.45) * 0.9);
-      put("squint", Math.max(rl * 0.55, (this.effort || 0) * 0.35, Math.max(0, f - 0.6) * 0.4));
+      // Soft/fond: mild contented squint (AU6) that coexists with smile.
+      // Fear clamps it — you cannot look fond and terrified at once.
+      const softK = (this.soft || 0) * (1 - f * 0.85);
+      put("squint", Math.max(rl * 0.55, (this.effort || 0) * 0.35, Math.max(0, f - 0.6) * 0.4, softK * 0.50));
       // Relief reads as a real, small smile — the arousal-comes-down half of
       // the story this whole game is about.
-      put("smile", Math.max(this.smile || 0, rl * 0.75));
+      put("smile", Math.max(this.smile || 0, rl * 0.75, softK * 0.35));
       put("smileL", (this.halfSmile || 0) * (1 - f * 0.7));
       for (const m of expressionMeshes) {
         const inf = m.morphTargetInfluences;
@@ -15498,13 +15595,15 @@ function buildHead(o) {
       // ~1 mm): fully raised lids over downward-rotated globes is the look of a
       // doll staring at the floor. Relief relaxes the aperture and raises the
       // LOWER lid — the Duchenne cue that separates "calm" from "blank".
+      // Soft/fond eyes share that lower-lid rise (contented, not startled).
       const gy = this.gazeY || 0, rl = this.relief || 0;
+      const softK = (this.soft || 0) * (1 - (this.fear || 0) * 0.85);
       for (const e of eyes) {
         const kk = Math.min(1, k * e.blinkGain);
         e.upper.rotation.x = -0.055 + (1.12 - this.wide * 0.10) * kk - this.wide * 0.26
-          + gy * 0.45 + rl * 0.05 + e.lidJit;
+          + gy * 0.45 + rl * 0.05 + softK * 0.04 + e.lidJit;
         e.lower.rotation.x = 0.140 - 0.13 * kk + this.wide * 0.14
-          - gy * 0.25 + rl * 0.10 - e.lidJit * 0.6;
+          - gy * 0.25 + rl * 0.10 + softK * 0.14 - e.lidJit * 0.6;
       }
     },
     // Eye rotation in HEAD-local space. `verge` converges both globes toward
@@ -15623,6 +15722,14 @@ function buildHead(o) {
     setSmile(k) {
       this.smile = Math.max(0, Math.min(1, k || 0));
       this._applyMorphs();
+    },
+    // Soft/fond eyes: the look of a calm person touching something warm.
+    // Lower lids rise (Duchenne cue), mild squint — opposite of the
+    // wide-eyed fear stare. Suppressed by fear so the two never fight.
+    setSoft(k) {
+      this.soft = Math.max(0, Math.min(1, k || 0));
+      this._applyMorphs();
+      this.setBlink(this.blink);
     },
     // Physical exertion (reaching at full stretch, holding a rail hard). Reads
     // as a brow knit plus a squint, and it is the difference between "the arm
@@ -16239,6 +16346,10 @@ class Body {
     // anything that would rather push than publish.
     this._threatTarget = new THREE.Vector3();
     this._threatAt = -1e9;
+    // Calm watch target (e.g. looking at a friendly dog's head). Separate from
+    // threat so low-fear mutual gaze still works.
+    this._watchTarget = new THREE.Vector3();
+    this._watchAt = -1e9;
   }
 
   // A world point the eyes should monitor while frightened. Pass null to clear.
@@ -16246,6 +16357,14 @@ class Body {
     if (!v) { this._threatAt = -1e9; return; }
     this._threatTarget.set(v.x, v.y, v.z);
     this._threatAt = (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000;
+  }
+
+  // Calm attention: look at a friendly creature / object without requiring
+  // elevated fear. Used for mutual dog gaze. Pass null to clear.
+  setWatchTarget(v) {
+    if (!v) { this._watchAt = -1e9; return; }
+    this._watchTarget.set(v.x, v.y, v.z);
+    this._watchAt = (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000;
   }
 
   _build() {
@@ -16537,13 +16656,17 @@ class Body {
       let dOff = offTarget - this._travelOff;
       while (dOff > Math.PI) dOff -= Math.PI * 2;
       while (dOff < -Math.PI) dOff += Math.PI * 2;
-      this._travelOff += dOff * Math.min(1, dtB * 7);
+      // Snappier facing into a committed stride; softer for adjust steps.
+      const faceRate = walkAmt > 0.45 ? 10 : 6.5;
+      this._travelOff += dOff * Math.min(1, dtB * faceRate);
       if (this._camYawSm == null) this._camYawSm = controls.yaw;
       if (this.cameraMode === "tp") {
         let dYawC = controls.yaw - this._camYawSm;
         while (dYawC > Math.PI) dYawC -= Math.PI * 2;
         while (dYawC < -Math.PI) dYawC += Math.PI * 2;
-        this._camYawSm += dYawC * Math.min(1, dtB * (walkAmt > 0.3 ? 11 : 5.5));
+        // Body yaw lags camera more when idle (look around), catches up
+        // quickly once walking so the torso isn't crab-walking.
+        this._camYawSm += dYawC * Math.min(1, dtB * (walkAmt > 0.3 ? 13 : 4.8));
       } else {
         this._camYawSm = controls.yaw;
       }
@@ -16553,12 +16676,12 @@ class Body {
         aimYaw = (controls.yaw - this._camYawSm) + this._travelOff;
         while (aimYaw > Math.PI) aimYaw -= Math.PI * 2;
         while (aimYaw < -Math.PI) aimYaw += Math.PI * 2;
-        aimYaw = Math.max(-0.75, Math.min(0.75, aimYaw));
-        aimPitch = Math.max(-0.45, Math.min(0.55, -(controls.pitch || 0) * 0.45));
+        aimYaw = Math.max(-0.85, Math.min(0.85, aimYaw));
+        aimPitch = Math.max(-0.50, Math.min(0.55, -(controls.pitch || 0) * 0.50));
       }
       if (this._headAimYaw == null) { this._headAimYaw = 0; this._headAimPitch = 0; }
-      this._headAimYaw += (aimYaw - this._headAimYaw) * Math.min(1, dtB * 9);
-      this._headAimPitch += (aimPitch - this._headAimPitch) * Math.min(1, dtB * 9);
+      this._headAimYaw += (aimYaw - this._headAimYaw) * Math.min(1, dtB * 10);
+      this._headAimPitch += (aimPitch - this._headAimPitch) * Math.min(1, dtB * 10);
     }
 
     const idleFactor = 1 - (walkAmt || 0);
@@ -16603,6 +16726,16 @@ class Body {
       if (this.face.setSmile) {
         const settled = Math.max(0, 1 - this._fearSm * 1.6);
         this.face.setSmile((this._contactLanded || 0) * settled * 0.7);
+      }
+      // Soft/fond eyes once contact has actually landed and arousal has
+      // settled: the warm look of touching something living. Builds a touch
+      // slower than the smile so the face arrives at fondness, not a snap.
+      if (this.face.setSoft) {
+        const settled = Math.max(0, 1 - this._fearSm * 1.4);
+        const wantSoft = (this._contactLanded || 0) * settled * 0.85;
+        this._softSm = (this._softSm || 0)
+          + (wantSoft - (this._softSm || 0)) * Math.min(1, dtB * 1.8);
+        this.face.setSoft(this._softSm);
       }
       // ---- talking (viseme random-walk) ----
       // window.PhobiaTalk is the same 0/1 hold-to-speak signal the speaking
@@ -16938,6 +17071,13 @@ class Body {
     // Hip hinge for reach assist — applied to the spine chain below so it
     // carries the shoulders forward rather than just tilting the chest.
     const hinge = assistLean * 0.62;
+    // Walk-start commitment: rising walkAmt tips the torso into the first
+    // step — real walking begins with a fall forward, not an upright glide.
+    const risingWalk = Math.max(0, walkAmt - (this._prevWalkAmtLean || 0));
+    this._prevWalkAmtLean = walkAmt;
+    const startLean = Math.min(0.14, risingWalk * 5.5 + walkAmt * 0.045);
+    this._startLeanSm = (this._startLeanSm || 0)
+      + (startLean - (this._startLeanSm || 0)) * Math.min(1, dtB * 6);
     // Hip counter-twist: the pelvis leads each stride while the thorax
     // counter-rotates above it — the hallmark of a real walk cycle. In a bone
     // CHAIN the chest inherits the pelvis, so its local yaw must overshoot to
@@ -16951,14 +17091,35 @@ class Body {
     this._hipTwist += (hipTwistTarget - this._hipTwist) * Math.min(1, dtB * 15);
     const pelvisYaw = -this._hipTwist * 0.085;
     const gaitRoll = weightRoll;
-    this.hips.rotation.set(hinge * 0.45, pelvisYaw, gaitRoll * 0.070);
-    this.spine.rotation.set(totalLean * 0.35 + hinge * 0.35, -pelvisYaw * 0.9, -gaitRoll * 0.026);
-    this.chest.rotation.set(totalLean * 0.65 + hinge * 0.20, -pelvisYaw * 1.15, -gaitRoll * 0.042);
+    const commitLean = this._startLeanSm || 0;
+    this.hips.rotation.set(hinge * 0.45 + commitLean * 0.35, pelvisYaw, gaitRoll * 0.070);
+    this.spine.rotation.set(totalLean * 0.35 + hinge * 0.35 + commitLean * 0.40, -pelvisYaw * 0.9, -gaitRoll * 0.026);
+    this.chest.rotation.set(totalLean * 0.65 + hinge * 0.20 + commitLean * 0.55, -pelvisYaw * 1.15, -gaitRoll * 0.042);
 
     // Crouch — bent KNEES, not a shrunken torso: the thigh pitches forward,
     // the shin folds back, and the whole body drops by exactly the geometric
     // shortening of the bent leg, so the feet stay planted.
     const crouchAmt = Math.max(ps.crouch, assistCrouch);
+    // ---- Idle soft knees + weight rock ----
+    // A standing person never locks both knees; weight drifts slowly side to
+    // side. Without this, idle TP characters read as mannequins planted on
+    // stilts — especially visible while waiting for a dog to approach.
+    const idleSoft = idleFactor * (1 - Math.min(1, crouchAmt * 2));
+    if (idleSoft > 0.05) {
+      this._idleRockPh = (this._idleRockPh || 0) + dtB * (0.55 + fearK * 0.35);
+      const rock = Math.sin(this._idleRockPh) * idleSoft;
+      const softKnee = 0.06 * idleSoft;
+      for (const leg of this.legs) {
+        // Slightly more bend on the loaded leg (the side weight is over).
+        const load = 1 + rock * leg.side * 0.55;
+        leg.knee.rotation.x += softKnee * load;
+        leg.hip.rotation.x -= softKnee * 0.35 * load;
+        leg.hip.rotation.z += rock * leg.side * 0.018;
+        leg.foot.rotation.x = -(leg.hip.rotation.x + leg.knee.rotation.x) * 0.82;
+      }
+      if (this.hips) this.hips.rotation.z += rock * 0.028;
+      if (this.spine) this.spine.rotation.z -= rock * 0.012;
+    }
     if (crouchAmt > 0.01) {
       const c = crouchAmt;
       // A full crouch is a real squat: ~40 cm of drop. The old angles gave 8 cm,
@@ -17056,16 +17217,41 @@ class Body {
       this._headTurnUntil = null;
     }
     this._headTurnAmount += (this._headTurnTarget - this._headTurnAmount) * Math.min(1, dtB * 2.4);
+    // Tip the head toward whatever we're watching / touching. Eyes alone
+    // track a low dog while the skull stays level — the classic doll stare.
+    // Reach wins over calm watch; both fade with committed walking.
+    {
+      let tipPitch = 0, tipYaw = 0;
+      const tipSrc = (hands && hands._reach && hands._reachStrength > 0.2 && hands._reachWorld)
+        ? hands._reachWorld
+        : ((typeof performance !== "undefined" ? performance.now() : Date.now()) * 0.001 - (this._watchAt || -1e9) < 0.5
+            ? this._watchTarget : null);
+      if (tipSrc && this.head && idleFactor > 0.25) {
+        this.head.updateMatrixWorld(true);
+        _bV1.copy(tipSrc);
+        this.head.worldToLocal(_bV1);
+        const dd = Math.max(0.2, _bV1.length());
+        tipYaw = Math.max(-0.55, Math.min(0.55, Math.atan2(_bV1.x, Math.max(0.08, _bV1.z))));
+        tipPitch = Math.max(-0.55, Math.min(0.35, -Math.asin(Math.max(-1, Math.min(1, _bV1.y / dd)))));
+        tipPitch *= idleFactor;
+        tipYaw *= idleFactor;
+      }
+      this._tipPitchSm = (this._tipPitchSm || 0)
+        + (tipPitch - (this._tipPitchSm || 0)) * Math.min(1, dtB * 5);
+      this._tipYawSm = (this._tipYawSm || 0)
+        + (tipYaw - (this._tipYawSm || 0)) * Math.min(1, dtB * 5);
+    }
     if (this.head) {
       const aimY = this._headAimYaw || 0;
       const wanderK = Math.max(0, 1 - Math.abs(aimY) * 3);
       // The neck carries part of the turn — a head that swivels alone on a
       // rigid neck is the classic owl tell.
-      const yawTotal = this._headTurnAmount * wanderK + aimY;
+      const yawTotal = this._headTurnAmount * wanderK + aimY + (this._tipYawSm || 0) * 0.55;
       this.neck.rotation.y = yawTotal * 0.35;
-      this.neck.rotation.x = totalLean * -0.25 - hinge * 0.30;
+      this.neck.rotation.x = totalLean * -0.25 - hinge * 0.30 + (this._tipPitchSm || 0) * 0.35;
       this.head.rotation.y = yawTotal * 0.65;
       this.head.rotation.x = totalLean * 0.30 - hinge * 0.55 + (this._headAimPitch || 0)
+        + (this._tipPitchSm || 0) * 0.65
         + Math.sin(t * 0.7) * 0.02
         + (Math.abs(Math.sin(walkPhase)) - 0.6) * 0.035 * walkAmt;
       this.head.rotation.z = Math.sin(t * 0.53) * 0.012 - gaitRoll * 0.02;
@@ -17117,22 +17303,28 @@ class Body {
         }
       } catch {}
       const threatLive = (nowW - this._threatAt) < 0.5 && fearK > 0.2;
+      const watchLive = (nowW - this._watchAt) < 0.5;
       let pt = null;
       if (hands && hands._reach && hands._reachStrength > 0.15 && hands._reachWorld) {
         pt = hands._reachWorld;
         this._nextGlanceAt = null;
       } else if (threatLive) {
         pt = this._threatTarget;
+      } else if (watchLive) {
+        pt = this._watchTarget;
       } else {
         this._nextGlanceAt = null;
       }
       // Monitoring, not a doll stare: a 1–2 s glance away every 4–6 s.
+      // Threat gets more frequent breaks; calm watch glances away less often
+      // (you're paying soft attention to a friendly animal).
       let glX = 0, glY = 0;
-      if (pt === this._threatTarget) {
-        if (this._nextGlanceAt == null) this._nextGlanceAt = t + 4 + Math.random() * 2;
+      if (pt === this._threatTarget || pt === this._watchTarget) {
+        const gap = pt === this._threatTarget ? (4 + Math.random() * 2) : (6 + Math.random() * 4);
+        if (this._nextGlanceAt == null) this._nextGlanceAt = t + gap;
         if (t > this._nextGlanceAt) {
           this._glanceUntil = t + 1 + Math.random();
-          this._nextGlanceAt = this._glanceUntil + 4 + Math.random() * 2;
+          this._nextGlanceAt = this._glanceUntil + gap;
           this._glanceX = (Math.random() < 0.5 ? -1 : 1) * (0.20 + Math.random() * 0.14);
           this._glanceY = (Math.random() - 0.6) * 0.18;
         }
@@ -17193,14 +17385,22 @@ class Body {
     }
 
     // ---------- Footsteps + dust ----------
-    if (walkAmt > 0.4) {
+    // Fire earlier in the walk ramp (0.22) so a cautious creep still plants
+    // audible steps; pass side + speed so L/R and creep/stomp sound different.
+    if (walkAmt > 0.22) {
       if (this._lastStepBucket == null) this._lastStepBucket = -1;
       const stepBucket = Math.floor(walkPhase / Math.PI);
       if (stepBucket !== this._lastStepBucket) {
         if (this._lastStepBucket !== -1 && window.PhobiaAudio?.footstep) {
-          const stepVol = walkAmt * (0.25 + 0.75 * Math.pow(speedNorm, 1.4));
-          try { window.PhobiaAudio.footstep(stepVol, this.opts.surface); } catch {}
-          this._spawnFootDust(stepBucket % 2 === 0 ? -1 : 1, walkAmt * (0.3 + 0.7 * speedNorm));
+          const side = stepBucket % 2 === 0 ? -1 : 1;
+          const stepVol = walkAmt * (0.22 + 0.78 * Math.pow(speedNorm, 1.25));
+          try {
+            window.PhobiaAudio.footstep(stepVol, this.opts.surface, {
+              side,
+              speed: speedNorm,
+            });
+          } catch {}
+          this._spawnFootDust(side, walkAmt * (0.3 + 0.7 * speedNorm));
         }
         this._lastStepBucket = stepBucket;
       }
@@ -17285,11 +17485,19 @@ class Body {
       const swingWeight   = (1 - gestureWeight) * (1 - reachW);
       const idle = 1 - walkAmt;
       const idleSway = Math.sin(t * 0.9 + side * 1.7) * 0.025 * idle;
+      // Off-hand brace on the thigh while crouching to pet: the free hand
+      // rests near the knee instead of hovering. Classic "greeting a dog"
+      // silhouette in third person.
+      const thighBrace = idleArm && crouchAmt > 0.25
+        ? Math.min(1, (crouchAmt - 0.25) / 0.35) * contact.k
+        : 0;
       const rotX =
           shoulderTarget * gestureWeight
         + reachShoulder  * reachWeight
-        + (swing + 0.05 * idle + idleSway * 0.6) * swingWeight;
-      const spreadZ = side * (0.95 * spreadStrength + (idleArm ? 0.18 * contact.k : 0));
+        + (swing + 0.05 * idle + idleSway * 0.6) * swingWeight
+        + thighBrace * 0.55;                     // upper arm drops toward thigh
+      const spreadZ = side * (0.95 * spreadStrength + (idleArm ? 0.18 * contact.k : 0)
+        - thighBrace * 0.35);
       const naturalZ = side * 0.10 + Math.sin(armPhase * 0.5) * 0.04 * walkAmt + idleSway;
       // The forearm TRAILS the upper arm by ~0.5 rad of phase (whip-like
       // follow-through) — an elbow that bends in sync reads as one rigid rod.
@@ -17301,10 +17509,11 @@ class Body {
       const elbX =
           elbowTarget   * gestureWeight
         + reachElbow    * reachWeight
-        + passiveBend   * swingWeight;
+        + passiveBend   * swingWeight
+        + thighBrace * 0.85;                     // elbow folds so hand finds thigh
       arm.root.rotation.set(rotX, 0, spreadZ + naturalZ * (1 - spreadStrength));
       this._elbowFlex(arm, elbX);
-      arm.wrist.rotation.set(0, 0, 0);
+      arm.wrist.rotation.set(thighBrace * 0.35, 0, side * thighBrace * 0.20);
 
       // Contact overrides the layered pose for the reaching arm(s).
       const hk = this._handK[i];
@@ -18254,15 +18463,20 @@ class Hands {
           // Right hand offers forward; the stroking wave only plays while a
           // pet is actually HAPPENING (actionPulse from the click) — before,
           // the hand pawed at empty air the whole time the dog was merely
-          // within invite range.
+          // within invite range. Sustained reach onto a flat surface (dog's
+          // coat) also drives a gentler continuous stroke so the pet doesn't
+          // freeze the moment the click pulse dies. Uses _reachStrength (set
+          // before this loop) — contactK is zeroed earlier in the frame.
           if (side === 1) {
-            const strokeK = 0.15 + 0.85 * this.actionPulse;
-            const wave = Math.sin(t * 4) * 0.04 * strokeK;
-            target.x = 0.06;
+            const contactStroke = (this._reachStrength || 0)
+              * (this._reach && this._reach.grip === "flat" ? 1 : 0);
+            const strokeK = 0.15 + 0.85 * this.actionPulse + 0.55 * contactStroke;
+            const wave = Math.sin(t * (3.2 + contactStroke * 1.4)) * 0.04 * strokeK;
+            target.x = 0.06 + wave * 0.35 * contactStroke;
             target.y = -0.18 + wave * 0.5 - this.actionPulse * 0.05;
-            target.z = -0.55 - this.actionPulse * 0.15;
+            target.z = -0.55 - this.actionPulse * 0.15 - contactStroke * 0.04;
             targetRotX = -1.0 + wave;
-            fingerCurl = 0.4;
+            fingerCurl = 0.35 + contactStroke * 0.15;
           } else {
             target.y = -0.32;
           }
@@ -24492,6 +24706,15 @@ class DogController {
     this.handInvite = 0;
     this.handMeetDist = 0.48;
     this._handMeetCool = 0;
+    // ---- Sit-for-pet / nuzzle reciprocity ----
+    // Scene can request a sit while being petted (sitForPet); the dog leans
+    // INTO the hand and closes a few centimetres on its own (nuzzle).
+    this.sitForPet = 0;
+    this._sitForPetT = 0;
+    this._nudgeT = 0;
+    // ---- Playful orbit: high-trust circle around the player ----
+    this._orbitT = 0;
+    this._orbitCD = 12 + Math.random() * 8;
     // Idle "alive" extras: occasional weight-shift + independent ear flicks
     // so a standing dog isn't a statue between clips. (No blink: the models
     // ship a single skinned mesh with no eye nodes to close.)
@@ -24699,6 +24922,8 @@ class DogController {
     this._greetT = Math.max(this._greetT || 0, dur);
     this.tailWag += 6;
     if (this.state === "idle") this.setState("happy");
+    // Soft recorded "woof" on greet when available — friendlier than a bark.
+    this._greetWoof = true;
   }
   // Full-speed charge toward (x,z) using the Gallop clip. Same grounded
   // locomotion as walkTo — timeScale follows actual ground speed so the
@@ -24846,6 +25071,8 @@ class DogController {
     // ---- Come and meet an offered hand ----
     // Same guards as follow: a commanded sit stays sat, a barking or locked
     // dog is busy, and the cooldown stops this re-issuing a walk every frame.
+    // Approach is SLOWER than a normal walk — the last half-metre is a soft
+    // close, not a trot into your knees.
     if (this.handInvite > 0 && this.playerPos
         && this.state !== "walking" && this.state !== "galloping"
         && this.state !== "bark" && this.state !== "eat"
@@ -24860,7 +25087,23 @@ class DogController {
         const k = (dist - this.handMeetDist) / dist;
         this.walkTo(this.dog.position.x + dx * k, this.dog.position.z + dz * k, {});
         this._handMeetCool = t + 1.0;
+        this._softApproach = true;   // throttle walk speed while closing
       }
+    }
+    // ---- Sit for pet (reciprocal body language) ----
+    // A dog that wants more contact often sits so the hand can reach its
+    // chest/neck. Builds over ~0.9 s of sustained petting, then holds sit.
+    if (this.sitForPet > 0.5 && this.mood !== "aggressive"
+        && (this.state === "idle" || this.state === "happy")
+        && this._petAmountSm > 0.25) {
+      this._sitForPetT = (this._sitForPetT || 0) + d;
+      if (this._sitForPetT > 0.9) {
+        this.sit();
+        this._sitForPetT = 0;
+        this.tailWag += 4;
+      }
+    } else if (this.sitForPet < 0.2) {
+      this._sitForPetT = 0;
     }
     // While walking a FOLLOW leg, keep the target pinned to the player's live
     // position. Refresh quietly — do not reset stuck on retarget alone.
@@ -24922,6 +25165,9 @@ class DogController {
         // clip while the body still moved at walk speed, so a "sprinting" dog
         // crawled across the room with churning legs.
         const gait = galloping ? this.gallopSpeed : this.walkSpeed;
+        // Soft hand-meet: throttle to ~55% walk so the dog eases into reach
+        // instead of trotting into the player's knees.
+        const softMul = (!galloping && this._softApproach) ? 0.55 : 1;
         const targetUx = dx / dist, targetUz = dz / dist;
         // Travel along the body's current heading while it turns toward the
         // target. Moving directly down the target vector made the paws slide
@@ -24929,7 +25175,7 @@ class DogController {
         const headingUx = Math.sin(this.dog.rotation.y);
         const headingUz = Math.cos(this.dog.rotation.y);
         const alignment = Math.max(0, headingUx * targetUx + headingUz * targetUz);
-        const desiredSpeed = gait * ease * (0.20 + 0.80 * alignment);
+        const desiredSpeed = gait * softMul * ease * (0.20 + 0.80 * alignment);
         const speedRate = desiredSpeed > this._moveSpeed
           ? (galloping ? 5.5 : 3.2)
           : (galloping ? 8.0 : 5.5);
@@ -25001,11 +25247,13 @@ class DogController {
         this.dog.position.x = this.followTarget.x;
         this.dog.position.z = this.followTarget.z;
         this._moveSpeed = 0;
+        this._softApproach = false;
         this.stopMove();
       }
     } else if (this.state === "idle" || this.state === "sit" || this.state === "lay") {
       this._moveSpeed = Math.max(0, this._moveSpeed - d * 6);
       this.groundSpeed *= Math.max(0, 1 - d * 8);
+      this._softApproach = false;
       // Gently turn the whole body to watch the player when they're near and
       // we're not mid-sniff (headPitch high). Reads as a dog tracking you.
       if (this.headPitch < 0.3) {
@@ -25071,6 +25319,18 @@ class DogController {
     if (this._greetT > 0) {
       this._greetT = Math.max(0, this._greetT - d);
       this.tailWag += d * 6;
+      if (this._greetWoof) {
+        this._greetWoof = false;
+        try {
+          if (window.PhobiaAudio?.dogVocal) {
+            window.PhobiaAudio.dogVocal("woof", 0.45, {
+              x: this.dog.position.x,
+              y: this.dog.position.y + (this.parts.height || 0.5) * 0.6,
+              z: this.dog.position.z,
+            }, { count: 1, reverb: 0.15 });
+          }
+        } catch {}
+      }
       if (this._greetT <= 0 && this.state === "happy") this.setState("idle");
     }
     // ---- Bark burst: re-arm the head-toss for each remaining audible bark.
@@ -25638,6 +25898,48 @@ class DogController {
       for (const e of rig.earsL) e.rotation.x += 0.08 * lean;
       for (const e of rig.earsR) e.rotation.x += 0.08 * lean;
       this._poseYOff += 0.01 * lean;   // tiny lift into the stroke
+      // ---- Nuzzle step ----
+      // Every ~1.4 s of active petting the dog closes a few centimetres into
+      // the hand — the push-into-you that makes contact feel mutual. Caps at
+      // handMeetDist so it never bowls the player over.
+      this._nudgeT = (this._nudgeT || 0) + d * lean;
+      if (this._nudgeT > 1.4 && dist > this.handMeetDist + 0.04 && lean > 0.35) {
+        this._nudgeT = 0;
+        const step = Math.min(0.10, dist - this.handMeetDist);
+        const nx = this.dog.position.x + (dx / dist) * step;
+        const nz = this.dog.position.z + (dz / dist) * step;
+        const r = this._resolve(nx, nz);
+        this.dog.position.x = r.x;
+        this.dog.position.z = r.z;
+        this.tailWag += 2.5;
+      }
+      // Stronger chest press pulse synced to the wag — reads as breathing
+      // into the stroke rather than a static lean angle.
+      if (rig.chest[0] && lean > 0.2) {
+        rig.chest[0].rotation.x += Math.sin(this._wagPhase * 1.6) * 0.035 * lean;
+      }
+      // Happy sit wiggle: a sitting dog being petted shifts its haunches —
+      // the "can't sit still from joy" tell.
+      if (this.state === "sit" && lean > 0.3 && rig.pelvis) {
+        rig.pelvis.rotation.z += Math.sin(this._wagPhase * 1.3) * 0.045 * lean;
+        if (rig.chest[0]) rig.chest[0].rotation.z += Math.sin(this._wagPhase * 1.3 + 0.4) * 0.03 * lean;
+      }
+      // Pant from the pleasure of contact (no jaw bone — chest flutter).
+      this.pant = Math.max(this.pant || 0, lean * 0.55);
+      this._petHeldT = (this._petHeldT || 0) + d;
+    } else {
+      this._nudgeT = 0;
+      // Let contact-driven pant decay when the hand lifts.
+      if (this.pant > 0) this.pant = Math.max(0, this.pant - d * 0.55);
+      // Shake-off after a real petting session ends — dogs reset their coat
+      // when the hand lifts. Needs ~1.2 s of prior contact so a tap doesn't
+      // trigger a full-body roll.
+      if ((this._petHeldT || 0) > 1.2 && this._petAmountSm < 0.05
+          && resting && this.mood !== "aggressive") {
+        if (Math.random() < 0.55) this._shakePulse = Math.max(this._shakePulse, 0.85);
+        this.tailWag += 3;
+      }
+      this._petHeldT = 0;
     }
 
     // ---- Idle micro-motion ---- (only when genuinely at rest + not aggressive)
@@ -26731,16 +27033,32 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     petRequestT = 0;
     petPulse = 1.0;
     dogCtrl.tailWag += 8;
+    // A successful pet is a greeting beat: brief head-cock + lean impulse so
+    // the dog visibly answers the touch, not just absorbs it.
+    if (dogCtrl.mood !== "aggressive") {
+      dogCtrl.headCock(0.55);
+      dogCtrl._nudgeT = Math.max(dogCtrl._nudgeT || 0, 1.2); // invite a nuzzle soon
+    }
     // Trust grants are cooldown-gated (1.2 s): click-spam still pets the dog
     // (pulse + wag + hearts) but doesn't farm the bond.
     const nowSec = performance.now() / 1000;
     if (nowSec - lastPetGrantT > 1.2) {
       lastPetGrantT = nowSec;
       bumpTrust("pet");
-      // Close the sensory loop: a soft contented pant + a gentle reward tap
+      // Soft face pulse on the avatar — the warm look of contact landing.
+      try { window.dispatchEvent(new CustomEvent("mira-relief")); } catch {}
+      // Close the sensory loop: contented pant + a soft woof when available
       // so the bond feels reciprocal, not like the avatar touched a prop.
-      if (dogCtrl.mood !== "aggressive" && window.PhobiaAudio && window.PhobiaAudio.dogPant) {
-        try { window.PhobiaAudio.dogPant(0.32, { x: dog.position.x, y: dog.position.y + dogHeight * 0.35, z: dog.position.z }); } catch {}
+      const dogPos = { x: dog.position.x, y: dog.position.y + dogHeight * 0.35, z: dog.position.z };
+      if (dogCtrl.mood !== "aggressive" && window.PhobiaAudio) {
+        try {
+          if (window.PhobiaAudio.dogVocal) {
+            window.PhobiaAudio.dogVocal("pant", 0.35, dogPos);
+            if (Math.random() < 0.45) window.PhobiaAudio.dogVocal("woof", 0.32, dogPos, { count: 1 });
+          } else if (window.PhobiaAudio.dogPant) {
+            window.PhobiaAudio.dogPant(0.32, dogPos);
+          }
+        } catch {}
       }
       if (window.PhobiaFX && window.PhobiaFX.haptic) window.PhobiaFX.haptic([20]);
     } else {
@@ -27603,6 +27921,12 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       // the camera floats metres behind the avatar, and follow/watch angles
       // computed against it were visibly wrong (dog staring past you).
       dogCtrl.playerPos = controls ? controls.position : null;
+      // Sit-for-pet: sustained contact + some trust → dog sits so the hand
+      // can reach chest/neck. Classic reciprocal bonding body language.
+      dogCtrl.sitForPet = (intensity !== "barking"
+        && dogCtrl.mood !== "aggressive"
+        && petPulse > 0.15
+        && trust > 0.12) ? 1 : 0;
       // ---- Offered hand → the dog closes the last step ----
       // The player standing quietly inside the invite band IS the offer. It is
       // also the only intent signal available: the reach target itself is only
@@ -27847,13 +28171,48 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           const handY = cpos.y - 0.55;
           dogCtrl.lookAt3({ x: cpos.x, y: handY, z: cpos.z }, 0.95);
         } else if (dogCtrl._birdGaze && dogCtrl._birdGaze > 0 && bird.visible) {
-          dogCtrl.lookAt3(bird.position, 0.9);
-        } else if (pdist < 5.5 && dogCtrl.state !== "eat" && dogCtrl.headPitch < 0.3) {
-          // Watch the player: full attention when close or alert, casual
-          // check-ins when relaxed and far.
-          const near = Math.max(0, Math.min(1, (5.5 - pdist) / 4));
-          const w = intensity === "alert" ? Math.max(0.55, near) : near * 0.85;
-          dogCtrl.lookAt3({ x: cpos.x, y: cpos.y, z: cpos.z }, w);
+          dogCtrl.lookAt3(bird.position, Math.min(1, dogCtrl._birdGaze));
+        } else if (pdist < 5.5 && intensity !== "barking") {
+          // Look at the PLAYER'S FACE (eye height), not their feet — a dog
+          // that stares at ankles reads as broken, not attentive.
+          const faceY = cpos.y - 0.08;
+          const gazeW = petPulse > 0.1 ? 0.95
+            : (pdist < 2.2 ? 0.75 : 0.45);
+          dogCtrl.lookAt3({ x: cpos.x, y: faceY, z: cpos.z }, gazeW);
+        }
+      }
+
+      // ---- Mutual gaze: character watches the dog's head when near ----
+      // Without this the avatar stares into space while the dog watches them —
+      // the bond only goes one way. Prefer the live Head bone; fall back to a
+      // height estimate. setGazeTarget owns the calm-watch channel (threat
+      // still wins when PhobiaThreat is live).
+      if (active && active.body && active.body.setWatchTarget && controls
+          && intensity !== "barking") {
+        const pDist = Math.hypot(
+          controls.position.x - dog.position.x,
+          controls.position.z - dog.position.z);
+        if (pDist < 4.5 && dog.userData.ready) {
+          const parts = dog.userData.parts;
+          if (parts && parts.model) {
+            if (parts._gazeHead === undefined) {
+              parts._gazeHead = null;
+              parts.model.traverse(o => {
+                if (!parts._gazeHead && o.isBone && o.name === "Head") parts._gazeHead = o;
+              });
+            }
+            if (parts._gazeHead) {
+              parts._gazeHead.getWorldPosition(_petPt);
+            } else {
+              const dogH = (parts && parts.height) || 0.6;
+              _petPt.set(dog.position.x, dog.position.y + dogH * 0.85, dog.position.z);
+            }
+          } else {
+            _petPt.set(dog.position.x, dog.position.y + 0.55, dog.position.z);
+          }
+          active.body.setWatchTarget(_petPt);
+        } else {
+          active.body.setWatchTarget(null);
         }
       }
 
@@ -28026,19 +28385,22 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         // character the same instinct: lower the body + reach when very
         // close. Also a slight bow forward when petting.
         if (active.body && active.body.setPosture) {
-          // Crouch grows from 0 at 2.5m to 0.5 at 0.6m (max 50% squat)
-          const crouch = Math.max(0, Math.min(0.5, (2.5 - playerDist) / 1.9));
+          // Crouch grows from 0 at 2.5m to 0.55 at 0.6m — deeper than before
+          // so the character actually gets down to dog height.
+          const crouch = Math.max(0, Math.min(0.55, (2.5 - playerDist) / 1.9));
+          // Extra squat while actively petting or when the dog has sat for you.
+          const petCrouch = petPulse * 0.25 + (dogCtrl.state === "sit" ? 0.12 : 0);
           // Reach forward when within petting range, blends with petPulse
           // so each pet visibly extends the hand a bit further forward
           const reach = playerDist < 1.6
-            ? 0.4 + petPulse * 0.5
-            : (playerDist < 2.5 ? 0.2 : 0);
+            ? 0.45 + petPulse * 0.55
+            : (playerDist < 2.5 ? 0.25 : 0);
           // Subtle forward lean while petting (peering down at the dog)
-          const lean = playerDist < 1.6 ? 0.30 + petPulse * 0.15 : 0;
+          const lean = playerDist < 1.6 ? 0.35 + petPulse * 0.20 : 0;
           active.body.setPosture({
-            crouch,
+            crouch: Math.min(0.72, crouch + petCrouch),
             reach,
-            reachHeight: 0.25,        // hip-low — reaching DOWN to the dog
+            reachHeight: dogCtrl.state === "sit" ? 0.38 : 0.22,  // higher for a sitting dog
             lean,
             armSpread: 0,
           });
@@ -28048,12 +28410,25 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           if (controls.setEyeDrop) {
             const parts = dog.userData.parts;
             const dogH = (parts && parts.height) || 0.6;
-            const contactY = dog.position.y + dogH * 0.72;
+            const sitBoost = dogCtrl.state === "sit" ? 0.12 : 0;
+            const contactY = dog.position.y + dogH * (0.72 + sitBoost);
             const closeness = Math.max(0, Math.min(1, (2.2 - playerDist) / 1.0));
             const drop = playerDist < 2.2
               ? Math.max(0, controls.position.y - (contactY + 0.55)) * closeness
               : 0;
             controls.setEyeDrop(Math.min(0.62, drop));
+          }
+          // Reciprocal: when the player crouches near a friendly dog, the dog
+          // often sits so faces meet. Requires being in invite range (not
+          // just "nearby") so a distant approach doesn't auto-sit the dog.
+          if (crouch + petCrouch > 0.42 && playerDist < 1.35
+              && intensity !== "barking" && dogCtrl.mood !== "aggressive"
+              && dogCtrl.state === "idle" && trust > 0.08
+              && (!dogCtrl._playerCrouchSitAt || t - dogCtrl._playerCrouchSitAt > 14)) {
+            dogCtrl._playerCrouchSitAt = t;
+            dogCtrl.sit();
+            dogCtrl.tailWag += 5;
+            dogCtrl.headCock(0.7);
           }
         } else if (controls.setEyeDrop) {
           controls.setEyeDrop(0);
@@ -28084,6 +28459,13 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           }
           // Subtle tail flick to acknowledge — drives the visible reaction
           dogCtrl.tailWag += 4;
+          dogCtrl.headCock(0.8);
+          // Ear flick toward the player — the "I heard you" micro-signal.
+          dogCtrl._earFlickSide = Math.sign(
+            (controls.position.x - dog.position.x) * Math.cos(dog.rotation.y)
+            - (controls.position.z - dog.position.z) * Math.sin(dog.rotation.y)
+          ) || 1;
+          dogCtrl._earFlickA = 1;
           // The dog quietly stops what it was doing (sniff, wander) and
           // turns to face the player — EXCEPT on the lying-start rung, where
           // the escalation arc owns posture (this would pop it to standing).
@@ -28192,6 +28574,31 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       // Trust-driven tail wag at rest
       if (dogCtrl.state === "idle" || dogCtrl.state === "sit" || dogCtrl.state === "lay") {
         dogCtrl.tailWag += d * trust * 4;
+      }
+      // ---- Playful orbit (high trust) ----
+      // A bonded dog sometimes circles the player at a soft trot — the
+      // "happy dance" that makes the relationship feel two-sided. Cooldown-
+      // gated, only on calm/alert rungs, never while fetching or barking.
+      if (controls && intensity !== "barking" && trust > 0.45
+          && dogCtrl.mood !== "aggressive" && fetchPhase === "idle"
+          && dogCtrl.state === "idle" && petPulse < 0.1
+          && !(dogCtrl._moveLockT > 0)) {
+        dogCtrl._orbitCD = (dogCtrl._orbitCD || 18) - d;
+        const pDist = playerDogSurfaceDist(controls.position);
+        if (dogCtrl._orbitCD <= 0 && pDist < 2.4 && pDist > 0.4) {
+          dogCtrl._orbitCD = 16 + Math.random() * 14;
+          const ang = Math.atan2(
+            dog.position.x - controls.position.x,
+            dog.position.z - controls.position.z
+          ) + (Math.random() < 0.5 ? 1 : -1) * (1.1 + Math.random() * 0.5);
+          const rad = 1.1 + Math.random() * 0.5;
+          const ox = controls.position.x + Math.sin(ang) * rad;
+          const oz = controls.position.z + Math.cos(ang) * rad;
+          const hop = dogCtrl._resolve(ox, oz);
+          dogCtrl.walkTo(hop.x, hop.z, { force: true });
+          dogCtrl.tailWag += 6;
+          dogCtrl.playBow();
+        }
       }
       // Goal ring under the dog — pulses while user is far, fades when they
       // step into petting range. Tracks the dog as it wanders so it always
