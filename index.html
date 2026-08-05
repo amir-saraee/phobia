@@ -13705,7 +13705,9 @@ class FPControls {
     // Strafe is also a touch slower than forward — humans don't side-step
     // at full walk speed.
     const isLean = this.opts.mode === "lookOnly";
-    let maxSpeed = (isLean ? 0.85 : this.opts.speed) * moveMag;
+    let maxSpeed = (isLean
+      ? 0.85
+      : Math.min(this.opts.speed, this._walkCap == null ? Infinity : this._walkCap)) * moveMag;
     // ---- Fear-modulated gait (opt-in) ----
     // Fear slows the APPROACH, never the retreat: walking toward the fear at
     // fear ≥ 80 runs at 0.55×; backing away or strafing is always full speed
@@ -13783,7 +13785,12 @@ class FPControls {
     // amplitude and footstep gain so a slow creep is quiet and low-bob
     // instead of a full-volume stomp at 0.1 m/s.
     {
-      const denomV = (isLean ? 0.85 : this.opts.speed) || 1;
+      // Normalize against the speed actually reachable, not the one the scene
+      // asked for — otherwise the walk-capped scenes never read as "full pace"
+      // and their footsteps, bob and lean all sit permanently at 80%.
+      const denomV = (isLean
+        ? 0.85
+        : Math.min(this.opts.speed, this._walkCap == null ? Infinity : this._walkCap)) || 1;
       const rawSN = Math.min(1, Math.hypot(this._vel.x, this._vel.z) / denomV);
       this._speedNorm += (rawSN - this._speedNorm) * Math.min(1, dt * 6);
     }
@@ -13892,13 +13899,27 @@ class FPControls {
     // reusing one forward cycle for every direction is how moonwalks happen.
     if (this._moveFwd == null) { this._moveFwd = 1; this._moveSide = 0; }
     if (movingNow && _movedDist > 1e-4) {
-      // Fear shortens the stride (0.62 → 0.465 m at fear ≥ 80): visibly
-      // quicker, smaller steps at the same ground speed. A slow analog creep
-      // shortens it too — creeping with full-length slow-motion strides read
-      // as floating; real cautious steps are SMALL steps (the gait engine
-      // scales the leg swing to match, so the feet still don't slide).
-      const creepK = 0.50 + 0.50 * (this._speedNorm == null ? 1 : this._speedNorm);
-      const stride = (this._fearGaitOn ? 0.62 * (1 - 0.25 * this._fearRampSm) : 0.62) * creepK;
+      // Fear shortens the stride by a further 25% at fear ≥ 80: visibly
+      // quicker, smaller steps at the same ground speed.
+      // Step length and cadence BOTH grow with speed, as roughly √v — the
+      // oldest relationship in gait analysis. A step length that ignores pace
+      // makes a brisk walk read as a scurry (this was 141 steps/min, a march)
+      // and a creep as slow motion. `_strideBase` is the step at 1 m/s and
+      // belongs to the LEGS, not to a constant: a short character taking the
+      // same strides as a tall one over-reaches on every step. setStrideBase()
+      // feeds the real leg length in once the body exists.
+      const paceK = Math.sqrt(Math.max(0.12, Math.hypot(this._vel.x, this._vel.z)));
+      const sb = this._strideBase || 0.56;
+      // Nobody strides out sideways or backwards the way they do forwards —
+      // both are shorter, quicker steps. Keeping one step length for every
+      // direction is also what forced the pelvis into a squat on a side-step:
+      // a foot planted 36 cm out to the side has to come from somewhere, and
+      // with an honest leg it comes out of hip height.
+      const af = Math.abs(this._moveFwd || 0), as = Math.abs(this._moveSide || 0);
+      const backShare = Math.max(0, -(this._moveFwd || 0));
+      const sideDom = _hsat((as - af) / 0.25) * as;
+      const dirK = (1 - 0.22 * backShare) * (1 - 0.38 * sideDom);
+      const stride = (this._fearGaitOn ? sb * (1 - 0.25 * this._fearRampSm) : sb) * paceK * dirK;
       this._strideLen = stride;
       this._walkPhase += (_movedDist / stride) * Math.PI;   // distance-driven stride
       const inv = 1 / _movedDist;
@@ -13963,9 +13984,13 @@ class FPControls {
     // Footfall-shaped bob: sharp heel plant, float through mid-stance.
     // cos^6 (was ^8) is still punchy but less of a single-frame spike —
     // that spike read as camera jitter more than weight transfer.
+    // Both of these were keyed to cos(ph), which peaks at ph = 0, 2π… — half a
+    // step away from a real footfall (those land at π/2 + kπ) and only once per
+    // full cycle, so the camera dipped on every OTHER step. |sin| puts the dip
+    // on every footfall, in time with the legs and the footstep sound.
     const ph = this._walkPhase || 0;
-    const heel = Math.pow(Math.max(0, Math.cos(ph)), 6);
-    const float = Math.pow(Math.abs(Math.sin(ph)), 1.25);
+    const heel = Math.pow(Math.abs(Math.sin(ph)), 6);
+    const float = Math.pow(Math.abs(Math.cos(ph)), 1.25);
     const sideBias = 1 + 0.05 * Math.sin(ph);
     const snBob = 0.25 + 0.75 * this._speedNorm;
     const bobYRaw = (-heel * 0.028 + (float - 0.52) * 0.018)
@@ -13983,8 +14008,11 @@ class FPControls {
     this._breathT = (this._breathT || 0) + dt * (1.5 + fearK * 2.4);
     const breathY = Math.sin(this._breathT) * (0.0038 + fearK * 0.005)
       * (1 - this._walkAmt * 0.65) * fpBobScale;
-    // Lateral sway on camera-local right, phase-offset from bob.
-    const swayAmt = Math.sin(ph * 0.5 + 0.2) * 0.018 * this._walkAmt * fpBobScale
+    // Lateral sway on camera-local right: weight rolls out over whichever foot
+    // is planted, so it peaks at mid-stance (ph ≈ π/2 + 0.31·2π) and completes
+    // one cycle per STRIDE. `ph * 0.5` gave it a four-step period — a slow drift
+    // that never lined up with a footfall.
+    const swayAmt = Math.sin(ph - 1.95) * 0.018 * this._walkAmt * fpBobScale
       * (0.35 + 0.65 * this._speedNorm);
     const rSinY = Math.sin(this.yaw), rCosY = Math.cos(this.yaw);
     // Crouch eye-drop: a scene (e.g. greeting a low dog) can ask the head to
@@ -14004,7 +14032,7 @@ class FPControls {
     const rollTarget = Math.max(-0.07, Math.min(0.07,
       -yawVel * 0.018
       - strafe * 0.028 * this._walkAmt
-      + Math.sin((this._walkPhase || 0) * 0.5) * 0.010 * this._walkAmt
+      + Math.sin((this._walkPhase || 0) - 1.95) * 0.010 * this._walkAmt
     )) * fpBobScale;
     this._camRoll = (this._camRoll || 0) + (rollTarget - this._camRoll) * Math.min(1, dt * 8);
 
@@ -14196,6 +14224,21 @@ class FPControls {
   // eye used by TP framing and collision.
   setEyeDrop(m) { this._eyeDropTarget = Math.max(0, Math.min(0.7, m || 0)); }
 
+  // Metres of ground covered per step at 1 m/s. The body sizes its leg swing to
+  // whatever this says, so the two can never disagree.
+  setStrideBase(m) {
+    if (!(m > 0.05)) return;
+    this._strideBase = m;
+    // …and legs of a given length have a top speed they can WALK at. Froude
+    // number ~0.19 is the comfortable walking gait; past it the step length the
+    // √v law asks for no longer fits the leg, so the character lunges, the hips
+    // heave 10 cm a step, and it reads as a race-walk. This rig's 0.78 m leg
+    // caps at ~1.2 m/s, where the scenes were asking for 1.3–1.45. Scenes can
+    // still ask for anything SLOWER (wading, a fear creep) — this only stops
+    // them outrunning the legs.
+    this._walkCap = Math.sqrt(0.19 * 9.81 * (m / 0.72));
+  }
+
   // ---- Event-driven camera startle (FP only) ----
   // kickShake(a): a sharp, fast-decaying jitter on the camera angles — the head
   // flinch when something lunges. snapLookAt(x,y,z,k): a brief, decaying
@@ -14354,6 +14397,67 @@ function _falloff(dx, dy, dz, rx, ry, rz) {
   const a = dx / rx, b = dy / ry, c = dz / rz;
   const d2 = a * a + b * b + c * c;
   return d2 > 9 ? 0 : Math.exp(-d2);
+}
+
+// ---- gait shaping -------------------------------------------------------
+// One walk cycle, phase s ∈ [0,1), s = 0 at initial contact. These are the
+// shapes a real walk is made of; the leg solver in Body.update turns them into
+// joint angles by inverse kinematics rather than posing the joints directly.
+const _GAIT = {
+  stance: 0.62,      // duty factor — 62% of the cycle bears weight
+  flat: 0.09,        // heel rocker complete: the sole is down
+  heelOff: 0.42,     // forefoot rocker begins: the heel starts to lift
+  pitchIC: -0.33,    // sole pitch at contact (negative = toe up)
+  pitchTO: 0.65,     // at toe-off (positive = toe down, heel high)
+  pitchSwing: -0.08, // through mid-swing, so the foot clears the ground
+  // Stance knee flexion (rad) against cycle phase: the loading-response dip
+  // that absorbs the landing, re-extension over mid-stance, then the pre-swing
+  // flex that throws the leg into its swing. Normative gait, near enough.
+  kneeKeys: [[0, 0.09], [0.15, 0.31], [0.35, 0.09], [0.50, 0.21], [0.62, 0.70]],
+};
+// Piecewise-smoothstep through [[x, y], …] keyframes.
+function _track(keys, u) {
+  for (let i = 1; i < keys.length; i++) {
+    if (u <= keys[i][0]) {
+      const a = keys[i - 1], b = keys[i];
+      return a[1] + (b[1] - a[1]) * _sstep(a[0], b[0], u);
+    }
+  }
+  return keys[keys.length - 1][1];
+}
+// World pitch of the sole across the cycle (+ = toe down).
+function _solePitch(s) {
+  const G = _GAIT;
+  if (s < G.flat) return G.pitchIC * (1 - _sstep(0, G.flat, s));
+  if (s < G.heelOff) return 0;
+  if (s < G.stance) {
+    // Heel-off breaks gently, then the push accelerates.
+    const u = (s - G.heelOff) / (G.stance - G.heelOff);
+    return G.pitchTO * _sstep(0, 1, u) * (0.30 + 0.70 * u);
+  }
+  const u = (s - G.stance) / (1 - G.stance);
+  return u < 0.30
+    ? G.pitchTO + (G.pitchSwing - G.pitchTO) * _sstep(0, 0.30, u)
+    : G.pitchSwing + (G.pitchIC - G.pitchSwing) * _sstep(0.30, 1, u);
+}
+// Hip→ankle distance for a two-segment leg at a given knee flexion.
+function _legReach(k, a, b) { return Math.hypot(a + b * Math.cos(k), b * Math.sin(k)); }
+// Two-link leg IK. Target is relative to the hip joint: tx to the body's right,
+// tz forward, ty below (negative). Writes hip pitch (negative swings the thigh
+// forward, matching the rig), hip abduction and knee flexion (≥ 0) into `out`.
+// The lateral reach has to be part of the SAME solve as the knee: solving the
+// sagittal plane and abducting afterwards shortens the leg by cos(abduction),
+// which on a committed side-step is 30° of hidden shortening — enough to drag
+// the pelvis a quarter of a metre toward the floor.
+function _legIK(tx, tz, ty, a, b, out) {
+  const L = Math.min(Math.hypot(tx, tz, ty), (a + b) * 0.9995);
+  let c = (L * L - a * a - b * b) / (2 * a * b);
+  c = c < -1 ? -1 : c > 1 ? 1 : c;
+  out.knee = Math.acos(c);
+  const psi = Math.atan2(b * Math.sin(out.knee), a + b * Math.cos(out.knee));
+  out.abduct = Math.asin(Math.max(-0.85, Math.min(0.85, L > 1e-6 ? tx / L : 0)));
+  out.hip = -(Math.atan2(tz, -ty) + psi);
+  return out;
 }
 
 // ---- skinned geometry accumulator --------------------------------------
@@ -16221,7 +16325,21 @@ function buildHumanRig(o = {}) {
     a.wr.add(hand);
     arms.push({ root: a.sh, elbow: a.el, wrist: a.wr, hand, side: a.side });
   }
-  const legs = legBones.map((g) => ({ hip: g.hp, knee: g.kn, foot: g.an, ankle: g.an, side: g.side }));
+  // Sole landmarks in ANKLE-LOCAL space. The shoe is skinned rigid to the ankle
+  // bone, so these points travel with it exactly — which is what lets the gait
+  // engine roll the foot heel-to-toe and the ground clamp measure real contact
+  // instead of guessing from the ankle joint. Derived from the same numbers the
+  // shoe was swept with above (sole plane 0.004, heel −0.082, toe 0.174, plus
+  // the baked-in out-toe yaw) so the two can never drift apart.
+  const soleDrop = L.ankleY - 0.004 * H;        // ankle joint above the sole
+  const legs = legBones.map((g) => {
+    const st = Math.sin(g.side * 0.09), ct = Math.cos(g.side * 0.09);
+    const pt = (z) => new THREE.Vector3(z * H * st, -soleDrop, z * H * ct);
+    return {
+      hip: g.hp, knee: g.kn, foot: g.an, ankle: g.an, side: g.side,
+      heelPt: pt(-0.082), ballPt: pt(0.100), toePt: pt(0.174),
+    };
+  });
 
   return {
     group, mesh, skeleton, bones, materials: { mSkin, mShirt, mPants, mShoe, mDark },
@@ -16229,7 +16347,10 @@ function buildHumanRig(o = {}) {
     face: head.userData.face, hairFlutter: head.userData.hairFlutter,
     eyes: head.userData.eyes,
     arms, legs, bt,
-    dims: { upperLen, foreLen, thighLen, shinLen, H, shoulderX, armY, chestY, L },
+    dims: {
+      upperLen, foreLen, thighLen, shinLen, H, shoulderX, armY, chestY, L,
+      foot: { soleDrop, heelZ: -0.082 * H, ballZ: 0.100 * H, toeZ: 0.174 * H },
+    },
   };
 }
 
@@ -16397,6 +16518,18 @@ class Body {
     this._shinLen = this.rig.dims.shinLen;
     this._upperLen = this.rig.dims.upperLen;
     this._foreLen = this.rig.dims.foreLen;
+    this._foot = this.rig.dims.foot;         // sole landmarks (see buildHumanRig)
+    // Rest lengths of the torso chain — the gait shortens them a little to
+    // absorb the pelvis bob before it reaches the head.
+    this._spineY0 = this.spine.position.y;
+    this._chestY0 = this.chest.position.y;
+    this._neckY0  = this.neck.position.y;
+    this._legT = [{}, {}];                   // per-leg gait targets, reused
+    this._ikOut = { hip: 0, knee: 0, abduct: 0 };
+    // Swing-trajectory keyframes, mutated in place — this runs twice a frame
+    // for the life of the scene, and fresh literals here are pure GC churn.
+    this._swZ = [[0, 0], [0.30, 0], [0.62, 0], [1, 0]];
+    this._swY = [[0, 0], [0.30, 0], [0.62, 0], [1, 0]];
     this.head.visible = false;               // FP default — camera is the head
     if (this.head.userData.neckPart) this.head.userData.neckPart.visible = false;
 
@@ -16885,27 +17018,74 @@ class Body {
       const fx = Math.sin(yawB), fz = Math.cos(yawB);
       if (this._prevPos == null) this._prevPos = { x: ax, z: az };
       const dx = ax - this._prevPos.x, dz = az - this._prevPos.z;
-      this._stepFwd  = dx * fx + dz * fz;
-      this._stepSide = dx * Math.cos(yawB) - dz * Math.sin(yawB);
+      // A jump this big is not walking — it is a respawn, a scene teleport or a
+      // frame hitch. Feeding it to the closed loop would hand the planted foot a
+      // target metres out of reach, and a foot the leg cannot reach drags the
+      // whole pelvis to the floor. Drop the plant and start the next step clean.
+      const teleported = (dx * dx + dz * dz) > 0.25;
+      this._stepFwd  = teleported ? 0 : dx * fx + dz * fz;
+      this._stepSide = teleported ? 0 : dx * Math.cos(yawB) - dz * Math.sin(yawB);
       this._prevPos.x = ax; this._prevPos.z = az;
+      if (teleported) {
+        for (const leg of this.legs) {
+          leg._plantF = 0; leg._plantSd = 0; leg._plantS = null;
+          leg._anchor = null; leg._hipPrev = null;
+          leg._hipStepF = 0; leg._hipStepS = 0;
+        }
+      }
     }
 
-    // ---- stride-locked legs ----
-    // Amplitude comes from the stride the phase engine is integrating, never a
-    // magic constant. Stance is CLOSED-LOOP: the foot is placed by subtracting
-    // measured travel, so no accumulation of small modelling errors (knee
-    // yield, pelvis yaw, a smoothed direction estimate) can make it skate.
+    // ---- stride-locked legs: rockers, planted soles, inverse kinematics ----
+    // A foot is not a point at the ankle. It lands on the heel, rolls flat, then
+    // pivots over the toe to push off — three rockers, and they are what turns a
+    // swinging leg into forward travel. Posing the leg from the ANKLE (as this
+    // used to) see-saws the sole about a joint 3.6 cm above the ground: the toe
+    // punches through the floor at push-off, the heel sinks at contact, the foot
+    // floats up to 7 cm at the moment it is supposed to plant, and no amount of
+    // curve-tweaking above that can make it read as a human step.
+    //
+    // So the order is inverted. Put the CONTACT POINT on the ground, prescribe
+    // the sole's pitch, work out where that forces the ankle to be, and let
+    // two-link IK find the hip and knee. Both feet then sit exactly on the
+    // floor, and the joint curves fall out of the geometry — which is how they
+    // arise in a real leg — instead of being drawn by hand.
     const legLen = (this.opts.hipY - this.opts.ankleY);
-    const strideLen = this._strideLen || 0.62 * strideK;
-    const STANCE = 0.62;                         // duty factor — 62% of the cycle
+    const strideLen = this._strideLen || legLen * 0.795 * strideK;
+    const G = _GAIT;
+    const STANCE = G.stance;
+    const ft = this._foot;
     // Half the fore-aft sweep of a planted foot. NOT half a stride: the body
     // covers two strides per gait cycle, so during one foot's 62% stance it
     // travels 1.24 strides — and the foot has to give back exactly that.
     const half = Math.min(legLen * 0.85, STANCE * strideLen) * walkAmt;
     const A = this._thighLen, Bl = this._shinLen;
-    for (const leg of this.legs) {
+    // How much of the travel is fore-aft? A committed stride rolls heel-to-toe;
+    // a pure side-step or a pivot lands flat-footed, which is what people
+    // actually do — you do not heel-strike sideways.
+    const rollK = walkAmt * Math.min(1, fwdShare * 1.3);
+    // Walking backward reverses the contact sequence: the TOE lands first and
+    // the body rocks back onto the heel. Same rockers, mirrored.
+    const backw = gaitFwd < 0;
+    const leadZ = backw ? ft.toeZ : ft.heelZ;     // first point down
+    const pushZ = backw ? ft.heelZ : ft.toeZ;     // last point up
+    const pitchSign = backw ? -0.72 : 1;          // a backward push-off is flatter
+    // Walking tracks the feet in toward the midline: hips sit ~20 cm apart but
+    // step width is ~10 cm. Hanging each leg straight down from its hip — which
+    // is what zero adduction does — leaves the feet 22 cm apart, and that wide
+    // base is a waddle, not a walk. The target is calibrated against the
+    // MEASURED width rather than solved for, because the closed loop is also
+    // busy cancelling pelvic list (which swings each ankle ±5 cm laterally over
+    // a stance) and the two share the same channel. Standing (walkAmt 0) keeps
+    // the hip-width stance, which is also what people do.
+    const hipHalf = Math.abs(this.legs[0].hip.position.x);
+    const footInset = Math.max(0, hipHalf - 0.022 * (legLen / 0.78)) * walkAmt;
+
+    // ---- pass 1: where each foot has to be ----
+    const legT = this._legT;
+    for (let i = 0; i < this.legs.length; i++) {
+      const leg = this.legs[i], T = legT[i];
       const th = walkPhase + (leg.side > 0 ? 0 : Math.PI);
-      // s: 0 at heel strike (foot furthest forward), rising through stance.
+      // s: 0 at initial contact, rising through stance then swing.
       let s = ((th - Math.PI / 2) / (Math.PI * 2)) % 1;
       if (s < 0) s += 1;
       // Side-step roles: on a committed strafe the leg on the side of travel
@@ -16915,12 +17095,27 @@ class Body {
       // patterns. Latched per leg so stance and swing agree at footfall.
       const leadLeg = (leg.side > 0) === (gaitSide > 0);
       if (s >= STANCE || leg._latAmp == null) {
+        // The crossing leg travels further than the leading one, but not by the
+        // margin this used to claim: with the lateral reach now costing real hip
+        // height (it always did, on a real leg), 1.65× put the character into a
+        // half-squat every time it side-stepped.
         leg._latAmp = latDom > 0.001
-          ? (leadLeg ? 0.55 + 0.30 * latDom : 0.55 + 1.10 * latDom)
+          ? (leadLeg ? 0.55 + 0.25 * latDom : 0.55 + 0.55 * latDom)
           : 0.55;
       }
-      let alongF, alongS, kneeSwing, swingT = 0;
-      if (s < STANCE) {
+      const pitch = _solePitch(s) * rollK * pitchSign;
+      const planted = s < STANCE;
+      // Which point of the sole carries the weight right now. Swapping at
+      // heel-off is what makes the body vault over the forefoot.
+      const pz = planted ? (s < G.heelOff ? leadZ : pushZ) : pushZ;
+      // Ankle offsets from the contact anchor. `A + pz(1−cos) + drop·sin` is
+      // the ankle of a rigid sole rotated by `pitch` about a pivot `pz` along
+      // it — at pitch 0 that collapses to the anchor itself, so a flat-footed
+      // strafe costs nothing.
+      const rockZ = pz * (1 - Math.cos(pitch)) + ft.soleDrop * Math.sin(pitch);
+      const rockY = ft.soleDrop * Math.cos(pitch) + pz * Math.sin(pitch);
+      let alongF, alongS, swingT = 0;
+      if (planted) {
         if (leg._plantS == null || s < leg._plantS) {     // a fresh footfall
           leg._plantF = 0; leg._plantSd = 0;
           leg._dirF = gaitFwd; leg._dirS = gaitSide;
@@ -16933,61 +17128,152 @@ class Body {
         // forward. Cancelling the body's motion leaves all of that as drift.
         leg._plantF  += (leg._hipStepF != null ? leg._hipStepF : this._stepFwd);
         leg._plantSd += (leg._hipStepS != null ? leg._hipStepS : this._stepSide);
-        alongF = half * leg._dirF - leg._plantF;
+        // Standing still there is no stride for the loop to close around, but the
+        // servo keeps integrating hip micro-motion — breathing, the idle weight
+        // rock — and ten seconds of that is enough to leave one foot hanging a
+        // centimetre and a half in the air. Bleed the offset off once the walk
+        // has stopped; a live stride re-establishes it within one footfall.
+        if (walkAmt < 0.05) {
+          const keep = Math.exp(-dtB * 8);
+          leg._plantF *= keep; leg._plantSd *= keep;
+        }
+        alongF = half * leg._dirF - leg._plantF + rockZ;
         alongS = half * leg._dirS * leg._latAmp - leg._plantSd;
-        kneeSwing = 0;
+        T.ankleH = rockY;
       } else {
         leg._plantS = null;
-        swingT = (s - STANCE) / (1 - STANCE);             // 0..1
-        const e = 0.5 - 0.5 * Math.cos(Math.PI * swingT);
-        alongF = (-half + 2 * half * e) * gaitFwd;
-        alongS = (-half + 2 * half * e) * gaitSide * leg._latAmp;
-        kneeSwing = Math.sin(Math.PI * swingT);
+        swingT = (s - STANCE) / (1 - STANCE);
+        // Toe-off pose → next contact pose. The ankle does not travel straight
+        // between them: it stays high and BEHIND for the first third (the knee
+        // whip that gives swing its 60° of flexion), then skims forward low.
+        const pTO = _solePitch(STANCE - 1e-4) * rollK * pitchSign;
+        const pIC = G.pitchIC * rollK * pitchSign;
+        const zTO = -half * gaitFwd + pushZ * (1 - Math.cos(pTO)) + ft.soleDrop * Math.sin(pTO);
+        const yTO = ft.soleDrop * Math.cos(pTO) + pushZ * Math.sin(pTO);
+        const zIC =  half * gaitFwd + leadZ * (1 - Math.cos(pIC)) + ft.soleDrop * Math.sin(pIC);
+        const yIC = ft.soleDrop * Math.cos(pIC) + leadZ * Math.sin(pIC);
+        const zMid = zTO + (zIC - zTO) * 0.64;
+        // Mid-swing skim height. Scaled by walkAmt so the settle-step pose (which
+        // parks one leg at s ≈ 0.75, mid-swing) puts the foot back on the floor
+        // instead of leaving the character standing on one leg.
+        const low = ft.soleDrop + 0.042 * (legLen / 0.78) * walkAmt;
+        const kz = this._swZ, ky = this._swY;
+        kz[0][1] = zTO; kz[1][1] = zTO * 0.45; kz[2][1] = zMid; kz[3][1] = zIC;
+        ky[0][1] = yTO; ky[1][1] = yTO * 1.02; ky[2][1] = low;  ky[3][1] = yIC;
+        alongF = _track(kz, swingT);
+        T.ankleH = _track(ky, swingT);
+        alongS = (-half + 2 * half * _sstep(0, 1, swingT)) * gaitSide * leg._latAmp;
+        // Turning on the spot is foot WORK: alternating knee-ups, not a
+        // pirouette on frozen legs. `half` is ~0 here, so lift the ankle
+        // directly and let the IK fold the knee to match.
+        if (shufK > 0.001) T.ankleH += shufK * 0.055 * Math.sin(Math.PI * swingT);
       }
-      // Knee clears the ground at mid-swing. The crossing leg of a side-step
-      // lifts almost like a forward stride; the leading leg stays low (that's
-      // how people shuffle sideways). Turning in place lifts both — a pivot
-      // is alternating knee-ups, not frozen-leg spinning.
-      const latLift = latDom > 0.001 ? (leadLeg ? 0.42 : 0.95) * sideShare : 0;
-      const kneeFlex = (kneeSwing * Math.max(0.28 + 0.62 * fwdShare, latLift) + 0.04
-        + shufK * 0.30 * kneeSwing) * walkAmt;
-      // Stance-phase knee YIELD: a real knee never locks straight under load —
-      // it gives ~8° as the body's weight rolls over the planted leg.
-      const stanceYield = (s < STANCE
-        ? Math.sin(Math.PI * (s / STANCE)) : 0) * 0.13 * walkAmt
-        * Math.max(fwdShare, sideShare * 0.7);
-      const kx = kneeFlex + stanceYield;
-      // Solve the hip from the FULL two-segment chain, not from the leg length:
-      // a bent knee shortens the leg, and treating it as straight injects a few
-      // centimetres of forward drift exactly when the knee yields under load.
-      const R = Math.hypot(A + Bl * Math.cos(kx), Bl * Math.sin(kx));
-      const psi = Math.atan2(Bl * Math.sin(kx), A + Bl * Math.cos(kx));
-      leg.hip.rotation.x =
-        Math.asin(Math.max(-0.97, Math.min(0.97, -alongF / Math.max(1e-4, R)))) - psi;
-      leg.hip.rotation.z =
-        Math.asin(Math.max(-0.85, Math.min(0.85, alongS / legLen)));
+      alongS -= leg.side * footInset;
+      // Never ask for a foot the leg cannot reach. Drift in the closed loop —
+      // a collision sliding the body along a wall, a blocked walk, a hitch —
+      // can otherwise push the target past full extension, and `sqrt` of a
+      // negative reach then folds the pelvis onto the floor.
+      const maxH = (A + Bl) * 0.90;
+      const need = Math.hypot(alongF, alongS);
+      if (need > maxH) {
+        const k = maxH / need;
+        // Fold the correction into the closed loop so it settles over the next
+        // few frames instead of being re-clamped, and re-fought, forever.
+        if (planted) {
+          leg._plantF  += alongF * (1 - k);
+          leg._plantSd += alongS * (1 - k);
+        }
+        alongF *= k; alongS *= k;
+      }
+      T.s = s; T.planted = planted; T.pitch = pitch;
+      T.alongF = alongF; T.alongS = alongS; T.swingT = swingT; T.leadLeg = leadLeg;
+      T.pivotToe = planted && s >= G.heelOff;
+    }
+
+    // ---- pass 2: how high the pelvis rides ----
+    // Not a hand-drawn bob curve: the highest the hip can sit while every
+    // planted foot still reaches its contact with the knee flexion a real leg
+    // carries at that point in the cycle. The vertical travel of a walk is a
+    // CONSEQUENCE of the leg geometry, and deriving it is what keeps both feet
+    // on the floor through double support.
+    const hipStand = legLen + ft.soleDrop;
+    let hipH = Infinity;
+    for (const T of legT) {
+      if (!T.planted) continue;
+      const L = _legReach(_track(G.kneeKeys, T.s), A, Bl);
+      const horiz = T.alongF * T.alongF + T.alongS * T.alongS;
+      hipH = Math.min(hipH, T.ankleH + Math.sqrt(Math.max(0, L * L - horiz)));
+    }
+    // Terminal swing: the body is already lowering to meet the floor before the
+    // heel lands. Without it the pelvis holds high until contact and then drops
+    // three centimetres in a single frame — a visible hitch at every footfall.
+    for (const T of legT) {
+      if (T.planted) continue;
+      const w = _sstep(0.55, 1, T.swingT);
+      if (w <= 0) continue;
+      const L = _legReach(G.kneeKeys[0][1], A, Bl);
+      const horiz = T.alongF * T.alongF + T.alongS * T.alongS;
+      const cand = T.ankleH + Math.sqrt(Math.max(0, L * L - horiz));
+      if (cand < hipH) hipH += (cand - hipH) * w;
+    }
+    if (!isFinite(hipH)) hipH = hipStand;
+    // Walking never sinks the hips into a squat. A foot can be left out of reach
+    // — reverse direction mid-stance and the trailing one always is — and
+    // without this floor the pelvis chases it all the way down. Capped, the
+    // over-reaching foot simply lifts early, which is what a person does.
+    hipH = Math.max(hipH, hipStand - 0.135 * (legLen / 0.78));
+    hipH = hipStand + (hipH - hipStand) * walkAmt;
+
+    // ---- trunk compliance ----
+    // A real spine absorbs most of the pelvis's rise and fall: the head
+    // oscillates roughly 40% of what the hips do. On a rigid chain the head
+    // follows the pelvis 1:1 (measured: 6.2 cm of head bob against 7.1 cm at
+    // the hip), and THAT is what leaves a kinematically correct walk still
+    // reading as a doll bouncing on springs. Absorbing it across the lumbar,
+    // thoracic and cervical joints is both the fix and what actually happens.
+    if (this._hipMean == null) this._hipMean = hipH;
+    this._hipMean += (hipH - this._hipMean) * Math.min(1, dtB * 1.0);
+    const bobDev = Math.max(-0.05, Math.min(0.05, hipH - this._hipMean)) * 0.55 * walkAmt;
+    this.spine.position.y = this._spineY0 - bobDev * 0.40;
+    this.chest.position.y = this._chestY0 - bobDev * 0.35;
+    this.neck.position.y  = this._neckY0  - bobDev * 0.25;
+
+    // ---- pass 3: solve each leg ----
+    for (let i = 0; i < this.legs.length; i++) {
+      const leg = this.legs[i], T = legT[i];
+      const sol = _legIK(T.alongS, T.alongF, T.ankleH - hipH, A, Bl, this._ikOut);
+      leg.hip.rotation.x = sol.hip;
+      leg.knee.rotation.x = sol.knee;
+      leg.hip.rotation.z = sol.abduct;
       // Crossing-leg twist: on a strafe the trailing thigh rotates across the
       // midline during swing instead of describing a wide outward arc — the
       // visible "cross" that separates a side-step from a sideways glide.
-      leg.hip.rotation.y = (!leadLeg && latDom > 0.001 && swingT > 0)
-        ? latDom * Math.sign(gaitSide) * Math.sin(Math.PI * swingT) * 0.30
+      leg.hip.rotation.y = (!T.leadLeg && latDom > 0.001 && T.swingT > 0)
+        ? latDom * Math.sign(gaitSide) * Math.sin(Math.PI * T.swingT) * 0.30
         : 0;
-      leg.knee.rotation.x = kx;
-      // Foot: level the sole against the leg rotation, then add a heel-toe
-      // roll — toe up as it reaches forward, heel peel as it pushes off behind.
-      leg.foot.rotation.x = -(leg.hip.rotation.x + leg.knee.rotation.x) * 0.82
-        + (s < STANCE
-            ? (0.16 - 0.34 * (s / STANCE))                // heel down → toe off
-            : 0.20 * Math.sin(Math.PI * swingT))          // toe lifted in swing
-          * walkAmt * Math.max(0, gaitFwd);
-      leg.foot.rotation.z = -leg.hip.rotation.z * 0.8;
+      // The sole's WORLD pitch is the thing the rockers prescribe, so the ankle
+      // angle is whatever is left after the hip and knee have had their say.
+      leg._gaitPitch = T.pitch;
+      leg.foot.rotation.x = T.pitch - sol.hip - sol.knee;
+      leg.foot.rotation.z = -leg.hip.rotation.z;   // sole stays level sideways
+      // Remember which sole point is bearing weight — the closed-loop servo in
+      // the ground clamp anchors on it, and it has to re-anchor when the pivot
+      // migrates from heel to toe.
+      if (T.pivotToe !== leg._pivotToe) { leg._anchor = null; leg._pivotToe = T.pivotToe; }
+      leg._pivotPt = T.pivotToe ? leg.toePt : leg.heelPt;
     }
     // Lateral weight shift over the planted foot, expressed as a ROLL of the
     // pelvis and spine rather than a translation of the whole body. Sliding the
     // body sideways drags the planted foot with it; leaning over it is both what
     // a person actually does and what leaves the foot where it was.
-    const weightRoll = Math.sin(walkPhase) * walkAmt * this.bt.sway
-      + Math.sin(t * 0.45) * 0.55 * idleFactor;
+    // Split by source. The stride's roll belongs on the PELVIS — that is real
+    // pelvic list, and during single support only one foot is down so it costs
+    // nothing. The slow idle sway must NOT go there: standing still, both feet
+    // are on the floor, and rolling the pelvis lifts one hip ~4 mm, which with
+    // honest sole contact is a shoe visibly hanging in the air.
+    const rollWalk = Math.sin(walkPhase) * walkAmt * this.bt.sway;
+    const rollIdle = Math.sin(t * 0.45) * 0.55 * idleFactor;
+    const weightRoll = rollWalk + rollIdle;
 
     // ---------- Posture (smoothed lerp toward the scene's targets) ----------
     const ps = this._postureSm;
@@ -17065,7 +17351,9 @@ class Body {
     // With a real chain the lean is spread across pelvis→spine→chest, which is
     // how a back actually bends; a single hinge at the chest reads as a doll
     // folding at the sternum.
-    const walkLean = walkAmt * 0.055;
+    // Walking is a controlled fall forward, and the faster you go the further
+    // you lean into it. A fixed lean read as strolling at every pace.
+    const walkLean = walkAmt * (0.030 + 0.055 * speedNorm);
     const postureLean = (this.cameraMode === "tp" ? ps.lean : 0) * 0.42;
     const totalLean = walkLean + postureLean;
     // Hip hinge for reach assist — applied to the spine chain below so it
@@ -17090,11 +17378,13 @@ class Body {
       * Math.max(fwdShare, sideShare * 0.8, shufK * 0.6);
     this._hipTwist += (hipTwistTarget - this._hipTwist) * Math.min(1, dtB * 15);
     const pelvisYaw = -this._hipTwist * 0.085;
-    const gaitRoll = weightRoll;
+    const gaitRoll = rollWalk;
     const commitLean = this._startLeanSm || 0;
     this.hips.rotation.set(hinge * 0.45 + commitLean * 0.35, pelvisYaw, gaitRoll * 0.070);
-    this.spine.rotation.set(totalLean * 0.35 + hinge * 0.35 + commitLean * 0.40, -pelvisYaw * 0.9, -gaitRoll * 0.026);
-    this.chest.rotation.set(totalLean * 0.65 + hinge * 0.20 + commitLean * 0.55, -pelvisYaw * 1.15, -gaitRoll * 0.042);
+    this.spine.rotation.set(totalLean * 0.35 + hinge * 0.35 + commitLean * 0.40, -pelvisYaw * 0.9,
+      -gaitRoll * 0.026 + rollIdle * 0.030);
+    this.chest.rotation.set(totalLean * 0.65 + hinge * 0.20 + commitLean * 0.55, -pelvisYaw * 1.15,
+      -gaitRoll * 0.042 + rollIdle * 0.022);
 
     // Crouch — bent KNEES, not a shrunken torso: the thigh pitches forward,
     // the shin folds back, and the whole body drops by exactly the geometric
@@ -17115,10 +17405,17 @@ class Body {
         leg.knee.rotation.x += softKnee * load;
         leg.hip.rotation.x -= softKnee * 0.35 * load;
         leg.hip.rotation.z += rock * leg.side * 0.018;
-        leg.foot.rotation.x = -(leg.hip.rotation.x + leg.knee.rotation.x) * 0.82;
+        // Re-level: the sole holds the pitch the rockers asked for, whatever
+        // the layers above just did to the hip and knee.
+        leg.foot.rotation.x = (leg._gaitPitch || 0) - leg.hip.rotation.x - leg.knee.rotation.x;
+        leg.foot.rotation.z = -leg.hip.rotation.z;
       }
-      if (this.hips) this.hips.rotation.z += rock * 0.028;
-      if (this.spine) this.spine.rotation.z -= rock * 0.012;
+      // The sway rides on the SPINE, not the pelvis. Rolling the pelvis lifts one
+      // hip ~3 mm, and with the sole now actually meeting the floor that shows up
+      // as a foot hanging in the air while the character stands still. Carried on
+      // the spine the weight shift reads the same and both feet stay down.
+      if (this.spine) this.spine.rotation.z += rock * 0.020;
+      if (this.chest) this.chest.rotation.z += rock * 0.012;
     }
     if (crouchAmt > 0.01) {
       const c = crouchAmt;
@@ -17130,7 +17427,11 @@ class Body {
       for (const leg of this.legs) {
         leg.hip.rotation.x -= hipBend;
         leg.knee.rotation.x += kneeBend;
-        leg.foot.rotation.x = -(leg.hip.rotation.x + leg.knee.rotation.x) * 0.85;
+        // Soles stay flat on the floor through the squat. The old 0.85 left the
+        // sole 9° toe-down at full crouch, which with real sole contact would
+        // stand the character on its toes and lift it out of the crouch.
+        leg.foot.rotation.x = (leg._gaitPitch || 0) * (1 - c)
+          - leg.hip.rotation.x - leg.knee.rotation.x;
       }
       // Squatting tips the torso forward — sitting bolt upright in a deep
       // crouch is a pose no balanced human holds.
@@ -17145,15 +17446,20 @@ class Body {
     // crouch drop), and it is what stops feet floating above the ground at the
     // ends of a stride or sinking into it in a squat.
     {
-      // Measure, don't predict. Asking the scene graph where the lowest ankle
-      // actually ended up absorbs everything that moves a hip joint — pelvis
-      // roll, hip twist, the spine hinge — which a closed-form guess misses,
-      // and those misses are exactly what makes a planted foot drift.
+      // Measure, don't predict. Asking the scene graph where the lowest bit of
+      // SOLE actually ended up absorbs everything that moves a hip joint —
+      // pelvis roll, hip twist, the spine hinge, the crouch — which a
+      // closed-form guess misses, and those misses are what make a planted foot
+      // drift. The heel and toe (not the ankle joint) are the points that touch:
+      // measuring the joint left the toe 3 cm under the floor at every push-off
+      // and the whole foot hanging in the air at every heel strike.
       const floorY = this.group.position.y;
       this.group.updateMatrixWorld(true);
       let lowest = Infinity;
       for (const leg of this.legs) {
-        leg.foot.getWorldPosition(_bV1);
+        _bV1.copy(leg.heelPt).applyMatrix4(leg.foot.matrixWorld);
+        if (_bV1.y < lowest) lowest = _bV1.y;
+        _bV1.copy(leg.toePt).applyMatrix4(leg.foot.matrixWorld);
         if (_bV1.y < lowest) lowest = _bV1.y;
       }
       // While the world matrices are fresh, record how far each hip joint moved
@@ -17179,8 +17485,12 @@ class Body {
           // accumulates over a whole stance; measuring the ACTUAL world error
           // and handing it back closes the loop without having to enumerate
           // every source.
+          // Anchored on the sole point currently bearing weight (heel, then toe
+          // after heel-off) — that is the thing physically pinned to the floor.
+          // Anchoring on the ankle fought the rockers, which move the ankle
+          // several centimetres on purpose while the contact stands still.
           if (leg._plantS != null) {
-            leg.foot.getWorldPosition(_bV3);
+            _bV3.copy(leg._pivotPt || leg.heelPt).applyMatrix4(leg.foot.matrixWorld);
             if (!leg._anchor) leg._anchor = _bV3.clone();
             else {
               const ex = _bV3.x - leg._anchor.x, ez = _bV3.z - leg._anchor.z;
@@ -17192,7 +17502,7 @@ class Body {
           }
         }
       }
-      const clampDy = (floorY + this.opts.ankleY) - lowest;
+      const clampDy = floorY - lowest;
       this.group.position.y += clampDy;
       // The clamp moves the group ORIGIN below the floor as the legs fold (the
       // feet are what stay put), so the contact shadow has to be pushed back up
@@ -17254,7 +17564,7 @@ class Body {
         + (this._tipPitchSm || 0) * 0.65
         + Math.sin(t * 0.7) * 0.02
         + (Math.abs(Math.sin(walkPhase)) - 0.6) * 0.035 * walkAmt;
-      this.head.rotation.z = Math.sin(t * 0.53) * 0.012 - gaitRoll * 0.02;
+      this.head.rotation.z = Math.sin(t * 0.53) * 0.012 - weightRoll * 0.02;
       // Fine tremor at high arousal — small enough to feel rather than see.
       if (fearK > 0.25) {
         const tr = (fearK - 0.25) * 0.0075;
@@ -17388,11 +17698,15 @@ class Body {
     // Fire earlier in the walk ramp (0.22) so a cautious creep still plants
     // audible steps; pass side + speed so L/R and creep/stomp sound different.
     if (walkAmt > 0.22) {
-      if (this._lastStepBucket == null) this._lastStepBucket = -1;
-      const stepBucket = Math.floor(walkPhase / Math.PI);
+      // Fire on the real footfall. A foot reaches initial contact when its
+      // phase s hits 0, which is walkPhase = π/2 + kπ — NOT at kπ, where this
+      // used to trigger. Half a step out, the step you heard landed while the
+      // feet were passing each other in mid-air.
+      const stepBucket = Math.floor((walkPhase - Math.PI / 2) / Math.PI);
       if (stepBucket !== this._lastStepBucket) {
-        if (this._lastStepBucket !== -1 && window.PhobiaAudio?.footstep) {
-          const side = stepBucket % 2 === 0 ? -1 : 1;
+        if (this._lastStepBucket != null && window.PhobiaAudio?.footstep) {
+          // Even buckets are the side>0 leg's contact (its phase offset is 0).
+          const side = (((stepBucket % 2) + 2) % 2) === 0 ? 1 : -1;
           const stepVol = walkAmt * (0.22 + 0.78 * Math.pow(speedNorm, 1.25));
           try {
             window.PhobiaAudio.footstep(stepVol, this.opts.surface, {
@@ -17470,8 +17784,12 @@ class Body {
     for (let i = 0; i < this.arms.length; i++) {
       const arm = this.arms[i];
       const side = arm.side;
-      // Right arm swings with the LEFT leg, which is how humans walk.
-      const armPhase = walkPhase + (side > 0 ? Math.PI : 0);
+      // Right arm swings with the LEFT leg, which is how humans walk. The
+      // offset has to MATCH this side's leg phase, not oppose it: a positive
+      // shoulder rotation swings the arm BACK, so sharing the leg's phase puts
+      // the arm behind while that leg is in front. The old inverted offset gave
+      // same-side arm and leg — the unmistakable tin-soldier walk.
+      const armPhase = walkPhase + (side > 0 ? 0 : Math.PI);
       const swing = Math.sin(armPhase) * (side > 0 ? 0.40 : 0.45) * walkAmt * strideK;
       const shoulderTarget = side > 0 ? rS : lS;
       const elbowTarget    = side > 0 ? rE : lE;
@@ -17609,7 +17927,7 @@ class Body {
       const phase = this._windPhase * 0.9;
       const swayX = Math.sin(t * 1.7) * 0.02 + walkAmt * Math.sin(walkPhase * 2) * 0.05;
       this.hairFlutter.rotation.x = swayX + Math.sin(phase * 1.6) * 0.15 * wind;
-      this.hairFlutter.rotation.z = Math.sin(t * 1.3) * 0.015 - gaitRoll * 0.05
+      this.hairFlutter.rotation.z = Math.sin(t * 1.3) * 0.015 - weightRoll * 0.05
         + Math.sin(phase + 0.6) * 0.12 * wind;
     }
 
@@ -17687,6 +18005,13 @@ class Body {
     if (!this._dustPuffs) this._dustPuffs = [];
     this._dustPuffs.push({ mesh: points, velocities, life: 0.8, maxLife: 0.8, baseSize });
   }
+
+  // Step length for these legs AT 1 m/s; the phase engine scales it by √speed.
+  // 0.72 × leg length reproduces the measured step length / leg length ratio of
+  // ordinary walking, so at this scene's 1.45 m/s the character takes ~0.68 m
+  // steps at ~2.1 per second — a walk, where the old fixed 0.62 m gave 2.35, a
+  // march.
+  strideBase() { return (this.opts.hipY - this.opts.ankleY) * 0.72; }
 
   setWindExposure(amount) {
     this.opts.windExposure = Math.max(0, Math.min(1.4, amount || 0));
@@ -19471,6 +19796,8 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // undefined key still overrides defaults through Object.assign.
       Object.keys(bodyOpts).forEach(k => { if (bodyOpts[k] === undefined) delete bodyOpts[k]; });
       body = new Body(scene, camera, bodyOpts);
+      // Step length comes from this character's actual legs.
+      if (controls && controls.setStrideBase) controls.setStrideBase(body.strideBase());
       // Sync body's head visibility AND the FP hands' visibility to the
       // controls' camera mode. In TP, body's head shows + FP hands hide
       // (so the user sees ONE clear character, not body + floating hands).
