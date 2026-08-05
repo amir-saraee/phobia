@@ -14747,7 +14747,7 @@ const FACE = {
 function makeHeadSurface(shape) {
   // shape: 0 = softer/rounder (woman/child), 1 = squarer/heavier (man)
   const sq = shape;
-  const SX = 0.0800, SY = 0.1095, SZ = 0.0920;   // base ellipsoid half-axes
+  const SX = 0.0752, SY = 0.1095, SZ = 0.0920;   // base ellipsoid half-axes
   return function headPoint(theta, phi) {
     const sp = Math.sin(phi), cp = Math.cos(phi);
     let x = SX * sp * Math.sin(theta);
@@ -15276,7 +15276,7 @@ function buildHead(o) {
   // Lips are a little redder and darker than the skin around them — not a
   // different material. At 0.545/0.515 they went brown enough that, with the
   // seam shading on top, a closed mouth read as an open one.
-  const lipTone = [1.04, 0.800, 0.775];
+  const lipTone = [1.04, 0.740, 0.712];
   const skull = buildHeadShell(headPoint, faceM, {
     nu: dense.nu, nv: dense.nv, morphs: true, cacheKey: "skull|" + shape + "|" + dense.nu,
     tint: (p) => {
@@ -16129,7 +16129,7 @@ function buildHand(side, skinM, sleeveM, opts = {}) {
 // averages across shared indices, so it cannot help there. Averaging over a
 // small RADIUS does, and a crease limit keeps genuine edges (the shirt hem, the
 // shoe welt) from being smeared along with them.
-function blendSeamNormals(geom, radius = 0.014, cosLimit = 0.64) {
+function blendSeamNormals(geom, radius = 0.024, cosLimit = 0.42) {
   const pos = geom && geom.attributes && geom.attributes.position;
   const nor = geom && geom.attributes && geom.attributes.normal;
   if (!pos || !nor) return;
