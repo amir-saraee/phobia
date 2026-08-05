@@ -14830,10 +14830,14 @@ function makeHeadSurface(shape) {
     z -= 0.0072 * _falloff(ax - 0.0102, y + 0.0452, z - 0.0930, 0.0048, 0.0042, 0.020);
     // Philtrum groove
     z -= 0.0040 * _falloff(x, y + 0.0530, z - 0.0850, 0.0060, 0.0070, 0.020);
-    // Lips: the upper is thinner and sits slightly behind the lower
-    z += 0.0135 * _falloff(x, y + 0.0590, z - 0.0830, 0.0235, 0.0070, 0.024);
-    z -= 0.0125 * _falloff(x, y - FACE.mouthY, z - 0.0850, 0.0225, 0.0042, 0.022);
-    z += 0.0150 * _falloff(x, y + 0.0730, z - 0.0815, 0.0205, 0.0090, 0.024);
+    // Lips: the upper is thinner and sits slightly behind the lower. The SEAM
+    // between them is a crease, not a cavity — at 12.5 mm it was the deepest
+    // feature on the whole face (deeper than the nostrils) and, with the
+    // shading below piled on top, a closed mouth read as a dark open hole.
+    // A real lip seam is a couple of millimetres.
+    z += 0.0105 * _falloff(x, y + 0.0590, z - 0.0830, 0.0235, 0.0070, 0.024);
+    z -= 0.0042 * _falloff(x, y - FACE.mouthY, z - 0.0850, 0.0225, 0.0042, 0.022);
+    z += 0.0118 * _falloff(x, y + 0.0730, z - 0.0815, 0.0205, 0.0090, 0.024);
     // Mouth corners tuck in
     z -= 0.0080 * _falloff(ax - 0.0240, y - FACE.mouthY, z - 0.0740, 0.0085, 0.0105, 0.030);
     // Mentolabial crease, then the chin itself. The crease has to be measured
@@ -15269,7 +15273,10 @@ function buildHead(o) {
     sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.55),
     envMapIntensity: 0.45, vertexColors: true,
   });
-  const lipTone = [1.02, 0.545, 0.515];
+  // Lips are a little redder and darker than the skin around them — not a
+  // different material. At 0.545/0.515 they went brown enough that, with the
+  // seam shading on top, a closed mouth read as an open one.
+  const lipTone = [1.04, 0.800, 0.775];
   const skull = buildHeadShell(headPoint, faceM, {
     nu: dense.nu, nv: dense.nv, morphs: true, cacheKey: "skull|" + shape + "|" + dense.nu,
     tint: (p) => {
@@ -15289,7 +15296,9 @@ function buildHead(o) {
       // purpose: the seam runs from z 0.099 at the centre to 0.073 at the
       // corners, so a tight depth window clips the corners right off.
       const seam = _falloff(p.x, p.y - FACE.mouthY, p.z - 0.0900, 0.0245, 0.0038, 0.050);
-      const sk = 1 - 0.68 * seam; r *= sk; g *= sk * 0.86; b *= sk * 0.88;
+      // 0.68 was near-black at the centre. A lip line is darker than skin, not
+      // a void — the geometry above already carries the crease.
+      const sk = 1 - 0.34 * seam; r *= sk; g *= sk * 0.93; b *= sk * 0.94;
       // Eye sockets / upper-lid shadow
       const sock = _falloff(ax - FACE.eyeX, p.y - FACE.eyeY - 0.006, p.z - 0.0705, 0.029, 0.015, 0.040);
       r *= 1 - 0.22 * sock; g *= 1 - 0.27 * sock; b *= 1 - 0.24 * sock;
@@ -15895,7 +15904,10 @@ function buildHead(o) {
     _applyMouth() {
       const open = Math.max(this.talk || 0, this.jaw || 0);
       const s = Math.max(0.001, open * 0.75);
-      mouthCap.visible = open > 0.03;
+      // The dark interior patch only belongs behind a mouth that is actually
+      // open. The idle jaw sits around 0.07, so at 0.03 the cavity showed on a
+      // resting face and did most of the work of making it look slack-jawed.
+      mouthCap.visible = open > 0.11;
       mouthCap.scale.y = s;
       // A jaw drops; it does not open symmetrically about the lip line. The cap
       // has to travel with the jawOpen morph or the dark interior slides out
@@ -16110,6 +16122,57 @@ function buildHand(side, skinM, sleeveM, opts = {}) {
   return hand;
 }
 
+// Blend normals across surfaces that MEET but do not share vertices. The body is
+// swept as separate tubes — torso, arms, legs — so where the deltoid emerges
+// from the shoulder, or the thigh from the pelvis, two surfaces interpenetrate
+// with a hard shading crease along the intersection. computeVertexNormals only
+// averages across shared indices, so it cannot help there. Averaging over a
+// small RADIUS does, and a crease limit keeps genuine edges (the shirt hem, the
+// shoe welt) from being smeared along with them.
+function blendSeamNormals(geom, radius = 0.014, cosLimit = 0.64) {
+  const pos = geom && geom.attributes && geom.attributes.position;
+  const nor = geom && geom.attributes && geom.attributes.normal;
+  if (!pos || !nor) return;
+  const inv = 1 / radius, r2 = radius * radius;
+  const grid = new Map();
+  const cellKey = (gx, gy, gz) => gx + "," + gy + "," + gz;
+  const gi = (i) => [
+    Math.floor(pos.getX(i) * inv), Math.floor(pos.getY(i) * inv), Math.floor(pos.getZ(i) * inv),
+  ];
+  for (let i = 0; i < pos.count; i++) {
+    const [gx, gy, gz] = gi(i);
+    const k = cellKey(gx, gy, gz);
+    let arr = grid.get(k);
+    if (!arr) { arr = []; grid.set(k, arr); }
+    arr.push(i);
+  }
+  const src = new Float32Array(nor.array);
+  for (let i = 0; i < pos.count; i++) {
+    const px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+    const nx = src[i * 3], ny = src[i * 3 + 1], nz = src[i * 3 + 2];
+    let ax = 0, ay = 0, az = 0;
+    const [gx, gy, gz] = gi(i);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          const arr = grid.get(cellKey(gx + dx, gy + dy, gz + dz));
+          if (!arr) continue;
+          for (const j of arr) {
+            const qx = pos.getX(j) - px, qy = pos.getY(j) - py, qz = pos.getZ(j) - pz;
+            if (qx * qx + qy * qy + qz * qz > r2) continue;
+            const mx = src[j * 3], my = src[j * 3 + 1], mz = src[j * 3 + 2];
+            if (nx * mx + ny * my + nz * mz < cosLimit) continue;
+            ax += mx; ay += my; az += mz;
+          }
+        }
+      }
+    }
+    const len = Math.hypot(ax, ay, az);
+    if (len > 1e-6) nor.setXYZ(i, ax / len, ay / len, az / len);
+  }
+  nor.needsUpdate = true;
+}
+
 // ---- the rig ------------------------------------------------------------
 // Material slots inside the single body SkinnedMesh.
 const MAT = { SKIN: 0, SHIRT: 1, PANTS: 2, SHOE: 3, DARK: 4 };
@@ -16146,6 +16209,10 @@ const THIGH_FRAC  = (HIP_Y - KNEE_Y) / (HIP_Y - ANKLE_Y);   // ≈ 0.50
 // outboard of it, a 0.57 m bideltoid silhouette against a real 0.41 — which is
 // most of why the shoulders read as pads bolted onto a barrel.
 const SHOULDER_HALF = +((0.115 * _STATURE) / 1.16).toFixed(4);   // 0.164
+// Hand length is 0.108 x stature (wrist crease to middle fingertip). The hand
+// mesh is authored at 0.128 m, so it needs scaling up to reach a real 0.179 —
+// small hands were part of why the figure read as slightly doll-like.
+const HAND_SCALE = +((0.108 * _STATURE) / 0.1277).toFixed(3);   // ~1.40
 
 // The mesh stations inside buildHumanRig are hand-authored in ONE fixed frame —
 // heights measured on the figure as it used to be proportioned. The bones come
@@ -16255,9 +16322,12 @@ function buildHumanRig(o = {}) {
     // The acromion shelf stays WIDE up to just above the joint — that is what
     // the deltoid sits on. Narrowing it here (which the first attempt did) left
     // the arm cap protruding into thin air beside the neck.
-    { ay: SHY + 0.018, rx: .1450, rz: .0955, w: [[bi(chest), 1]], mat: shirtTop, sq: .92 },
-    { ay: SHY - 0.010, rx: .1600, rz: .1030, w: [[bi(chest), 1]], mat: shirtTop, sq: .89 },
-    { ay: SHY - 0.055, rx: .1955, rz: .1130, w: [[bi(chest), 1]], mat: shirtTop, sq: sqT },
+    // Round through the shoulder band. `sq` squares the cross-section off, which
+    // is right for a ribcage and wrong for a shoulder girdle — the corners were
+    // reading as hard pointed edges where the sleeve met the yoke.
+    { ay: SHY + 0.018, rx: .1450, rz: .0955, w: [[bi(chest), 1]], mat: shirtTop, sq: .99 },
+    { ay: SHY - 0.010, rx: .1600, rz: .1030, w: [[bi(chest), 1]], mat: shirtTop, sq: .97 },
+    { ay: SHY - 0.055, rx: .1955, rz: .1130, w: [[bi(chest), 1]], mat: shirtTop, sq: .93 },
     { y: 1.212, rx: .1950, rz: .1160, w: [[bi(chest), .70], [bi(breath), .30]], mat: shirtTop, sq: sqT },
     { y: 1.150, rx: .1805, rz: .1195, w: [[bi(breath), 1]], mat: shirtTop, sq: sqT },
     { y: 1.078, rx: .1580, rz: .1090, w: [[bi(breath), .55], [bi(spine), .45]], mat: shirtTop, sq: sqT },
@@ -16382,6 +16452,7 @@ function buildHumanRig(o = {}) {
   }
 
   const geo = sg.toGeometry();
+  blendSeamNormals(geo);   // soften where the swept tubes meet
   const skinCol = new THREE.Color(o.skinColor ?? 0xd4a07a);
   const shirtCol = new THREE.Color(o.shirtColor ?? 0x2c9d96);
   const pantsCol = new THREE.Color(o.pantsColor ?? 0x2c3a52);
@@ -16536,7 +16607,7 @@ function buildHumanRig(o = {}) {
   const arms = [];
   for (let i = 0; i < armBones.length; i++) {
     const a = armBones[i];
-    const hand = buildHand(a.side, mSkin, mShirt, { scale: H * LW, cuff: longSleeve });
+    const hand = buildHand(a.side, mSkin, mShirt, { scale: H * LW * HAND_SCALE, cuff: longSleeve });
     hand.position.set(0, -0.012 * H, 0);
     hand.rotation.y = a.side * -0.30;
     a.wr.add(hand);
@@ -18102,7 +18173,9 @@ class Body {
         // with the stroke: a hand resting on an animal sinks into it and the
         // pressure varies. Holding a fixed stand-off is what makes a pet look
         // like a hand hovering a centimetre above a statue.
-        const give = 0.055 - (contact.landed || 0) * (0.014 + 0.006 * Math.sin(t * 3.1));
+        // Stand-off is measured from the WRIST, so it tracks the hand's size —
+        // the palm now sits ~3 cm past the wrist rather than ~2.2.
+        const give = 0.070 - (contact.landed || 0) * (0.018 + 0.008 * Math.sin(t * 3.1));
         if (n) tgt.addScaledVector(n, give);
         else tgt.y += give;
         this.chest.updateMatrixWorld();
