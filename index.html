@@ -14532,6 +14532,16 @@ function _falloff(dx, dy, dz, rx, ry, rz) {
   return d2 > 9 ? 0 : Math.exp(-d2);
 }
 
+// Correlated micro-motion. A real body is never still and never exactly
+// repeats: there is always a slow sway being corrected. Three incommensurate
+// sines give a smooth signal that never returns to the same phase, which is
+// what separates "alive" from "looping".
+function _wob(t, seed) {
+  return (Math.sin(t * 0.73 + seed) * 0.55
+        + Math.sin(t * 1.19 + seed * 2.3) * 0.30
+        + Math.sin(t * 2.11 + seed * 4.7) * 0.15);
+}
+
 // ---- gait shaping -------------------------------------------------------
 // One walk cycle, phase s ∈ [0,1), s = 0 at initial contact. These are the
 // shapes a real walk is made of; the leg solver in Body.update turns them into
@@ -14740,14 +14750,17 @@ const FACE = {
   noseTipY: -0.0345,
   noseBaseY:-0.0455,
   mouthY:   -0.0645,  // the lip seam
-  chinY:    -0.0930,
+  chinY:    -0.0985,
   earY:     -0.0080,
 };
 
 function makeHeadSurface(shape) {
   // shape: 0 = softer/rounder (woman/child), 1 = squarer/heavier (man)
   const sq = shape;
-  const SX = 0.0752, SY = 0.1095, SZ = 0.0920;   // base ellipsoid half-axes
+  // SY trimmed with the lowered chin: dropping the chin 5.5 mm to lengthen the
+  // short lower third also made the head 8% taller than canon (7.1 heads to
+  // the figure, against 7.3–7.8). Taking it off the cranium keeps both right.
+  const SX = 0.0752, SY = 0.1070, SZ = 0.0920;   // base ellipsoid half-axes
   return function headPoint(theta, phi) {
     const sp = Math.sin(phi), cp = Math.cos(phi);
     let x = SX * sp * Math.sin(theta);
@@ -14758,7 +14771,7 @@ function makeHeadSurface(shape) {
     // Jaw taper: the mandible is narrower than the cranium and its back edge
     // cuts forward toward the chin. Overdoing this is what turns a head into
     // an alien, so it stays modest and only bites below the cheekbones.
-    const jt = _sstep(-0.010, -0.098, y);
+    const jt = _sstep(-0.010, -0.1035, y);
     x *= 1 - 0.20 * jt * (0.85 + 0.3 * sq);
     if (z < 0) z *= 1 - 0.40 * jt;
     // Mandible. The base ellipsoid tapers to nothing at its south pole, so a
@@ -14774,8 +14787,8 @@ function makeHeadSurface(shape) {
     // so the ramp is taken back off below the mentolabial crease and the jaw
     // lands on a near-vertical plane instead of a wedge.
     {
-      const drop = _sstep(-0.052, -0.098, y);
-      const chinTaper = 1 - 0.52 * _sstep(-0.072, -0.100, y);
+      const drop = _sstep(-0.052, -0.1035, y);
+      const chinTaper = 1 - 0.52 * _sstep(-0.0775, -0.1055, y);
       const poleFade = _sstep(1.00, 0.88, phi / Math.PI);
       const front = Math.max(0, Math.cos(theta));
       z += 0.078 * drop * chinTaper * Math.pow(front, 1.5) * poleFade;
@@ -17399,6 +17412,21 @@ class Body {
       }
       const pitch = _solePitch(s) * rollK * pitchSign;
       const planted = s < STANCE;
+      // No two steps are the same length. Real walking carries ~3% step-to-step
+      // variability and a standing 1–2% left/right asymmetry (everyone has a
+      // dominant leg); a cycle that repeats to the millimetre is the loudest
+      // robot tell there is, and it survives however correct the joint angles
+      // are. Rolled as the foot LEAVES the ground, so the swing trajectory and
+      // the stance that follows are sized by the same number.
+      if (leg._wasPlanted && !planted) {
+        leg._stepVar = 1 + (Math.random() - 0.5) * 0.075;
+        leg._liftVar = 1 + (Math.random() - 0.5) * 0.22;
+      }
+      leg._wasPlanted = planted;
+      if (leg._stepVar == null) { leg._stepVar = 1; leg._liftVar = 1; }
+      // A fixed per-side bias on top: the same leg is always the slightly
+      // longer stepper, which is what makes a gait belong to a person.
+      const halfL = half * leg._stepVar * (leg.side > 0 ? 1.014 : 0.986);
       // Which point of the sole carries the weight right now. Swapping at
       // heel-off is what makes the body vault over the forefoot.
       const pz = planted ? (s < G.heelOff ? leadZ : pushZ) : pushZ;
@@ -17431,8 +17459,8 @@ class Body {
           const keep = Math.exp(-dtB * 8);
           leg._plantF *= keep; leg._plantSd *= keep;
         }
-        alongF = half * leg._dirF - leg._plantF + rockZ;
-        alongS = half * leg._dirS * leg._latAmp - leg._plantSd;
+        alongF = halfL * leg._dirF - leg._plantF + rockZ;
+        alongS = halfL * leg._dirS * leg._latAmp - leg._plantSd;
         T.ankleH = rockY;
       } else {
         leg._plantS = null;
@@ -17442,21 +17470,21 @@ class Body {
         // whip that gives swing its 60° of flexion), then skims forward low.
         const pTO = _solePitch(STANCE - 1e-4) * rollK * pitchSign;
         const pIC = G.pitchIC * rollK * pitchSign;
-        const zTO = -half * gaitFwd + pushZ * (1 - Math.cos(pTO)) + ft.soleDrop * Math.sin(pTO);
+        const zTO = -halfL * gaitFwd + pushZ * (1 - Math.cos(pTO)) + ft.soleDrop * Math.sin(pTO);
         const yTO = ft.soleDrop * Math.cos(pTO) + pushZ * Math.sin(pTO);
-        const zIC =  half * gaitFwd + leadZ * (1 - Math.cos(pIC)) + ft.soleDrop * Math.sin(pIC);
+        const zIC =  halfL * gaitFwd + leadZ * (1 - Math.cos(pIC)) + ft.soleDrop * Math.sin(pIC);
         const yIC = ft.soleDrop * Math.cos(pIC) + leadZ * Math.sin(pIC);
         const zMid = zTO + (zIC - zTO) * 0.64;
         // Mid-swing skim height. Scaled by walkAmt so the settle-step pose (which
         // parks one leg at s ≈ 0.75, mid-swing) puts the foot back on the floor
         // instead of leaving the character standing on one leg.
-        const low = ft.soleDrop + 0.042 * (legLen / 0.78) * walkAmt;
+        const low = ft.soleDrop + 0.042 * (legLen / 0.78) * walkAmt * leg._liftVar;
         const kz = this._swZ, ky = this._swY;
         kz[0][1] = zTO; kz[1][1] = zTO * 0.45; kz[2][1] = zMid; kz[3][1] = zIC;
         ky[0][1] = yTO; ky[1][1] = yTO * 1.02; ky[2][1] = low;  ky[3][1] = yIC;
         alongF = _track(kz, swingT);
         T.ankleH = _track(ky, swingT);
-        alongS = (-half + 2 * half * _sstep(0, 1, swingT)) * gaitSide * leg._latAmp;
+        alongS = (-halfL + 2 * halfL * _sstep(0, 1, swingT)) * gaitSide * leg._latAmp;
         // Turning on the spot is foot WORK: alternating knee-ups, not a
         // pirouette on frozen legs. `half` is ~0 here, so lift the ankle
         // directly and let the IK fold the knee to match.
@@ -17465,7 +17493,7 @@ class Body {
         // ground, and pass 2 uses it to start lowering the pelvis early instead
         // of waiting to be forced down at the instant of contact.
         T.icZ = zIC; T.icY = yIC;
-        T.icS = half * gaitSide * leg._latAmp - leg.side * footInset;
+        T.icS = halfL * gaitSide * leg._latAmp - leg.side * footInset;
       }
       alongS -= leg.side * footInset;
       // Never ask for a foot the leg cannot reach. Drift in the closed loop —
@@ -17692,11 +17720,42 @@ class Body {
     const pelvisYaw = -this._hipTwist * 0.085;
     const gaitRoll = rollWalk;
     const commitLean = this._startLeanSm || 0;
-    this.hips.rotation.set(hinge * 0.45 + commitLean * 0.35, pelvisYaw, gaitRoll * 0.070);
-    this.spine.rotation.set(totalLean * 0.35 + hinge * 0.35 + commitLean * 0.40, -pelvisYaw * 0.9,
-      -gaitRoll * 0.026 + rollIdle * 0.030);
-    this.chest.rotation.set(totalLean * 0.65 + hinge * 0.20 + commitLean * 0.55, -pelvisYaw * 1.15,
-      -gaitRoll * 0.042 + rollIdle * 0.022);
+    // ---- bank into the turn ----
+    // Walk a curve and you lean into it; the faster and tighter the turn, the
+    // more. Without it a turning character stays bolt upright and pivots like a
+    // turret, which is the single most obvious thing missing from a walk that
+    // is otherwise correct step for step.
+    {
+      const yawNow = this._camYawSm || 0;
+      if (this._bankPrevYaw == null) this._bankPrevYaw = yawNow;
+      let dY = yawNow - this._bankPrevYaw;
+      while (dY > Math.PI) dY -= Math.PI * 2;
+      while (dY < -Math.PI) dY += Math.PI * 2;
+      this._bankPrevYaw = yawNow;
+      const yawRate = dtB > 1e-5 ? dY / dtB : 0;
+      // NEGATED: a positive rotation.z raises the character's LEFT side, which
+      // tips the body to its right. Turning left has to lean left, so the sign
+      // flips. (Measured: the unflipped version threw the head 28 mm to the
+      // OUTSIDE of the turn — a motorcycle leaning the wrong way.)
+      const want = Math.max(-0.13, Math.min(0.13, -yawRate * speedNorm * walkAmt * 0.085));
+      this._bankSm = (this._bankSm || 0) + (want - (this._bankSm || 0)) * Math.min(1, dtB * 3.5);
+    }
+    const bank = this._bankSm || 0;
+    // ---- micro-motion ----
+    // Small, slow, uncorrelated-looking drift on the trunk and neck. Amplitudes
+    // are deliberately below the threshold of "I can see that moving" — the
+    // point is that the silhouette is never twice the same.
+    const wobT = t * (0.8 + 0.5 * walkAmt);
+    const wobA = 0.010 + 0.006 * walkAmt;
+    const wobSpineX = _wob(wobT, 1.7) * wobA * 0.5;
+    const wobSpineZ = _wob(wobT, 4.1) * wobA;
+    const wobChestY = _wob(wobT, 7.3) * wobA * 0.9;
+    const wobNeckX = _wob(wobT, 11.9) * wobA * 0.7;
+    this.hips.rotation.set(hinge * 0.45 + commitLean * 0.35, pelvisYaw, gaitRoll * 0.070 + bank * 0.30);
+    this.spine.rotation.set(totalLean * 0.35 + hinge * 0.35 + commitLean * 0.40 + wobSpineX, -pelvisYaw * 0.9,
+      -gaitRoll * 0.026 + rollIdle * 0.030 + bank * 0.42 + wobSpineZ);
+    this.chest.rotation.set(totalLean * 0.65 + hinge * 0.20 + commitLean * 0.55, -pelvisYaw * 1.15 + wobChestY,
+      -gaitRoll * 0.042 + rollIdle * 0.022 + bank * 0.28);
 
     // Crouch — bent KNEES, not a shrunken torso: the thigh pitches forward,
     // the shin folds back, and the whole body drops by exactly the geometric
@@ -17885,13 +17944,14 @@ class Body {
       // rigid neck is the classic owl tell.
       const yawTotal = this._headTurnAmount * wanderK + aimY + (this._tipYawSm || 0) * 0.55;
       this.neck.rotation.y = yawTotal * 0.35;
-      this.neck.rotation.x = totalLean * -0.25 - hinge * 0.30 + (this._tipPitchSm || 0) * 0.35;
+      this.neck.rotation.x = totalLean * -0.25 - hinge * 0.30 + (this._tipPitchSm || 0) * 0.35 + wobNeckX;
       this.head.rotation.y = yawTotal * 0.65;
       this.head.rotation.x = totalLean * 0.30 - hinge * 0.55 + (this._headAimPitch || 0)
         + (this._tipPitchSm || 0) * 0.65
         + Math.sin(t * 0.7) * 0.02
         + (Math.abs(Math.sin(walkPhase)) - 0.6) * 0.035 * walkAmt;
-      this.head.rotation.z = Math.sin(t * 0.53) * 0.012 - weightRoll * 0.02;
+      // Eyes stay level through a turn: the head gives back most of the bank.
+      this.head.rotation.z = Math.sin(t * 0.53) * 0.012 - weightRoll * 0.02 - bank * 0.62;
       // Fine tremor at high arousal — small enough to feel rather than see.
       if (fearK > 0.25) {
         const tr = (fearK - 0.25) * 0.0075;
@@ -18117,7 +18177,10 @@ class Body {
       // the arm behind while that leg is in front. The old inverted offset gave
       // same-side arm and leg — the unmistakable tin-soldier walk.
       const armPhase = walkPhase + (side > 0 ? 0 : Math.PI);
-      const swing = Math.sin(armPhase) * (side > 0 ? 0.40 : 0.45) * walkAmt * strideK;
+      // Arms do not swing to a metronome either — a slow drift on amplitude,
+      // different per side, keeps the two from mirroring each other exactly.
+      const armVar = 1 + _wob(t * 0.6, side > 0 ? 2.9 : 6.2) * 0.13;
+      const swing = Math.sin(armPhase) * (side > 0 ? 0.40 : 0.45) * walkAmt * strideK * armVar;
       const shoulderTarget = side > 0 ? rS : lS;
       const elbowTarget    = side > 0 ? rE : lE;
       const gestureWeight = this.cameraMode === "tp" ? gestureStrength : 0;
