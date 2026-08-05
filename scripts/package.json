@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "bake-dog-coats": "node bake-dog-coats.cjs"
+    "bake-dog-coats": "node bake-dog-coats.cjs",
+    "bake-character-skin": "node bake-character-skin.cjs",
+    "bake-all": "node bake-character-skin.cjs && node bake-dog-coats.cjs"
   },
   "keywords": [],
   "author": "",

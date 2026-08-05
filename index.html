@@ -13162,7 +13162,7 @@ const DOG_MODELS = {
   shiba: "assets/models/ShibaInu.gltf",
   husky: "assets/models/Husky.gltf",
 };
-// Breed PBR coat maps (baked from assets/refs/dog-*-ref.png via
+// Breed PBR coat maps (baked from assets/refs/dog-*-reference.png via
 // scripts/bake-dog-coats.cjs). Applied on top of the Quaternius meshes so the
 // armature / clips stay DogController-compatible while the coat stops reading
 // as flat plastic.
@@ -13190,11 +13190,15 @@ function loadDogCoatTextures(breed) {
   const loader = getDogTexLoader();
   if (!urls || !loader) return Promise.resolve(null);
   if (_dogCoatTexCache.has(breed)) return _dogCoatTexCache.get(breed);
+  // Lower repeat than the old 5.5 wallpaper tiling — 1024 breed maps + box
+  // UVs still need some tiling (models ship no TEXCOORD_0), but 3.0 keeps
+  // strand detail readable without obvious seams on the flanks.
+  const COAT_REPEAT = 3.0;
   const loadOne = (url, srgb) => new Promise((resolve) => {
     loader.load(url, (t) => {
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
       t.anisotropy = 8;
-      t.repeat.set(5.5, 5.5);
+      t.repeat.set(COAT_REPEAT, COAT_REPEAT);
       if (srgb) t.colorSpace = THREE.SRGBColorSpace;
       t.needsUpdate = true;
       resolve(t);
@@ -13215,7 +13219,54 @@ function prefetchDogModels() {
   Object.values(DOG_MODELS).forEach((url) => { try { loadGLTF(url); } catch {} });
   // Warm the coat maps too so the first dog scene doesn't flash plastic.
   Object.keys(DOG_COAT_MAPS).forEach((b) => { try { loadDogCoatTextures(b); } catch {} });
+  // Same for the protagonist's face maps — by now QUALITY is resolved, so the
+  // low-quality gate inside actually applies.
+  try { loadCharacterFaceTextures(); } catch {}
 }
+
+// ---- protagonist facial PBR maps ----------------------------------------
+// Baked offline from assets/refs/protagonist-face-closeup.png via
+// scripts/bake-character-skin.cjs. Applied to the procedural skull so the
+// face stops reading as flat clay while the morph targets keep working.
+const CHARACTER_FACE_MAPS = {
+  albedo: "assets/models/textures/character_face_albedo.png",
+  normal: "assets/models/textures/character_face_normal.png",
+  roughness: "assets/models/textures/character_face_roughness.png",
+};
+let _charFaceTexPromise = null;
+function loadCharacterFaceTextures() {
+  const loader = getDogTexLoader();
+  if (!loader) return Promise.resolve(null);
+  // Gate on quality HERE, not at the point of use. buildHead's applyFaceMaps
+  // also refuses on low quality, but that check runs after the bytes are
+  // already on the wire — the weakest devices were still paying to download
+  // three 1K maps they would never bind.
+  if (typeof sceneQuality === "function" && sceneQuality() === "low") return Promise.resolve(null);
+  if (_charFaceTexPromise) return _charFaceTexPromise;
+  const loadOne = (url, srgb) => new Promise((resolve) => {
+    loader.load(url, (t) => {
+      // Spherical head UVs: U wraps once around the skull; do not tile.
+      t.wrapS = THREE.RepeatWrapping;
+      t.wrapT = THREE.ClampToEdgeWrapping;
+      t.anisotropy = 8;
+      if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+      t.needsUpdate = true;
+      resolve(t);
+    }, undefined, () => resolve(null));
+  });
+  _charFaceTexPromise = Promise.all([
+    loadOne(CHARACTER_FACE_MAPS.albedo, true),
+    loadOne(CHARACTER_FACE_MAPS.normal, false),
+    loadOne(CHARACTER_FACE_MAPS.roughness, false),
+  ]).then(([albedo, normal, roughness]) => {
+    if (!albedo && !normal && !roughness) return null;
+    return { albedo, normal, roughness };
+  });
+  return _charFaceTexPromise;
+}
+// Warmed from prefetchDogModels() rather than here: at module scope `QUALITY`
+// is still in its temporal dead zone, so the quality gate above would throw
+// and this call would silently do nothing anyway.
 
 // ---------- Other creature models (Quaternius "Easy Enemies", CC0) ----------
 // Real rigged + animated spider and snake (clips: <Name>_Idle / _Walk / _Attack
@@ -14594,21 +14645,22 @@ function _wob(t, seed) {
 }
 
 // ---- gait shaping -------------------------------------------------------
-// Clinical 4-phase walk cycle (see assets/refs/walk-cycle-sheet.png):
+// Clinical 4-phase walk cycle (see assets/refs/protagonist-walk-cycle.png):
 //   1. heel-strike (s≈0)  2. midstance flat (s≈flat..heelOff)
 //   3. toe-off (s≈stance) 4. mid-swing flexed knee (s≈0.81)
 // Phase s ∈ [0,1), s = 0 at initial contact. Body.update turns these into
 // joint angles by inverse kinematics rather than posing the joints directly.
 const _GAIT = {
-  stance: 0.60,      // duty factor — ~60% weight-bearing (clinical walk)
-  flat: 0.10,        // heel rocker complete: the sole is flat (midstance start)
-  heelOff: 0.40,     // forefoot rocker begins: heel lifts toward toe-off
-  pitchIC: -0.36,    // sole pitch at heel-strike (toe up)
-  pitchTO: 0.72,     // at toe-off (toe down, heel high) — clearer push-off
-  pitchSwing: -0.10, // mid-swing clearance
+  stance: 0.62,      // duty factor — clinical walk, slightly longer plant
+  flat: 0.12,        // heel rocker complete: the sole is flat (midstance start)
+  heelOff: 0.42,     // forefoot rocker begins: heel lifts toward toe-off
+  pitchIC: -0.40,    // sole pitch at heel-strike (clearer toe-up)
+  pitchTO: 0.78,     // at toe-off (toe down, heel high) — clearer push-off
+  pitchSwing: -0.12, // mid-swing clearance
   // Stance knee flexion (rad): loading-response dip → midstance re-extend →
   // pre-swing flex that throws the leg into mid-swing peak flexion.
-  kneeKeys: [[0, 0.10], [0.12, 0.34], [0.32, 0.08], [0.48, 0.24], [0.60, 0.78], [0.81, 1.05], [1.0, 0.10]],
+  // Peak mid-swing flexion raised to match the walk-cycle sheet's flexed knee.
+  kneeKeys: [[0, 0.12], [0.12, 0.36], [0.32, 0.10], [0.48, 0.26], [0.62, 0.82], [0.81, 1.12], [1.0, 0.12]],
 };
 // Piecewise-smoothstep through [[x, y], …] keyframes.
 function _track(keys, u) {
@@ -14783,7 +14835,9 @@ function _sweep(sg, stations, radial) {
 // the softer/rounder shaping that separates the presets at silhouette range.
 const BODY_TYPES_3D = {
   man:   { h: 1.00, shoulder: 1.00, hip: 1.00, head: 1.00, sway: 1.0, chestZ: 1.00, waist: 1.00, limb: 1.00, seat: 1.00 },
-  woman: { h: 0.95, shoulder: 0.85, hip: 1.14, head: 0.96, sway: 1.35, chestZ: 1.06, waist: 0.86, limb: 0.92, seat: 1.10 },
+  // Tuned against assets/refs/protagonist-turnaround.png: narrower shoulders,
+  // slightly longer limb read, fuller hips/seat, softer chest depth.
+  woman: { h: 0.96, shoulder: 0.84, hip: 1.16, head: 0.97, sway: 1.40, chestZ: 1.08, waist: 0.84, limb: 0.94, seat: 1.12 },
   boy:   { h: 0.80, shoulder: 0.80, hip: 0.96, head: 1.16, sway: 0.9,  chestZ: 0.94, waist: 0.96, limb: 0.90, seat: 0.96 },
   girl:  { h: 0.78, shoulder: 0.76, hip: 1.02, head: 1.18, sway: 1.15, chestZ: 0.96, waist: 0.90, limb: 0.88, seat: 1.02 },
 };
@@ -14801,15 +14855,15 @@ const BODY_TYPES_3D = {
 // horizontal midline, nose base halfway from brow to chin, lip seam a third
 // of the way down from nose base to chin.
 const FACE = {
-  eyeY:      0.0045,  // pupil line — a real head's eyes sit at its vertical middle
-  eyeX:      0.0325,  // pupil separation / 2
+  eyeY:      0.0050,  // pupil line — a real head's eyes sit at its vertical middle
+  eyeX:      0.0318,  // pupil separation / 2 (slightly closer for female soft face)
   eyeZ:      0.0615,  // eyeball CENTRE depth (the cornea pokes out past this)
   eyeR:      0.0125,  // eyeball radius
-  browY:     0.0215,
-  noseTipY: -0.0345,
-  noseBaseY:-0.0455,
-  mouthY:   -0.0645,  // the lip seam
-  chinY:    -0.0985,
+  browY:     0.0205,
+  noseTipY: -0.0335,
+  noseBaseY:-0.0445,
+  mouthY:   -0.0635,  // the lip seam
+  chinY:    -0.0975,
   earY:     -0.0080,
 };
 
@@ -14882,11 +14936,11 @@ function makeHeadSurface(shape) {
     z -= 0.0118 * _falloff(ax - FACE.eyeX, y - FACE.eyeY - 0.001, z - 0.064, 0.026, 0.017, 0.050);
     z -= 0.0085 * _falloff(ax - FACE.eyeX, y - FACE.eyeY, z - 0.066, 0.0175, 0.0080, 0.040);
     // Cheekbone, then the hollow under it. Slightly fuller apple + deeper
-    // submalar (from the face close-up ref) so the midface reads as flesh,
-    // not a painted cylinder.
-    z += 0.0120 * _falloff(ax - 0.0535, y + 0.0095, z - 0.048, 0.027, 0.020, 0.048);
-    x += 0.0068 * Math.sign(x || 1) * _falloff(ax - 0.0590, y + 0.0085, z - 0.032, 0.025, 0.022, 0.045);
-    z -= 0.0082 * _falloff(ax - 0.0445, y + 0.0410, z - 0.050, 0.022, 0.019, 0.044) * (0.55 + 0.55 * sq);
+    // submalar (from the protagonist face close-up) so the midface reads as
+    // flesh, not a painted cylinder. Soften the hollow for feminine shapes.
+    z += 0.0125 * _falloff(ax - 0.0535, y + 0.0095, z - 0.048, 0.027, 0.020, 0.048);
+    x += 0.0070 * Math.sign(x || 1) * _falloff(ax - 0.0590, y + 0.0085, z - 0.032, 0.025, 0.022, 0.045);
+    z -= 0.0074 * _falloff(ax - 0.0445, y + 0.0410, z - 0.050, 0.022, 0.019, 0.044) * (0.40 + 0.70 * sq);
     // Nose: bridge ridge → tip bulb → wings → the shadow under the septum
     {
       const t = _hsat((0.0245 - y) / 0.0590);                    // 0 at bridge top, 1 at tip
@@ -14909,10 +14963,10 @@ function makeHeadSurface(shape) {
     // feature on the whole face (deeper than the nostrils) and, with the
     // shading below piled on top, a closed mouth read as a dark open hole.
     // A real lip seam is a couple of millimetres. Slightly more vermilion
-    // volume (face-closeup ref) so the mouth plane reads under soft light.
-    z += 0.0115 * _falloff(x, y + 0.0590, z - 0.0840, 0.0240, 0.0074, 0.024);
+    // volume (protagonist face close-up) so the mouth plane reads under soft light.
+    z += 0.0120 * _falloff(x, y + 0.0590, z - 0.0840, 0.0240, 0.0076, 0.024);
     z -= 0.0038 * _falloff(x, y - FACE.mouthY, z - 0.0860, 0.0230, 0.0036, 0.022);
-    z += 0.0130 * _falloff(x, y + 0.0730, z - 0.0825, 0.0210, 0.0094, 0.024);
+    z += 0.0135 * _falloff(x, y + 0.0730, z - 0.0825, 0.0210, 0.0096, 0.024);
     // Mouth corners tuck in
     z -= 0.0080 * _falloff(ax - 0.0240, y - FACE.mouthY, z - 0.0740, 0.0085, 0.0105, 0.030);
     // Mentolabial crease, then the chin itself. The crease has to be measured
@@ -15342,14 +15396,42 @@ function buildHead(o) {
   // features. Tinting does the other half of the work: skin is not one flat
   // colour, and lips/sockets/brows carry most of a face's readability.
   const dense = o.lowDetail ? { nu: 72, nv: 54 } : { nu: 112, nv: 86 };
-  // Skin: slightly oilier T-zone (lower roughness on forehead/nose via tint
-  // proxy) + cheek sheen warmth so the face stops reading as matte clay.
+  // Skin: slightly oilier T-zone (forehead/nose via roughness map) + cheek
+  // sheen warmth so the face stops reading as matte clay. Vertex colours still
+  // drive lip / socket / blush tinting on top of the baked albedo.
   const faceM = new THREE.MeshPhysicalMaterial({
     color: skinCol, roughness: 0.52, metalness: 0.0,
     sheen: 0.42, sheenRoughness: 0.78,
     sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.58),
     envMapIntensity: 0.52, vertexColors: true,
   });
+  // Attach baked face maps when ready. Low quality keeps colour-only so mobile
+  // GPUs do not pay for three 1K textures on a mesh that is often off-screen in FP.
+  const applyFaceMaps = (maps) => {
+    if (!maps || !maps.albedo) return;
+    if (typeof sceneQuality === "function" && sceneQuality() === "low") return;
+    faceM.map = maps.albedo;
+    if (maps.normal) {
+      faceM.normalMap = maps.normal;
+      if (faceM.normalScale) faceM.normalScale.set(0.55, 0.55);
+    }
+    if (maps.roughness) {
+      faceM.roughnessMap = maps.roughness;
+      faceM.roughness = 0.62;
+    }
+    // Drop the vertex tint. It exists to paint lips, sockets, nostrils and
+    // brows onto a face that has no albedo — and the photo map carries all of
+    // them already. Left on, the two sets MULTIPLY at slightly different
+    // places: a second brow bar above the real one, a second mouth below it.
+    // The colour attribute stays on the geometry, so the no-map fallback path
+    // (low quality, or a texture that fails to load) is unaffected.
+    faceM.vertexColors = false;
+    // Let the map carry most of the look; keep skinCol as a soft multiply tint
+    // so creator swatches still recolour the face.
+    faceM.color.copy(skinCol).lerp(new THREE.Color(0xffffff), 0.55);
+    faceM.needsUpdate = true;
+  };
+  loadCharacterFaceTextures().then(applyFaceMaps).catch(() => {});
   // Lips are a little redder and darker than the skin around them — not a
   // different material. At 0.545/0.515 they went brown enough that, with the
   // seam shading on top, a closed mouth read as an open one.
@@ -15357,7 +15439,7 @@ function buildHead(o) {
   // Bust the geometry cache when the sculpt/tint changes so creator previews
   // pick up the new face immediately (old keys would serve stale morphs).
   const skull = buildHeadShell(headPoint, faceM, {
-    nu: dense.nu, nv: dense.nv, morphs: true, cacheKey: "skull|v2|" + shape + "|" + dense.nu,
+    nu: dense.nu, nv: dense.nv, morphs: true, cacheKey: "skull|v3|" + shape + "|" + dense.nu,
     tint: (p) => {
       let r = 1, g = 1, b = 1;
       const ax = Math.abs(p.x);
@@ -18258,10 +18340,10 @@ class Body {
       const armPhase = walkPhase + (side > 0 ? 0 : Math.PI);
       // Arms do not swing to a metronome either — a slow drift on amplitude,
       // different per side, keeps the two from mirroring each other exactly.
-      // Amplitude matched to the walk-cycle sheet: clearer opposite-arm
-      // counter-swing (~35–40° shoulder arc at full stride).
+      // Amplitude matched to the protagonist walk-cycle sheet: clearer
+      // opposite-arm counter-swing (~38–45° shoulder arc at full stride).
       const armVar = 1 + _wob(t * 0.6, side > 0 ? 2.9 : 6.2) * 0.13;
-      const swing = Math.sin(armPhase) * (side > 0 ? 0.52 : 0.58) * walkAmt * strideK * armVar;
+      const swing = Math.sin(armPhase) * (side > 0 ? 0.58 : 0.64) * walkAmt * strideK * armVar;
       const shoulderTarget = side > 0 ? rS : lS;
       const elbowTarget    = side > 0 ? rE : lE;
       const gestureWeight = this.cameraMode === "tp" ? gestureStrength : 0;
@@ -25256,7 +25338,7 @@ function buildDog(opts = {}) {
           if (coatMaps && coatMaps.albedo && !lowQ) {
             m.map = coatMaps.albedo.clone();
             m.map.wrapS = m.map.wrapT = THREE.RepeatWrapping;
-            m.map.repeat.set(5.5, 5.5);
+            m.map.repeat.set(3.0, 3.0);
             m.map.needsUpdate = true;
             if (mode === "upgrade" && !m.userData._coatAlbedoBoost) {
               // Soften flat vertex colour once so the map carries the look.
@@ -25274,14 +25356,14 @@ function buildDog(opts = {}) {
           if (nrmSrc) {
             m.normalMap = nrmSrc.clone();
             m.normalMap.wrapS = m.normalMap.wrapT = THREE.RepeatWrapping;
-            m.normalMap.repeat.set(5.5, 5.5);
+            m.normalMap.repeat.set(3.0, 3.0);
             m.normalMap.needsUpdate = true;
-            if (m.normalScale) m.normalScale.set(0.85, 0.85);
+            if (m.normalScale) m.normalScale.set(0.95, 0.95);
           }
           if (rghSrc) {
             m.roughnessMap = rghSrc.clone();
             m.roughnessMap.wrapS = m.roughnessMap.wrapT = THREE.RepeatWrapping;
-            m.roughnessMap.repeat.set(5.5, 5.5);
+            m.roughnessMap.repeat.set(3.0, 3.0);
             m.roughnessMap.needsUpdate = true;
           }
           m.needsUpdate = true;
@@ -25475,8 +25557,9 @@ class DogController {
     // Gait-phase footfalls: the scene sets onFootfall(strength) and each paw
     // strike in the Walk/Gallop cycle fires it — rate AND strength encode the
     // dog's actual ground speed (a charge is an accelerating click-train).
+    // Phases retimed for a clearer diagonal walk cadence (RF, LH, LF, RH).
     this.onFootfall = null;
-    this.footfallPhases = [0.06, 0.31, 0.56, 0.81];
+    this.footfallPhases = [0.04, 0.29, 0.54, 0.79];
     this._ffPrevPhase = 0;
     this.groundSpeed = 0;
     // Stuck detector: when the collision resolver keeps cancelling the step
@@ -26395,17 +26478,19 @@ class DogController {
           const over = Math.abs(Math.atan2(lx, lz)) - 1.2;
           if (over > 0) this._gazeWSm *= Math.max(0, 1 - over * 1.5);
         }
-        this._gazeYawSm += (desYaw - this._gazeYawSm) * Math.min(1, d * 7);
-        this._gazePitchSm += (desPitch - this._gazePitchSm) * Math.min(1, d * 7);
+        this._gazeYawSm += (desYaw - this._gazeYawSm) * Math.min(1, d * 5.5);
+        this._gazePitchSm += (desPitch - this._gazePitchSm) * Math.min(1, d * 5.5);
         const w = this._gazeWSm;
         const chain = rig.neckChain.length ? rig.neckChain : (rig.neck ? [rig.neck] : []);
-        const perNeck = chain.length ? 0.62 / chain.length : 0;
+        // Neck leads, head trails — a slight lag reads as intent rather than
+        // a swivel head tracking the player like a turret.
+        const perNeck = chain.length ? 0.68 / chain.length : 0;
         for (const nb of chain) {
           nb.rotation.y += this._gazeYawSm * perNeck * w;
-          nb.rotation.x += this._gazePitchSm * perNeck * 0.6 * w;
+          nb.rotation.x += this._gazePitchSm * perNeck * 0.55 * w;
         }
-        rig.head.rotation.y += this._gazeYawSm * 0.38 * w;
-        rig.head.rotation.x += this._gazePitchSm * 0.55 * w;
+        rig.head.rotation.y += this._gazeYawSm * 0.32 * w;
+        rig.head.rotation.x += this._gazePitchSm * 0.48 * w;
       }
       // One-frame request: the scene must keep calling lookAt3 to hold gaze.
       this.gazeTarget = null; this.gazeWeight = 0;
@@ -26619,12 +26704,15 @@ class DogController {
       // sin² instead of |sin|: same two-beats-per-stride rise, but smooth at
       // the bottom of each bob — the |sin| kink put a sharp V-bounce into
       // every footfall that read as vibration. Amplitude scales with dog
-      // height (~2.5% of it): the old fixed 0.022 was tuned on the 2.5×
-      // over-scaled model and shook the true-size shiba like a paint mixer.
+      // height (~3% of it): slightly fuller than before so a small shiba's
+      // trot still reads at therapy-room viewing distance.
       const bobK = Math.sin(bobP);
-      const bobAmp = 0.025 * (this.parts.height || 0.6);
+      const bobAmp = 0.030 * (this.parts.height || 0.6);
       this.dog.position.y = this.baseY + poseYPrev + this._groundAdjSm + bobK * bobK * bobAmp * this._walkAmtSm;
-      if (rig.chest[0]) rig.chest[0].rotation.z += Math.sin(bobP * 0.5) * 0.05 * Math.min(1, this._walkAmtSm);
+      // Shoulder roll leads the body bob slightly — a real trot rocks the
+      // withers before the pelvis settles.
+      if (rig.chest[0]) rig.chest[0].rotation.z += Math.sin(bobP * 0.5 + 0.35) * 0.065 * Math.min(1, this._walkAmtSm);
+      if (rig.pelvis) rig.pelvis.rotation.z -= Math.sin(bobP * 0.5) * 0.035 * Math.min(1, this._walkAmtSm);
     } else {
       this.dog.position.y += (this.baseY + poseYPrev + this._groundAdjSm - this.dog.position.y) * Math.min(1, d * 6);
     }
@@ -26632,10 +26720,10 @@ class DogController {
     // ---- Ears ---- (gentle sway + a bounce while trotting; perked hard
     // forward when alert — the "ears up, watching" of the rung description.
     // Excitement perks them a notch even on a relaxed dog.)
-    const earPerk = (this.mood === "alert" ? 0.16 : 0) + this._excSm * 0.11;
-    const earOsc = Math.sin(this._wagPhase * 0.5) * 0.025
-      + (this._walkAmtSm > 0.01 ? Math.sin(bobP) * 0.06 * this._walkAmtSm : 0)
-      + (resting ? Math.sin(t * 1.1) * 0.018 : 0);
+    const earPerk = (this.mood === "alert" ? 0.18 : 0) + this._excSm * 0.12;
+    const earOsc = Math.sin(this._wagPhase * 0.5) * 0.028
+      + (this._walkAmtSm > 0.01 ? Math.sin(bobP) * 0.075 * this._walkAmtSm : 0)
+      + (resting ? Math.sin(t * 1.1) * 0.020 : 0);
     for (let i = 0; i < rig.earsL.length; i++) rig.earsL[i].rotation.x += earOsc * (0.5 + i * 0.3) + earPerk;
     for (let i = 0; i < rig.earsR.length; i++) rig.earsR[i].rotation.x += earOsc * (0.55 + i * 0.28) + earPerk;
     // Asymmetric orienting: the leading ear rotates toward the gaze target —
@@ -37287,40 +37375,60 @@ function buildAvatarFigure(c) {
   group.add(shadow);
 
   // Idle loop — breath, blink, weight shift, a slow scan of the room, and a
-  // resting arm pose. Standing perfectly still is the loudest mannequin tell,
-  // so nothing here is ever completely at rest.
+  // soft in-place walk demo that reuses the shared _GAIT / _legIK helpers so
+  // the creator preview shows the same clinical walk the scenes use.
   let blinkAt = 1.5, blinkP = 0, last = 0;
+  const walkPhase0 = Math.random() * Math.PI * 2;
+  const ikOut = { hip: 0, knee: 0, abduct: 0 };
   group.userData.animate = function (t) {
     const dt = Math.min(0.05, Math.max(0.001, t - last)); last = t;
     const br = Math.sin(t * 1.35);
     if (rig.breath) rig.breath.scale.set(1 + br * 0.020, 1 + br * 0.014, 1 + br * 0.026);
-    rig.group.position.y = br * 0.006;
-    // Weight shift: hips drift, shoulders counter, one knee softens.
-    const shift = Math.sin(t * 0.42);
-    rig.pelvis.rotation.set(0, shift * 0.045, shift * 0.030);
-    rig.spine.rotation.set(0.02, -shift * 0.030, -shift * 0.018);
-    rig.chest.rotation.set(0.015, -shift * 0.045, -shift * 0.022);
-    rig.legs.forEach((leg, i) => {
-      const s = i === 0 ? shift : -shift;
-      leg.hip.rotation.set(-0.02 + Math.max(0, s) * 0.10, 0, 0);
-      leg.knee.rotation.x = 0.04 + Math.max(0, s) * 0.14;
-      leg.foot.rotation.x = -(leg.hip.rotation.x + leg.knee.rotation.x) * 0.8;
+    // Soft walk demo: ~0.55 of full stride so proportions stay readable while
+    // still showing heel-strike / mid-swing clearly against the refs.
+    const walkAmt = 0.55;
+    const walkPhase = walkPhase0 + t * 3.4;
+    const G = _GAIT;
+    const thigh = (rig.dims && rig.dims.thighLen) || 0.38;
+    const shin = (rig.dims && rig.dims.shinLen) || 0.38;
+    const half = 0.18 * walkAmt;
+    rig.legs.forEach((leg) => {
+      const th = walkPhase + (leg.side > 0 ? 0 : Math.PI);
+      let s = ((th - Math.PI / 2) / (Math.PI * 2)) % 1;
+      if (s < 0) s += 1;
+      const planted = s < G.stance;
+      const swingT = planted ? 0 : (s - G.stance) / (1 - G.stance);
+      const along = planted
+        ? half * (1 - 2 * (s / G.stance))
+        : -half + 2 * half * swingT;
+      const lift = planted ? 0 : Math.sin(Math.PI * swingT) * 0.085 * walkAmt;
+      _legIK(0, along, -(thigh + shin) + lift + 0.02, thigh, shin, ikOut);
+      const kneeWant = planted ? _track(G.kneeKeys, s) : Math.max(ikOut.knee, _track(G.kneeKeys, s));
+      leg.hip.rotation.set(ikOut.hip * 0.92, 0, ikOut.abduct * 0.4);
+      leg.knee.rotation.x = kneeWant;
+      leg.foot.rotation.x = _solePitch(s) * walkAmt * 0.85 - (leg.hip.rotation.x + leg.knee.rotation.x) * 0.15;
     });
+    const shift = Math.sin(walkPhase) * 0.04;
+    rig.pelvis.rotation.set(0, shift * 0.55, Math.sin(walkPhase) * 0.025);
+    rig.spine.rotation.set(0.03, -shift * 0.35, -shift * 0.02);
+    rig.chest.rotation.set(0.02, -shift * 0.45, -shift * 0.025);
+    rig.group.position.y = br * 0.004 + Math.abs(Math.sin(walkPhase)) * 0.012 * walkAmt;
     // Head + eyes scan slowly; eyes lead, head follows.
-    const look = Math.sin(t * 0.33) * 0.22 + Math.sin(t * 0.11) * 0.10;
-    rig.neck.rotation.set(0.02, look * 0.35, Math.sin(t * 0.27) * 0.02);
-    rig.head.rotation.set(Math.sin(t * 0.24) * 0.04, look * 0.65, Math.sin(t * 0.31) * 0.02);
-    if (rig.face) rig.face.setGaze(look * 0.5 + Math.sin(t * 0.9) * 0.05, Math.sin(t * 0.5) * 0.05);
-    // Arms hang with a live, asymmetric bend.
+    const look = Math.sin(t * 0.33) * 0.18 + Math.sin(t * 0.11) * 0.08;
+    rig.neck.rotation.set(0.02, look * 0.30, Math.sin(t * 0.27) * 0.02);
+    rig.head.rotation.set(Math.sin(t * 0.24) * 0.03, look * 0.55, Math.sin(t * 0.31) * 0.02);
+    if (rig.face) rig.face.setGaze(look * 0.45 + Math.sin(t * 0.9) * 0.04, Math.sin(t * 0.5) * 0.04);
+    // Opposite-arm counter-swing matched to the walk-cycle sheet.
     rig.arms.forEach((a) => {
-      const p = t * 1.1 + a.side * 1.3;
-      a.root.rotation.set(0.04 + Math.sin(p) * 0.018, 0, a.side * 0.115 + Math.sin(p * 0.7) * 0.012);
-      a.elbow.rotation.x = -(0.28 + Math.sin(p + 0.6) * 0.02);
-      if (a.hand.userData.setCurl) a.hand.userData.setCurl(0.10 + Math.sin(p) * 0.03, 0);
+      const armPhase = walkPhase + (a.side > 0 ? 0 : Math.PI);
+      const swing = Math.sin(armPhase) * 0.42 * walkAmt;
+      a.root.rotation.set(swing + 0.04, 0, a.side * 0.12);
+      a.elbow.rotation.x = -(0.32 + Math.max(0, Math.sin(armPhase - 0.5)) * 0.28 * walkAmt);
+      if (a.hand.userData.setCurl) a.hand.userData.setCurl(0.10 + Math.sin(armPhase) * 0.03, 0);
     });
     if (rig.hairFlutter) {
-      rig.hairFlutter.rotation.x = Math.sin(t * 1.4) * 0.025;
-      rig.hairFlutter.rotation.z = Math.sin(t * 1.05) * 0.02 - shift * 0.05;
+      rig.hairFlutter.rotation.x = Math.sin(t * 1.4) * 0.03;
+      rig.hairFlutter.rotation.z = Math.sin(t * 1.05) * 0.025 - shift * 0.08;
     }
     // Blink: fast close, slower open.
     blinkAt -= dt;

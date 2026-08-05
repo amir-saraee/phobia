@@ -3,9 +3,9 @@
  * Bake breed-specific PBR coat maps (albedo / normal / roughness) for the
  * Quaternius dogs.
  *
- * The palettes are SAMPLED from assets/refs/dog-*-ref.png, not hand-picked.
- * Guessed constants are how a shiba ends up the wrong kind of orange: the
- * photographs are already the ground truth, so read them.
+ * The palettes are SAMPLED from assets/refs/dog-*-reference.png, not
+ * hand-picked. Guessed constants are how a shiba ends up the wrong kind of
+ * orange: the photographs are already the ground truth, so read them.
  *
  * Output: assets/models/textures/{breed}_{albedo,normal,roughness}.png
  */
@@ -15,35 +15,36 @@ const { PNG } = require("pngjs");
 
 const OUT = path.join(__dirname, "..", "assets", "models", "textures");
 const REFS = path.join(__dirname, "..", "assets", "refs");
-const SIZE = 512;
+const SIZE = 1024;
 
 // Per breed: which photo, where the animal's body sits in it, how neutral that
 // animal's lightest fur really is (see `wb` below), and a strand seed. Without
 // distinct seeds every breed bakes byte-identical normal/roughness maps, which
 // is real duplication on disk and in the service-worker precache for no gain.
+// The crop is the left-profile body core of the studio sheet — see the crop
+// note in samplePalette for why it has to be that tight.
 const BREEDS = {
   // A shiba's underside is genuinely cream, so balancing it all the way to
   // white would launder the breed's own colour out of the map.
-  shiba: { ref: "dog-shiba-ref.png", crop: [0.30, 0.75, 0.30, 0.72], wb: 0.25, seed: 0 },
+  shiba: { ref: "dog-shiba-reference.png", crop: [0.10, 0.42, 0.28, 0.72], wb: 0.25, seed: 0 },
   // A husky's underside really is white — take the full correction.
-  husky: { ref: "dog-husky-ref.png", crop: [0.30, 0.75, 0.30, 0.72], wb: 1.00, seed: 977 },
+  husky: { ref: "dog-husky-reference.png", crop: [0.10, 0.42, 0.28, 0.72], wb: 1.00, seed: 977 },
 };
 
 // Pull a breed's coat palette out of its photo. Sorting the surviving pixels by
 // luminance and reading four quantiles gives the tonal ladder a coat actually
 // has — shadow tipping, mid, body, and the light underside.
 //
-// Two rejections do the real work, and both are narrower than they look:
+// Three rejections do the real work:
 //   * Vegetation — foliage is the only thing here whose green sits well above
 //     its blue AND above its red. A warm tan coat is red-max, and a gray/white
 //     coat is near-neutral (g ≈ b), so neither trips it, while lit grass, grass
 //     in shadow, and dark background trees all do.
-//   * Sky — blue-dominant. Overcast sky is nearly neutral and slips through,
-//     and so does an out-of-focus treeline, which photographs warm olive
-//     (g < r) and therefore is NOT vegetation by the test above. The crop is
-//     what excludes both: sample the BODY CORE, not the frame. Widening it to
-//     the whole animal pulled that treeline in and turned the husky's grey
-//     saddle olive, which is what made this worth writing down.
+//   * Sky — blue-dominant.
+//   * Studio backdrop — the neutral reference sheets sit on a flat mid-grey
+//     seamless. Without rejecting that, the light quantiles become wallpaper
+//     grey instead of cream/white fur (which is exactly what the first
+//     dog-*-reference bake produced).
 function samplePalette(file, crop, wb) {
   const png = PNG.sync.read(fs.readFileSync(path.join(REFS, file)));
   const { width: W, height: H, data } = png;
@@ -57,7 +58,13 @@ function samplePalette(file, crop, wb) {
       const r = data[i], g = data[i + 1], b = data[i + 2];
       if (g > r && g > b * 1.10) continue;                 // grass, foliage
       if (b > r * 1.06 && b > g * 1.02) continue;          // sky / blue cast
-      px.push([r, g, b, 0.299 * r + 0.587 * g + 0.114 * b]);
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      const neut = Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
+      // Flat studio grey / off-white seamless — keep real white fur (high lum
+      // AND still slightly warm or cool-cast from the coat) by requiring the
+      // neutral band to also be mid-grey, not bright white fur highlights.
+      if (neut < 14 && lum > 145 && lum < 235) continue;
+      px.push([r, g, b, lum]);
     }
   }
   if (px.length < 500) throw new Error(`ref ${file}: only ${px.length} coat pixels survived`);
@@ -95,10 +102,13 @@ function hash(i) {
   return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
 }
 
-function writePNG(file, rgba) {
-  const png = new PNG({ width: SIZE, height: SIZE });
-  png.data = Buffer.from(rgba);
-  fs.writeFileSync(file, PNG.sync.write(png));
+// Opaque maps, and roughness is greyscale — writing RGBA for all of them cost
+// ~4 MB across the texture set, all of it precached by the service worker.
+function writePNG(file, rgba, grey) {
+  const colorType = grey ? 0 : 2;
+  const png = new PNG({ width: SIZE, height: SIZE, colorType, inputColorType: 6, inputHasAlpha: true });
+  Buffer.from(rgba).copy(png.data);
+  fs.writeFileSync(file, PNG.sync.write(png, { colorType }));
 }
 
 function bakeBreed(name, pal, seed) {
@@ -140,13 +150,14 @@ function bakeBreed(name, pal, seed) {
     }
   }
 
-  const HAIR = 5200;
+  // Scale strand count with resolution so 1024 maps keep similar hair density.
+  const HAIR = Math.round(5200 * (SIZE / 512) * (SIZE / 512));
   for (let h = 0; h < HAIR; h++) {
     const s = seed + h;
     const x0 = hash(s * 3) * SIZE;
     const y0 = hash(s * 3 + 1) * SIZE;
     const ang = Math.PI / 2 + (hash(s * 3 + 2) - 0.5) * 0.45;
-    const len = 5 + hash(s * 5) * 12;
+    const len = (5 + hash(s * 5) * 12) * (SIZE / 512);
     const tone = (hash(s * 7) - 0.5) * 28;
     const nx = Math.cos(ang) * 0.4;
     const ny = -Math.sin(ang) * 0.4;
@@ -171,7 +182,7 @@ function bakeBreed(name, pal, seed) {
 
   writePNG(path.join(OUT, `${name}_albedo.png`), albedo);
   writePNG(path.join(OUT, `${name}_normal.png`), normal);
-  writePNG(path.join(OUT, `${name}_roughness.png`), rough);
+  writePNG(path.join(OUT, `${name}_roughness.png`), rough, true);
   console.log("baked", name);
 }
 

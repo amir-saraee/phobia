@@ -98,13 +98,14 @@ const STARTER_PRESETS = [
 function defaultCharacter() {
   return {
     name: "",
-    bodyType: "man",
+    // Canonical protagonist from the realistic reference pack.
+    bodyType: "woman",
     skinTone: "fair",
     hairColor: "brown",
-    hairStyle: "short",
+    hairStyle: "long",
     topColor: "teal",
     topStyle: "tee",
-    eyeColor: "brown",
+    eyeColor: "hazel",
     glasses: "none",
     facialHair: "none",
     headwear: "none",
@@ -615,7 +616,7 @@ function viewCharacterCreator(existing, allPhobias) {
             </div>
             <div class="creator-row">
               <label>Body</label>
-              <div class="swatches text" data-group="bodyType">${swatch(BODY_TYPES, c.bodyType || "man", "bodyType")}</div>
+              <div class="swatches text" data-group="bodyType">${swatch(BODY_TYPES, c.bodyType || "woman", "bodyType")}</div>
             </div>
             <div class="creator-row">
               <label>Skin tone</label>
@@ -703,7 +704,7 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
   if (!root) return;
   const state = existing ? Object.assign({}, existing) : defaultCharacter();
   // Make sure new fields exist on legacy characters
-  if (!state.bodyType)    state.bodyType = "man";
+  if (!state.bodyType)    state.bodyType = "woman";
   if (!state.eyeColor)    state.eyeColor = "brown";
   if (!state.glasses)     state.glasses = "none";
   if (!state.facialHair)  state.facialHair = "none";

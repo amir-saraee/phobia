@@ -11,7 +11,7 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v12-character-dog";
+const VERSION = "mira-v14-face-registration";
 const SHELL = [
   "./",
   "./index.html",
@@ -33,6 +33,10 @@ const SHELL = [
   "./assets/models/textures/husky_albedo.png",
   "./assets/models/textures/husky_normal.png",
   "./assets/models/textures/husky_roughness.png",
+  // Protagonist facial PBR maps (baked from protagonist-face-closeup.png).
+  "./assets/models/textures/character_face_albedo.png",
+  "./assets/models/textures/character_face_normal.png",
+  "./assets/models/textures/character_face_roughness.png",
   // (The recorded therapist-voice manifest is no longer precached: the spoken
   // guide track is retired — guidance is captions/tips only, and the world's
   // own audio is synthesized or sampled below.)
