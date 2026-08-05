@@ -6146,11 +6146,17 @@ const PhobiaAudio = (() => {
   // method that ramps the gain in real time. Heights uses this to make the
   // heartbeat audibly louder when the user is close to the edge / looking
   // straight down — a felt physiological response, not a constant track.
-  function startVertigoHeartbeat(initialBpm = 78, onBeat = null) {
+  // `opts.silent` runs the beat CLOCK without sounding it. A heartbeat you can
+  // hear is score, not world: nobody standing in a room hears their own pulse,
+  // and it was the one thing in the mix that wasn't the dog, the room or your
+  // own feet. The clock still drives the vignette throb and the haptic buzz —
+  // the body-feel channels that don't lie about being diegetic.
+  function startVertigoHeartbeat(initialBpm = 78, onBeat = null, opts = {}) {
     const c = ensureCtx(); if (!c) return { stop() {}, setIntensity() {}, setBpm() {} };
     let alive = true;
     let bpm = initialBpm;
     let intensity = 0;
+    const silent = !!opts.silent;
     const dynGain = c.createGain();
     dynGain.gain.value = 0.0;
     dynGain.connect(master);
@@ -6158,6 +6164,7 @@ const PhobiaAudio = (() => {
       if (!alive) return;
       const now = c.currentTime;
       const beat = (t, freq, peak, dur) => {
+        if (silent) return;
         const osc = c.createOscillator();
         osc.type = "sine"; osc.frequency.value = freq;
         const g = c.createGain();
@@ -8756,10 +8763,12 @@ function attachHandlers(view, params) {
 
 // ---------- Ambient pad (background music on non-exposure views) ----------
 function ensureAmbient(view) {
-  const wantMusic = (() => { try { return localStorage.getItem("fobia.music") === "1"; } catch { return false; } })();
-  // Music is allowed everywhere now — including exposure — at a low gain so the
-  // scene's diegetic audio (wind, traffic, dog, etc.) still leads. The user can
-  // disable from Settings if they prefer scene-only sound.
+  let wantMusic = (() => { try { return localStorage.getItem("fobia.music") === "1"; } catch { return false; } })();
+  // …but never inside a trial. A scene should sound like the place it is: your
+  // feet, the room, and whatever the animal or the objects are doing. A pad
+  // underneath it — however quiet — is the one voice in the mix that isn't
+  // coming from anywhere in the world. Menus and the camp keep their music.
+  if (view === "exposure") wantMusic = false;
   if (!wantMusic) {
     if (ambientPad) { try { ambientPad.stop(); } catch {} ambientPad = null; }
     return;
@@ -8768,12 +8777,7 @@ function ensureAmbient(view) {
     PhobiaAudio.unlock();
     ambientPad = PhobiaAudio.startAmbientPad();
   }
-  // Duck the pad during exposure so it doesn't compete with diegetic sound.
-  // The natural pad level is ~0.045; in exposure we drop to ~0.018 so the
-  // scene's wind/traffic/dog audio still leads the mix.
-  try {
-    if (ambientPad.setGain) ambientPad.setGain(view === "exposure" ? 0.018 : 0.045);
-  } catch {}
+  try { if (ambientPad.setGain) ambientPad.setGain(0.045); } catch {}
 }
 
 // ---------- App side menu (slide-out from the left) ----------
@@ -14229,14 +14233,14 @@ class FPControls {
   setStrideBase(m) {
     if (!(m > 0.05)) return;
     this._strideBase = m;
-    // …and legs of a given length have a top speed they can WALK at. Froude
-    // number ~0.19 is the comfortable walking gait; past it the step length the
-    // √v law asks for no longer fits the leg, so the character lunges, the hips
-    // heave 10 cm a step, and it reads as a race-walk. This rig's 0.78 m leg
-    // caps at ~1.2 m/s, where the scenes were asking for 1.3–1.45. Scenes can
-    // still ask for anything SLOWER (wading, a fear creep) — this only stops
-    // them outrunning the legs.
-    this._walkCap = Math.sqrt(0.19 * 9.81 * (m / 0.72));
+    // …and legs of a given length have a speed they can walk at CALMLY. Step
+    // length grows with √v, the reach at heel strike grows with it, and the
+    // hips have to drop to meet it — so pace buys vertical heave at a brutal
+    // rate. At Froude 0.19 this rig heaved 8 cm a step and read as trudging;
+    // 0.14 puts it at ~5 cm, which is what an unhurried walk looks like. Works
+    // out to ~1.05 m/s on a 0.78 m leg. Scenes can still ask for anything
+    // SLOWER (wading, a fear creep) — this only stops them outrunning the legs.
+    this._walkCap = Math.sqrt(0.14 * 9.81 * (m / 0.72));
   }
 
   // ---- Event-driven camera startle (FP only) ----
@@ -17233,7 +17237,10 @@ class Body {
     // thoracic and cervical joints is both the fix and what actually happens.
     if (this._hipMean == null) this._hipMean = hipH;
     this._hipMean += (hipH - this._hipMean) * Math.min(1, dtB * 1.0);
-    const bobDev = Math.max(-0.05, Math.min(0.05, hipH - this._hipMean)) * 0.55 * walkAmt;
+    // 0.35, not 0.55: with the pelvis now only travelling ~5 cm there is less to
+    // absorb, and a torso that visibly squashes to hide the rest is its own
+    // wrongness — it reads as the body sloshing rather than striding.
+    const bobDev = Math.max(-0.05, Math.min(0.05, hipH - this._hipMean)) * 0.35 * walkAmt;
     this.spine.position.y = this._spineY0 - bobDev * 0.40;
     this.chest.position.y = this._chestY0 - bobDev * 0.35;
     this.neck.position.y  = this._neckY0  - bobDev * 0.25;
@@ -20222,7 +20229,6 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // point a user gesture has long since unlocked the AudioContext.
   let fearUnsubscribe = null;
   let fxHeart = null;          // adjustable heartbeat (audio + beat callback)
-  let fxBreath = null;         // slow breath pacer
   let fxBeatBoost = 0;         // vignette throb, decays between beats
   let fxLastNow = performance.now();
   const fxCanVibrate = !!(navigator.vibrate && window.matchMedia
@@ -20243,7 +20249,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
             try { navigator.vibrate(Math.round(18 + intensity * 30)); } catch {}
           }
           fxBeatBoost = Math.min(0.2, 0.06 + intensity * 0.12);
-        });
+        }, { silent: true });
       }
       if (fxHeart) {
         const hbI = ctx.grounding ? 0.12 : Math.max(0, (value - 22) / 78);
@@ -20251,17 +20257,12 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         fxHeart.setBpm(64 + fear01 * 56 - (ctx.grounding ? 18 : 0));
       }
 
-      // --- Slow breath pacer at sustained high fear (hysteresis 58 on / 42 off).
-      // Deliberately CALM (~13 breaths/min): it models the breathing we want
-      // the user to copy — the audio twin of the breath-circle HUD, not a
-      // panic soundtrack.
-      if (!fxBreath && value > 58 && !ctx.grounding
-          && window.PhobiaAudio && window.PhobiaAudio.startBreathing) {
-        fxBreath = window.PhobiaAudio.startBreathing(0.22);
-      } else if (fxBreath && (value < 42 || ctx.grounding)) {
-        try { fxBreath.stop(); } catch {}
-        fxBreath = null;
-      }
+      // --- The slow breath pacer that used to fade in above fear 58 is gone.
+      // It was a therapeutic metronome laid over the scene, and like the
+      // heartbeat it was audio the world could not account for. The breath-
+      // circle HUD already carries that guidance where it belongs — on screen.
+      // Scenes that motivate breath DIEGETICALLY (submerged in water, sealed in
+      // the MRI bore) still start their own in startSceneAudio.
 
       // Vignette opacity rises from 0 to ~0.9 as fear climbs — plus the
       // decaying heartbeat throb, so the edges of vision pulse with the lub-dub.
@@ -20304,8 +20305,6 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   const fearFXStop = () => {
     try { if (fxHeart) fxHeart.stop(); } catch {}
     fxHeart = null;
-    try { if (fxBreath) fxBreath.stop(); } catch {}
-    fxBreath = null;
     try { if (fxCanVibrate) navigator.vibrate(0); } catch {}
   };
 
@@ -24830,15 +24829,51 @@ function buildDog(opts = {}) {
     model.position.y = -box.min.y * S;
     parts.height = targetHeight;
     parts.modelScale = S;
-    // Grounded-locomotion constants in WORLD units at this scale. The Walk
-    // clip covers ~1.9 m/s per unit of BIND height at timeScale 1 (measured);
-    // expressing it through the raw pose keeps the paws planted now that the
-    // render scale is pose-true. DogController prefers these over the scene's
-    // height-based guesses once the model is ready.
+    // Grounded-locomotion constants — MEASURED off the clips, not guessed from
+    // the model's height. The old "1.9 × height" heuristic came out 1.83× too
+    // high for this rig, so the controller played Walk far too slowly for the
+    // ground it was covering and the planted paws slid at up to 1.5 m/s. Run
+    // each gait once and watch how far a paw actually travels along the dog's
+    // own forward axis in one cycle: that excursion IS the stride.
+    parts.footBones = ["FFL", "FFR", "FFBL", "FFBR"]
+      .map((n) => model.getObjectByName(n)).filter(Boolean);
+    const measureStride = (name) => {
+      const act = parts.actions[name];
+      if (!act || !parts.footBones.length) return null;
+      const clip = act.getClip();
+      for (const k in parts.actions) parts.actions[k].stop();
+      act.reset(); act.setEffectiveWeight(1); act.timeScale = 1; act.play();
+      const N = 48, dt = clip.duration / N;
+      const lo = parts.footBones.map(() => Infinity);
+      const hi = parts.footBones.map(() => -Infinity);
+      const _p = new THREE.Vector3();
+      for (let i = 0; i <= N; i++) {
+        mixer.update(i === 0 ? 0 : dt);
+        model.updateWorldMatrix(true, true);
+        parts.footBones.forEach((b, j) => {
+          b.getWorldPosition(_p);
+          model.worldToLocal(_p);
+          if (_p.z < lo[j]) lo[j] = _p.z;
+          if (_p.z > hi[j]) hi[j] = _p.z;
+        });
+      }
+      act.stop(); act.reset();
+      // Mean across all four paws, in model-local units → world via the scale.
+      let sum = 0;
+      for (let j = 0; j < lo.length; j++) sum += (hi[j] - lo[j]);
+      const stride = (sum / lo.length) * S;
+      return stride > 0.02 ? stride : null;
+    };
     const bindBox = new THREE.Box3().setFromObject(model);   // scaled bind pose
     const bindH = Math.max(0.001, (bindBox.max.y - bindBox.min.y));
-    parts.strideSpeed = 1.9 * bindH;
-    parts.gallopStride = 2.4 * bindH;
+    const walkClip = parts.actions.Walk && parts.actions.Walk.getClip();
+    const walkStride = measureStride("Walk");
+    parts.walkStride = walkStride;
+    parts.strideSpeed = walkStride && walkClip
+      ? walkStride / walkClip.duration
+      : 1.9 * bindH;
+    parts.gallopStride = measureStride("Gallop") || 2.4 * bindH;
+    if (parts.actions.Idle) { parts.actions.Idle.reset(); }
     // Collision circle from the measured body (half the nose→tail length,
     // slightly tight since the tail overhangs) — the old height-derived guess
     // was tuned against the over-scaled render and left a ring of "touching
@@ -25358,11 +25393,12 @@ class DogController {
     if (p.bodyRadius && !this._radiusCalibrated) {
       this._radiusCalibrated = true;
       this.radius = p.bodyRadius;
-      // Cap the commanded walk speed below what the Walk clip can ground
-      // (timeScale clamp is 2.2) — past that the paws skate, and pinning the
-      // cadence AT the clamp reads as frantic churning. 1.9 leaves headroom
-      // so the gait sits in a relaxed trot.
-      if (p.strideSpeed) this.walkSpeed = Math.min(this.walkSpeed, p.strideSpeed * 1.9);
+      // Cap the commanded walk speed at what the Walk clip can actually ground.
+      // `strideSpeed` is now MEASURED off the clip, so this is a real ceiling
+      // rather than a guess: 2.0 puts the cycle at twice its authored rate,
+      // which reads as a trot, and anything past it is the dog outrunning its
+      // own legs. Wanting to move faster than this is what Gallop is for.
+      if (p.strideSpeed) this.walkSpeed = Math.min(this.walkSpeed, p.strideSpeed * 2.0);
       // Gallop speed from the measured Gallop stride (ts ≤ 2 keeps it grounded).
       if (p.gallopStride) {
         const gclip = this._has("Gallop") && p.actions["Gallop"].getClip();
@@ -25381,6 +25417,20 @@ class DogController {
     // Sitting/lying dogs stay put: a commanded sit must not be silently
     // overridden by the follow urge, or commands read as broken.
     // Movement lock (drink/fetch/scene yield) also suppresses follow.
+    // Falling behind mid-walk: a dog that is already walking and STILL losing
+    // ground breaks into a run rather than trudging along at its walk ceiling
+    // for ever. Without this the gap just grew — the follow branch below only
+    // re-evaluates once the dog has arrived somewhere.
+    if (this.followPlayer && this.state === "walking" && this.playerPos
+        && !(this._moveLockT > 0) && this.mood !== "aggressive") {
+      const pp = this.playerPos;
+      const gap = Math.hypot(pp.x - this.dog.position.x, pp.z - this.dog.position.z);
+      if (gap > this.followRadius + 1.6) {
+        const k = (gap - this.followRadius) / gap;
+        this.gallopTo(this.dog.position.x + (pp.x - this.dog.position.x) * k,
+                      this.dog.position.z + (pp.z - this.dog.position.z) * k);
+      }
+    }
     if (this.followPlayer && this.state !== "walking" && this.state !== "galloping"
         && this.state !== "eat" && this.state !== "bark"
         && this.state !== "sit" && this.state !== "lay"
@@ -25392,7 +25442,16 @@ class DogController {
       const dist = Math.hypot(dx, dz);
       if (dist > this.followRadius + 0.55) {
         const k = (dist - this.followRadius) / dist;
-        this.walkTo(this.dog.position.x + dx * k, this.dog.position.z + dz * k, { follow: true });
+        const tx = this.dog.position.x + dx * k, tz = this.dog.position.z + dz * k;
+        // A dog that has fallen behind BREAKS INTO A RUN — it does not walk
+        // faster. The walk gait tops out around 0.7 m/s here (that is what the
+        // clip can ground), well under the player's pace, so a walk-only follow
+        // could never close the gap and just churned its legs at the cap.
+        if (dist > this.followRadius + 1.2 && this.mood !== "aggressive") {
+          this.gallopTo(tx, tz);
+        } else {
+          this.walkTo(tx, tz, { follow: true });
+        }
       }
     }
     // ---- Come and meet an offered hand ----
@@ -25482,11 +25541,26 @@ class DogController {
       const arriveR = galloping ? 0.10 : 0.05;
       if (dist > arriveR) {
         this.targetYaw = Math.atan2(dx, dz);
-        // Turn fast enough that the body mostly faces the path; still not
-        // instant, and rate-capped (≈4.5 rad/s walk, 6.5 gallop) so a
-        // behind-the-back retarget reads as a turn, not a spin.
+        // Turn rate. 4.5 rad/s is 258°/s — a dog does not pivot like that at a
+        // walk, it swings its shoulders round over a step or two. 2.2 rad/s
+        // (≈125°/s) walking, 4.0 galloping, is what a real animal manages
+        // without planting its feet sideways.
+        const prevYaw = this.dog.rotation.y;
         this.dog.rotation.y = this._easeYaw(this.dog.rotation.y, this.targetYaw,
-          d * (galloping ? 10 : 7), (galloping ? 6.5 : 4.5) * d);
+          d * (galloping ? 8 : 5), (galloping ? 4.0 : 2.2) * d);
+        // Bank into it. A quadruped leans its body toward the inside of a turn;
+        // a level body swinging round its own axis is the giveaway of a model
+        // on a turntable. Applied to the MODEL so it rolls in the dog's own
+        // frame, and eased so it settles out of the turn rather than snapping.
+        {
+          let dy = this.dog.rotation.y - prevYaw;
+          while (dy > Math.PI) dy -= Math.PI * 2;
+          while (dy < -Math.PI) dy += Math.PI * 2;
+          const yawRate = d > 1e-5 ? dy / d : 0;
+          const want = Math.max(-0.20, Math.min(0.20, -yawRate * 0.075));
+          this._bank = (this._bank || 0) + (want - (this._bank || 0)) * Math.min(1, d * 5);
+          if (this.parts.model) this.parts.model.rotation.z = this._bank;
+        }
         const ease = Math.min(1, dist / (galloping ? 0.35 : 0.55));
         // Gallop is a genuinely faster gait — the state used to swap only the
         // clip while the body still moved at walk speed, so a "sprinting" dog
@@ -25602,6 +25676,13 @@ class DogController {
           }
         }
       }
+    }
+
+    // Level out of the turn whenever the dog isn't driving one — a bank that
+    // survives the corner leaves the animal standing tilted.
+    if (!moving && this.parts.model) {
+      this._bank = (this._bank || 0) * Math.max(0, 1 - d * 5);
+      this.parts.model.rotation.z = this._bank;
     }
 
     // ---- Head-low "settle/sniff" pose (scene raises headPitch for sniff &
