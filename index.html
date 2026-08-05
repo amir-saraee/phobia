@@ -13162,8 +13162,59 @@ const DOG_MODELS = {
   shiba: "assets/models/ShibaInu.gltf",
   husky: "assets/models/Husky.gltf",
 };
+// Breed PBR coat maps (baked from assets/refs/dog-*-ref.png via
+// scripts/bake-dog-coats.cjs). Applied on top of the Quaternius meshes so the
+// armature / clips stay DogController-compatible while the coat stops reading
+// as flat plastic.
+const DOG_COAT_MAPS = {
+  shiba: {
+    albedo: "assets/models/textures/shiba_albedo.png",
+    normal: "assets/models/textures/shiba_normal.png",
+    roughness: "assets/models/textures/shiba_roughness.png",
+  },
+  husky: {
+    albedo: "assets/models/textures/husky_albedo.png",
+    normal: "assets/models/textures/husky_normal.png",
+    roughness: "assets/models/textures/husky_roughness.png",
+  },
+};
+const _dogCoatTexCache = new Map();
+let _dogTexLoader = null;
+function getDogTexLoader() {
+  if (_dogTexLoader) return _dogTexLoader;
+  try { _dogTexLoader = new THREE.TextureLoader(); } catch { return null; }
+  return _dogTexLoader;
+}
+function loadDogCoatTextures(breed) {
+  const urls = DOG_COAT_MAPS[breed] || DOG_COAT_MAPS.shiba;
+  const loader = getDogTexLoader();
+  if (!urls || !loader) return Promise.resolve(null);
+  if (_dogCoatTexCache.has(breed)) return _dogCoatTexCache.get(breed);
+  const loadOne = (url, srgb) => new Promise((resolve) => {
+    loader.load(url, (t) => {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.anisotropy = 8;
+      t.repeat.set(5.5, 5.5);
+      if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+      t.needsUpdate = true;
+      resolve(t);
+    }, undefined, () => resolve(null));
+  });
+  const p = Promise.all([
+    loadOne(urls.albedo, true),
+    loadOne(urls.normal, false),
+    loadOne(urls.roughness, false),
+  ]).then(([albedo, normal, roughness]) => {
+    if (!albedo && !normal && !roughness) return null;
+    return { albedo, normal, roughness };
+  });
+  _dogCoatTexCache.set(breed, p);
+  return p;
+}
 function prefetchDogModels() {
   Object.values(DOG_MODELS).forEach((url) => { try { loadGLTF(url); } catch {} });
+  // Warm the coat maps too so the first dog scene doesn't flash plastic.
+  Object.keys(DOG_COAT_MAPS).forEach((b) => { try { loadDogCoatTextures(b); } catch {} });
 }
 
 // ---------- Other creature models (Quaternius "Easy Enemies", CC0) ----------
@@ -14543,20 +14594,21 @@ function _wob(t, seed) {
 }
 
 // ---- gait shaping -------------------------------------------------------
-// One walk cycle, phase s ∈ [0,1), s = 0 at initial contact. These are the
-// shapes a real walk is made of; the leg solver in Body.update turns them into
+// Clinical 4-phase walk cycle (see assets/refs/walk-cycle-sheet.png):
+//   1. heel-strike (s≈0)  2. midstance flat (s≈flat..heelOff)
+//   3. toe-off (s≈stance) 4. mid-swing flexed knee (s≈0.81)
+// Phase s ∈ [0,1), s = 0 at initial contact. Body.update turns these into
 // joint angles by inverse kinematics rather than posing the joints directly.
 const _GAIT = {
-  stance: 0.62,      // duty factor — 62% of the cycle bears weight
-  flat: 0.09,        // heel rocker complete: the sole is down
-  heelOff: 0.42,     // forefoot rocker begins: the heel starts to lift
-  pitchIC: -0.33,    // sole pitch at contact (negative = toe up)
-  pitchTO: 0.65,     // at toe-off (positive = toe down, heel high)
-  pitchSwing: -0.08, // through mid-swing, so the foot clears the ground
-  // Stance knee flexion (rad) against cycle phase: the loading-response dip
-  // that absorbs the landing, re-extension over mid-stance, then the pre-swing
-  // flex that throws the leg into its swing. Normative gait, near enough.
-  kneeKeys: [[0, 0.09], [0.15, 0.31], [0.35, 0.09], [0.50, 0.21], [0.62, 0.70]],
+  stance: 0.60,      // duty factor — ~60% weight-bearing (clinical walk)
+  flat: 0.10,        // heel rocker complete: the sole is flat (midstance start)
+  heelOff: 0.40,     // forefoot rocker begins: heel lifts toward toe-off
+  pitchIC: -0.36,    // sole pitch at heel-strike (toe up)
+  pitchTO: 0.72,     // at toe-off (toe down, heel high) — clearer push-off
+  pitchSwing: -0.10, // mid-swing clearance
+  // Stance knee flexion (rad): loading-response dip → midstance re-extend →
+  // pre-swing flex that throws the leg into mid-swing peak flexion.
+  kneeKeys: [[0, 0.10], [0.12, 0.34], [0.32, 0.08], [0.48, 0.24], [0.60, 0.78], [0.81, 1.05], [1.0, 0.10]],
 };
 // Piecewise-smoothstep through [[x, y], …] keyframes.
 function _track(keys, u) {
@@ -14685,10 +14737,17 @@ function _sweep(sg, stations, radial) {
         cx = Math.sign(cx) * Math.pow(Math.abs(cx), sq);
         cz = Math.sign(cz) * Math.pow(Math.abs(cz), sq);
       }
-      const ox = X.x * s.rx * cx + Z.x * s.rz * cz;
-      const oy = X.y * s.rx * cx + Z.y * s.rz * cz;
-      const oz = X.z * s.rx * cx + Z.z * s.rz * cz;
-      ring.push(sg.vert(s.p[0] + ox, s.p[1] + oy, s.p[2] + oz, k / N, i / (stations.length - 1), s.w));
+      // A station may modulate its radius per angle (`rmod`) and vary its bone
+      // weights per vertex (`wAt`). Both exist so the SHOULDER can carry its
+      // deltoids as part of the torso surface: a ring that can only be an
+      // ellipse cannot grow two lateral lobes, and a ring with one weight set
+      // cannot send its left lobe to the left arm and its right to the right.
+      const rm = s.rmod ? s.rmod(ang) : 1;
+      const ox = (X.x * s.rx * cx + Z.x * s.rz * cz) * rm;
+      const oy = (X.y * s.rx * cx + Z.y * s.rz * cz) * rm;
+      const oz = (X.z * s.rx * cx + Z.z * s.rz * cz) * rm;
+      const wv = s.wAt ? s.wAt(ang) : s.w;
+      ring.push(sg.vert(s.p[0] + ox, s.p[1] + oy, s.p[2] + oz, k / N, i / (stations.length - 1), wv));
     }
     rings.push(ring);
   }
@@ -14820,12 +14879,14 @@ function makeHeadSurface(shape) {
     z += 0.0130 * _falloff(ax - 0.0305, y - FACE.browY, z - 0.070, 0.029, 0.013, 0.055) * (0.72 + 0.5 * sq);
     z += 0.0060 * _falloff(x, y - FACE.browY - 0.002, z - 0.074, 0.014, 0.011, 0.050);
     // Eye sockets, recessed so the eyeballs sit IN the skull rather than on it
-    z -= 0.0105 * _falloff(ax - FACE.eyeX, y - FACE.eyeY - 0.001, z - 0.064, 0.026, 0.017, 0.050);
-    z -= 0.0075 * _falloff(ax - FACE.eyeX, y - FACE.eyeY, z - 0.066, 0.0175, 0.0080, 0.040);
-    // Cheekbone, then the hollow under it
-    z += 0.0105 * _falloff(ax - 0.0545, y + 0.0075, z - 0.046, 0.026, 0.019, 0.048);
-    x += 0.0060 * Math.sign(x || 1) * _falloff(ax - 0.0600, y + 0.0075, z - 0.030, 0.024, 0.021, 0.045);
-    z -= 0.0070 * _falloff(ax - 0.0455, y + 0.0395, z - 0.048, 0.021, 0.018, 0.042) * (0.6 + 0.6 * sq);
+    z -= 0.0118 * _falloff(ax - FACE.eyeX, y - FACE.eyeY - 0.001, z - 0.064, 0.026, 0.017, 0.050);
+    z -= 0.0085 * _falloff(ax - FACE.eyeX, y - FACE.eyeY, z - 0.066, 0.0175, 0.0080, 0.040);
+    // Cheekbone, then the hollow under it. Slightly fuller apple + deeper
+    // submalar (from the face close-up ref) so the midface reads as flesh,
+    // not a painted cylinder.
+    z += 0.0120 * _falloff(ax - 0.0535, y + 0.0095, z - 0.048, 0.027, 0.020, 0.048);
+    x += 0.0068 * Math.sign(x || 1) * _falloff(ax - 0.0590, y + 0.0085, z - 0.032, 0.025, 0.022, 0.045);
+    z -= 0.0082 * _falloff(ax - 0.0445, y + 0.0410, z - 0.050, 0.022, 0.019, 0.044) * (0.55 + 0.55 * sq);
     // Nose: bridge ridge → tip bulb → wings → the shadow under the septum
     {
       const t = _hsat((0.0245 - y) / 0.0590);                    // 0 at bridge top, 1 at tip
@@ -14847,10 +14908,11 @@ function makeHeadSurface(shape) {
     // between them is a crease, not a cavity — at 12.5 mm it was the deepest
     // feature on the whole face (deeper than the nostrils) and, with the
     // shading below piled on top, a closed mouth read as a dark open hole.
-    // A real lip seam is a couple of millimetres.
-    z += 0.0105 * _falloff(x, y + 0.0590, z - 0.0830, 0.0235, 0.0070, 0.024);
-    z -= 0.0042 * _falloff(x, y - FACE.mouthY, z - 0.0850, 0.0225, 0.0042, 0.022);
-    z += 0.0118 * _falloff(x, y + 0.0730, z - 0.0815, 0.0205, 0.0090, 0.024);
+    // A real lip seam is a couple of millimetres. Slightly more vermilion
+    // volume (face-closeup ref) so the mouth plane reads under soft light.
+    z += 0.0115 * _falloff(x, y + 0.0590, z - 0.0840, 0.0240, 0.0074, 0.024);
+    z -= 0.0038 * _falloff(x, y - FACE.mouthY, z - 0.0860, 0.0230, 0.0036, 0.022);
+    z += 0.0130 * _falloff(x, y + 0.0730, z - 0.0825, 0.0210, 0.0094, 0.024);
     // Mouth corners tuck in
     z -= 0.0080 * _falloff(ax - 0.0240, y - FACE.mouthY, z - 0.0740, 0.0085, 0.0105, 0.030);
     // Mentolabial crease, then the chin itself. The crease has to be measured
@@ -15280,18 +15342,22 @@ function buildHead(o) {
   // features. Tinting does the other half of the work: skin is not one flat
   // colour, and lips/sockets/brows carry most of a face's readability.
   const dense = o.lowDetail ? { nu: 72, nv: 54 } : { nu: 112, nv: 86 };
+  // Skin: slightly oilier T-zone (lower roughness on forehead/nose via tint
+  // proxy) + cheek sheen warmth so the face stops reading as matte clay.
   const faceM = new THREE.MeshPhysicalMaterial({
-    color: skinCol, roughness: 0.55, metalness: 0.0,
-    sheen: 0.35, sheenRoughness: 0.85,
-    sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.55),
-    envMapIntensity: 0.45, vertexColors: true,
+    color: skinCol, roughness: 0.52, metalness: 0.0,
+    sheen: 0.42, sheenRoughness: 0.78,
+    sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.58),
+    envMapIntensity: 0.52, vertexColors: true,
   });
   // Lips are a little redder and darker than the skin around them — not a
   // different material. At 0.545/0.515 they went brown enough that, with the
   // seam shading on top, a closed mouth read as an open one.
-  const lipTone = [1.04, 0.740, 0.712];
+  const lipTone = [1.06, 0.720, 0.695];
+  // Bust the geometry cache when the sculpt/tint changes so creator previews
+  // pick up the new face immediately (old keys would serve stale morphs).
   const skull = buildHeadShell(headPoint, faceM, {
-    nu: dense.nu, nv: dense.nv, morphs: true, cacheKey: "skull|" + shape + "|" + dense.nu,
+    nu: dense.nu, nv: dense.nv, morphs: true, cacheKey: "skull|v2|" + shape + "|" + dense.nu,
     tint: (p) => {
       let r = 1, g = 1, b = 1;
       const ax = Math.abs(p.x);
@@ -15311,17 +15377,19 @@ function buildHead(o) {
       const seam = _falloff(p.x, p.y - FACE.mouthY, p.z - 0.0900, 0.0245, 0.0038, 0.050);
       // 0.68 was near-black at the centre. A lip line is darker than skin, not
       // a void — the geometry above already carries the crease.
-      const sk = 1 - 0.34 * seam; r *= sk; g *= sk * 0.93; b *= sk * 0.94;
-      // Eye sockets / upper-lid shadow
+      const sk = 1 - 0.30 * seam; r *= sk; g *= sk * 0.94; b *= sk * 0.95;
+      // Eye sockets / upper-lid shadow — a touch deeper for orbital form.
       const sock = _falloff(ax - FACE.eyeX, p.y - FACE.eyeY - 0.006, p.z - 0.0705, 0.029, 0.015, 0.040);
-      r *= 1 - 0.22 * sock; g *= 1 - 0.27 * sock; b *= 1 - 0.24 * sock;
+      r *= 1 - 0.26 * sock; g *= 1 - 0.30 * sock; b *= 1 - 0.27 * sock;
       // Nostril openings — two small dark slits, not a bar across the septum.
       const nos = _falloff(ax - 0.0104, p.y + 0.0450, p.z - 0.0990, 0.0044, 0.0036, 0.022);
       const nk = 1 - 0.82 * nos; r *= nk; g *= nk; b *= nk;
-      // Cheek warmth + a cooler jaw/beard shadow, the two tones that keep a
-      // face from looking plastic.
+      // Cheek warmth + cooler forehead/T-zone + cooler jaw — skin that is not
+      // one flat paint (face-closeup ref).
       const cheek = _falloff(ax - 0.0500, p.y + 0.0230, p.z - 0.0670, 0.030, 0.024, 0.045);
-      r *= 1 + 0.055 * cheek; g *= 1 - 0.010 * cheek; b *= 1 - 0.020 * cheek;
+      r *= 1 + 0.075 * cheek; g *= 1 - 0.012 * cheek; b *= 1 - 0.028 * cheek;
+      const forehead = _falloff(p.x, p.y - 0.055, p.z - 0.070, 0.045, 0.030, 0.050) * _hsat(p.z * 8);
+      r *= 1 - 0.02 * forehead; g *= 1 - 0.01 * forehead; b *= 1 + 0.015 * forehead;
       const jaw = _sstep(-0.040, -0.075, p.y) * Math.max(0, p.z) * 12;
       const jk = 1 - 0.05 * Math.min(1, jaw); r *= jk; g *= jk * 0.995; b *= 1 - 0.02 * Math.min(1, jaw);
       // Brow hair root shading
@@ -15366,15 +15434,19 @@ function buildHead(o) {
   // --- eyes ----------------------------------------------------------------
   // A real eyeball in a real socket, with lids that ROTATE shut. (Squashing a
   // lid's scale.y was the old blink and it looked like a shutter.)
+  // Wet cornea + clearer limbal read (face-closeup ref): lower roughness,
+  // stronger clearcoat, a touch more iris emissive so eyes catch room light.
   const scleraM = new THREE.MeshPhysicalMaterial({
-    color: 0xe9ded2, roughness: 0.14, clearcoat: 1.0, clearcoatRoughness: 0.05,
+    color: 0xf2ebe3, roughness: 0.10, clearcoat: 1.0, clearcoatRoughness: 0.035,
+    envMapIntensity: 0.7,
   });
   const irisM = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color(o.eyeColor), roughness: 0.14, metalness: 0.15,
-    clearcoat: 1.0, clearcoatRoughness: 0.04,
-    emissive: new THREE.Color(o.eyeColor).multiplyScalar(0.12),
+    color: new THREE.Color(o.eyeColor), roughness: 0.11, metalness: 0.12,
+    clearcoat: 1.0, clearcoatRoughness: 0.03,
+    emissive: new THREE.Color(o.eyeColor).multiplyScalar(0.16),
+    envMapIntensity: 0.65,
   });
-  const pupilM = new THREE.MeshBasicMaterial({ color: 0x07060a });
+  const pupilM = new THREE.MeshBasicMaterial({ color: 0x050408 });
   const lashM  = new THREE.MeshStandardMaterial({
     color: hairCol.clone().multiplyScalar(0.35), roughness: 1.0,
   });
@@ -17478,10 +17550,17 @@ class Body {
         // Mid-swing skim height. Scaled by walkAmt so the settle-step pose (which
         // parks one leg at s ≈ 0.75, mid-swing) puts the foot back on the floor
         // instead of leaving the character standing on one leg.
-        const low = ft.soleDrop + 0.042 * (legLen / 0.78) * walkAmt * leg._liftVar;
+        const lift = 0.055 * (legLen / 0.78) * walkAmt * leg._liftVar;
+        const low = ft.soleDrop + lift;
         const kz = this._swZ, ky = this._swY;
-        kz[0][1] = zTO; kz[1][1] = zTO * 0.45; kz[2][1] = zMid; kz[3][1] = zIC;
-        ky[0][1] = yTO; ky[1][1] = yTO * 1.02; ky[2][1] = low;  ky[3][1] = yIC;
+        kz[0][1] = zTO; kz[1][1] = zTO * 0.38; kz[2][1] = zMid; kz[3][1] = zIC;
+        // Peak clearance earlier in swing (clinical mid-swing ~30% of swing).
+        // The 1.35 applies to the LIFT, not to `low` — `low` carries soleDrop,
+        // the ankle's height when the sole is flat on the floor, and scaling
+        // that scales the floor: at walkAmt 0 the settle-step leg (parked at
+        // s ≈ 0.75) hung 18 mm in the air, which is the exact failure the
+        // comment above says this term exists to prevent.
+        ky[0][1] = yTO; ky[1][1] = low + lift * 0.35; ky[2][1] = low;  ky[3][1] = yIC;
         alongF = _track(kz, swingT);
         T.ankleH = _track(ky, swingT);
         alongS = (-halfL + 2 * halfL * _sstep(0, 1, swingT)) * gaitSide * leg._latAmp;
@@ -17570,13 +17649,12 @@ class Body {
     // thoracic and cervical joints is both the fix and what actually happens.
     if (this._hipMean == null) this._hipMean = hipH;
     this._hipMean += (hipH - this._hipMean) * Math.min(1, dtB * 1.0);
-    // 0.35, not 0.55: with the pelvis now only travelling ~5 cm there is less to
-    // absorb, and a torso that visibly squashes to hide the rest is its own
-    // wrongness — it reads as the body sloshing rather than striding.
-    const bobDev = Math.max(-0.05, Math.min(0.05, hipH - this._hipMean)) * 0.35 * walkAmt;
-    this.spine.position.y = this._spineY0 - bobDev * 0.40;
-    this.chest.position.y = this._chestY0 - bobDev * 0.35;
-    this.neck.position.y  = this._neckY0  - bobDev * 0.25;
+    // 0.28: absorb more pelvis bob into the spine so the head (and FP camera)
+    // stay steadier — the walk-cycle sheet's head barely oscillates vs hips.
+    const bobDev = Math.max(-0.05, Math.min(0.05, hipH - this._hipMean)) * 0.28 * walkAmt;
+    this.spine.position.y = this._spineY0 - bobDev * 0.42;
+    this.chest.position.y = this._chestY0 - bobDev * 0.38;
+    this.neck.position.y  = this._neckY0  - bobDev * 0.32;
 
     // ---- pass 3: solve each leg ----
     for (let i = 0; i < this.legs.length; i++) {
@@ -17717,7 +17795,8 @@ class Body {
     const hipTwistTarget = Math.sin(walkPhase) * walkAmt
       * Math.max(fwdShare, sideShare * 0.8, shufK * 0.6);
     this._hipTwist += (hipTwistTarget - this._hipTwist) * Math.min(1, dtB * 15);
-    const pelvisYaw = -this._hipTwist * 0.085;
+    // Slightly stronger pelvic lead (clinical walk counter-rotation).
+    const pelvisYaw = -this._hipTwist * 0.105;
     const gaitRoll = rollWalk;
     const commitLean = this._startLeanSm || 0;
     // ---- bank into the turn ----
@@ -18179,8 +18258,10 @@ class Body {
       const armPhase = walkPhase + (side > 0 ? 0 : Math.PI);
       // Arms do not swing to a metronome either — a slow drift on amplitude,
       // different per side, keeps the two from mirroring each other exactly.
+      // Amplitude matched to the walk-cycle sheet: clearer opposite-arm
+      // counter-swing (~35–40° shoulder arc at full stride).
       const armVar = 1 + _wob(t * 0.6, side > 0 ? 2.9 : 6.2) * 0.13;
-      const swing = Math.sin(armPhase) * (side > 0 ? 0.40 : 0.45) * walkAmt * strideK * armVar;
+      const swing = Math.sin(armPhase) * (side > 0 ? 0.52 : 0.58) * walkAmt * strideK * armVar;
       const shoulderTarget = side > 0 ? rS : lS;
       const elbowTarget    = side > 0 ? rE : lE;
       const gestureWeight = this.cameraMode === "tp" ? gestureStrength : 0;
@@ -18212,7 +18293,7 @@ class Body {
       // A walking arm carries 20–40° of elbow flexion, most of it on the
       // FORWARD swing; parked near 15° the whole cycle the arms read as two
       // straight sticks hinged at the shoulder.
-      const passiveBend = 0.34 + Math.max(0, Math.sin(armPhase - 0.5)) * 0.34 * walkAmt
+      const passiveBend = 0.38 + Math.max(0, Math.sin(armPhase - 0.5)) * 0.40 * walkAmt
         + fearK * 0.22 + idleSway * 0.5;
       const elbX =
           elbowTarget   * gestureWeight
@@ -25131,54 +25212,89 @@ function buildDog(opts = {}) {
     // to see the final colours or a dark coat gets crushed twice.
     applyCoatTint(model, opts.coat);
 
-    // Add procedural fur micro-detail so the flat-shaded coat catches light like
-    // real fur instead of smooth plastic. We apply only the strand NORMAL +
-    // matte ROUGHNESS maps (UV-safe relief + break-up) and leave the model's own
-    // palette colours alone — skipping the eyes/nose (very dark) and teeth/
-    // eye-whites (very light). makeFurMaps() was built for exactly this and was
-    // previously generated but never bound.
-    try {
-      // The fur maps are tiling, so they need UVs to sample. The models ship
-      // without any, so synthesise box UVs (normalised by the model's native
-      // height) first — otherwise the maps are a no-op and the coat is plastic.
-      const rawBox = new THREE.Box3().setFromObject(model);
-      const rawSize = Math.max(0.001, rawBox.max.y - rawBox.min.y);
-      model.traverse((o) => {
-        if (o.isMesh && o.geometry) ensureBoxUV(o.geometry, rawSize);
-      });
-      const fur = makeFurMaps();
+    // Box UVs first — Quaternius dogs ship without TEXCOORD_0.
+    const rawBox = new THREE.Box3().setFromObject(model);
+    const rawSize = Math.max(0.001, rawBox.max.y - rawBox.min.y);
+    model.traverse((o) => {
+      if (o.isMesh && o.geometry) ensureBoxUV(o.geometry, rawSize);
+    });
+
+    // Apply breed PBR coat maps (external textures) with procedural fur as
+    // fallback / micro-detail layer. Eyes/nose get a wet dark specular;
+    // coat stays matte dielectric. `mode`: "base" darkens + sets mats once;
+    // "upgrade" only swaps map slots so a late-arriving PNG never re-darkens.
+    const applyCoatMaterials = (coatMaps, mode = "base") => {
+      const lowQ = (typeof sceneQuality === "function" && sceneQuality() === "low");
+      const fur = (() => { try { return makeFurMaps(); } catch { return null; } })();
       model.traverse((o) => {
         if (!o.isMesh || !o.material) return;
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach((m) => {
           if (!m || !m.color) return;
           const lum = 0.299 * m.color.r + 0.587 * m.color.g + 0.114 * m.color.b;
-          if (lum < 0.06) return;                  // skip eyes/nose (near-black)
-          m.metalness = 0;                         // coats are dielectric, never metal
-          // Flat, high roughness stops the coat pinging inside the sunbeam;
-          // reduced env intensity keeps the PMREM studio env from re-blowing
-          // the white husky chest (default 1.0 was most of the old clipping).
-          m.roughness = 0.88;
-          m.envMapIntensity = 0.45;
-          // Give the coat tonal HEADROOM against the key + ACES exposure.
-          // Lighter touch than the old 0.58 table — the new light rig no
-          // longer stacks four fills, but the fear grade still pushes
-          // key.intensity ×1.25, so the white chest needs ~0.6 albedo max.
-          const darken = lum > 0.78 ? 0.66 : lum > 0.6 ? 0.76 : lum > 0.4 ? 0.86 : 0.95;
-          m.color.multiplyScalar(darken);
-          // Fur micro-relief on the coat (not the bright teeth/eye-whites, where
-          // tiling noise reads as dirt).
-          if (lum <= 0.92) {
-            const nrm = fur.normal.clone();    nrm.repeat.set(7, 7); nrm.needsUpdate = true;
-            const rgh = fur.roughness.clone(); rgh.repeat.set(7, 7); rgh.needsUpdate = true;
-            m.normalMap = nrm;
-            if (m.normalScale) m.normalScale.set(0.7, 0.7);
-            m.roughnessMap = rgh;
+          // Eyes / nose / pads — dark wet specular, no fur tiling.
+          if (lum < 0.06) {
+            if (mode === "base") {
+              m.metalness = 0.15;
+              m.roughness = 0.22;
+              m.envMapIntensity = 0.85;
+              if (m.clearcoat != null) { m.clearcoat = 0.55; m.clearcoatRoughness = 0.18; }
+              m.needsUpdate = true;
+            }
+            return;
+          }
+          if (mode === "base") {
+            m.metalness = 0;
+            m.roughness = 0.88;
+            m.envMapIntensity = 0.42;
+            const darken = lum > 0.78 ? 0.66 : lum > 0.6 ? 0.76 : lum > 0.4 ? 0.86 : 0.95;
+            m.color.multiplyScalar(darken);
+          }
+          if (lum > 0.92) { m.needsUpdate = true; return; } // teeth / eye-whites
+          // Prefer baked breed albedo; keep a warm tint multiply so coat tint
+          // (per-traveller) still reads through.
+          if (coatMaps && coatMaps.albedo && !lowQ) {
+            m.map = coatMaps.albedo.clone();
+            m.map.wrapS = m.map.wrapT = THREE.RepeatWrapping;
+            m.map.repeat.set(5.5, 5.5);
+            m.map.needsUpdate = true;
+            if (mode === "upgrade" && !m.userData._coatAlbedoBoost) {
+              // Soften flat vertex colour once so the map carries the look.
+              m.color.multiplyScalar(0.55);
+              m.color.lerp(new THREE.Color(0xffffff), 0.35);
+              m.userData._coatAlbedoBoost = true;
+            } else if (mode === "base") {
+              m.color.multiplyScalar(0.55);
+              m.color.lerp(new THREE.Color(0xffffff), 0.35);
+              m.userData._coatAlbedoBoost = true;
+            }
+          }
+          const nrmSrc = (coatMaps && coatMaps.normal && !lowQ) ? coatMaps.normal : (fur && fur.normal);
+          const rghSrc = (coatMaps && coatMaps.roughness && !lowQ) ? coatMaps.roughness : (fur && fur.roughness);
+          if (nrmSrc) {
+            m.normalMap = nrmSrc.clone();
+            m.normalMap.wrapS = m.normalMap.wrapT = THREE.RepeatWrapping;
+            m.normalMap.repeat.set(5.5, 5.5);
+            m.normalMap.needsUpdate = true;
+            if (m.normalScale) m.normalScale.set(0.85, 0.85);
+          }
+          if (rghSrc) {
+            m.roughnessMap = rghSrc.clone();
+            m.roughnessMap.wrapS = m.roughnessMap.wrapT = THREE.RepeatWrapping;
+            m.roughnessMap.repeat.set(5.5, 5.5);
+            m.roughnessMap.needsUpdate = true;
           }
           m.needsUpdate = true;
         });
       });
-    } catch (e) { console.warn("[dogs] fur maps:", e); }
+    };
+    // Procedural maps immediately so the dog never flashes plastic while the
+    // breed PNGs stream in; then upgrade map slots when ready (no re-darken).
+    try { applyCoatMaterials(null, "base"); } catch (e) { console.warn("[dogs] fur maps:", e); }
+    loadDogCoatTextures(breed).then((maps) => {
+      if (dog.userData.disposed || !maps) return;
+      try { applyCoatMaterials(maps, "upgrade"); } catch (e) { console.warn("[dogs] coat maps:", e); }
+    });
 
     // Animation: a named action map over the 12 clips the pack ships. Created
     // BEFORE measuring so the rig can be posed for measurement.
@@ -26016,8 +26132,10 @@ class DogController {
             implied = (this.parts.gallopStride || this.gallopStride) / Math.max(0.2, gclip ? gclip.duration : 0.567);
           }
           const rawTs = actualSpeed / Math.max(0.05, implied);
-          const ts = actualSpeed < 0.05 ? 0 : Math.max(0.4, Math.min(2.2, rawTs));
-          this._action.timeScale += (ts - this._action.timeScale) * Math.min(1, d * 14);
+          // Slightly tighter band so paws stay grounded at walk/gallop speeds
+          // measured from the clip stride (reduces residual slide).
+          const ts = actualSpeed < 0.05 ? 0 : Math.max(0.45, Math.min(2.0, rawTs));
+          this._action.timeScale += (ts - this._action.timeScale) * Math.min(1, d * 16);
         }
         this.groundSpeed = moved / Math.max(0.0001, d);
         if (this._action && this.onFootfall && this.groundSpeed > 0.08) {
@@ -26342,12 +26460,27 @@ class DogController {
       if (tailLift) rig.tail[i].rotation.x += tailLift * (i === 0 ? 1 : 0.35);
     }
 
-    // ---- Breathing ---- (chest rises/falls; subtle, faster when keyed up)
+    // ---- Breathing ---- (chest rises/falls; subtle, faster when keyed up.
+    // Slightly fuller at rest so a standing dog reads as alive in close-up.)
     const breatheK = resting ? 1 : 0.45;
-    this._breathPhase += d * (this.state === "bark" ? 4.2 : 1.7);
+    this._breathPhase += d * (this.state === "bark" ? 4.2 : (resting ? 1.45 : 1.7));
     const br = Math.sin(this._breathPhase);
-    for (const b of rig.chest) b.rotation.x += br * 0.012 * breatheK;
-    if (rig.neck) rig.neck.rotation.x -= br * 0.007 * breatheK;   // keep head level
+    const breathAmp = 0.016 * breatheK * (0.85 + 0.15 * (this.parts.height || 0.7));
+    for (let i = 0; i < rig.chest.length; i++) {
+      rig.chest[i].rotation.x += br * breathAmp * (1 - i * 0.18);
+      // Soft lateral rib swell — absolute scale each frame (clips don't drive it).
+      if (rig.chest[i].scale) {
+        const s = resting ? (1 + br * 0.012 * breatheK) : 1;
+        rig.chest[i].scale.set(s, resting ? (1 + br * 0.006 * breatheK) : 1, s);
+      }
+    }
+    if (rig.neck) rig.neck.rotation.x -= br * 0.008 * breatheK;   // keep head level
+    // Soft idle weight rock — a standing dog never freezes perfectly still.
+    if (resting && this._walkAmtSm < 0.05) {
+      const rock = Math.sin(t * 0.55) * 0.012;
+      if (rig.pelvis) rig.pelvis.rotation.z += rock;
+      if (rig.chest[0]) rig.chest[0].rotation.z -= rock * 0.6;
+    }
 
     // ---- Panting ---- (these rigs ship no jaw bone, so the pant that the
     // audio timer plays reads through the body instead: a fast shallow chest
@@ -26501,9 +26634,10 @@ class DogController {
     // Excitement perks them a notch even on a relaxed dog.)
     const earPerk = (this.mood === "alert" ? 0.16 : 0) + this._excSm * 0.11;
     const earOsc = Math.sin(this._wagPhase * 0.5) * 0.025
-      + (this._walkAmtSm > 0.01 ? Math.sin(bobP) * 0.06 * this._walkAmtSm : 0);
+      + (this._walkAmtSm > 0.01 ? Math.sin(bobP) * 0.06 * this._walkAmtSm : 0)
+      + (resting ? Math.sin(t * 1.1) * 0.018 : 0);
     for (let i = 0; i < rig.earsL.length; i++) rig.earsL[i].rotation.x += earOsc * (0.5 + i * 0.3) + earPerk;
-    for (let i = 0; i < rig.earsR.length; i++) rig.earsR[i].rotation.x += earOsc * (0.5 + i * 0.3) + earPerk;
+    for (let i = 0; i < rig.earsR.length; i++) rig.earsR[i].rotation.x += earOsc * (0.55 + i * 0.28) + earPerk;
     // Asymmetric orienting: the leading ear rotates toward the gaze target —
     // permanently mirrored ears are a persistent puppet tell in close-up.
     const earGy = this._gazeYawSm * this._gazeWSm;
@@ -26511,17 +26645,18 @@ class DogController {
       for (const e of rig.earsL) e.rotation.z += Math.max(0, Math.min(1, earGy)) * 0.12;
       for (const e of rig.earsR) e.rotation.z -= Math.max(0, Math.min(1, -earGy)) * 0.12;
     }
-    // Independent flick: one ear at a time, on its own 4-10 s clock at rest.
+    // Independent flick: one ear at a time, on its own 3-8 s clock at rest
+    // (was 4-10 — slightly more frequent so the face stays alive).
     if (resting) {
       this._earFlickT -= d;
       if (this._earFlickT <= 0) {
-        this._earFlickT = 4 + Math.random() * 6;
+        this._earFlickT = 3 + Math.random() * 5;
         this._earFlickSide = Math.random() < 0.5 ? -1 : 1;
         this._earFlickA = 1;
       }
     }
     if (this._earFlickA > 0) {
-      const fa = Math.sin(this._earFlickA * Math.PI) * 0.3;      // 0.25 s pulse
+      const fa = Math.sin(this._earFlickA * Math.PI) * 0.34;      // slightly stronger flick
       this._earFlickA = Math.max(0, this._earFlickA - d * 4);
       for (const e of (this._earFlickSide < 0 ? rig.earsL : rig.earsR)) e.rotation.x += fa;
     }

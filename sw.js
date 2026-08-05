@@ -11,7 +11,7 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v11-world-sound";
+const VERSION = "mira-v12-character-dog";
 const SHELL = [
   "./",
   "./index.html",
@@ -26,6 +26,13 @@ const SHELL = [
   "./assets/models/Husky.gltf",
   "./assets/models/Spider.glb",
   "./assets/models/Snake.glb",
+  // Breed PBR coat maps (baked from reference images).
+  "./assets/models/textures/shiba_albedo.png",
+  "./assets/models/textures/shiba_normal.png",
+  "./assets/models/textures/shiba_roughness.png",
+  "./assets/models/textures/husky_albedo.png",
+  "./assets/models/textures/husky_normal.png",
+  "./assets/models/textures/husky_roughness.png",
   // (The recorded therapist-voice manifest is no longer precached: the spoken
   // guide track is retired — guidance is captions/tips only, and the world's
   // own audio is synthesized or sampled below.)
