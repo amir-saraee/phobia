@@ -4300,11 +4300,110 @@ const PhobiaAudio = (() => {
       baseFreq: 220, q: 1.2, gain: 0.248, lfoRate: 0.18, lfoDepth: 60, pink: true,
     });
   }
+  // A room's own sound is AIR, not a hum. This used to be pink noise squeezed
+  // through a Q-1.2 bandpass at 102 Hz — a resonant drone, the sound of a
+  // machine somewhere, and at four times this level. Wide, high and quiet reads
+  // as "an indoor space" and leaves headroom for the things that actually
+  // happen in the room (see startRoomLife).
   function startRoomTone(intensity = 0.4) {
     return startLoop({
-      baseFreq: 90 + intensity * 60, q: 1.2,
-      gain: 0.12 + intensity * 0.15, lfoRate: 0.1, lfoDepth: 30, pink: true,
+      baseFreq: 300 + intensity * 260, q: 0.30,
+      gain: 0.028 + intensity * 0.034, lfoRate: 0.05, lfoDepth: 70, pink: true,
     });
+  }
+
+  // ---- Room life ----
+  // What actually makes a room sound like a place: near-silence, and then
+  // something happens. A bird beyond the glass, the floor settling, a car two
+  // streets away. Sparse, randomly spaced and PLACED — the window sounds come
+  // from the window — so the ear builds a room out of them. A continuous bed
+  // can never do this however carefully it's filtered.
+  function startRoomLife(opts = {}) {
+    const c = ensureCtx(); if (!c) return { stop() {} };
+    const win = opts.window || { x: 0, y: 0.5, z: -6 };
+    const room = opts.room || { x: 0, z: 0, rx: 4, rz: 5 };
+    const level = opts.level == null ? 1 : opts.level;
+    let alive = true;
+    const timers = new Set();
+    const later = (fn, ms) => {
+      const id = setTimeout(() => { timers.delete(id); if (alive) fn(); }, ms);
+      timers.add(id);
+    };
+    // Birdsong outside. Muffled by the glass — a low-pass is most of what a
+    // closed window does to a bird.
+    const bird = () => {
+      const now = c.currentTime;
+      const out = spatial(
+        { x: win.x + (Math.random() - 0.5) * 3, y: win.y + 1.2 + Math.random() * 1.5, z: win.z - 1.5 - Math.random() * 5 },
+        { refDistance: 2.5, maxDistance: 34, air: true }
+      );
+      const glass = c.createBiquadFilter();
+      glass.type = "lowpass"; glass.frequency.value = 2600; glass.Q.value = 0.6;
+      glass.connect(out);
+      const n = 2 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) {
+        const t0 = now + i * (0.09 + Math.random() * 0.07);
+        const f = 2000 + Math.random() * 1300;
+        const o = c.createOscillator(); o.type = "sine";
+        o.frequency.setValueAtTime(f, t0);
+        o.frequency.exponentialRampToValueAtTime(f * (0.88 + Math.random() * 0.34), t0 + 0.07);
+        const g = c.createGain();
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.020 * level, t0 + 0.008);
+        g.gain.exponentialRampToValueAtTime(0.0006, t0 + 0.09);
+        o.connect(g).connect(glass); o.start(t0); o.stop(t0 + 0.12);
+      }
+      later(bird, 7000 + Math.random() * 13000);
+    };
+    // The building settling: a short woody creak from somewhere in the room.
+    const creak = () => {
+      const now = c.currentTime;
+      const out = spatial(
+        { x: room.x + (Math.random() - 0.5) * room.rx * 1.6, y: -0.6, z: room.z + (Math.random() - 0.5) * room.rz * 1.6 },
+        { refDistance: 1.5, maxDistance: 14 }
+      );
+      const dur = 0.18 + Math.random() * 0.22;
+      const o = c.createOscillator(); o.type = "sawtooth";
+      const f0 = 120 + Math.random() * 90;
+      o.frequency.setValueAtTime(f0, now);
+      o.frequency.linearRampToValueAtTime(f0 * (1.10 + Math.random() * 0.25), now + dur);
+      const lp = c.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = 900; lp.Q.value = 0.8;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.014 * level, now + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.0004, now + dur);
+      o.connect(lp).connect(g).connect(out); o.start(now); o.stop(now + dur + 0.05);
+      later(creak, 22000 + Math.random() * 34000);
+    };
+    // A car, streets away. A slow swell of low noise through the window.
+    const car = () => {
+      const now = c.currentTime;
+      const out = spatial({ x: win.x, y: win.y, z: win.z - 14 }, { refDistance: 6, maxDistance: 60, air: true });
+      const dur = 3.5 + Math.random() * 2.5;
+      const src = c.createBufferSource(); src.buffer = pinkNoiseBuffer(dur + 0.4); src.loop = false;
+      const lp = c.createBiquadFilter();
+      lp.type = "lowpass"; lp.Q.value = 0.5;
+      lp.frequency.setValueAtTime(260, now);
+      lp.frequency.linearRampToValueAtTime(430, now + dur * 0.5);
+      lp.frequency.linearRampToValueAtTime(240, now + dur);
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.020 * level, now + dur * 0.5);
+      g.gain.exponentialRampToValueAtTime(0.0004, now + dur);
+      src.connect(lp).connect(g).connect(out); src.start(now); src.stop(now + dur + 0.2);
+      later(car, 45000 + Math.random() * 70000);
+    };
+    later(bird, 2500 + Math.random() * 5000);
+    later(creak, 12000 + Math.random() * 20000);
+    later(car, 20000 + Math.random() * 40000);
+    return {
+      stop() {
+        alive = false;
+        for (const id of timers) clearTimeout(id);
+        timers.clear();
+      },
+    };
   }
 
   // ---- Dog vocal sample bank ----
@@ -6326,6 +6425,7 @@ const PhobiaAudio = (() => {
     unlock, setMuted, isMuted, duck, ui,
     startMonitorBeep, startCreaks,
     startWind, startWaterLap, startUnderwater, startRoomTone, startCityHum,
+    startRoomLife,
     startBarking, startSkittering, startMRI, startBreathing, startHeartbeat,
     breathCatch,
     startVertigoHeartbeat,
@@ -11408,6 +11508,16 @@ function startSceneAudio(phobiaKey, levelIdx) {
     }
     case "dogs": {
       handles.push(A.startRoomTone(0.2));
+      // The room is a real place with a window onto a meadow, so it gets the
+      // things a real room does: a bird beyond the glass, the floor settling,
+      // a car somewhere off. The window position matches the gap the back wall
+      // is built around (see the dog room shell: ROOM.z0, centred at x −2.2).
+      if (A.startRoomLife) {
+        handles.push(A.startRoomLife({
+          window: { x: -2.2, y: 0.5, z: -5.6 },
+          room: { x: 0, z: -0.2, rx: 4.6, rz: 5.4 },
+        }));
+      }
       // Discrete barks, growls and the dog's panting are all fired from INSIDE
       // the 3D dog scene, spatialised to the dog's position, so the sound comes
       // from the animal — not from a loud, non-spatialised breath track sitting
@@ -13985,26 +14095,40 @@ class FPControls {
     }
     const mScale = this._reduceMotion ? 0.3 : 1;
     const fpBobScale = (1 - this.tpBlend) * mScale;   // fades to 0 in TP
-    // Footfall-shaped bob: sharp heel plant, float through mid-stance.
-    // cos^6 (was ^8) is still punchy but less of a single-frame spike —
-    // that spike read as camera jitter more than weight transfer.
-    // Both of these were keyed to cos(ph), which peaks at ph = 0, 2π… — half a
-    // step away from a real footfall (those land at π/2 + kπ) and only once per
-    // full cycle, so the camera dipped on every OTHER step. |sin| puts the dip
-    // on every footfall, in time with the legs and the footstep sound.
+    // ---- Vertical bob ----
+    // First person is the DEFAULT view, so this — not the legs — is what most
+    // players actually experience as "walking". It used to be a hand-drawn
+    // |sin(ph)|^6 spike: a 2.8 cm drop delivered inside ~13% of a step and
+    // gone again, which lands as a jolt at every footfall. Real heads do not
+    // do that. They ride the pelvis, damped by the spine, on a smooth curve.
+    //
+    // We already compute that curve honestly for the character's own head, so
+    // ride it. FP and TP then cannot disagree, and every gait fix (pace, step
+    // length, trunk compliance) reaches first person for free.
     const ph = this._walkPhase || 0;
-    const heel = Math.pow(Math.abs(Math.sin(ph)), 6);
-    const float = Math.pow(Math.abs(Math.cos(ph)), 1.25);
     const sideBias = 1 + 0.05 * Math.sin(ph);
     const snBob = 0.25 + 0.75 * this._speedNorm;
-    const bobYRaw = (-heel * 0.028 + (float - 0.52) * 0.018)
-      * this._walkAmt * fpBobScale * snBob * sideBias;
-    // Smooth the vertical bob so high refresh rates don't stair-step it.
-    this._bobYSm = (this._bobYSm || 0) + (bobYRaw - (this._bobYSm || 0)) * Math.min(1, dt * 28);
-    const bobY = this._bobYSm;
-    // Head pitch into the plant — smoothed separately so it feels like neck
-    // compliance, not a locked camera keyframe.
-    const bobPitchRaw = -heel * 0.011 * this._walkAmt * fpBobScale * snBob;
+    let bobYRaw;
+    const headBob = this._bobSource ? this._bobSource() : null;
+    if (headBob != null) {
+      bobYRaw = headBob * 0.85 * fpBobScale * sideBias;
+    } else {
+      // Fallback when no body is mounted: a smooth two-per-stride sine, lowest
+      // at footfall — the same shape, just without the real thing to copy.
+      bobYRaw = -Math.cos(2 * ph) * 0.011 * this._walkAmt * fpBobScale * snBob * sideBias;
+    }
+    // Two-pole smoothing — the neck. One pole still passed the corner where the
+    // pelvis hands over from one stance leg to the other, and at double support
+    // the two legs alternate as the constraining one, which chatters. A second
+    // pole rounds both off while leaving the ~1.8 Hz fundamental intact.
+    const bobA = Math.min(1, dt * 30);
+    this._bobYSm = (this._bobYSm || 0) + (bobYRaw - (this._bobYSm || 0)) * bobA;
+    this._bobYSm2 = (this._bobYSm2 || 0) + (this._bobYSm - (this._bobYSm2 || 0)) * bobA;
+    const bobY = this._bobYSm2;
+    // A trace of neck compliance: the chin dips very slightly as weight lands.
+    // Small and smooth — the old spike-driven version read as a flinch.
+    const bobPitchRaw = -Math.max(0, -Math.cos(2 * ph)) * 0.004
+      * this._walkAmt * fpBobScale * snBob;
     this._bobPitch = (this._bobPitch || 0)
       + (bobPitchRaw - (this._bobPitch || 0)) * Math.min(1, dt * 22);
     // Breathing — always present, faster and deeper as fear rises.
@@ -14227,6 +14351,11 @@ class FPControls {
   // what the player is reaching for (e.g. a low dog) without moving the logical
   // eye used by TP framing and collision.
   setEyeDrop(m) { this._eyeDropTarget = Math.max(0, Math.min(0.7, m || 0)); }
+
+  // Where the FP camera gets its vertical bob: a function returning the
+  // character's head deviation from its own running mean, in metres. Without
+  // one the camera falls back to a synthetic curve.
+  setBobSource(fn) { this._bobSource = typeof fn === "function" ? fn : null; }
 
   // Metres of ground covered per step at 1 m/s. The body sizes its leg swing to
   // whatever this says, so the two can never disagree.
@@ -17171,6 +17300,11 @@ class Body {
         // pirouette on frozen legs. `half` is ~0 here, so lift the ankle
         // directly and let the IK fold the knee to match.
         if (shufK > 0.001) T.ankleH += shufK * 0.055 * Math.sin(Math.PI * swingT);
+        // Where this foot is GOING to land. Known from the moment it leaves the
+        // ground, and pass 2 uses it to start lowering the pelvis early instead
+        // of waiting to be forced down at the instant of contact.
+        T.icZ = zIC; T.icY = yIC;
+        T.icS = half * gaitSide * leg._latAmp - leg.side * footInset;
       }
       alongS -= leg.side * footInset;
       // Never ask for a foot the leg cannot reach. Drift in the closed loop —
@@ -17189,6 +17323,7 @@ class Body {
         }
         alongF *= k; alongS *= k;
       }
+      if (planted) { T.icZ = null; T.icY = 0; T.icS = 0; }
       T.s = s; T.planted = planted; T.pitch = pitch;
       T.alongF = alongF; T.alongS = alongS; T.swingT = swingT; T.leadLeg = leadLeg;
       T.pivotToe = planted && s >= G.heelOff;
@@ -17213,11 +17348,20 @@ class Body {
     // three centimetres in a single frame — a visible hitch at every footfall.
     for (const T of legT) {
       if (T.planted) continue;
-      const w = _sstep(0.55, 1, T.swingT);
+      // Aim at the cap this foot will impose AT CONTACT, not the one its
+      // current mid-air position implies. The latter only drops below the
+      // standing leg's cap in the last fraction of the swing, so the pelvis got
+      // no warning and was forced down 26 mm in four frames — a sawtooth, and
+      // in first person a lurch at every step. Using the landing point spreads
+      // that descent across the whole swing, which is what a walking pelvis
+      // actually does. Descending early is always safe: a foot can only fail to
+      // reach when the pelvis is too HIGH.
+      if (T.icZ == null) continue;
+      const w = _sstep(0.05, 1, T.swingT);
       if (w <= 0) continue;
       const L = _legReach(G.kneeKeys[0][1], A, Bl);
-      const horiz = T.alongF * T.alongF + T.alongS * T.alongS;
-      const cand = T.ankleH + Math.sqrt(Math.max(0, L * L - horiz));
+      const horiz = T.icZ * T.icZ + T.icS * T.icS;
+      const cand = T.icY + Math.sqrt(Math.max(0, L * L - horiz));
       if (cand < hipH) hipH += (cand - hipH) * w;
     }
     if (!isFinite(hipH)) hipH = hipStand;
@@ -17515,6 +17659,21 @@ class Body {
       // feet are what stay put), so the contact shadow has to be pushed back up
       // or it sinks through the ground in a crouch.
       if (this.shadow) this.shadow.position.y = 0.005 - clampDy;
+      // Publish the head's own vertical travel, relative to its running mean.
+      // This IS the walk's bob — the pelvis's rise and fall after the spine has
+      // absorbed most of it — and the FP camera rides it (setBobSource) so the
+      // view and the body can never tell different stories. Measured here, one
+      // line after the clamp, because `clampDy` is what makes it true.
+      if (this.head) {
+        // getWorldPosition() refreshes the ancestors from their CURRENT local
+        // transforms, so this is already post-clamp — adding clampDy here
+        // double-counted it and reported ~3× the real bob.
+        this.head.getWorldPosition(_bV1);
+        const headY = _bV1.y;
+        if (this._headMeanY == null) this._headMeanY = headY;
+        this._headMeanY += (headY - this._headMeanY) * Math.min(1, dtB * 1.2);
+        this._headBobY = Math.max(-0.06, Math.min(0.06, headY - this._headMeanY));
+      }
     }
 
     // ---------- Head + gaze ----------
@@ -18012,6 +18171,10 @@ class Body {
     if (!this._dustPuffs) this._dustPuffs = [];
     this._dustPuffs.push({ mesh: points, velocities, life: 0.8, maxLife: 0.8, baseSize });
   }
+
+  // The head's vertical deviation from its own running mean, in metres — the
+  // honest bob of this walk. The FP camera rides it (FPControls.setBobSource).
+  headBobY() { return this._headBobY || 0; }
 
   // Step length for these legs AT 1 m/s; the phase engine scales it by √speed.
   // 0.72 × leg length reproduces the measured step length / leg length ratio of
@@ -19803,8 +19966,10 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // undefined key still overrides defaults through Object.assign.
       Object.keys(bodyOpts).forEach(k => { if (bodyOpts[k] === undefined) delete bodyOpts[k]; });
       body = new Body(scene, camera, bodyOpts);
-      // Step length comes from this character's actual legs.
+      // Step length comes from this character's actual legs, and the FP
+      // camera's bob comes from that same character's actual head.
       if (controls && controls.setStrideBase) controls.setStrideBase(body.strideBase());
+      if (controls && controls.setBobSource) controls.setBobSource(() => body.headBobY());
       // Sync body's head visibility AND the FP hands' visibility to the
       // controls' camera mode. In TP, body's head shows + FP hands hide
       // (so the user sees ONE clear character, not body + floating hands).
