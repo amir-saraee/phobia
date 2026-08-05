@@ -16119,12 +16119,57 @@ const MAT = { SKIN: 0, SHIRT: 1, PANTS: 2, SHOE: 3, DARK: 4 };
 //
 // `dims` carries the landmark heights the rest of the app already agrees on
 // (headY is the EYE height and a scene contract — never silently change it).
+// ---- landmark heights ---------------------------------------------------
+// Where the joints sit on a standing figure, as fractions of stature, from
+// ordinary anthropometry. The eye is the fixed point (headY = 1.55 is a scene
+// contract), which puts this figure at 1.657 m, and everything else follows.
+//
+// These replace a set that had drifted badly: the shoulders sat at 0.750 of
+// stature against a real 0.818, so eleven centimetres of bare neck stood
+// between the collar and the jaw and the character read as a giraffe. The hips
+// and knees were each ~6 cm low with it, which shortened the legs and pushed
+// the torso down.
+const _STATURE = 1.55 / 0.935;                 // eye height ÷ its canon fraction
+const ANKLE_Y     = +(0.039 * _STATURE).toFixed(4);   // 0.065
+const KNEE_Y      = +(0.285 * _STATURE).toFixed(4);   // 0.472
+const HIP_Y       = +(0.530 * _STATURE).toFixed(4);   // 0.878
+const WAIST_Y     = +(0.615 * _STATURE).toFixed(4);   // 1.019
+const NECK_Y      = +(0.848 * _STATURE).toFixed(4);   // 1.406
+// The shoulder BONE lands 2 cm under chestTopY (see armY), so aim that at the
+// acromion rather than this.
+const CHEST_TOP_Y = +(0.818 * _STATURE + 0.02).toFixed(4);   // 1.376
+const UPPER_ARM   = +(0.188 * _STATURE).toFixed(4);   // 0.312 — acromion→elbow
+const FOREARM     = +(0.145 * _STATURE).toFixed(4);   // 0.241 — elbow→wrist
+const THIGH_FRAC  = (HIP_Y - KNEE_Y) / (HIP_Y - ANKLE_Y);   // ≈ 0.50
+// Acromion half-breadth. shoulderX = width x 1.16 puts the shoulder BONE on the
+// acromion. The old 0.18 gave a 0.42 m bone span and, with the arm axis hung
+// outboard of it, a 0.57 m bideltoid silhouette against a real 0.41 — which is
+// most of why the shoulders read as pads bolted onto a barrel.
+const SHOULDER_HALF = +((0.115 * _STATURE) / 1.16).toFixed(4);   // 0.164
+
+// The mesh stations inside buildHumanRig are hand-authored in ONE fixed frame —
+// heights measured on the figure as it used to be proportioned. The bones come
+// from L. When the two disagree the surface drifts off the skeleton it is
+// skinned to, which is exactly how the neck got stretched to twice its length.
+// These map an authored height onto the landmark frame in force, so the surface
+// always follows its bones. Authored anchors first, live ones second.
+const _REF_BODY = [0, 0.04, 0.4144, 0.82, 0.92, 1.28, 1.40, 1.55];
+function _remap(y, ref, act) {
+  for (let i = 1; i < ref.length; i++) {
+    if (y <= ref[i] || i === ref.length - 1) {
+      const t = (y - ref[i - 1]) / (ref[i] - ref[i - 1]);
+      return act[i - 1] + t * (act[i] - act[i - 1]);
+    }
+  }
+  return y;
+}
+
 function buildHumanRig(o = {}) {
   const bt = BODY_TYPES_3D[o.bodyType] || BODY_TYPES_3D.man;
   const L = {
-    headY: o.headY ?? 1.55, neckY: o.neckY ?? 1.40, chestTopY: o.chestTopY ?? 1.28,
-    waistY: o.waistY ?? 0.92, hipY: o.hipY ?? 0.82, kneeY: o.kneeY ?? 0.45,
-    ankleY: o.ankleY ?? 0.04, width: o.width ?? 0.18,
+    headY: o.headY ?? 1.55, neckY: o.neckY ?? NECK_Y, chestTopY: o.chestTopY ?? CHEST_TOP_Y,
+    waistY: o.waistY ?? WAIST_Y, hipY: o.hipY ?? HIP_Y, kneeY: o.kneeY ?? KNEE_Y,
+    ankleY: o.ankleY ?? ANKLE_Y, width: o.width ?? 0.18,
   };
   const H = L.headY / 1.55;                    // overall height factor
   const SW = (L.width / 0.18);                 // shoulder width factor (already × bt.shoulder)
@@ -16147,9 +16192,25 @@ function buildHumanRig(o = {}) {
   const shoulderX = L.width * 1.16;
   const armY      = L.chestTopY - 0.02;
   const chestY    = L.waistY + (L.chestTopY - L.waistY) * 0.50;
-  const upperLen  = 0.268 * H, foreLen = 0.252 * H;
+  // Arm segments from anthropometry too. With the shoulder raised to where it
+  // belongs, the old 0.268/0.252 left the fingertips 9 cm high — they had been
+  // compensating for the low shoulder rather than being right themselves.
+  const upperLen  = UPPER_ARM * H, foreLen = FOREARM * H;
   const legLen    = L.hipY - L.ankleY;
-  const thighLen  = legLen * 0.52, shinLen = legLen * 0.48;
+  const thighLen  = legLen * THIGH_FRAC, shinLen = legLen * (1 - THIGH_FRAC);
+  // Authored height → this rig's height, for the mesh stations. Torso, legs and
+  // shoe ride the body landmarks; the arm rides its own chain, because its
+  // segment lengths changed independently of the trunk.
+  const _actBody = [0, L.ankleY, L.hipY - thighLen, L.hipY, L.waistY, L.chestTopY, L.neckY, L.headY];
+  const stationY = (y) => _remap(y, _REF_BODY, _actBody);
+  const _REF_ARM = [0.740, 0.992, 1.26];
+  const _actArm  = [armY - upperLen - foreLen, armY - upperLen, armY];
+  // At and above the shoulder the arm rings ARE the deltoid, weighted to the
+  // chest — they have to stay welded to the trunk, so they ride the body map.
+  // Below it they ride the arm chain, whose segments changed independently.
+  // The two agree exactly at the authored shoulder (1.26 → armY), so the
+  // surface is continuous across the join.
+  const armStationY = (y) => (y >= 1.26 ? stationY(y) : _remap(y, _REF_ARM, _actArm));
 
   const pelvis = bone("pelvis", null, 0, L.hipY, 0);
   const spine  = bone("spine",  pelvis, 0, L.waistY - L.hipY, 0);
@@ -16180,13 +16241,24 @@ function buildHumanRig(o = {}) {
   // continuous rather than three primitives poking through each other.
   const shirtTop = MAT.SHIRT;
   const sqT = 0.86;
+  // Above the chest the stations are placed RELATIVE TO THE SHOULDER, not at
+  // absolute heights. The old list was authored when the shoulder sat 11 cm
+  // lower, and it put the trunk's widest point five centimetres ABOVE where the
+  // arm now hangs from — so the deltoid attached to thin air and the shoulders
+  // read as pads sitting on a barrel. `ay` is an absolute height; `y` still goes
+  // through the body remap.
+  const SHY = armY;                                   // acromion
   const torso = [
-    { y: 1.344, rx: .0655, rz: .0665, w: [[bi(neck), .45], [bi(chest), .55]], mat: shirtTop, sq: 1, cap: 1 },
-    { y: 1.330, rx: .0830, rz: .0775, w: [[bi(chest), 1]], mat: shirtTop, sq: .95 },
-    { y: 1.318, rx: .1210, rz: .0880, w: [[bi(chest), 1]], mat: shirtTop, sq: .92 },
-    { y: 1.300, rx: .1640, rz: .0975, w: [[bi(chest), 1]], mat: shirtTop, sq: sqT },
-    { y: 1.272, rx: .1880, rz: .1055, w: [[bi(chest), 1]], mat: shirtTop, sq: sqT },
-    { y: 1.212, rx: .1955, rz: .1160, w: [[bi(chest), .70], [bi(breath), .30]], mat: shirtTop, sq: sqT },
+    { ay: SHY + 0.080, rx: .0615, rz: .0635, w: [[bi(neck), .65], [bi(chest), .35]], mat: shirtTop, sq: 1, cap: 1 },
+    { ay: SHY + 0.062, rx: .0720, rz: .0730, w: [[bi(neck), .38], [bi(chest), .62]], mat: shirtTop, sq: .97 },
+    { ay: SHY + 0.040, rx: .1030, rz: .0870, w: [[bi(chest), 1]], mat: shirtTop, sq: .93 },
+    // The acromion shelf stays WIDE up to just above the joint — that is what
+    // the deltoid sits on. Narrowing it here (which the first attempt did) left
+    // the arm cap protruding into thin air beside the neck.
+    { ay: SHY + 0.018, rx: .1450, rz: .0955, w: [[bi(chest), 1]], mat: shirtTop, sq: .92 },
+    { ay: SHY - 0.010, rx: .1600, rz: .1030, w: [[bi(chest), 1]], mat: shirtTop, sq: .89 },
+    { ay: SHY - 0.055, rx: .1955, rz: .1130, w: [[bi(chest), 1]], mat: shirtTop, sq: sqT },
+    { y: 1.212, rx: .1950, rz: .1160, w: [[bi(chest), .70], [bi(breath), .30]], mat: shirtTop, sq: sqT },
     { y: 1.150, rx: .1805, rz: .1195, w: [[bi(breath), 1]], mat: shirtTop, sq: sqT },
     { y: 1.078, rx: .1580, rz: .1090, w: [[bi(breath), .55], [bi(spine), .45]], mat: shirtTop, sq: sqT },
     { y: 1.008, rx: .1415, rz: .0975, w: [[bi(spine), 1]], mat: shirtTop, sq: sqT },
@@ -16200,14 +16272,19 @@ function buildHumanRig(o = {}) {
   // Chest / hip widths diverge by body type; `k` is 1 at the shoulders, 0 at
   // the seat, so one lerp shapes the whole silhouette.
   _sweep(sg, torso.map((s) => {
-    const k = _hsat((s.y - 0.80) / (1.29 - 0.80));
+    // `ay` stations are already in the live frame; `y` ones come from the
+    // authored frame and need the remap. `k` (shoulder→seat blend) is judged in
+    // the AUTHORED frame either way, so a re-authored station still gets the
+    // body-type widths it should.
+    const yAuth = s.ay != null ? 1.28 + (s.ay - armY) : s.y;
+    const k = _hsat((yAuth - 0.80) / (1.29 - 0.80));
     // Dampened: stacking the raw hip factor on top of the seat factor pushed a
     // 36 cm hip out past 44 cm, which is what made the pelvis read as a block.
     const wide = SW * k + (1 + (HW - 1) * 0.55) * (1 - k);
-    const waistPinch = 1 - (1 - bt.waist) * 0.75 * Math.exp(-Math.pow((s.y - 0.985) / 0.095, 2));
+    const waistPinch = 1 - (1 - bt.waist) * 0.75 * Math.exp(-Math.pow((yAuth - 0.985) / 0.095, 2));
     const seatK = 1 + (bt.seat - 1) * 0.5 * (1 - k) * (1 - k);
     return {
-      p: [0, s.y * H, 0],
+      p: [0, s.ay != null ? s.ay : stationY(s.y), 0],
       rx: s.rx * wide * waistPinch * seatK,
       rz: s.rz * (0.94 + 0.06 * wide) * bt.chestZ * waistPinch * seatK,
       w: s.w, mat: s.mat, sq: s.sq, cap: s.cap,
@@ -16222,26 +16299,33 @@ function buildHumanRig(o = {}) {
     const U = bi(a.sh), F = bi(a.el), W = bi(a.wr), C = bi(chest);
     const sleeveMat = longSleeve ? MAT.SHIRT : MAT.SKIN;
     const arm = [
-      { y: 1.268, xr: 0.46, rx: .026, rz: .026, w: [[C, 1]], mat: MAT.SHIRT, cap: 1 },
-      { y: 1.288, xr: 0.68, rx: .046, rz: .045, w: [[C, .92], [U, .08]], mat: MAT.SHIRT },
-      { y: 1.286, xr: 0.88, rx: .058, rz: .056, w: [[C, .62], [U, .38]], mat: MAT.SHIRT },
-      { y: 1.262, xr: 1.00, rx: .064, rz: .062, w: [[C, .26], [U, .74]], mat: MAT.SHIRT },
-      { y: 1.218, xr: 1.045, rx: .062, rz: .060, w: [[U, 1]], mat: MAT.SHIRT },
-      { y: 1.150, xr: 1.050, rx: .056, rz: .054, w: [[U, 1]], mat: MAT.SHIRT },
-      { y: 1.082, xr: 1.050, rx: .0500, rz: .0490, w: [[U, 1]], mat: sleeveMat },
-      { y: 1.032, xr: 1.048, rx: .0458, rz: .0450, w: [[U, 1]], mat: sleeveMat },
-      { y: 1.014, xr: 1.046, rx: .0442, rz: .0435, w: [[U, .78], [F, .22]], mat: sleeveMat },
-      { y: 0.992, xr: 1.045, rx: .0430, rz: .0424, w: [[U, .50], [F, .50]], mat: sleeveMat },
-      { y: 0.968, xr: 1.044, rx: .0438, rz: .0430, w: [[U, .22], [F, .78]], mat: sleeveMat },
-      { y: 0.928, xr: 1.043, rx: .0460, rz: .0448, w: [[F, 1]], mat: sleeveMat },
-      { y: 0.855, xr: 1.042, rx: .0400, rz: .0386, w: [[F, 1]], mat: sleeveMat },
+      // Deltoid cap. Its crown sits AT the acromion now, not 2.8 cm above it —
+      // above the joint there is only neck, and a cap up there reads as a
+      // shoulder pad with a gap under it.
+      // The humerus hangs INBOARD of the acromion, and the deltoid wraps outside
+      // it — so the arm axis sits at ~0.85 of shoulderX and the tube is slim
+      // enough that its outer surface lands on the real bideltoid breadth.
+      // Riding the axis at 1.05 with a fat tube is what made the pads.
+      { y: 1.262, xr: 0.36, rx: .028, rz: .028, w: [[C, 1]], mat: MAT.SHIRT, cap: 1 },
+      { y: 1.268, xr: 0.56, rx: .042, rz: .041, w: [[C, .92], [U, .08]], mat: MAT.SHIRT },
+      { y: 1.266, xr: 0.73, rx: .049, rz: .047, w: [[C, .62], [U, .38]], mat: MAT.SHIRT },
+      { y: 1.250, xr: 0.84, rx: .050, rz: .048, w: [[C, .26], [U, .74]], mat: MAT.SHIRT },
+      { y: 1.218, xr: 0.86, rx: .048, rz: .046, w: [[U, 1]], mat: MAT.SHIRT },
+      { y: 1.150, xr: 0.865, rx: .0440, rz: .0424, w: [[U, 1]], mat: MAT.SHIRT },
+      { y: 1.082, xr: 0.865, rx: .0400, rz: .0392, w: [[U, 1]], mat: sleeveMat },
+      { y: 1.032, xr: 0.863, rx: .0370, rz: .0364, w: [[U, 1]], mat: sleeveMat },
+      { y: 1.014, xr: 0.862, rx: .0358, rz: .0352, w: [[U, .78], [F, .22]], mat: sleeveMat },
+      { y: 0.992, xr: 0.861, rx: .0348, rz: .0343, w: [[U, .50], [F, .50]], mat: sleeveMat },
+      { y: 0.968, xr: 0.860, rx: .0355, rz: .0348, w: [[U, .22], [F, .78]], mat: sleeveMat },
+      { y: 0.928, xr: 0.859, rx: .0372, rz: .0362, w: [[F, 1]], mat: sleeveMat },
+      { y: 0.855, xr: 0.858, rx: .0324, rz: .0312, w: [[F, 1]], mat: sleeveMat },
       // A hoodie / jacket sleeve runs to the wrist; a tee already ended at the
       // upper arm, so only the long-sleeve case changes here.
-      { y: 0.790, xr: 1.040, rx: .0320, rz: .0298, w: [[F, .55], [W, .45]], mat: longSleeve ? MAT.SHIRT : MAT.SKIN },
-      { y: 0.752, xr: 1.040, rx: .0270, rz: .0244, w: [[W, 1]], mat: MAT.SKIN },
+      { y: 0.790, xr: 0.857, rx: .0262, rz: .0244, w: [[F, .55], [W, .45]], mat: longSleeve ? MAT.SHIRT : MAT.SKIN },
+      { y: 0.752, xr: 0.857, rx: .0224, rz: .0202, w: [[W, 1]], mat: MAT.SKIN },
     ];
     _sweep(sg, arm.map((s) => ({
-      p: [sx * s.xr * shoulderX, s.y * H, 0],
+      p: [sx * s.xr * shoulderX, armStationY(s.y), 0],
       rx: s.rx * LW, rz: s.rz * LW, w: s.w, mat: s.mat, cap: s.cap,
     })), RAD_L);
   }
@@ -16268,7 +16352,7 @@ function buildHumanRig(o = {}) {
       { y: 0.086, z: 0, rx: .0392, rz: .0428, w: [[A, 1]], mat: MAT.SHOE },
     ];
     _sweep(sg, leg.map((s) => ({
-      p: [sx * 0.10 * HW, s.y * H, s.z * H],
+      p: [sx * 0.10 * HW, stationY(s.y), s.z * H],
       rx: s.rx * LW * (0.66 + 0.34 * HW), rz: s.rz * LW * (0.66 + 0.34 * HW),
       w: s.w, mat: s.mat, cap: s.cap,
     })), RAD_L);
@@ -16290,7 +16374,7 @@ function buildHumanRig(o = {}) {
     _sweep(sg, shoe.map((s) => {
       const lz = s.z * H, lx = 0;
       return {
-        p: [ax + (lx * ct + lz * st), (0.004 + s.r) * H, az + (-lx * st + lz * ct)],
+        p: [ax + (lx * ct + lz * st), stationY((0.004 + s.r) * H), az + (-lx * st + lz * ct)],
         rx: s.r * H, rz: s.wdt * H * (0.6 + 0.4 * LW),
         w: [[bi(g.an), 1]], mat: MAT.SHOE, sq: 0.70, cap: s.cap,
       };
@@ -16464,7 +16548,10 @@ function buildHumanRig(o = {}) {
   // instead of guessing from the ankle joint. Derived from the same numbers the
   // shoe was swept with above (sole plane 0.004, heel −0.082, toe 0.174, plus
   // the baked-in out-toe yaw) so the two can never drift apart.
-  const soleDrop = L.ankleY - 0.004 * H;        // ankle joint above the sole
+  // The sole plane is a mesh station too, so read it back through the remap —
+  // hard-coding 0.004 here would have the gait rocking the foot about a
+  // ground plane the shoe no longer sits on.
+  const soleDrop = L.ankleY - stationY(0.004 * H);   // ankle joint above the sole
   const legs = legBones.map((g) => {
     const st = Math.sin(g.side * 0.09), ct = Math.cos(g.side * 0.09);
     const pt = (z) => new THREE.Vector3(z * H * st, -soleDrop, z * H * ct);
@@ -16523,14 +16610,17 @@ class Body {
       headwear:   "none",    // "none" | "beanie" | "cap"
       topStyle:   "tee",     // "tee" | "hoodie" | "jacket"
       // Body part offsets in body-local space (foot at y=0, eye at y≈1.55).
-      headY:      1.55,    // camera height = eye line
-      neckY:      1.40,
-      chestTopY:  1.28,
-      waistY:     0.92,
-      hipY:       0.82,
-      kneeY:      0.45,
-      ankleY:     0.04,
-      width:      0.18,    // half torso width
+      // Anthropometric landmarks — see the constants above buildHumanRig for
+      // where the numbers come from. Overriding one of these moves the BONE and
+      // the surface together (the mesh stations are remapped through them).
+      headY:      1.55,    // camera height = eye line — a scene contract
+      neckY:      NECK_Y,
+      chestTopY:  CHEST_TOP_Y,
+      waistY:     WAIST_Y,
+      hipY:       HIP_Y,
+      kneeY:      KNEE_Y,
+      ankleY:     ANKLE_Y,
+      width:      SHOULDER_HALF,   // half torso width (acromion)
       // Wind exposure — used for hair flutter, scarf flap. Caller can crank this
       // up in heights / driving / flying for visible cloth motion that sells
       // "I'm somewhere with a real breeze".
@@ -36896,7 +36986,7 @@ function buildAvatarFigure(c) {
   const bt = BODY_TYPES_3D[c && c.bodyType] || BODY_TYPES_3D.man;
   // Same landmark contract as the in-scene Body: scale the skeleton's height
   // landmarks by the body type, then let the rig derive everything else.
-  const L = { headY: 1.55, neckY: 1.40, chestTopY: 1.28, waistY: 0.92, hipY: 0.82, kneeY: 0.45, ankleY: 0.04 };
+  const L = { headY: 1.55, neckY: NECK_Y, chestTopY: CHEST_TOP_Y, waistY: WAIST_Y, hipY: HIP_Y, kneeY: KNEE_Y, ankleY: ANKLE_Y };
   for (const k of Object.keys(L)) L[k] *= bt.h;
   const rig = buildHumanRig({
     bodyType: c && c.bodyType,
@@ -36909,7 +36999,7 @@ function buildAvatarFigure(c) {
     facialHair: c && c.facialHair,
     headwear:   c && c.headwear,
     topStyle:   c && c.topStyle,
-    width: 0.18 * bt.shoulder,
+    width: SHOULDER_HALF * bt.shoulder,
     headY: L.headY, neckY: L.neckY, chestTopY: L.chestTopY, waistY: L.waistY,
     hipY: L.hipY, kneeY: L.kneeY, ankleY: L.ankleY,
   });
