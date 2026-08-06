@@ -7,7 +7,10 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "bake-dog-coats": "node bake-dog-coats.cjs",
     "bake-character-skin": "node bake-character-skin.cjs",
-    "bake-all": "node bake-character-skin.cjs && node bake-dog-coats.cjs"
+    "bake-all": "node bake-character-skin.cjs && node bake-dog-coats.cjs",
+    "measure-ref": "node measure-ref.cjs",
+    "shoot": "node shoot-scenes.cjs",
+    "face-diagnostic": "node face-diagnostic.cjs"
   },
   "keywords": [],
   "author": "",
@@ -15,6 +18,7 @@
   "type": "commonjs",
   "dependencies": {
     "kokoro-js": "^1.2.1",
-    "pngjs": "^7.0.0"
+    "pngjs": "^7.0.0",
+    "puppeteer-core": "^25.5.0"
   }
 }

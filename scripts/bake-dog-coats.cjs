@@ -26,9 +26,9 @@ const SIZE = 1024;
 const BREEDS = {
   // A shiba's underside is genuinely cream, so balancing it all the way to
   // white would launder the breed's own colour out of the map.
-  shiba: { ref: "dog-shiba-reference.png", crop: [0.10, 0.42, 0.28, 0.72], wb: 0.25, seed: 0 },
+  shiba: { ref: "dog-shiba-reference.png", crop: [0.46, 0.68, 0.36, 0.55], wb: 0.25, seed: 0 },
   // A husky's underside really is white — take the full correction.
-  husky: { ref: "dog-husky-reference.png", crop: [0.10, 0.42, 0.28, 0.72], wb: 1.00, seed: 977 },
+  husky: { ref: "dog-husky-reference.png", crop: [0.44, 0.66, 0.34, 0.54], wb: 1.00, seed: 977 },
 };
 
 // Pull a breed's coat palette out of its photo. Sorting the surviving pixels by

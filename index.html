@@ -14659,8 +14659,10 @@ const _GAIT = {
   pitchSwing: -0.12, // mid-swing clearance
   // Stance knee flexion (rad): loading-response dip → midstance re-extend →
   // pre-swing flex that throws the leg into mid-swing peak flexion.
-  // Peak mid-swing flexion raised to match the walk-cycle sheet's flexed knee.
-  kneeKeys: [[0, 0.12], [0.12, 0.36], [0.32, 0.10], [0.48, 0.26], [0.62, 0.82], [0.81, 1.12], [1.0, 0.12]],
+  // Peak flexion sits at 0.76 of the cycle (clinical mid-swing is ~0.75, and
+  // the reference sheet's MID-SWING pose lands there); the old 0.81 peak read
+  // as a late, marchy knee-lift just before footfall.
+  kneeKeys: [[0, 0.12], [0.12, 0.36], [0.32, 0.10], [0.48, 0.26], [0.62, 0.82], [0.76, 1.05], [1.0, 0.12]],
 };
 // Piecewise-smoothstep through [[x, y], …] keyframes.
 function _track(keys, u) {
@@ -15339,6 +15341,36 @@ const _hsP = new THREE.Vector3();
 // eye height — the first-person / third-person camera contract.
 const HEAD_LIFT = 0.0555;
 
+// Taper, flatten and curve a capsule along its length so it reads as a LOCK OF
+// HAIR rather than a sausage. A capsule is a constant-radius tube, and constant
+// radius is the whole tell — real hair narrows toward its tip, is flattened
+// against the head rather than round, and falls in a curve instead of hanging
+// as a straight rod. `t` runs 0 at the top to 1 at the tip.
+function shapeHairLock(geom, opts = {}) {
+  const tipR = opts.tipR != null ? opts.tipR : 0.35;
+  const flat = opts.flat != null ? opts.flat : 1;
+  const curve = opts.curve || 0;
+  const widen = opts.widen || 0;          // >0 fans the lock out sideways
+  const pos = geom.attributes.position;
+  let minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  const span = Math.max(1e-6, maxY - minY);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const t = (maxY - y) / span;
+    const s = t * t * (3 - 2 * t);                 // smoothstep, so the taper eases
+    const k = 1 + (tipR - 1) * s;
+    pos.setXYZ(i, x * (k + widen * s), y, z * k * flat + curve * s);
+  }
+  pos.needsUpdate = true;
+  geom.computeVertexNormals();
+  return geom;
+}
+
 function buildHead(o) {
   const grp = new THREE.Group();
   const shape = (o.bodyType === "man") ? 1.0 : (o.bodyType === "woman" ? 0.25 : 0.5);
@@ -15355,8 +15387,14 @@ function buildHead(o) {
     sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.55),
     envMapIntensity: 0.45,
   });
-  const hairM = new THREE.MeshStandardMaterial({
-    color: hairCol, roughness: 0.72, metalness: 0.08, envMapIntensity: 0.6,
+  // Hair is fibrous, not metallic: a physical material with a light-coloured
+  // sheen gives the strand highlight real hair has, so brown hair reads as
+  // brown under night lighting instead of collapsing to a black helmet.
+  const hairM = new THREE.MeshPhysicalMaterial({
+    color: hairCol, roughness: 0.48, metalness: 0.0,
+    sheen: 0.55, sheenRoughness: 0.55,
+    sheenColor: hairCol.clone().lerp(new THREE.Color(0xfff2e0), 0.5),
+    envMapIntensity: 0.9,
   });
   const browM = new THREE.MeshStandardMaterial({
     color: hairCol.clone().multiplyScalar(0.8), roughness: 0.95,
@@ -15426,9 +15464,12 @@ function buildHead(o) {
     // The colour attribute stays on the geometry, so the no-map fallback path
     // (low quality, or a texture that fails to load) is unaffected.
     faceM.vertexColors = false;
-    // Let the map carry most of the look; keep skinCol as a soft multiply tint
-    // so creator swatches still recolour the face.
-    faceM.color.copy(skinCol).lerp(new THREE.Color(0xffffff), 0.55);
+    // The map is normalised to detail only (see bake-character-skin.cjs), so
+    // the tint is simply the skin colour — the head then matches the arms,
+    // which use skinCol flat. The old lerp-toward-white was compensating for a
+    // map that still carried its own base tone, and the two together still
+    // landed the face ~13% darker than the body.
+    faceM.color.copy(skinCol);
     faceM.needsUpdate = true;
   };
   loadCharacterFaceTextures().then(applyFaceMaps).catch(() => {});
@@ -15525,7 +15566,10 @@ function buildHead(o) {
   const irisM = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(o.eyeColor), roughness: 0.11, metalness: 0.12,
     clearcoat: 1.0, clearcoatRoughness: 0.03,
-    emissive: new THREE.Color(o.eyeColor).multiplyScalar(0.16),
+    // Stronger emissive: at night-scene light levels an unlit iris collapses
+    // to a black bead, which is how every eye read before the realistic
+    // reference pass. 0.32 keeps the creator's colour visible without glowing.
+    emissive: new THREE.Color(o.eyeColor).multiplyScalar(0.32),
     envMapIntensity: 0.65,
   });
   const pupilM = new THREE.MeshBasicMaterial({ color: 0x050408 });
@@ -15570,19 +15614,25 @@ function buildHead(o) {
     // Limbal ring: the dark band where iris meets sclera. It is the single
     // cheapest thing that stops an eye reading as a painted bead — real irises
     // are never a flat disc of colour with a hard edge.
+    //
+    // Cap angles are anatomical, not cosmetic: a real iris is ~11.5 mm on a
+    // ~24 mm globe, so the iris spans ~0.30 rad of the front cap, the limbal
+    // ring a hair past it, the pupil ~0.13. The old 0.50/0.545 covered the
+    // whole visible globe in dark iris — the "dead black bead" eye — and
+    // doubled up with the photographic iris the baked albedo already paints.
     const limbal = new THREE.Mesh(
-      cap(FACE.eyeR * 1.0005, 0.545),
+      cap(FACE.eyeR * 1.0005, 0.325),
       new THREE.MeshStandardMaterial({
         color: new THREE.Color(o.eyeColor).multiplyScalar(0.28), roughness: 0.3,
       })
     );
     globe.add(limbal);
-    const iris = new THREE.Mesh(cap(FACE.eyeR * 1.002, 0.50), irisM);
+    const iris = new THREE.Mesh(cap(FACE.eyeR * 1.002, 0.30), irisM);
     globe.add(iris);
-    const pupil = new THREE.Mesh(cap(FACE.eyeR * 1.010, 0.215), pupilM);
+    const pupil = new THREE.Mesh(cap(FACE.eyeR * 1.010, 0.135), pupilM);
     globe.add(pupil);
     const glint = new THREE.Mesh(
-      cap(FACE.eyeR * 1.020, 0.115),
+      cap(FACE.eyeR * 1.020, 0.075),
       new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.92 })
     );
     glint.rotation.set(-0.42, 0.38, 0);
@@ -15776,7 +15826,16 @@ function buildHead(o) {
   grp.add(hairGroup);
   let hairFlutter = null;
   if (style !== "bald") {
-    const thick = style === "buzz" ? 0.0035 : (style === "curly" ? 0.010 : 0.0085);
+    // Shell thickness IS the hair's volume — it is an offset of the sculpted
+    // skull, so raising it lifts the whole mass off the scalp the way hair
+    // actually sits. At 8.5 mm the styles with real bulk (long, curly, pony)
+    // were a skin painted on the head, which is most of the "helmet" read.
+    // Buzz stays thin because a buzz cut genuinely is.
+    const thick = style === "buzz" ? 0.0040
+      : style === "curly" ? 0.0190
+      : style === "long" ? 0.0165
+      : style === "pony" ? 0.0145
+      : 0.0120;
     const hairShellM = hairM.clone();
     hairShellM.transparent = true;
     hairShellM.vertexColors = true;
@@ -15804,19 +15863,37 @@ function buildHead(o) {
     // eyes) plus a back sheet that flutters.
     for (const sx of [-1, 1]) {
       // Beside the ear, NOT over the cheek: front locks that cross the face
-      // hide the very thing the creator is for.
-      const lock = new THREE.Mesh(new THREE.CapsuleGeometry(0.023, 0.15, 6, 10), hairM);
-      lock.scale.set(0.95, 1, 0.72);
-      lock.position.set(sx * 0.0755, -0.055, -0.010);
-      lock.rotation.z = sx * 0.10;
+      // hide the very thing the creator is for. Tapered and curved slightly
+      // back toward the jaw — as straight constant-radius capsules these read
+      // as two sausages hanging off the temples.
+      const lock = new THREE.Mesh(
+        shapeHairLock(new THREE.CapsuleGeometry(0.026, 0.165, 8, 12), { tipR: 0.34, flat: 0.66, curve: -0.020 }),
+        hairM
+      );
+      lock.position.set(sx * 0.0735, -0.058, -0.006);
+      lock.rotation.z = sx * 0.12;
       hairGroup.add(lock);
+      // A shorter inner strand breaks the silhouette so the mass does not read
+      // as one moulded piece.
+      const wisp = new THREE.Mesh(
+        shapeHairLock(new THREE.CapsuleGeometry(0.014, 0.10, 6, 10), { tipR: 0.25, flat: 0.6, curve: -0.012 }),
+        hairM
+      );
+      wisp.position.set(sx * 0.0615, -0.030, 0.022);
+      wisp.rotation.z = sx * 0.26;
+      hairGroup.add(wisp);
     }
     const back = new THREE.Group();
     back.position.set(0, 0.020, -0.040);
     hairGroup.add(back);
-    const sheet = new THREE.Mesh(new THREE.CapsuleGeometry(0.062, 0.20, 6, 14), hairM);
-    sheet.scale.set(1.05, 1, 0.52);
-    sheet.position.set(0, -0.135, -0.010);
+    // The back mass FANS as it falls — hair spreads over the shoulders rather
+    // than hanging as one fat tube. `widen` opens it out; `flat` presses it
+    // against the back instead of leaving it round.
+    const sheet = new THREE.Mesh(
+      shapeHairLock(new THREE.CapsuleGeometry(0.066, 0.215, 8, 18), { tipR: 0.62, flat: 0.46, widen: 0.55, curve: -0.012 }),
+      hairM
+    );
+    sheet.position.set(0, -0.140, -0.008);
     back.add(sheet);
     hairFlutter = back;
   } else if (style === "pony") {
@@ -16168,11 +16245,16 @@ function buildHead(o) {
 // `setCurl()` is what makes contact read as contact: the fingers actually
 // close around a rail or splay flat on a dog's back instead of the hand
 // staying a frozen mitt that happens to be near the object.
+// Radii are deliberately larger than the gaps between the roots (spacing is
+// ~10.3 mm, diameters ~19 mm) so adjacent fingers MERGE into one hand mass at
+// rest instead of standing apart as four separate rods — real fingers touch.
+// The splay values are the natural fan of a relaxed hand and are small; the
+// `spread` argument to setCurl is what opens them into a flat palm.
 const FINGER_SPEC = [
-  { name: "index",  x: -0.0155, len: [0.0305, 0.0195, 0.0140], r: 0.0088, splay: -0.10 },
-  { name: "middle", x: -0.0052, len: [0.0335, 0.0215, 0.0150], r: 0.0092, splay: -0.02 },
-  { name: "ring",   x:  0.0052, len: [0.0300, 0.0200, 0.0140], r: 0.0086, splay:  0.05 },
-  { name: "pinky",  x:  0.0150, len: [0.0235, 0.0150, 0.0120], r: 0.0072, splay:  0.14 },
+  { name: "index",  x: -0.0155, len: [0.0305, 0.0195, 0.0140], r: 0.0095, splay: -0.075 },
+  { name: "middle", x: -0.0052, len: [0.0335, 0.0215, 0.0150], r: 0.0099, splay: -0.015 },
+  { name: "ring",   x:  0.0052, len: [0.0300, 0.0200, 0.0140], r: 0.0093, splay:  0.040 },
+  { name: "pinky",  x:  0.0150, len: [0.0235, 0.0150, 0.0120], r: 0.0079, splay:  0.110 },
 ];
 
 function buildHand(side, skinM, sleeveM, opts = {}) {
@@ -16207,7 +16289,10 @@ function buildHand(side, skinM, sleeveM, opts = {}) {
       const pivot = new THREE.Group();
       if (s > 0) pivot.position.y = -spec.len[s - 1];
       parent.add(pivot);
-      const r = spec.r * (1 - s * 0.17);
+      // 0.17 per segment left the distal phalanx at 0.66 of the proximal and
+      // ended each finger in a small hemisphere — a point. A real fingertip is
+      // ~0.82 of the base and blunt.
+      const r = spec.r * (1 - s * 0.09);
       const bone = new THREE.Mesh(new THREE.CapsuleGeometry(r, spec.len[s] - r * 0.9, 5, 8), skinM);
       bone.position.y = -spec.len[s] / 2;
       bone.scale.z = 0.86;
@@ -16216,8 +16301,9 @@ function buildHand(side, skinM, sleeveM, opts = {}) {
       seg.push(pivot);
       parent = pivot;
     }
-    // A relaxed hand is never straight — this is the resting curl.
-    seg[0].rotation.x = 0.20; seg[1].rotation.x = 0.24; seg[2].rotation.x = 0.16;
+    // A relaxed hand is never straight — this is the resting curl. See the
+    // note on setCurl: these are the k = 0 pose and must match its constants.
+    seg[0].rotation.x = 0.34; seg[1].rotation.x = 0.72; seg[2].rotation.x = 0.20;
     fingers.push({ spec, seg });
   }
   // Thumb — rooted low on the side of the palm and rotated out of its plane.
@@ -16274,9 +16360,16 @@ function buildHand(side, skinM, sleeveM, opts = {}) {
       const f = fingers[i];
       // Ring and pinky lead a natural closing sequence.
       const lead = 1 + (i >= 2 ? 0.12 : 0) - (i === 0 ? 0.06 : 0);
-      f.seg[0].rotation.x = 0.20 + k * 1.05 * lead - spread * 0.28;
-      f.seg[1].rotation.x = 0.24 + k * 1.30 * lead - spread * 0.22;
-      f.seg[2].rotation.x = 0.16 + k * 0.85 * lead - spread * 0.14;
+      // k = 0 is now the hand's POSITION OF REST, the pose a hand falls into
+      // under nothing but its own tendon tension: MCP ~19°, PIP ~41°, DIP
+      // ~11°. It used to be 11°/14°/9°, which is not a resting hand, it is a
+      // hand being held open — and with the fingers fanned that is the "stop"
+      // gesture, which is exactly why they read as claws hanging off the
+      // wrists. Gains carry k = 1 to a real closed fist (~85°/100°/70°), so
+      // callers keep the 0..1 contract.
+      f.seg[0].rotation.x = 0.34 + k * 1.14 * lead - spread * 0.30;
+      f.seg[1].rotation.x = 0.72 + k * 1.03 * lead - spread * 0.44;
+      f.seg[2].rotation.x = 0.20 + k * 1.02 * lead - spread * 0.16;
       f.seg[0].rotation.z = side * f.spec.splay * (1 + spread * 1.9);
     }
     const tk = thumb == null ? k : thumb;
@@ -16500,11 +16593,21 @@ function buildHumanRig(o = {}) {
     { y: 1.078, rx: .1580, rz: .1090, w: [[bi(breath), .55], [bi(spine), .45]], mat: shirtTop, sq: sqT },
     { y: 1.008, rx: .1415, rz: .0975, w: [[bi(spine), 1]], mat: shirtTop, sq: sqT },
     { y: 0.952, rx: .1435, rz: .1005, w: [[bi(spine), .50], [bi(pelvis), .50]], mat: shirtTop, sq: sqT },
-    { y: 0.902, rx: .1580, rz: .1095, w: [[bi(pelvis), 1]], mat: shirtTop, sq: sqT },
-    { y: 0.862, rx: .1690, rz: .1165, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
-    { y: 0.826, rx: .1725, rz: .1195, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
-    { y: 0.790, rx: .1680, rz: .1200, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
-    { y: 0.758, rx: .1420, rz: .1070, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT, cap: 1 },
+    // A tee hem hangs OVER the waistband. The pants stations used to be wider
+    // than the shirt above them (.1690 against .1580), so the trousers stepped
+    // out past the hem and the overhang shaded into a hard black ring right
+    // across the hips. Carry the shirt down to its own slightly flared hem and
+    // start the trousers just inside it, so the step goes the way cloth does.
+    { y: 0.902, rx: .1620, rz: .1120, w: [[bi(pelvis), 1]], mat: shirtTop, sq: sqT },
+    { y: 0.878, rx: .1712, rz: .1188, w: [[bi(pelvis), 1]], mat: shirtTop, sq: sqT },
+    { y: 0.860, rx: .1668, rz: .1152, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
+    { y: 0.826, rx: .1700, rz: .1180, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
+    { y: 0.790, rx: .1640, rz: .1170, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
+    // Close the trunk NARROW and high. At .1420 the end cap was a disc wider
+    // than the gap between the thighs, hanging below the crotch — that pale
+    // wedge between the legs was this, seen from underneath.
+    { y: 0.774, rx: .1290, rz: .1010, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
+    { y: 0.762, rx: .0760, rz: .0860, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT, cap: 1 },
   ];
   // Chest / hip widths diverge by body type; `k` is 1 at the shoulders, 0 at
   // the seat, so one lerp shapes the whole silhouette.
@@ -16572,26 +16675,47 @@ function buildHumanRig(o = {}) {
   for (const g of legBones) {
     const sx = g.side;
     const P = bi(pelvis), T = bi(g.hp), S = bi(g.kn), A = bi(g.an);
+    // A leg is not a cone. The old list tapered monotonically from hip to
+    // ankle, and that single fact is why the legs read as two tubes however
+    // well they were shaded: below the knee a real leg gets WIDER before it
+    // gets narrower. Circumference against the upper thigh, adult norms —
+    // knee ~0.63, calf belly ~0.72, ankle ~0.40. So the calf belly is a good
+    // 12% wider than the knee, and it sits about 30% of the way down the shin.
+    //
+    // Width alone is not enough either. The gastrocnemius is POSTERIOR mass:
+    // inflating the whole ring just makes a fatter tube, so the swell goes on
+    // through `rmod`, which modulates radius per angle. In a downward sweep
+    // the ring's local +Z is world +Z, and the character faces +Z, so
+    // sin(ang) < 0 is the back of the leg.
+    const back = (a, p = 1.6) => (ang) => 1 + a * Math.pow(Math.max(0, -Math.sin(ang)), p);
+    const front = (a, p = 1.6) => (ang) => 1 + a * Math.pow(Math.max(0, Math.sin(ang)), p);
     const leg = [
       { y: 0.888, z: 0, rx: .098, rz: .105, w: [[P, .62], [T, .38]], mat: MAT.PANTS, cap: 1 },
-      { y: 0.848, z: 0, rx: .103, rz: .111, w: [[P, .28], [T, .72]], mat: MAT.PANTS },
-      { y: 0.792, z: 0, rx: .0995, rz: .107, w: [[T, 1]], mat: MAT.PANTS },
-      { y: 0.692, z: 0, rx: .0920, rz: .099, w: [[T, 1]], mat: MAT.PANTS },
+      // Hamstring mass high on the back of the thigh, fading by mid-shaft.
+      { y: 0.848, z: 0, rx: .103, rz: .111, w: [[P, .28], [T, .72]], mat: MAT.PANTS, rmod: back(.060) },
+      { y: 0.792, z: 0, rx: .0995, rz: .107, w: [[T, 1]], mat: MAT.PANTS, rmod: back(.050) },
+      { y: 0.692, z: 0, rx: .0920, rz: .099, w: [[T, 1]], mat: MAT.PANTS, rmod: back(.034) },
       { y: 0.582, z: 0, rx: .0820, rz: .089, w: [[T, 1]], mat: MAT.PANTS },
       { y: 0.492, z: .002, rx: .0730, rz: .079, w: [[T, 1]], mat: MAT.PANTS },
-      { y: 0.450, z: .003, rx: .0692, rz: .0752, w: [[T, .74], [S, .26]], mat: MAT.PANTS },
-      { y: 0.416, z: .003, rx: .0668, rz: .0725, w: [[T, .50], [S, .50]], mat: MAT.PANTS },
-      { y: 0.382, z: .001, rx: .0662, rz: .0735, w: [[T, .24], [S, .76]], mat: MAT.PANTS },
-      { y: 0.330, z: -.008, rx: .0662, rz: .0800, w: [[S, 1]], mat: MAT.PANTS },
-      { y: 0.268, z: -.006, rx: .0620, rz: .0725, w: [[S, 1]], mat: MAT.PANTS },
-      { y: 0.188, z: -.002, rx: .0500, rz: .0545, w: [[S, 1]], mat: MAT.PANTS },
-      { y: 0.128, z: 0, rx: .0420, rz: .0445, w: [[S, .60], [A, .40]], mat: MAT.SHOE },
+      { y: 0.450, z: .003, rx: .0700, rz: .0762, w: [[T, .74], [S, .26]], mat: MAT.PANTS },
+      // Knee: a narrow joint carrying one anterior bump, the patella. Sharper
+      // exponent so it stays a kneecap rather than a swollen front.
+      { y: 0.416, z: .004, rx: .0662, rz: .0730, w: [[T, .50], [S, .50]], mat: MAT.PANTS, rmod: front(.070, 2.4) },
+      { y: 0.390, z: .001, rx: .0672, rz: .0742, w: [[T, .24], [S, .76]], mat: MAT.PANTS, rmod: back(.055) },
+      // Calf belly — the widest point below the knee, and behind the shin.
+      { y: 0.336, z: -.006, rx: .0752, rz: .0800, w: [[S, 1]], mat: MAT.PANTS, rmod: back(.200) },
+      { y: 0.292, z: -.005, rx: .0715, rz: .0770, w: [[S, 1]], mat: MAT.PANTS, rmod: back(.155) },
+      { y: 0.248, z: -.003, rx: .0630, rz: .0690, w: [[S, 1]], mat: MAT.PANTS, rmod: back(.100) },
+      // Below the belly the taper is fast, and the Achilles keeps a narrow
+      // ridge at the back all the way down to the heel.
+      { y: 0.188, z: -.001, rx: .0505, rz: .0552, w: [[S, 1]], mat: MAT.PANTS, rmod: back(.058) },
+      { y: 0.128, z: 0, rx: .0420, rz: .0448, w: [[S, .60], [A, .40]], mat: MAT.SHOE },
       { y: 0.086, z: 0, rx: .0392, rz: .0428, w: [[A, 1]], mat: MAT.SHOE },
     ];
     _sweep(sg, leg.map((s) => ({
       p: [sx * 0.10 * HW, stationY(s.y), s.z * H],
       rx: s.rx * LW * (0.66 + 0.34 * HW), rz: s.rz * LW * (0.66 + 0.34 * HW),
-      w: s.w, mat: s.mat, cap: s.cap,
+      w: s.w, mat: s.mat, cap: s.cap, rmod: s.rmod,
     })), RAD_L);
 
     // Shoe — swept along +Z from heel to toe with a flat sole. Rigid to the
@@ -16990,6 +17114,16 @@ class Body {
     // Swing-trajectory keyframes, mutated in place — this runs twice a frame
     // for the life of the scene, and fresh literals here are pure GC churn.
     this._swZ = [[0, 0], [0.30, 0], [0.62, 0], [1, 0]];
+    // DO NOT push these key positions later to chase mid-swing knee flexion.
+    // Measured against normative gait the swing knee peaks ~0.10 of a cycle
+    // early and mid-swing runs ~13° shy, and holding the foot up later does
+    // fix that in isolation — but the foot then plants late and high, the
+    // closed-loop plant servo takes up the slack, and the STANCE knee ends up
+    // 20–25° over-flexed, which reads as a permanent crouch. Tried
+    // [0, 0.34, 0.66, 1] with more lift on both mid keys: mean absolute error
+    // against the normative curve went 6.9° → 13.4° (reproducible). Stance
+    // legs never read this array, so the coupling is entirely through plant
+    // timing — which is exactly why it is not obvious from the code.
     this._swY = [[0, 0], [0.30, 0], [0.62, 0], [1, 0]];
     this.head.visible = false;               // FP default — camera is the head
     if (this.head.userData.neckPart) this.head.userData.neckPart.visible = false;
@@ -18451,9 +18585,13 @@ class Body {
         // the fingers fall into a soft curl under their own tendon tension,
         // it tightens toward a half fist under fear, and it tightens further
         // at the front of each arm swing.
-        const swingTight = Math.max(0, Math.sin(armPhase)) * 0.10 * walkAmt;
-        wantCurl = 0.26 + fearK * 0.30 + swingTight;
-        wantSpread = 0.10 * (1 - fearK);
+        // k = 0 IS the resting curl now (see setCurl), so neutral asks for
+        // almost nothing and fear does the tightening it always did. The old
+        // 0.26 baseline predates that and would now read as a permanent
+        // half-fist. Spread is nearly off at rest too: relaxed fingers touch.
+        const swingTight = Math.max(0, Math.sin(armPhase)) * 0.09 * walkAmt;
+        wantCurl = 0.06 + fearK * 0.34 + swingTight;
+        wantSpread = 0.04 * (1 - fearK);
       }
       hk.curl += (wantCurl - hk.curl) * Math.min(1, dtB * 8);
       hk.spread += (wantSpread - hk.spread) * Math.min(1, dtB * 8);
@@ -37424,7 +37562,10 @@ function buildAvatarFigure(c) {
       const swing = Math.sin(armPhase) * 0.42 * walkAmt;
       a.root.rotation.set(swing + 0.04, 0, a.side * 0.12);
       a.elbow.rotation.x = -(0.32 + Math.max(0, Math.sin(armPhase - 0.5)) * 0.28 * walkAmt);
-      if (a.hand.userData.setCurl) a.hand.userData.setCurl(0.10 + Math.sin(armPhase) * 0.03, 0);
+      // Match Body's resting hand — the creator is where the character is
+      // looked at most closely, and it was the one place still asking for a
+      // near-straight hand.
+      if (a.hand.userData.setCurl) a.hand.userData.setCurl(0.05 + Math.max(0, Math.sin(armPhase)) * 0.07, 0.04);
     });
     if (rig.hairFlutter) {
       rig.hairFlutter.rotation.x = Math.sin(t * 1.4) * 0.03;

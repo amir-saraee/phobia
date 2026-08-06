@@ -36,19 +36,19 @@ const REF = "protagonist-face-closeup.png";
 // but THREE's TextureLoader sets flipY, so a mesh V samples PNG row (1 - V).
 // The bake therefore works in `bakeV` and converts with meshV = 1 - bakeV.
 const LANDMARKS = [
-  // [mesh V, photo V]      detected: brow 0.313, eye 0.360, nostril 0.528,
-  [0.561, 0.313],  // brow      lip seam 0.621, chin/neck edge 0.755
-  [0.515, 0.360],  // pupil line
-  [0.361, 0.528],  // nose base / nostrils
-  [0.298, 0.621],  // lip seam
-  [0.128, 0.755],  // chin
+  // [mesh V, photo V]      detected on the realistic reference (grid-measured,
+  // scripts/measure-ref.cjs): brow 0.375, eye 0.420, nostril 0.560,
+  [0.561, 0.375],  // brow      lip seam 0.635, chin/neck edge 0.800
+  [0.515, 0.420],  // pupil line
+  [0.361, 0.560],  // nose base / nostrils
+  [0.298, 0.635],  // lip seam
+  [0.128, 0.800],  // chin
 ];
 // Horizontal: the sculpted pupil sits at mesh U 0.571 (du = +0.071 from the
-// facial midline at U 0.5); the photo's pupils are at u 0.380 / 0.659, so its
-// midline is 0.5195 and its half-separation 0.1395. The old 1.55 spread the
-// photo too wide, landing its eyes outboard of the sculpt's.
-const PHOTO_MID_U = 0.5195;
-const U_SCALE = 0.1395 / 0.071;
+// facial midline at U 0.5); the photo's pupils are at u 0.410 / 0.600, so its
+// midline is 0.505 and its half-separation 0.095.
+const PHOTO_MID_U = 0.505;
+const U_SCALE = 0.095 / 0.071;
 
 // Piecewise-linear through LANDMARKS, extrapolating off each end with the
 // nearest segment's slope so forehead and under-chin stay continuous.
@@ -121,7 +121,7 @@ function bilinear(png, u, v) {
 
 function sampleSkinPalette(png) {
   // Crop to the central face (eyes/cheeks/nose) — avoid hair and background.
-  const crop = [0.28, 0.72, 0.22, 0.72];
+  const crop = [0.33, 0.69, 0.30, 0.70];
   const x0 = Math.floor(png.width * crop[0]);
   const x1 = Math.floor(png.width * crop[1]);
   const y0 = Math.floor(png.height * crop[2]);
@@ -241,6 +241,92 @@ function bake(png, pal) {
       const rv = Math.round(210 - tzone * 55 - faceMask * 18 + (n2 - 0.5) * 12);
       rough[i] = rough[i + 1] = rough[i + 2] = Math.max(120, Math.min(245, rv));
       rough[i + 3] = 255;
+    }
+  }
+
+  // ---- normalise the albedo to DETAIL ONLY --------------------------------
+  // The material multiplies this map by the creator's skin colour, so whatever
+  // base tone the map carries is applied TWICE. Baked straight from the photo
+  // its face band averaged #c6a494, and against a #d4a07a body that rendered
+  // the head ~13% darker than the arms in red and green but equal in blue —
+  // a muddy grey head on a warm body, which is exactly how it looked.
+  //
+  // Divide each channel by its own mean over the face band and rescale to a
+  // near-neutral target. Skin tone then comes entirely from the creator's
+  // swatch (as it must, or the swatches cannot work), and the map keeps only
+  // what it is actually for: lips, brows, sockets, pores, freckles.
+  {
+    const x0 = Math.floor(SIZE * 0.35), x1 = Math.floor(SIZE * 0.65);
+    const y0 = Math.floor(SIZE * 0.40), y1 = Math.floor(SIZE * 0.85);
+    let mr = 0, mg = 0, mb = 0, n = 0;
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        const i = (y * SIZE + x) * 4;
+        mr += albedo[i]; mg += albedo[i + 1]; mb += albedo[i + 2]; n++;
+      }
+    }
+    mr /= n; mg /= n; mb /= n;
+    // 236, not 255: leaving a little headroom keeps the brightest skin off the
+    // clipping point once the tint and the scene key are applied on top.
+    const TARGET = 236;
+    const kr = TARGET / Math.max(1, mr), kg = TARGET / Math.max(1, mg), kb = TARGET / Math.max(1, mb);
+    for (let i = 0; i < SIZE * SIZE * 4; i += 4) {
+      albedo[i]     = Math.max(0, Math.min(255, albedo[i] * kr));
+      albedo[i + 1] = Math.max(0, Math.min(255, albedo[i + 1] * kg));
+      albedo[i + 2] = Math.max(0, Math.min(255, albedo[i + 2] * kb));
+    }
+    console.log(`  albedo normalised: face band #${[mr, mg, mb].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("")} → neutral ${TARGET}`);
+
+    // The head carries REAL eyeballs — sclera, iris, pupil, lids that rotate.
+    // Painting the photograph's eyes on top of them gives every character dark
+    // sunken holes, because two sets of eyes are stacked and the map's version
+    // cannot blink. Erase the map over each eye and let the geometry do it.
+    // Centres come from the same registration as everything else: pupils at
+    // mesh U 0.571 / 0.429, pupil line at mesh V 0.515 (bakeV = 1 - meshV).
+    const EYES = [{ u: 0.571, v: 1 - 0.515 }, { u: 0.429, v: 1 - 0.515 }];
+    const RU = 0.050, RV = 0.034;
+    const wrapDU = (u, cu) => { let d = u - cu; if (d > 0.5) d -= 1; if (d < -0.5) d += 1; return d; };
+    // Blend toward the skin immediately AROUND each eye, not toward the flat
+    // neutral: filling with the global target leaves a pale disc that reads as
+    // a bag under the eye — which is precisely what the first attempt did.
+    const lids = EYES.map((e) => {
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let y = 0; y < SIZE; y++) {
+        for (let x = 0; x < SIZE; x++) {
+          const d = Math.hypot(wrapDU(x / SIZE, e.u) / RU, (y / SIZE - e.v) / RV);
+          if (d < 1.25 || d > 2.0) continue;            // annulus just outside
+          const i = (y * SIZE + x) * 4;
+          r += albedo[i]; g += albedo[i + 1]; b += albedo[i + 2]; n++;
+        }
+      }
+      return n ? [r / n, g / n, b / n] : [TARGET, TARGET, TARGET];
+    });
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        const u = x / SIZE, v = y / SIZE;
+        let m = 0, pick = 0;
+        EYES.forEach((e, k) => {
+          const d = Math.hypot(wrapDU(u, e.u) / RU, (v - e.v) / RV);
+          if (d < 1) { const w = 1 - d * d * (3 - 2 * d); if (w > m) { m = w; pick = k; } }
+        });
+        if (m <= 0) continue;
+        const i = (y * SIZE + x) * 4;
+        for (let c = 0; c < 3; c++) {
+          albedo[i + c] = albedo[i + c] + (lids[pick][c] - albedo[i + c]) * m;
+        }
+      }
+    }
+
+    // Finally, ease the remaining contrast toward the neutral. Photographic
+    // shading is authored for a photograph; on a 22 cm head lit by the scene's
+    // own key it doubles up with the real shading and every crease reads as a
+    // smudge. 0.62 keeps lips, brows and pores legible without them becoming
+    // holes — the sculpt already carries the forms underneath.
+    const CONTRAST = 0.62;
+    for (let i = 0; i < SIZE * SIZE * 4; i += 4) {
+      for (let c = 0; c < 3; c++) {
+        albedo[i + c] = Math.max(0, Math.min(255, TARGET + (albedo[i + c] - TARGET) * CONTRAST));
+      }
     }
   }
 
