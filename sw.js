@@ -11,7 +11,7 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v16-limb-anatomy";
+const VERSION = "mira-v17-photo-realism";
 const SHELL = [
   "./",
   "./index.html",
@@ -26,20 +26,26 @@ const SHELL = [
   "./assets/models/Husky.gltf",
   "./assets/models/Spider.glb",
   "./assets/models/Snake.glb",
-  // Breed PBR coat maps (baked from reference images).
-  "./assets/models/textures/shiba_albedo.png",
-  "./assets/models/textures/shiba_normal.png",
-  "./assets/models/textures/shiba_roughness.png",
-  "./assets/models/textures/husky_albedo.png",
-  "./assets/models/textures/husky_normal.png",
-  "./assets/models/textures/husky_roughness.png",
+  // Photo-projected breed coats (baked from assets/refs/dog-*-reference.png).
+  "./assets/models/textures/shiba_photo_albedo.png",
+  "./assets/models/textures/shiba_photo_normal.png",
+  "./assets/models/textures/shiba_photo_roughness.png",
+  "./assets/models/textures/husky_photo_albedo.png",
+  "./assets/models/textures/husky_photo_normal.png",
+  "./assets/models/textures/husky_photo_roughness.png",
   // Protagonist facial PBR maps (baked from protagonist-face-closeup.png).
   "./assets/models/textures/character_face_albedo.png",
   "./assets/models/textures/character_face_normal.png",
   "./assets/models/textures/character_face_roughness.png",
-  // (The recorded therapist-voice manifest is no longer precached: the spoken
-  // guide track is retired — guidance is captions/tips only, and the world's
-  // own audio is synthesized or sampled below.)
+  // Meadow window backdrop + outdoor HDRI for the dog room.
+  "./assets/models/textures/meadow_window.jpg",
+  "./assets/env/meadow_1k.hdr",
+  // Recorded ambient beds (room / birds / forest / wind).
+  "./assets/audio/ambient/manifest.json",
+  "./assets/audio/ambient/room_soft.mp3",
+  "./assets/audio/ambient/birds.mp3",
+  "./assets/audio/ambient/forest.mp3",
+  "./assets/audio/ambient/wind_soft.mp3",
   // Dog vocal sample bank manifest (samples cache at runtime like voice
   // clips; a missing/uncached sample falls back to synthesis per-kind).
   "./assets/audio/dog/manifest.json",

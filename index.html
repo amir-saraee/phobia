@@ -4312,6 +4312,81 @@ const PhobiaAudio = (() => {
     });
   }
 
+  // ---- Recorded ambience beds ----
+  // Pink-noise room tone reads as a machine; a short Mixkit bed filtered and
+  // looped reads as a place. Cached by URL, gain-ramped, optional low-pass so
+  // outdoor birds through glass stay muffled.
+  const _bedCache = new Map();
+  function _loadBed(url) {
+    if (_bedCache.has(url)) return _bedCache.get(url);
+    const c = ensureCtx();
+    if (!c) return Promise.resolve(null);
+    const p = fetch(url)
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject()))
+      .then((ab) => c.decodeAudioData(ab))
+      .catch(() => null);
+    _bedCache.set(url, p);
+    return p;
+  }
+  function startAmbienceBed(kind, opts = {}) {
+    const c = ensureCtx(); if (!c) return { stop() {} };
+    const urls = {
+      birds: "assets/audio/ambient/birds.mp3",
+      forest: "assets/audio/ambient/forest.mp3",
+      room: "assets/audio/ambient/room_soft.mp3",
+      wind: "assets/audio/ambient/wind_soft.mp3",
+    };
+    const url = urls[kind] || urls.room;
+    const gainLevel = opts.gain == null ? 0.045 : opts.gain;
+    const lpHz = opts.lowpass || 0;
+    let stopped = false;
+    let src = null, g = null, lp = null;
+    const startBuf = (buf) => {
+      if (stopped || !buf) return;
+      src = c.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      g = c.createGain();
+      g.gain.setValueAtTime(0.0001, c.currentTime);
+      g.gain.exponentialRampToValueAtTime(Math.max(0.0002, gainLevel), c.currentTime + 1.2);
+      let node = src;
+      if (lpHz > 0) {
+        lp = c.createBiquadFilter();
+        lp.type = "lowpass";
+        lp.frequency.value = lpHz;
+        lp.Q.value = 0.5;
+        node.connect(lp);
+        node = lp;
+      }
+      node.connect(g);
+      // Soft beds sit on the master bus (not the creature bus) so barks stay on top.
+      const dest = (typeof master !== "undefined" && master) ? master : c.destination;
+      try { g.connect(dest); } catch { g.connect(c.destination); }
+      src.start();
+    };
+    _loadBed(url).then(startBuf);
+    return {
+      setGain(v) {
+        if (g) {
+          try {
+            g.gain.cancelScheduledValues(c.currentTime);
+            g.gain.exponentialRampToValueAtTime(Math.max(0.0002, v), c.currentTime + 0.4);
+          } catch {}
+        }
+      },
+      stop() {
+        stopped = true;
+        if (!g) return;
+        try {
+          const t = c.currentTime;
+          g.gain.cancelScheduledValues(t);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+          if (src) src.stop(t + 0.7);
+        } catch {}
+      },
+    };
+  }
+
   // ---- Room life ----
   // What actually makes a room sound like a place: near-silence, and then
   // something happens. A bird beyond the glass, the floor settling, a car two
@@ -6424,7 +6499,7 @@ const PhobiaAudio = (() => {
   return {
     unlock, setMuted, isMuted, duck, ui,
     startMonitorBeep, startCreaks,
-    startWind, startWaterLap, startUnderwater, startRoomTone, startCityHum,
+    startWind, startWaterLap, startUnderwater, startRoomTone, startAmbienceBed, startCityHum,
     startRoomLife,
     startBarking, startSkittering, startMRI, startBreathing, startHeartbeat,
     breathCatch,
@@ -11507,23 +11582,20 @@ function startSceneAudio(phobiaKey, levelIdx) {
       break;
     }
     case "dogs": {
-      handles.push(A.startRoomTone(0.2));
-      // The room is a real place with a window onto a meadow, so it gets the
-      // things a real room does: a bird beyond the glass, the floor settling,
-      // a car somewhere off. The window position matches the gap the back wall
-      // is built around (see the dog room shell: ROOM.z0, centred at x −2.2).
+      // Recorded room + muffled birds outside the glass. Synth room tone stays
+      // as a whisper under the bed so a failed fetch never goes silent.
+      handles.push(A.startRoomTone(0.12));
+      if (A.startAmbienceBed) {
+        handles.push(A.startAmbienceBed("room", { gain: 0.038 }));
+        // Birds beyond the window — low-passed as if through closed glass.
+        handles.push(A.startAmbienceBed("birds", { gain: 0.028, lowpass: 2400 }));
+      }
       if (A.startRoomLife) {
         handles.push(A.startRoomLife({
           window: { x: -2.2, y: 0.5, z: -5.6 },
           room: { x: 0, z: -0.2, rx: 4.6, rz: 5.4 },
         }));
       }
-      // Discrete barks, growls and the dog's panting are all fired from INSIDE
-      // the 3D dog scene, spatialised to the dog's position, so the sound comes
-      // from the animal — not from a loud, non-spatialised breath track sitting
-      // inside the user's own head (which is what the old startBreathing here
-      // was: human breathing mislabeled as a pant). The user's own calming
-      // breath is handled globally by the fear rig when fear runs high.
       break;
     }
     case "spiders": {
@@ -11557,7 +11629,11 @@ function startSceneAudio(phobiaKey, levelIdx) {
       break;
     }
     case "snakes": {
-      handles.push(A.startWind(0.2));      // outdoor ambience
+      handles.push(A.startWind(0.12));
+      if (A.startAmbienceBed) {
+        handles.push(A.startAmbienceBed("forest", { gain: 0.040 }));
+        handles.push(A.startAmbienceBed("wind", { gain: 0.022 }));
+      }
       handles.push(A.startHiss(0.15 + intensity * 0.4));
       if (levelIdx >= 3) handles.push(A.startBreathing(0.3));
       break;
@@ -13110,6 +13186,7 @@ import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 // PMREM + RoomEnvironment gives every PBR surface real reflections without
 // loading an HDR file. Drop-in cinematic look upgrade.
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 import { Reflector } from "three/addons/objects/Reflector.js";
 // WebXR — lets the user enter immersive VR on a Quest / Vision Pro / any
 // WebXR-capable headset. The button only appears if the browser supports
@@ -13162,20 +13239,22 @@ const DOG_MODELS = {
   shiba: "assets/models/ShibaInu.gltf",
   husky: "assets/models/Husky.gltf",
 };
-// Breed PBR coat maps (baked from assets/refs/dog-*-reference.png via
-// scripts/bake-dog-coats.cjs). Applied on top of the Quaternius meshes so the
-// armature / clips stay DogController-compatible while the coat stops reading
-// as flat plastic.
+// Breed PBR coat maps — PHOTO-PROJECTED from assets/refs/dog-*-reference.png
+// via scripts/bake-dog-photo-coats.cjs. Side-projection UVs (applySidePhotoUVs)
+// map these onto the Quaternius meshes so the coat reads as the real animal
+// while the armature / clips stay DogController-compatible.
 const DOG_COAT_MAPS = {
   shiba: {
-    albedo: "assets/models/textures/shiba_albedo.png",
-    normal: "assets/models/textures/shiba_normal.png",
-    roughness: "assets/models/textures/shiba_roughness.png",
+    albedo: "assets/models/textures/shiba_photo_albedo.png",
+    normal: "assets/models/textures/shiba_photo_normal.png",
+    roughness: "assets/models/textures/shiba_photo_roughness.png",
+    photo: true,
   },
   husky: {
-    albedo: "assets/models/textures/husky_albedo.png",
-    normal: "assets/models/textures/husky_normal.png",
-    roughness: "assets/models/textures/husky_roughness.png",
+    albedo: "assets/models/textures/husky_photo_albedo.png",
+    normal: "assets/models/textures/husky_photo_normal.png",
+    roughness: "assets/models/textures/husky_photo_roughness.png",
+    photo: true,
   },
 };
 const _dogCoatTexCache = new Map();
@@ -13190,13 +13269,17 @@ function loadDogCoatTextures(breed) {
   const loader = getDogTexLoader();
   if (!urls || !loader) return Promise.resolve(null);
   if (_dogCoatTexCache.has(breed)) return _dogCoatTexCache.get(breed);
-  // Lower repeat than the old 5.5 wallpaper tiling — 1024 breed maps + box
-  // UVs still need some tiling (models ship no TEXCOORD_0), but 3.0 keeps
-  // strand detail readable without obvious seams on the flanks.
-  const COAT_REPEAT = 3.0;
+  // Photo-projected coats cover the dog once (side UVs); procedural legacy
+  // maps tiled because box UVs had no breed silhouette to land on.
+  const photo = !!urls.photo;
+  const COAT_REPEAT = photo ? 1.0 : 3.0;
   const loadOne = (url, srgb) => new Promise((resolve) => {
     loader.load(url, (t) => {
-      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      if (photo) {
+        t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+      } else {
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      }
       t.anisotropy = 8;
       t.repeat.set(COAT_REPEAT, COAT_REPEAT);
       if (srgb) t.colorSpace = THREE.SRGBColorSpace;
@@ -13210,7 +13293,7 @@ function loadDogCoatTextures(breed) {
     loadOne(urls.roughness, false),
   ]).then(([albedo, normal, roughness]) => {
     if (!albedo && !normal && !roughness) return null;
-    return { albedo, normal, roughness };
+    return { albedo, normal, roughness, photo };
   });
   _dogCoatTexCache.set(breed, p);
   return p;
@@ -13506,6 +13589,27 @@ function getRoomEnvMap(renderer) {
     _envMap = null;
   }
   return _envMap;
+}
+
+// Outdoor equirect HDR for scenes that want real sky/ground reflections rather
+// than the RoomEnvironment studio box. Cached as the DECODED DataTexture, not
+// as a PMREM: the PMREM output lives in a renderer's GL context, so it must be
+// rebuilt (and disposed) per mount, while the 1.4 MB decode is renderer-
+// agnostic and worth keeping. Resolves to null if the file is missing.
+let _meadowHDR = null;
+function loadMeadowHDR() {
+  if (_meadowHDR) return _meadowHDR;
+  _meadowHDR = new Promise((resolve) => {
+    try {
+      new RGBELoader().load(
+        "assets/env/meadow_1k.hdr",
+        (tex) => resolve(tex),
+        undefined,
+        () => resolve(null),
+      );
+    } catch { resolve(null); }
+  });
+  return _meadowHDR;
 }
 
 // ---------- Touch joystick for mobile movement ----------
@@ -18475,9 +18579,10 @@ class Body {
       // Arms do not swing to a metronome either — a slow drift on amplitude,
       // different per side, keeps the two from mirroring each other exactly.
       // Amplitude matched to the protagonist walk-cycle sheet: clearer
-      // opposite-arm counter-swing (~38–45° shoulder arc at full stride).
+      // opposite-arm counter-swing (~42–50° shoulder arc at full stride) and
+      // a soft elbow lead so the forearm trails the upper arm like a whip.
       const armVar = 1 + _wob(t * 0.6, side > 0 ? 2.9 : 6.2) * 0.13;
-      const swing = Math.sin(armPhase) * (side > 0 ? 0.58 : 0.64) * walkAmt * strideK * armVar;
+      const swing = Math.sin(armPhase) * (side > 0 ? 0.72 : 0.78) * walkAmt * strideK * armVar;
       const shoulderTarget = side > 0 ? rS : lS;
       const elbowTarget    = side > 0 ? rE : lE;
       const gestureWeight = this.cameraMode === "tp" ? gestureStrength : 0;
@@ -18509,7 +18614,7 @@ class Body {
       // A walking arm carries 20–40° of elbow flexion, most of it on the
       // FORWARD swing; parked near 15° the whole cycle the arms read as two
       // straight sticks hinged at the shoulder.
-      const passiveBend = 0.38 + Math.max(0, Math.sin(armPhase - 0.5)) * 0.40 * walkAmt
+      const passiveBend = 0.42 + Math.max(0, Math.sin(armPhase - 0.55)) * 0.48 * walkAmt
         + fearK * 0.22 + idleSway * 0.5;
       const elbX =
           elbowTarget   * gestureWeight
@@ -19779,6 +19884,11 @@ const FearGradeShader = {
 
 function unmount() {
   if (!active) return;
+  // Mark the scene dead FIRST. Scenes kick off async loads (models, HDRI) that
+  // check scene.userData.disposed before touching the renderer; the flag was
+  // read in setupDogs but never written, so a late HDRI landed on a renderer
+  // whose context had already been force-lost.
+  if (active.scene && active.scene.userData) active.scene.userData.disposed = true;
   // Stop both the rAF and the WebXR animation loop drivers
   cancelAnimationFrame(active.raf);
   if (active.renderer) {
@@ -20166,6 +20276,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       hour: sceneCtx.hour.id, weather: sceneCtx.weather.id,
       label: sceneCtx.label, visit: sceneCtx.visit,
     };
+    scene.userData.renderer = renderer;
     result = setup(scene, camera, level, levelIdx, sceneCtx);
     updateFn = result && result.update;
     if (result && result.controls) {
@@ -25241,6 +25352,51 @@ function ensureBoxUV(geom, scaleRef) {
   geom.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
 }
 
+// Bind-pose bounds of everything renderable under `root`, taken from the
+// authored geometry only. Box3.setFromObject() cannot be used on a rig that
+// has not been posed: it routes SkinnedMesh through computeBoundingBox(),
+// which skins each vertex with bone matrices that are still unset this early.
+function geometryBox(root) {
+  const box = new THREE.Box3();
+  const b = new THREE.Box3();
+  root.updateWorldMatrix(false, true);
+  root.traverse((o) => {
+    if (!o.isMesh || !o.geometry) return;
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    if (!o.geometry.boundingBox) return;
+    b.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld);
+    box.union(b);
+  });
+  return box;
+}
+
+// Side-profile photo projection. The breed albedo is a cropped photograph of
+// the real dog (facing −Z in texture space = left). Map mesh length (Z) → U
+// and height (Y) → V so the flanks carry the photo; mirror across X so both
+// sides of the body show the same profile rather than a stretched underside.
+function applySidePhotoUVs(geom, box) {
+  if (!geom || !geom.attributes || !geom.attributes.position) return;
+  const pos = geom.attributes.position;
+  const min = box.min, max = box.max;
+  const sx = Math.max(1e-4, max.x - min.x);
+  const sy = Math.max(1e-4, max.y - min.y);
+  const sz = Math.max(1e-4, max.z - min.z);
+  const uv = new Float32Array(pos.count * 2);
+  // Quaternius dogs face +Z; the photo faces left (−X in image = nose).
+  // U increases toward the tail so the muzzle lands on the left of the photo.
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i), z = pos.getZ(i);
+    const u = 1 - (z - min.z) / sz;          // nose (+Z) → left of photo
+    // TextureLoader flipY: v=1 samples the top of the PNG (crown).
+    const v = (y - min.y) / sy;
+    uv[i * 2] = Math.max(0, Math.min(1, u));
+    uv[i * 2 + 1] = Math.max(0, Math.min(1, v));
+  }
+  geom.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  // Silence unused sx — kept so a future cylindrical blend can use lateral.
+  void sx;
+}
+
 // Angle-limited normal smoothing for flat-shaded GLTF creatures. These models
 // duplicate every vertex per triangle with per-face normals — each triangle a
 // hard plate. For every cluster of position-duplicate vertices, average the
@@ -25311,6 +25467,11 @@ function attachDogCollar(model, parts, rawH) {
   collar.rotation.x = Math.PI / 2;        // hole along the bone's Y (neck axis)
   collar.position.y = rawH * 0.110;       // low on the neck, above the shoulders
   collar.castShadow = true;
+  // The collar hangs off Neck1, i.e. INSIDE the model — so the coat pass's
+  // model.traverse() would reach it. Leather and brass are not fur: without
+  // this flag the late coat upgrade forces the colour to white and stretches
+  // the whole breed photograph around the ring and the tag.
+  collar.userData.noCoat = true;
   grp.add(collar);
   const tag = new THREE.Mesh(
     new THREE.CylinderGeometry(tubeR * 2.3, tubeR * 2.3, tubeR * 0.8, 10),
@@ -25319,6 +25480,7 @@ function attachDogCollar(model, parts, rawH) {
   tag.rotation.x = Math.PI / 2;           // flat against the chest
   tag.position.set(0, collar.position.y - tubeR * 1.8, ringR * 1.0);
   tag.castShadow = true;
+  tag.userData.noCoat = true;
   grp.add(tag);
   neck.add(grp);
   parts.collar = grp;
@@ -25428,15 +25590,30 @@ function buildDog(opts = {}) {
         smoothCreaseNormals(o.geometry, Math.cos(Math.PI / 3));
       }
     });
-    // Coat first: the fur pass below darkens by measured luminance, so it has
-    // to see the final colours or a dark coat gets crushed twice.
-    applyCoatTint(model, opts.coat);
+    // Coat tint only for legacy procedural maps. Photo-projected coats already
+    // carry the real breed colours — tinting them washes the photograph into
+    // a single HSL smear.
+    const coatIsPhoto = !!(DOG_COAT_MAPS[breed] && DOG_COAT_MAPS[breed].photo);
+    if (!coatIsPhoto) applyCoatTint(model, opts.coat);
 
-    // Box UVs first — Quaternius dogs ship without TEXCOORD_0.
-    const rawBox = new THREE.Box3().setFromObject(model);
+    // UVs: photo coats need side-projection registered to the dog silhouette;
+    // legacy coats keep box UVs for tiling strand maps.
+    //
+    // The box MUST come from the authored geometry, not Box3.setFromObject():
+    // on a SkinnedMesh that helper calls SkinnedMesh.computeBoundingBox(),
+    // which skins every vertex through bone matrices that have not been posed
+    // yet at build time. It came back ~2× too tall and half a body below the
+    // floor, so the side projection squeezed the whole dog into the top 40 %
+    // of the photo — i.e. the empty backdrop above the animal. Every breed
+    // rendered as one flat sheet of backdrop tan. (Same build-probe trap the
+    // collar sizing hit; see attachDogCollar.)
+    const rawBox = geometryBox(model);
     const rawSize = Math.max(0.001, rawBox.max.y - rawBox.min.y);
     model.traverse((o) => {
-      if (o.isMesh && o.geometry) ensureBoxUV(o.geometry, rawSize);
+      if (o.isMesh && o.geometry) {
+        if (coatIsPhoto) applySidePhotoUVs(o.geometry, rawBox);
+        else ensureBoxUV(o.geometry, rawSize);
+      }
     });
 
     // Apply breed PBR coat maps (external textures) with procedural fur as
@@ -25446,8 +25623,12 @@ function buildDog(opts = {}) {
     const applyCoatMaterials = (coatMaps, mode = "base") => {
       const lowQ = (typeof sceneQuality === "function" && sceneQuality() === "low");
       const fur = (() => { try { return makeFurMaps(); } catch { return null; } })();
+      const photo = !!(coatMaps && coatMaps.photo) || coatIsPhoto;
+      const wrap = photo ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
+      const rep = photo ? 1.0 : 3.0;
       model.traverse((o) => {
         if (!o.isMesh || !o.material) return;
+        if (o.userData && o.userData.noCoat) return;   // collar, tag — not fur
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach((m) => {
           if (!m || !m.color) return;
@@ -25465,27 +25646,28 @@ function buildDog(opts = {}) {
           }
           if (mode === "base") {
             m.metalness = 0;
-            m.roughness = 0.88;
-            m.envMapIntensity = 0.42;
-            const darken = lum > 0.78 ? 0.66 : lum > 0.6 ? 0.76 : lum > 0.4 ? 0.86 : 0.95;
-            m.color.multiplyScalar(darken);
+            m.roughness = photo ? 0.82 : 0.88;
+            m.envMapIntensity = photo ? 0.55 : 0.42;
+            if (!photo) {
+              const darken = lum > 0.78 ? 0.66 : lum > 0.6 ? 0.76 : lum > 0.4 ? 0.86 : 0.95;
+              m.color.multiplyScalar(darken);
+            }
           }
           if (lum > 0.92) { m.needsUpdate = true; return; } // teeth / eye-whites
-          // Prefer baked breed albedo; keep a warm tint multiply so coat tint
-          // (per-traveller) still reads through.
           if (coatMaps && coatMaps.albedo && !lowQ) {
             m.map = coatMaps.albedo.clone();
-            m.map.wrapS = m.map.wrapT = THREE.RepeatWrapping;
-            m.map.repeat.set(3.0, 3.0);
+            m.map.wrapS = m.map.wrapT = wrap;
+            m.map.repeat.set(rep, rep);
             m.map.needsUpdate = true;
-            if (mode === "upgrade" && !m.userData._coatAlbedoBoost) {
-              // Soften flat vertex colour once so the map carries the look.
-              m.color.multiplyScalar(0.55);
-              m.color.lerp(new THREE.Color(0xffffff), 0.35);
-              m.userData._coatAlbedoBoost = true;
-            } else if (mode === "base") {
-              m.color.multiplyScalar(0.55);
-              m.color.lerp(new THREE.Color(0xffffff), 0.35);
+            // Photo albedo carries the colour — multiply by near-white so the
+            // map is the look. Legacy maps still need a tint-through multiply.
+            if (!m.userData._coatAlbedoBoost) {
+              if (photo) {
+                m.color.setRGB(1, 1, 1);
+              } else {
+                m.color.multiplyScalar(0.55);
+                m.color.lerp(new THREE.Color(0xffffff), 0.35);
+              }
               m.userData._coatAlbedoBoost = true;
             }
           }
@@ -25493,15 +25675,15 @@ function buildDog(opts = {}) {
           const rghSrc = (coatMaps && coatMaps.roughness && !lowQ) ? coatMaps.roughness : (fur && fur.roughness);
           if (nrmSrc) {
             m.normalMap = nrmSrc.clone();
-            m.normalMap.wrapS = m.normalMap.wrapT = THREE.RepeatWrapping;
-            m.normalMap.repeat.set(3.0, 3.0);
+            m.normalMap.wrapS = m.normalMap.wrapT = wrap;
+            m.normalMap.repeat.set(rep, rep);
             m.normalMap.needsUpdate = true;
-            if (m.normalScale) m.normalScale.set(0.95, 0.95);
+            if (m.normalScale) m.normalScale.set(photo ? 1.15 : 0.95, photo ? 1.15 : 0.95);
           }
           if (rghSrc) {
             m.roughnessMap = rghSrc.clone();
-            m.roughnessMap.wrapS = m.roughnessMap.wrapT = THREE.RepeatWrapping;
-            m.roughnessMap.repeat.set(3.0, 3.0);
+            m.roughnessMap.wrapS = m.roughnessMap.wrapT = wrap;
+            m.roughnessMap.repeat.set(rep, rep);
             m.roughnessMap.needsUpdate = true;
           }
           m.needsUpdate = true;
@@ -27266,6 +27448,34 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   // PMREM environment and the windowGlow bounce carry the rest.
   const hemi = new THREE.HemisphereLight(mood.hemiSky, mood.hemiGnd, mood.hemiI);
   scene.add(hemi);
+  // Outdoor HDRI for PBR reflections on floor/fur/glass — softer and more
+  // natural than the default RoomEnvironment studio box. The decoded equirect
+  // is cached module-side (loadMeadowHDR) so re-entering the room doesn't
+  // re-download 1.4 MB; the PMREM itself is per-renderer, so it's rebuilt each
+  // mount and released in dispose() below. Without that release every visit
+  // leaks a 768×1024 float cube-UV target.
+  let dogEnvTex = null;
+  if (typeof sceneQuality === "function" && sceneQuality() !== "low") {
+    try {
+      const r = scene.userData && scene.userData.renderer;
+      if (r) {
+        loadMeadowHDR().then((hdr) => {
+          // The scene may have unmounted while the HDR was in flight — its
+          // renderer's GL context is force-lost by then, and PMREM on a dead
+          // context throws deep inside three's shader compile.
+          if (!hdr || scene.userData.disposed) return;
+          try {
+            const gl = r.getContext();
+            if (!gl || gl.isContextLost()) return;
+            const gen = new THREE.PMREMGenerator(r);
+            dogEnvTex = gen.fromEquirectangular(hdr).texture;
+            scene.environment = dogEnvTex;
+            gen.dispose();
+          } catch (e) { console.warn("[dogs] HDRI:", e); }
+        });
+      }
+    } catch {}
+  }
   // Dedicated rim light that TRACKS behind the dog (opposite the camera) so its
   // silhouette catches a bright fur edge and pops off the background — the
   // single cheapest "this is a real furry animal, not a flat prop" cue. The
@@ -27522,9 +27732,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   // now a real window 5-6 m from the player with a parallax backdrop behind
   // the glass, so "outside" exists.
   const cx = -2.2, cy = 0.65, wz = ROOM.z0 + 0.03;   // window centre on the shell
-  // Backdrop: the outside world, 2.6 m behind the glass for true parallax.
-  // Painted procedurally: sky, tree line, fence, lawn. Emissive 1.8 exceeds
-  // the scene's 0.96 bloom threshold pre-tonemap so the window gently glows.
+  // Backdrop: real meadow photograph behind the glass (parallax at z=-8.2).
+  // Falls back to a painted sky/lawn if the ref fails to load.
   const bdC = document.createElement("canvas");
   bdC.width = bdC.height = 512;
   const bd = bdC.getContext("2d");
@@ -27533,7 +27742,6 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   bdSky.addColorStop(1, mood.skyHz);
   bd.fillStyle = bdSky;
   bd.fillRect(0, 0, 512, 512 * 0.62);
-  // tree line silhouettes
   bd.fillStyle = "rgba(64,78,56,0.85)";
   for (let i = 0; i < 7; i++) {
     const tx = i * 85 + (Math.random() - 0.5) * 40;
@@ -27541,11 +27749,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     const ty = 512 * (0.54 + Math.random() * 0.06);
     bd.beginPath(); bd.arc(tx, ty, tr, Math.PI, 0); bd.fill();
   }
-  // garden fence band
   bd.fillStyle = "#6e5a42";
   bd.fillRect(0, 512 * 0.64, 512, 4);
   for (let x = 0; x < 512; x += 14) bd.fillRect(x, 512 * 0.64, 6, 512 * 0.10);
-  // lawn
   const bdLawn = bd.createLinearGradient(0, 512 * 0.72, 0, 512);
   bdLawn.addColorStop(0, "#7a8f56");
   bdLawn.addColorStop(1, "#5c7042");
@@ -27554,9 +27760,26 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   const bdTex = new THREE.CanvasTexture(bdC);
   bdTex.colorSpace = THREE.SRGBColorSpace;
   const backdropMat = new THREE.MeshStandardMaterial({
-    map: bdTex, emissiveMap: bdTex, emissive: 0xffffff, emissiveIntensity: 1.8,
+    map: bdTex, emissiveMap: bdTex, emissive: 0xffffff, emissiveIntensity: 1.6,
     roughness: 1.0, fog: false,
   });
+  // Swap in the photographed meadow when available — the window is the
+  // player's only view of "outside", so a painted cartoon kills the room.
+  try {
+    const loader = getDogTexLoader();
+    if (loader) {
+      loader.load("assets/models/textures/meadow_window.jpg", (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = 8;
+        tex.needsUpdate = true;
+        backdropMat.map = tex;
+        backdropMat.emissiveMap = tex;
+        backdropMat.emissiveIntensity = 1.35;
+        backdropMat.needsUpdate = true;
+        if (bdTex) bdTex.dispose();
+      }, undefined, () => {});
+    }
+  } catch {}
   const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(7, 5), backdropMat);
   backdrop.position.set(cx, 0.4, -8.2);
   backdrop.userData.noCollide = true;
@@ -30623,6 +30846,10 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       // Stop looped/long audio (room reverb send, lapping). One-shot vocals
       // ≤1.5 s may run out per the scene audio contract.
       try { liveAudio.forEach(h => h && h.stop && h.stop()); } catch {}
+      // The meadow PMREM is a render target this scene owns — disposeObject()
+      // only walks materials, so scene.environment would leak per visit.
+      try { if (dogEnvTex) { dogEnvTex.dispose(); dogEnvTex = null; } } catch {}
+      try { scene.environment = null; } catch {}
       clearItem();
     },
   };
