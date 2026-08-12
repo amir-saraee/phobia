@@ -16299,7 +16299,11 @@ function buildHead(o) {
     envMapIntensity: 0.9,
   });
   const browM = new THREE.MeshStandardMaterial({
-    color: hairCol.clone().multiplyScalar(0.8), roughness: 0.95,
+    // Brow hair is sparser than scalp hair — skin shows through it. Straight
+    // hair colour ×0.8 rendered near-black on every brunette and the pair
+    // read as one heavy scowl (doubled, until the bake stopped painting its
+    // own brows underneath these). Lift toward skin instead of darkening.
+    color: hairCol.clone().lerp(skinCol, 0.28), roughness: 0.95,
     side: THREE.DoubleSide,   // the ribbon winds the other way on the −X side
   });
 
@@ -16586,7 +16590,7 @@ function buildHead(o) {
       // square tips, which is exactly what made the brows read as stickers
       // pressed onto the forehead. Real brows are thickest at the head, thin
       // to nothing at the tail.
-      (t) => 0.010 + Math.pow(Math.sin(Math.pow(t, 0.72) * Math.PI), 0.55) * 0.026 * (1 - 0.35 * t),
+      (t) => 0.010 + Math.pow(Math.sin(Math.pow(t, 0.72) * Math.PI), 0.55) * 0.020 * (1 - 0.35 * t),
       0.0026, browM, 30
     );
     brow.position.copy(skull.position);
@@ -17507,9 +17511,13 @@ function buildHumanRig(o = {}) {
     { y: 0.790, rx: .1640, rz: .1170, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
     // Close the trunk NARROW and high. At .1420 the end cap was a disc wider
     // than the gap between the thighs, hanging below the crotch — that pale
-    // wedge between the legs was this, seen from underneath.
-    { y: 0.774, rx: .1290, rz: .1010, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
-    { y: 0.762, rx: .0760, rz: .0860, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT, cap: 1 },
+    // wedge between the legs was this, seen from underneath. The first shrink
+    // (.0760 at y .762) still left the disc hanging ~2 cm proud of the inseam,
+    // where its down-facing normals catch the fill light and read as a pale
+    // wedge of skin between the trousers. Tuck it up INTO the thigh gap and
+    // narrow it to the inseam shadow's width.
+    { y: 0.784, rx: .1120, rz: .0920, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
+    { y: 0.776, rx: .0560, rz: .0680, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT, cap: 1 },
   ];
   // Chest / hip widths diverge by body type; `k` is 1 at the shoulders, 0 at
   // the seat, so one lerp shapes the whole silhouette.
@@ -17664,7 +17672,10 @@ function buildHumanRig(o = {}) {
   });
   const mPants = new THREE.MeshPhysicalMaterial({
     color: pantsCol, roughness: 0.95, metalness: 0,
-    sheen: 0.4, sheenRoughness: 0.95, sheenColor: pantsCol.clone().lerp(new THREE.Color(0xffffff), 0.25),
+    // Sheen 0.4 with a 25%-white sheen colour put a broad warm specular wash
+    // across the pelvis front under any warm key — on navy trousers it read
+    // as a patch of bare skin at the crotch. Trouser cloth barely sheens.
+    sheen: 0.22, sheenRoughness: 0.95, sheenColor: pantsCol.clone().lerp(new THREE.Color(0xffffff), 0.10),
     envMapIntensity: 0.3,
   });
   const mShoe = new THREE.MeshPhysicalMaterial({
@@ -17802,7 +17813,12 @@ function buildHumanRig(o = {}) {
     const a = armBones[i];
     const hand = buildHand(a.side, mSkin, mShirt, { scale: H * LW * HAND_SCALE, cuff: longSleeve });
     hand.position.set(0, -0.012 * H, 0);
-    hand.rotation.y = a.side * -0.30;
+    // A relaxed arm hangs in mid-pronation: palm toward the thigh, thumb
+    // forward, knuckles out. At -0.30 the palm faced backward with the fingers
+    // fanned toward the viewer — the "reaching for you" hang that made the
+    // figure read as a sleepwalker. Verified against the live preview: +1.15
+    // turns the palm in without pressing it flat against the leg.
+    hand.rotation.y = a.side * 1.15;
     a.wr.add(hand);
     arms.push({ root: a.sh, elbow: a.el, wrist: a.wr, hand, side: a.side });
   }
@@ -38547,7 +38563,13 @@ function setupDark(scene, camera, level) {
 // the SAME rig the exposure scenes use (buildHumanRig). Before this they had
 // their own, separately-drifting figure — you designed one person and then
 // played as a cruder one.
-function buildAvatarFigure(c) {
+// mode "walk": the creator's turntable demo — walks in place so the user can
+// judge the gait they'll see in the scenes. mode "idle": a person standing
+// still. The shell scenes used to run the walk demo too, which put an
+// endlessly treadmilling figure alone at the night campfire — motion with no
+// destination is deeply wrong on a person, and it was half of why the
+// traveler read as an apparition rather than a companion.
+function buildAvatarFigure(c, mode = "walk") {
   const group = new THREE.Group();
   const bt = BODY_TYPES_3D[c && c.bodyType] || BODY_TYPES_3D.man;
   // Same landmark contract as the in-scene Body: scale the skeleton's height
@@ -38587,10 +38609,55 @@ function buildAvatarFigure(c) {
   let blinkAt = 1.5, blinkP = 0, last = 0;
   const walkPhase0 = Math.random() * Math.PI * 2;
   const ikOut = { hip: 0, knee: 0, abduct: 0 };
+  // Idle state: which leg carries the weight, re-settled every several
+  // seconds the way a person actually stands.
+  let idleSide = Math.random() < 0.5 ? -1 : 1;
+  let idleSwapAt = 5 + Math.random() * 4;
+  let idleW = idleSide;
   group.userData.animate = function (t) {
     const dt = Math.min(0.05, Math.max(0.001, t - last)); last = t;
     const br = Math.sin(t * 1.35);
     if (rig.breath) rig.breath.scale.set(1 + br * 0.020, 1 + br * 0.014, 1 + br * 0.026);
+    // Torso lateral motion for the shared hair-flutter tail below — the walk
+    // branch overwrites it with its stride shift. (It used to be a const
+    // inside the walk branch, which the idle path then referenced: every
+    // idle animate() threw "shift is not defined", the shell's per-tick
+    // try/catch swallowed it, and the landing froze with the camera at the
+    // origin — staring into the trees.)
+    let shift = 0;
+    if (mode === "idle") {
+      // ---- standing idle: contrapposto, breath, and nothing else ----
+      // Weight settles onto one leg; the pelvis tips over it and the spine
+      // counter-curves back. Every few seconds the weight re-settles to the
+      // other side. No leg cycling — feet stay planted.
+      if (t > idleSwapAt) { idleSide = -idleSide; idleSwapAt = t + 6 + Math.random() * 4; }
+      idleW += (idleSide - idleW) * Math.min(1, dt * 0.8);
+      const w = idleW;
+      const sway = Math.sin(t * 0.5) * 0.010 + Math.sin(t * 0.23) * 0.007;
+      shift = w * 0.028;   // hair drapes gently toward the weighted side
+      rig.pelvis.rotation.set(0.015, w * 0.045, w * 0.050);
+      rig.spine.rotation.set(0.030, -w * 0.028, -w * 0.030);
+      rig.chest.rotation.set(0.020, -w * 0.020, -w * 0.022);
+      rig.legs.forEach((leg) => {
+        const bearing = (leg.side > 0 ? w : -w) > 0;   // this leg carries the weight
+        leg.hip.rotation.set(bearing ? 0.015 : 0.045, 0, leg.side * (bearing ? -0.015 : 0.030));
+        leg.knee.rotation.x = bearing ? 0.030 : 0.140;
+        // Sole stays flat on the ground: cancel the chain above it.
+        leg.foot.rotation.x = -(leg.hip.rotation.x + leg.knee.rotation.x) * 0.9;
+      });
+      rig.group.position.y = br * 0.004;
+      // Arms hang. Elbows carry their resting bend, hands their resting curl,
+      // and the two sides drift slightly out of phase so they never mirror.
+      rig.arms.forEach((a) => {
+        a.root.rotation.set(
+          0.045 + sway * (a.side > 0 ? 1.0 : -0.7),
+          0,
+          a.side * 0.082 + br * 0.006
+        );
+        a.elbow.rotation.x = -(0.16 + Math.max(0, sway) * 0.25);
+        if (a.hand.userData.setCurl) a.hand.userData.setCurl(0.12 + br * 0.015, 0);
+      });
+    } else {
     // Soft walk demo: ~0.55 of full stride so proportions stay readable while
     // still showing heel-strike / mid-swing clearly against the refs.
     const walkAmt = 0.62;
@@ -38615,16 +38682,11 @@ function buildAvatarFigure(c) {
       leg.knee.rotation.x = kneeWant;
       leg.foot.rotation.x = _solePitch(s) * walkAmt * 0.85 - (leg.hip.rotation.x + leg.knee.rotation.x) * 0.15;
     });
-    const shift = Math.sin(walkPhase) * 0.045;
+    shift = Math.sin(walkPhase) * 0.045;
     rig.pelvis.rotation.set(0.02, shift * 0.62, Math.sin(walkPhase) * 0.03);
     rig.spine.rotation.set(0.035, -shift * 0.40, -shift * 0.025);
     rig.chest.rotation.set(0.025, -shift * 0.52, -shift * 0.03);
     rig.group.position.y = br * 0.004 + Math.abs(Math.sin(walkPhase)) * 0.016 * walkAmt;
-    // Head + eyes scan slowly; eyes lead, head follows.
-    const look = Math.sin(t * 0.33) * 0.18 + Math.sin(t * 0.11) * 0.08;
-    rig.neck.rotation.set(0.02, look * 0.30, Math.sin(t * 0.27) * 0.02);
-    rig.head.rotation.set(Math.sin(t * 0.24) * 0.03, look * 0.55, Math.sin(t * 0.31) * 0.02);
-    if (rig.face) rig.face.setGaze(look * 0.45 + Math.sin(t * 0.9) * 0.04, Math.sin(t * 0.5) * 0.04);
     // Opposite-arm counter-swing: right arm with left leg. Shoulder arc and
     // trailing elbow match Body.update / the walk-cycle reference sheet.
     rig.arms.forEach((a) => {
@@ -38638,6 +38700,12 @@ function buildAvatarFigure(c) {
       a.elbow.rotation.x = -(0.42 + Math.max(0, Math.sin(armPhase - 0.55)) * 0.48 * walkAmt);
       if (a.hand.userData.setCurl) a.hand.userData.setCurl(0.05 + Math.max(0, Math.sin(armPhase)) * 0.07, 0.04);
     });
+    }
+    // Head + eyes scan slowly; eyes lead, head follows. Shared by both modes.
+    const look = Math.sin(t * 0.33) * 0.18 + Math.sin(t * 0.11) * 0.08;
+    rig.neck.rotation.set(0.02, look * 0.30, Math.sin(t * 0.27) * 0.02);
+    rig.head.rotation.set(Math.sin(t * 0.24) * 0.03, look * 0.55, Math.sin(t * 0.31) * 0.02);
+    if (rig.face) rig.face.setGaze(look * 0.45 + Math.sin(t * 0.9) * 0.04, Math.sin(t * 0.5) * 0.04);
     if (rig.hairFlutter) {
       rig.hairFlutter.rotation.x = Math.sin(t * 1.4) * 0.03;
       rig.hairFlutter.rotation.z = Math.sin(t * 1.05) * 0.025 - shift * 0.08;
@@ -38800,6 +38868,10 @@ window.AvatarPreview = AvatarPreview;
 // every route render. DPR is capped; reduced-motion renders one still frame.
 const ShellScenes = (() => {
   const registry = new Set();
+  // DEBUG hook (same spirit as window.__avatarFigure): lets tooling drive
+  // ctx.onTick + render manually when the tab is background-throttled and
+  // rAF never fires. Inert in normal use.
+  window.__shellCtxs = registry;
   let landingCtl = null;
   const reduceMotion = () =>
     window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -39148,7 +39220,7 @@ const ShellScenes = (() => {
     let figure = null;
     if (charHexes) {
       try {
-        figure = buildAvatarFigure(charHexes);
+        figure = buildAvatarFigure(charHexes, "idle");
         figure.position.set(-0.85, 0, 0.25);
         figure.rotation.y = 0.9;   // half-turned toward the fire, half toward you
         figure.traverse(o => { if (o.isMesh) o.castShadow = true; });
@@ -39553,7 +39625,10 @@ const ShellScenes = (() => {
     { pos: [0.55, 1.65, 3.5], look: [0.05, 0.85, 0.05] },
     { pos: [1.15, 1.48, 3.7], look: [-0.7, 0.95, 0.2] },
     { pos: [3.8, 3.15, 6.4], look: [1.6, 1.35, -10] },
-    { pos: [0.2, 1.22, 3.15], look: [-0.78, 0.98, 0.12] },
+    // Final beat: on the traveler — the camera stays at its proven clear spot
+    // (0.45/3.05 clipped into the near pine); only the look-at moves to the
+    // figure's place in the firelight.
+    { pos: [0.2, 1.22, 3.15], look: [-0.62, 0.98, 0.85] },
   ];
   const REALM_MARKERS = {
     dogs:     { p: [7.2, 0, -8.4],  c: 0xc4a574 },
@@ -39698,15 +39773,23 @@ const ShellScenes = (() => {
       markerLights[key] = { group: g, glow, light };
     });
 
-    // Traveler
+    // Traveler — IN the firelight, standing at ease, angled three-quarters
+    // toward the viewer. The old placement (-0.9, 0.28, turned away, outside
+    // the fire's radius, running the walk-demo treadmill) staged a dark
+    // humanoid pacing at the edge of the frame — the grammar of a horror
+    // shot, on the character who is supposed to be YOU. A warm fill makes
+    // sure the face reads even before the fire flicker catches it.
     let figure = null;
     if (opts.charHexes) {
       try {
-        figure = buildAvatarFigure(opts.charHexes);
-        figure.position.set(-0.9, 0, 0.28);
-        figure.rotation.y = 0.85;
+        figure = buildAvatarFigure(opts.charHexes, "idle");
+        figure.position.set(-0.62, 0, 0.85);
+        figure.rotation.y = 0.5;
         figure.traverse((o) => { if (o.isMesh) o.castShadow = true; });
         scene.add(figure);
+        const figFill = new THREE.PointLight(0xffc890, 1.05, 6, 2);
+        figFill.position.set(0.55, 1.55, 2.1);
+        scene.add(figFill);
       } catch { figure = null; }
     }
 

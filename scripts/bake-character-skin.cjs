@@ -167,6 +167,7 @@ function bake(png, pal) {
   const normal = new Uint8ClampedArray(SIZE * SIZE * 4);
   const rough = new Uint8ClampedArray(SIZE * SIZE * 4);
   const height = new Float32Array(SIZE * SIZE);
+  const poreN = new Float32Array(SIZE * SIZE);
 
   // Face photo occupies the front UV band. After the head's π UV offset,
   // U≈0.5 is the facial midline. V is registered on landmarks, not stretched.
@@ -228,9 +229,12 @@ function bake(png, pal) {
       albedo[i + 2] = b | 0;
       albedo[i + 3] = 255;
 
-      // Height from luminance + pores for the normal bake.
-      const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-      height[y * SIZE + x] = lum * 0.55 + (n1 - 0.5) * 0.045 * (0.4 + faceMask);
+      // Pore noise for the normal bake — kept separately so the height field
+      // can be rebuilt from the FINAL albedo after the passes below. Building
+      // it here, from the raw sample, baked the photo's macro shading (the
+      // hairline gradient, the cheek shadows) into the normal map too, so even
+      // a fixed albedo kept re-shading the face with the same wrong forms.
+      poreN[y * SIZE + x] = (n1 - 0.5) * 0.045 * (0.4 + faceMask);
 
       // Roughness: oilier T-zone (forehead + nose), matte cheeks. Centred on
       // the forehead/nose band in mesh V, spanning both.
@@ -281,10 +285,15 @@ function bake(png, pal) {
     // Painting the photograph's eyes on top of them gives every character dark
     // sunken holes, because two sets of eyes are stacked and the map's version
     // cannot blink. Erase the map over each eye and let the geometry do it.
-    // Centres come from the same registration as everything else: pupils at
-    // mesh U 0.571 / 0.429, pupil line at mesh V 0.515 (bakeV = 1 - meshV).
-    const EYES = [{ u: 0.571, v: 1 - 0.515 }, { u: 0.429, v: 1 - 0.515 }];
-    const RU = 0.050, RV = 0.034;
+    // Centres are MEASURED off the baked pixels (dark-pixel centroid of each
+    // eye region), not derived from the mesh registration: the derived values
+    // (u 0.571/0.429, bakeV 0.485) sat ~0.022 inboard and ~0.030 above where
+    // the photo's irises actually land, so the erase clipped the upper lids
+    // and left both irises intact — and the runtime then stacked its real
+    // eyeballs on top of the photo's, which is precisely the sunken double-eye
+    // look this pass exists to remove.
+    const EYES = [{ u: 0.593, v: 0.515 }, { u: 0.397, v: 0.513 }];
+    const RU = 0.056, RV = 0.036;
     const wrapDU = (u, cu) => { let d = u - cu; if (d > 0.5) d -= 1; if (d < -0.5) d += 1; return d; };
     // Blend toward the skin immediately AROUND each eye, not toward the flat
     // neutral: filling with the global target leaves a pale disc that reads as
@@ -317,15 +326,138 @@ function bake(png, pal) {
       }
     }
 
+    // The head builds REAL eyebrows too — sculpted ribbon meshes riding the
+    // brow ridge, tinted with the character's hair colour. The map's brows
+    // stack underneath them a few millimetres off-register, and two brows per
+    // eye read as one thick black scowl. Erase the map's pair exactly the way
+    // the eyes are erased above, and let the geometry own the expression.
+    const BROWS = [{ u: 0.588, v: 0.456 }, { u: 0.402, v: 0.456 }];
+    const BRU = 0.066, BRV = 0.030;
+    const browFill = BROWS.map((e) => {
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let y = 0; y < SIZE; y++) {
+        for (let x = 0; x < SIZE; x++) {
+          const d = Math.hypot(wrapDU(x / SIZE, e.u) / BRU, (y / SIZE - e.v) / BRV);
+          if (d < 1.25 || d > 2.0) continue;
+          const i = (y * SIZE + x) * 4;
+          r += albedo[i]; g += albedo[i + 1]; b += albedo[i + 2]; n++;
+        }
+      }
+      return n ? [r / n, g / n, b / n] : [TARGET, TARGET, TARGET];
+    });
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        const u = x / SIZE, v = y / SIZE;
+        let m = 0, pick = 0;
+        BROWS.forEach((e, k) => {
+          const d = Math.hypot(wrapDU(u, e.u) / BRU, (v - e.v) / BRV);
+          if (d < 1) { const w = 1 - d * d * (3 - 2 * d); if (w > m) { m = w; pick = k; } }
+        });
+        if (m <= 0) continue;
+        const i = (y * SIZE + x) * 4;
+        for (let c = 0; c < 3; c++) {
+          albedo[i + c] = albedo[i + c] + (browFill[pick][c] - albedo[i + c]) * m;
+        }
+      }
+    }
+
+    // Strip the photograph's LOW-FREQUENCY shading. Mean-normalising fixes
+    // the average, not the layout: the photo's hairline still flooded the
+    // whole upper forehead with hair-brown that faded out mid-face, and its
+    // cheek and philtrum shadows landed as bruise streaks and a mustache
+    // smudge on the sculpt (whose own forms sit elsewhere). A wide blur
+    // estimates that macro field per channel; dividing it out keeps only what
+    // a detail map is for — lips, nostrils, pores — while the sculpt and the
+    // scene's light do the shading. KEEP retains a quarter of the macro form
+    // so the face doesn't go poster-flat.
+    {
+      const R = Math.max(2, Math.round(SIZE * 0.055));
+      const KEEP = 0.25;
+      const blur = new Float32Array(SIZE * SIZE * 3);
+      for (let i = 0; i < SIZE * SIZE; i++) {
+        blur[i * 3] = albedo[i * 4];
+        blur[i * 3 + 1] = albedo[i * 4 + 1];
+        blur[i * 3 + 2] = albedo[i * 4 + 2];
+      }
+      const tmp = new Float32Array(SIZE * SIZE * 3);
+      for (let pass = 0; pass < 3; pass++) {
+        // horizontal (U wraps around the head)
+        tmp.set(blur);
+        for (let y = 0; y < SIZE; y++) {
+          for (let x = 0; x < SIZE; x++) {
+            let r = 0, g = 0, b = 0;
+            for (let k = -R; k <= R; k += Math.max(1, R >> 3)) {
+              const xx = (x + k + SIZE * 4) % SIZE;
+              const q = (y * SIZE + xx) * 3;
+              r += tmp[q]; g += tmp[q + 1]; b += tmp[q + 2];
+            }
+            const n = Math.floor((2 * R) / Math.max(1, R >> 3)) + 1;
+            const p = (y * SIZE + x) * 3;
+            blur[p] = r / n; blur[p + 1] = g / n; blur[p + 2] = b / n;
+          }
+        }
+        // vertical (V clamps at crown / neck)
+        tmp.set(blur);
+        for (let y = 0; y < SIZE; y++) {
+          for (let x = 0; x < SIZE; x++) {
+            let r = 0, g = 0, b = 0;
+            for (let k = -R; k <= R; k += Math.max(1, R >> 3)) {
+              const yy = Math.max(0, Math.min(SIZE - 1, y + k));
+              const q = (yy * SIZE + x) * 3;
+              r += tmp[q]; g += tmp[q + 1]; b += tmp[q + 2];
+            }
+            const n = Math.floor((2 * R) / Math.max(1, R >> 3)) + 1;
+            const p = (y * SIZE + x) * 3;
+            blur[p] = r / n; blur[p + 1] = g / n; blur[p + 2] = b / n;
+          }
+        }
+      }
+      for (let i = 0; i < SIZE * SIZE; i++) {
+        for (let c = 0; c < 3; c++) {
+          const macro = blur[i * 3 + c] - TARGET;
+          albedo[i * 4 + c] = Math.max(0, Math.min(255,
+            albedo[i * 4 + c] - macro * (1 - KEEP)));
+        }
+      }
+    }
+
+    // Above the brow line the map has nothing true to say: the mesh paints its
+    // own hairline (hairlineMask → toHair) and hangs its own hair shells, so
+    // any surviving photo tone up there lands on bare forehead or under hair
+    // that expects skin. Fade the scalp band to neutral. meshV = 1 - bakeV,
+    // so high mesh V is LOW y in the PNG.
+    for (let y = 0; y < SIZE; y++) {
+      const meshV = 1 - y / SIZE;
+      const t = Math.max(0, Math.min(1, (meshV - 0.60) / 0.14));
+      const fade = t * t * (3 - 2 * t) * 0.92;
+      if (fade <= 0) continue;
+      for (let x = 0; x < SIZE; x++) {
+        const i = (y * SIZE + x) * 4;
+        for (let c = 0; c < 3; c++) {
+          albedo[i + c] = albedo[i + c] + (TARGET - albedo[i + c]) * fade;
+        }
+      }
+    }
+
     // Finally, ease the remaining contrast toward the neutral. Photographic
     // shading is authored for a photograph; on a 22 cm head lit by the scene's
     // own key it doubles up with the real shading and every crease reads as a
-    // smudge. 0.62 keeps lips, brows and pores legible without them becoming
+    // smudge. 0.62 keeps lips and pores legible without them becoming
     // holes — the sculpt already carries the forms underneath.
     const CONTRAST = 0.62;
     for (let i = 0; i < SIZE * SIZE * 4; i += 4) {
       for (let c = 0; c < 3; c++) {
         albedo[i + c] = Math.max(0, Math.min(255, TARGET + (albedo[i + c] - TARGET) * CONTRAST));
+      }
+    }
+
+    // Rebuild the height field from the FINAL albedo so the normal map shades
+    // pores and lip creases, not the macro field the passes above just removed.
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        const i = (y * SIZE + x) * 4;
+        const lum = (0.299 * albedo[i] + 0.587 * albedo[i + 1] + 0.114 * albedo[i + 2]) / 255;
+        height[y * SIZE + x] = lum * 0.55 + poreN[y * SIZE + x];
       }
     }
   }
