@@ -3389,6 +3389,20 @@ if ("serviceWorker" in navigator) {
   .ground-stat .gs-v i { font-style: normal; font-size: 12px; font-weight: 600; color: var(--muted); }
   .ground-stat .gs-l { font-size: 9.5px; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
   .ground-note { font-size: 11px; color: #a9e8d2; line-height: 1.35; }
+  /* Peak-moment progress strip on the completion screen. */
+  .ground-gain {
+    display: flex; flex-direction: column; gap: 7px;
+    background: linear-gradient(180deg, rgba(24,40,36,.5), rgba(14,26,24,.6));
+    border: 1px solid #2e6b58; border-radius: 12px; padding: 11px 14px; margin: 10px 0;
+  }
+  .gg-line { font-size: 13px; color: var(--text); }
+  .gg-line strong { font-size: 19px; }
+  .gg-meter { height: 5px; border-radius: 3px; background: rgba(255,255,255,.14); overflow: hidden; }
+  .gg-meter i {
+    display: block; height: 100%; border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--ok));
+  }
+  .gg-note { font-size: 12px; color: #a9e8d2; line-height: 1.4; }
   @media (max-width: 600px) {
     .ground-box { min-width: 0; width: 100%; max-width: none; }
   }
@@ -8025,6 +8039,23 @@ function getWorldsteps(phobiaKey) {
 function worldstepDone(phobiaKey, step) {
   return getWorldsteps(phobiaKey).some(w => w.step === step);
 }
+// Where a realm actually stands, on both tracks. The valley was always the
+// only one that counted: five trials done and the realm read as "tamed", even
+// if the traveller had never once faced the thing outside the game. But the
+// in-game ladder is the rehearsal — the real steps are what generalises, and a
+// realm that calls itself finished without them is overclaiming.
+//
+// Nothing here gates: every trial stays playable at any time, and no real step
+// is ever required to continue. It only changes what "finished" means.
+function realmStatus(phobiaKey) {
+  const p = PHOBIAS[phobiaKey];
+  const totalTrials = (p && p.levels && p.levels.length) || 5;
+  const trials = Math.min(totalTrials, getProgress(phobiaKey).highestCompleted + 1);
+  const totalSteps = bridgeOf(phobiaKey).length;
+  const steps = getWorldsteps(phobiaKey).length;
+  const walked = trials >= totalTrials;          // every trial faced in here
+  return { trials, totalTrials, steps, totalSteps, walked, tamed: walked && steps >= totalSteps };
+}
 function worldstepCount() {
   const cs = activeCharSlice();
   return Object.values(cs.worldsteps || {}).reduce((s, arr) => s + arr.length, 0);
@@ -9742,7 +9773,11 @@ function viewSelect() {
     // The card used to report the guardian's health ("the Hound Shadow is
     // weakening"). Nothing in the realm weakens — the traveller advances. Say
     // that instead, in their own terms, so the map and the ladder agree.
-    const stateLine = cleared ? realm.clearedLine
+    // A realm only reads as finished once the real steps are walked too;
+    // clearing five rehearsals and never meeting a dog is not the same thing.
+    const rs = realmStatus(k);
+    const stateLine = rs.tamed ? realm.clearedLine
+      : rs.walked ? tf("node.walkedOnly", "All {total} trials faced. {n} of {s} real steps taken.", { total, n: rs.steps, s: rs.totalSteps })
       : done > 0 ? tf("node.faced", `You've faced {n} of {total} here.`, { n: done, total })
       : t("node.untouched", "You haven't set foot here yet.");
     return `
@@ -9750,7 +9785,7 @@ function viewSelect() {
           data-action="select-phobia" data-phobia="${k}" tabindex="0" role="button"
           aria-label="${escapeHtml(realm.realmName)} — ${escapeHtml(p.name)}, ${done} of ${total} trials faced">
         <div class="realm-thumb" aria-hidden="true">${phobiaThumbnail(k)}
-          ${cleared ? `<span class="realm-tamed">${t("node.tamed", "🕊 tamed")}</span>` : `<span class="realm-shadow" style="--rem:${remaining.toFixed(2)}"><i class="eye"></i><i class="eye"></i></span>`}
+          ${rs.tamed ? `<span class="realm-tamed">${t("node.tamed", "🕊 tamed")}</span>` : `<span class="realm-shadow" style="--rem:${remaining.toFixed(2)}"></span>`}
           ${isCurrent && ch ? `<span class="you-marker" title="You are here">${window.Character.avatarSVG(ch, 40)}<span>${t("node.you", "you")}</span></span>` : ""}
         </div>
         <div class="realm-body">
@@ -10172,6 +10207,7 @@ function viewLadder(phobiaKey) {
     ? guessPairs.reduce((s, l) => s + (l.predicted - l.suds), 0) / guessPairs.length
     : null;
   const realSteps = getWorldsteps(phobiaKey).length;
+  const rstat = realmStatus(phobiaKey);
   const groundStat = (label, value) =>
     `<div class="ground-stat"><span class="gs-v">${value}</span><span class="gs-l">${label}</span></div>`;
   const groundStats = [
@@ -10180,11 +10216,18 @@ function viewLadder(phobiaKey) {
     // Only worth showing once there are two readings to compare.
     (firstFear != null && lastFear != null && rated.length > 1)
       ? groundStat(t("ground.fear", "fear, first → last"), `${firstFear}<i>→</i>${lastFear}`) : "",
-    realSteps > 0 ? groundStat(t("ground.real", "real steps"), `${realSteps}`) : "",
+    // Always shown, even at zero: the real steps are the half of the ladder
+    // that transfers, and a stat that only appears once you've earned it is a
+    // stat nobody discovers.
+    groundStat(t("ground.real", "real steps"), `${realSteps}<i>/${rstat.totalSteps}</i>`),
   ].filter(Boolean).join("");
   const guardian = `
     <div class="ground-box">
-      <span class="ground-title">${cleared ? t("ground.cleared", "You walked all of it") : t("ground.head", "Your ground here")}</span>
+      <span class="ground-title">${rstat.tamed
+        ? t("ground.tamed", "This realm is behind you")
+        : rstat.walked
+          ? t("ground.walked", "The valley is walked — the Real Path is what's left")
+          : t("ground.head", "Your ground here")}</span>
       <div class="ground-meter"><div class="ground-meter-fill" style="width:${((done / total) * 100).toFixed(0)}%"></div></div>
       <div class="ground-stats">${groundStats}</div>
       ${overGuess != null && overGuess >= 1
@@ -11063,19 +11106,23 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     if (lastAward.daily) bits.push(`🔥 daily ember +15`);
     if (lastAward.streakAfter >= 2) bits.push(`day ${lastAward.streakAfter} of practice`);
     rewardStrip = `<div class="reward-strip">${bits.join(" · ")}${lastAward.milestones.length ? `<div class="reward-milestone">🏅 Milestone unlocked: ${escapeHtml(lastAward.milestones.join(", "))}</div>` : ""}</div>`;
-    // The shadow visibly weakens — progress feedback in the game's own
-    // language, only when this finish actually advanced the realm.
+    // Progress feedback at the peak moment. This used to show a blob with
+    // eyes shrinking beside "the Hound Shadow weakened — strength 3/5", which
+    // is the boss framing at the loudest point in the whole flow. The traveller
+    // moved; the dog did not. Report the move.
     if (!early && lastAward.advanced) {
-      const total = p.levels.length;
-      const after = total - (getProgress(phobiaKey).highestCompleted + 1);
-      const realm = realmOf(phobiaKey);
+      const rs = realmStatus(phobiaKey);
       shadowStrip = `
-        <div class="shadow-shrink" aria-label="${escapeHtml(realm.guardianName)} weakened to strength ${after} of ${total}">
-          <span class="ss-blob" style="--rem:${((after + 1) / total).toFixed(2)}"><i></i><i></i></span>
-          <span class="ss-arrow">➜</span>
-          ${after === 0
-            ? `<span class="ss-tamed">🕊</span><span class="ss-text"><strong>${escapeHtml(realm.guardianName)}</strong> ${t("shadow.tamedLine", "is tamed. The realm is yours.")}</span>`
-            : `<span class="ss-blob small" style="--rem:${(after / total).toFixed(2)}"><i></i><i></i></span><span class="ss-text"><strong>${escapeHtml(realm.guardianName)}</strong> ${tf("shadow.weakened", "weakened — strength {a}/{b}.", { a: after, b: total })}</span>`}
+        <div class="ground-gain" aria-label="Trials faced: ${rs.trials} of ${rs.totalTrials}">
+          <span class="gg-line">
+            <strong>${rs.trials}</strong>/${rs.totalTrials} ${t("gain.trials", "trials faced here")}
+          </span>
+          <span class="gg-meter"><i style="width:${((rs.trials / rs.totalTrials) * 100).toFixed(0)}%"></i></span>
+          ${rs.walked
+            ? `<span class="gg-note">${rs.tamed
+                ? t("gain.tamed", "🕊 Every trial and every real step — this realm is behind you.")
+                : tf("gain.stepsLeft", "The valley is walked. {n} of {s} real steps taken — those are the ones that follow you home.", { n: rs.steps, s: rs.totalSteps })}</span>`
+            : ""}
         </div>`;
     }
     // The bridge invitation: this finish just unlocked the matching
@@ -11136,7 +11183,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
   return `
     <div class="panel victory-panel">
       <span class="badge">${early ? tf("complete.early", "Trial {n} · stepped back", { n: levelIdx + 1 }) : tf("complete.faced", "Trial {n} faced", { n: levelIdx + 1 })} · ${escapeHtml(realmOf(phobiaKey).realmName)}</span>
-      <h2 style="margin-top: 10px;">${early ? t("complete.h2early", "You stepped back — showing up still counts.") : t("complete.h2", "Trial faced. The shadow shrinks.")}</h2>
+      <h2 style="margin-top: 10px;">${early ? t("complete.h2early", "You stepped back — showing up still counts.") : t("complete.h2", "Trial faced. That's ground you hold now.")}</h2>
       ${celebration}
       ${rewardStrip}
       ${shadowStrip}
@@ -11159,7 +11206,11 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       </div>
 
       <div class="actions">
-        ${!isLast ? `<button class="btn-primary" data-action="next-level" data-phobia="${phobiaKey}" data-level="${next}">${tf("complete.next", "Next trial: {t}", { t: escapeHtml(p.levels[next].title) })}</button>` : `<button class="btn-primary" data-action="back-ladder" data-phobia="${phobiaKey}">${t("complete.tamed", "🕊 The realm is tamed — see it")}</button>`}
+        ${!isLast
+          ? `<button class="btn-primary" data-action="next-level" data-phobia="${phobiaKey}" data-level="${next}">${tf("complete.next", "Next trial: {t}", { t: escapeHtml(p.levels[next].title) })}</button>`
+          : `<button class="btn-primary" data-action="back-ladder" data-phobia="${phobiaKey}">${realmStatus(phobiaKey).tamed
+              ? t("complete.tamed", "🕊 The realm is behind you — see it")
+              : t("complete.walked", "🌍 The valley is walked — see the Real Path")}</button>`}
         <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">${t("complete.back", "Back to the realm")}</button>
       </div>
     </div>
