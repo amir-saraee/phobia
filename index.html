@@ -414,12 +414,54 @@ if ("serviceWorker" in navigator) {
   /* True browser fullscreen — the stage takes the whole screen. */
   .stage:fullscreen {
     height: 100vh; width: 100vw;
-    border: none;
+    border: none; border-radius: 0;
   }
   .stage:-webkit-full-screen {
     height: 100vh; width: 100vw;
-    border: none;
+    border: none; border-radius: 0;
   }
+  /* In fullscreen ONLY #stage and its descendants render, so the hold bar and
+     the continue button — which live in .step-controls, a sibling — would be
+     invisible and the user would be stuck. The script moves that row inside
+     the stage on entry and puts it back on exit; this floats it over the
+     scene instead of letting it sit in the layout flow. */
+  .stage:fullscreen > .step-controls,
+  .stage:-webkit-full-screen > .step-controls {
+    position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%);
+    z-index: 12; width: min(760px, calc(100% - 32px));
+    background: rgba(8, 11, 22, .58);
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 14px; backdrop-filter: blur(10px);
+    padding: 10px 16px;
+  }
+  .stage:fullscreen > .scene-cmd-bar,
+  .stage:-webkit-full-screen > .scene-cmd-bar {
+    position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%);
+    z-index: 12; margin: 0;
+  }
+  /* Auto-hiding chrome. Once the scene is live and the user has been still
+     for a few seconds, everything that says "web page" fades out and the room
+     is all that is left; any input brings it back. Same contract as a video
+     player, and the reason it is opacity rather than display is that the
+     layout must not reflow underneath a running scene. */
+  .stage .mode-badge, .stage .camera-toggle, .stage .controls-hint,
+  .stage .stage-quick-bar, .stage .trust-hud, .stage .hold-pill,
+  .stage .ml-toggle, .stage .cmd-toggle,
+  .stage > .step-controls, .stage > .scene-cmd-bar {
+    transition: opacity .55s ease;
+  }
+  .stage.chrome-hidden .mode-badge, .stage.chrome-hidden .camera-toggle,
+  .stage.chrome-hidden .controls-hint, .stage.chrome-hidden .stage-quick-bar,
+  .stage.chrome-hidden .trust-hud, .stage.chrome-hidden .ml-toggle,
+  .stage.chrome-hidden .cmd-toggle,
+  .stage.chrome-hidden > .step-controls, .stage.chrome-hidden > .scene-cmd-bar {
+    opacity: 0; pointer-events: none;
+  }
+  /* Two things are exempt, for the same reason: they are the ones a frightened
+     person needs. The grounding button is the way out, and once .step-controls
+     has faded the pill is the only remaining answer to "how much longer". */
+  .stage.chrome-hidden .ground-btn { opacity: 1; pointer-events: auto; }
+  .stage.chrome-hidden .hold-pill { opacity: 1; }
   .stage-caption {
     padding: 14px 28px 4px; font-size: 14px;
     color: var(--muted); display: flex; justify-content: space-between;
@@ -872,6 +914,11 @@ if ("serviceWorker" in navigator) {
        HUD, top-centred it slid under the toggle. This column is free. */
     .stage .hold-pill { display: flex; left: 12px; transform: none; }
   }
+  /* A viewport-filling stage pushes .step-controls — and with it the hold bar —
+     below the fold, so desktop needs the pill for the same reason phones did:
+     it is the only progress readout still on screen. */
+  .stage.theater .hold-pill, .stage:fullscreen .hold-pill,
+  .stage:-webkit-full-screen .hold-pill { display: flex; }
 
   /* Touch panic-stop: a persistent "ground me" button above the joystick —
      the touch equivalent of Esc. Grounds IN PLACE (the scene survives). */
@@ -7533,8 +7580,16 @@ const PHOBIAS = {
         behavior: { follow: false, homeRadius: 0.7, startPose: "lay", standAt: 20, standDist: 3.0, firstBarkAt: 16, barkDist: 2.2, barkEvery: [14, 24], inZoneDist: 3.0 } },
       { title: "Large dog, close",    desc: "A large dog about a metre away. Alert, tongue out.",     breed: "husky", dogHeight: 1.00, size: 0.82, intensity: "alert",
         behavior: { follow: true, followRadius: 1.2, followDelay: 3, firstBarkAt: 12, barkEvery: [8, 14], settleAfter: 35, inZoneDist: 3.0 } },
+      // personalSpace is the line the dog refuses to let you cross — it backs
+      // away rather than charge. At 3.0 m that line sat further out than the
+      // 4.2 m spawn minus the room, so the climax rung was a dog you could
+      // never reach: walk at it and it retreated, permanently. And inZoneDist
+      // 4.5 was wider than the spawn distance, so the whole hold could be
+      // earned standing still on the spawn point. The rung asked for nothing.
+      // 1.5 m keeps the promise (it never charges, you still control the
+      // distance) while making the approach an actual approach.
       { title: "Large dog, barking",  desc: "A large dog barking across the room. You control the distance.", breed: "husky", dogHeight: 1.18, size: 1.00, intensity: "barking",
-        behavior: { homeRadius: 1.1, personalSpace: 3.0, inZoneDist: 4.5 } }
+        behavior: { homeRadius: 1.1, personalSpace: 1.5, inZoneDist: 2.8 } }
     ],
     sceneClass: "scene-approach",
     render: renderDog
@@ -11054,6 +11109,97 @@ function mountExposure(phobiaKey, levelIdx) {
   const stage = document.getElementById("stage");
   const minHold = parseInt(stage.dataset.minHold, 10) || 6;
 
+  // ---------- Immersion ----------
+  // The scene was a ~1150×560 card with a step badge above it and a button row
+  // below — the user looked AT a room instead of standing in one, and no
+  // amount of texture work fixes that framing. Two layers, because they have
+  // different costs: theater mode is pure CSS and can apply immediately, while
+  // true fullscreen needs a user gesture and can be refused.
+  const immersiveOn = (() => {
+    try { return localStorage.getItem("fobia.immersive") !== "0"; } catch { return true; }
+  })();
+  const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+  if (immersiveOn) stage.classList.add("theater");
+
+  // Fullscreen hides every sibling of #stage, which includes the hold bar and
+  // the continue button — leaving the user with no way to see progress or move
+  // on. Carry them inside for the duration and put them back after. Listeners
+  // are bound per-element, so they survive the move.
+  let fsMoved = null;
+  const onFsChange = () => {
+    const full = fsEl() === stage;
+    if (full && !fsMoved) {
+      fsMoved = [];
+      for (const sel of [".scene-cmd-bar", ".step-controls"]) {
+        const el = document.querySelector(sel);
+        if (el && !stage.contains(el)) {
+          fsMoved.push({ el, parent: el.parentNode, next: el.nextSibling });
+          stage.appendChild(el);
+        }
+      }
+    } else if (!full && fsMoved) {
+      for (const m of fsMoved) {
+        try { m.parent.insertBefore(m.el, m.next); } catch { try { m.parent.appendChild(m.el); } catch {} }
+      }
+      fsMoved = null;
+    }
+  };
+  document.addEventListener("fullscreenchange", onFsChange);
+  document.addEventListener("webkitfullscreenchange", onFsChange);
+
+  // One attempt only. If the user backs out with Esc, clicking in the scene
+  // again must not drag them back in — that is a fight, not a feature.
+  let fsAsked = false;
+  const goImmersive = () => {
+    if (fsAsked || !immersiveOn || fsEl()) return;
+    fsAsked = true;
+    try {
+      const req = stage.requestFullscreen || stage.webkitRequestFullscreen;
+      if (req) Promise.resolve(req.call(stage, { navigationUI: "hide" })).catch(() => {});
+    } catch {}
+  };
+  if (immersiveOn) {
+    stage.addEventListener("pointerdown", goImmersive, { once: true });
+    window.addEventListener("keydown", goImmersive, { once: true });
+  }
+
+  // Chrome auto-hide — the video-player contract: still for a moment and the
+  // interface gets out of the way, any input brings it back.
+  let chromeIdleTimer = null;
+  let chromeArmed = false;
+  const CHROME_IDLE_MS = 3500;
+  const showChrome = () => {
+    stage.classList.remove("chrome-hidden");
+    if (!chromeArmed) return;
+    clearTimeout(chromeIdleTimer);
+    chromeIdleTimer = setTimeout(() => stage.classList.add("chrome-hidden"), CHROME_IDLE_MS);
+  };
+  const CHROME_WAKE = ["pointermove", "pointerdown", "keydown", "wheel", "touchstart"];
+  const armChromeIdle = () => {
+    if (chromeArmed || !immersiveOn) return;
+    chromeArmed = true;
+    CHROME_WAKE.forEach(ev => window.addEventListener(ev, showChrome, { passive: true }));
+    showChrome();
+  };
+
+  // Leaving the rung must not leave the browser in fullscreen or the listeners
+  // on the window.
+  const releaseImmersion = () => {
+    clearTimeout(chromeIdleTimer);
+    CHROME_WAKE.forEach(ev => window.removeEventListener(ev, showChrome));
+    window.removeEventListener("keydown", goImmersive);
+    document.removeEventListener("fullscreenchange", onFsChange);
+    document.removeEventListener("webkitfullscreenchange", onFsChange);
+    if (fsEl() === stage) {
+      try {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (exit) Promise.resolve(exit.call(document)).catch(() => {});
+      } catch {}
+    }
+    onFsChange();   // put the borrowed rows back even if exit is async
+  };
+  window.addEventListener("hashchange", releaseImmersion, { once: true });
+
   // Read user preferences
   const heartEnabled = (() => {
     try { return localStorage.getItem("fobia.heart") !== "0"; } catch { return true; }
@@ -11296,6 +11442,13 @@ function mountExposure(phobiaKey, levelIdx) {
         if (timer && timer.isConnected) PhobiaVoice.speak(line, { audible: i === 0 });
       }, delay));
     });
+    // The room is live — let the interface start getting out of the way, and
+    // glide the page so the scene is what fills the screen rather than the
+    // rung's title card. (A no-op in true fullscreen, where it already does.)
+    armChromeIdle();
+    if (immersiveOn) {
+      try { stage.scrollIntoView({ block: "center", behavior: "smooth" }); } catch {}
+    }
     // Inactivity watcher — start once the scene is live.
     lastActivity = Date.now();
     INACTIVITY_EVENTS.forEach(ev => window.addEventListener(ev, onAnyActivity, { passive: true }));
@@ -11352,6 +11505,9 @@ function mountExposure(phobiaKey, levelIdx) {
       cdTimers.forEach(id => clearTimeout(id));
       cdTimers = [];
       countdown.style.opacity = "0";
+      // This click is a real user gesture, which is the one thing the
+      // Fullscreen API insists on — the best moment in the whole flow to ask.
+      goImmersive();
       startScene();
       setTimeout(() => countdown.remove(), 600);
     };
@@ -20279,6 +20435,29 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     scene.userData.renderer = renderer;
     result = setup(scene, camera, level, levelIdx, sceneCtx);
     updateFn = result && result.update;
+
+    // ----- First-person field of view -----
+    // Scenes frame themselves at 52–70° vertical, which is a comfortable
+    // *photographic* framing and a poor *inhabited* one: at 52° you are
+    // looking down a tube, with no periphery for anything to appear at the
+    // edge of. Widening the FP view is one of the strongest presence levers
+    // there is, and it only became safe to spend once the stage started
+    // filling the screen — a wide FOV inside a small window reads as fisheye,
+    // because the window's edges contradict it.
+    //
+    // Third-person keeps the scene's own framing (it is a camera there, and
+    // wide angles distort the avatar). Scenes that animate fov themselves —
+    // heights drives it from vertigo every frame — simply overwrite this,
+    // which is correct: there it is already a deliberate instrument.
+    const sceneBaseFov = camera.fov;
+    const fpFov = Math.min(70, Math.max(sceneBaseFov, sceneBaseFov + 14));
+    const applyModeFov = (mode) => {
+      const want = mode === "tp" ? sceneBaseFov : fpFov;
+      if (Math.abs(camera.fov - want) < 0.01) return;
+      camera.fov = want;
+      camera.updateProjectionMatrix();
+    };
+
     if (result && result.controls) {
       controls = new FPControls(camera, renderer.domElement, result.controls);
       // Apply the scene's preferred camera mode at scene mount UNLESS the
@@ -20631,6 +20810,18 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // ground-shadow disc) stuck at the world origin / eye level before the
       // first animation tick.
       try { body.update(0, 0, 0, controls, hands); } catch {}
+    }
+    // Field of view follows the camera mode. Chained here, after the body
+    // block above has had its turn at controls.onCameraModeChange, so neither
+    // hook clobbers the other — and installed even when a scene runs without
+    // a body, which that block would have skipped.
+    if (controls) {
+      const prevModeHook = controls.onCameraModeChange;
+      controls.onCameraModeChange = (m) => {
+        try { applyModeFov(m); } catch {}
+        if (prevModeHook) { try { prevModeHook(m); } catch {} }
+      };
+      applyModeFov(controls.cameraMode);
     }
     // Scenes opt into the generic re-grade with `vary: { daylight: <0..1> }`.
     // Rooms with no outside (a lift, a dark bedroom, an aircraft cabin) simply
