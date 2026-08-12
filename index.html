@@ -8124,7 +8124,6 @@ const REALMS = {
   dogs: {
     realmName: "The Meadow Yard",
     epithet: "where the barking lives",
-    guardianName: "the Hound Shadow",
     line: "Every yard I crossed the street to avoid made the barking louder in my head.",
     clearedLine: "The yard is just a yard now. The dog is just a dog.",
     whispers: [
@@ -8138,7 +8137,6 @@ const REALMS = {
   spiders: {
     realmName: "The Old Cellar",
     epithet: "where small things skitter",
-    guardianName: "the Weaver Shadow",
     line: "It's not the size. It's the legs. But I'm done checking every corner of every room.",
     clearedLine: "The cellar is quiet. It was always mostly quiet.",
     whispers: [
@@ -8152,7 +8150,6 @@ const REALMS = {
   snakes: {
     realmName: "The Sunlit Clearing",
     epithet: "where the grass moves",
-    guardianName: "the River Shadow",
     line: "A rope on a path once stopped my heart. I want my heart back.",
     clearedLine: "The grass moves. Sometimes it's just the wind. You can tell now.",
     whispers: [
@@ -8166,7 +8163,6 @@ const REALMS = {
   heights: {
     realmName: "The Summit",
     epithet: "where the ground looks up at you",
-    guardianName: "the Hollow-Stomach Shadow",
     line: "It's not the falling. It's the pull of the edge. I want to stand there and just… look.",
     clearedLine: "The drop is still deep. Your legs just no longer vote against you.",
     whispers: [
@@ -8180,7 +8176,6 @@ const REALMS = {
   dark: {
     realmName: "The House at Night",
     epithet: "where shapes grow eyes",
-    guardianName: "the Lightless Shadow",
     line: "I know there's nothing there. I just want my body to know it too.",
     clearedLine: "The dark is just the room with the lights off. It always was.",
     whispers: [
@@ -8194,7 +8189,6 @@ const REALMS = {
   enclosed: {
     realmName: "The Narrow Passage",
     epithet: "where walls come close",
-    guardianName: "the Tight-Chest Shadow",
     line: "Elevators, tunnels, tight rooms — my chest decides before I do. I'm taking the decision back.",
     clearedLine: "Small rooms are just rooms. Your breath fits in all of them.",
     whispers: [
@@ -8213,7 +8207,6 @@ function realmOf(key) {
   const base = REALMS[key] || {
     realmName: p ? `The Realm of ${p.label}` : "An Unmapped Realm",
     epithet: "a fear you carry",
-    guardianName: "its shadow",
     line: "I named this fear myself. That's already half the map.",
     clearedLine: "You walked the whole path you drew.",
     whispers: [
@@ -8231,7 +8224,6 @@ function realmOf(key) {
     return Object.assign({}, base, {
       realmName:    t(`realm.${key}.name`,     base.realmName),
       epithet:      t(`realm.${key}.epithet`,  base.epithet),
-      guardianName: t(`realm.${key}.guardian`, base.guardianName),
       line:         t(`realm.${key}.line`,     base.line),
       clearedLine:  t(`realm.${key}.cleared`,  base.clearedLine),
     });
@@ -10521,7 +10513,7 @@ function viewAbout() {
       <p>${t("about.privacy", "Everything stays in your browser: characters, sessions, check-ins — all of it lives in this device's local storage. No account, no analytics, no server. Your data leaves only when you export it yourself (Settings → Export).")}</p>
 
       <h3>${t("about.creditsH", "Credits")}</h3>
-      <p class="about-credits">${t("about.credits", "Built for fun with")} <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> · ${t("about.creditsModels", "creature models by")} <a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a> (CC0) · ${t("about.creditsMade", "made with care by Amir.")}</p>
+      <p class="about-credits">${t("about.credits", "Built for fun with")} <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> · ${t("about.creditsModels", "creature models by")} <a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a> (CC0) · ${t("about.creditsAmbient", "ambient recordings from")} <a href="https://mixkit.co" target="_blank" rel="noopener">Mixkit</a> · ${t("about.creditsHdri", "sky lighting from")} <a href="https://polyhaven.com/a/meadow" target="_blank" rel="noopener">Poly Haven</a> (CC0) · ${t("about.creditsMade", "made with care by Amir.")}</p>
 
       <div class="actions" style="margin-top:14px">
         <button class="btn-ghost" data-action="show-consent">${t("about.reread", "Re-read the welcome notice")}</button>
@@ -11122,12 +11114,12 @@ function viewProfiles() {
   const stepsTaken = worldstepCount();
   const statStrip = `
     <div class="stat-strip">
-      <div class="stat-tile" style="--i:0"><span class="stat-num">${streak}</span><span class="stat-lbl">🔥 day streak</span></div>
-      <div class="stat-tile" style="--i:1"><span class="stat-num">${totalSessions}</span><span class="stat-lbl">session${totalSessions === 1 ? "" : "s"}</span></div>
-      <div class="stat-tile" style="--i:2"><span class="stat-num">${rungsClimbed}</span><span class="stat-lbl">rungs climbed</span></div>
-      <div class="stat-tile" style="--i:3"><span class="stat-num">${stepsTaken}</span><span class="stat-lbl">🌍 real step${stepsTaken === 1 ? "" : "s"}</span></div>
-      <div class="stat-tile" style="--i:4"><span class="stat-num">${valleysWalked}</span><span class="stat-lbl">valley${valleysWalked === 1 ? "" : "s"} walked</span></div>
-      <div class="stat-tile" style="--i:5"><span class="stat-num">${realmsDone}</span><span class="stat-lbl">realm${realmsDone === 1 ? "" : "s"} behind you</span></div>
+      <div class="stat-tile" style="--i:0"><span class="stat-num">${streak}</span><span class="stat-lbl">${t("profile.streak", "🔥 day streak")}</span></div>
+      <div class="stat-tile" style="--i:1"><span class="stat-num">${totalSessions}</span><span class="stat-lbl">${t("profile.sessions", `session${totalSessions === 1 ? "" : "s"}`)}</span></div>
+      <div class="stat-tile" style="--i:2"><span class="stat-num">${rungsClimbed}</span><span class="stat-lbl">${t("profile.rungs", "rungs climbed")}</span></div>
+      <div class="stat-tile" style="--i:3"><span class="stat-num">${stepsTaken}</span><span class="stat-lbl">${t("profile.realSteps", `🌍 real step${stepsTaken === 1 ? "" : "s"}`)}</span></div>
+      <div class="stat-tile" style="--i:4"><span class="stat-num">${valleysWalked}</span><span class="stat-lbl">${t("profile.valleys", `valley${valleysWalked === 1 ? "" : "s"} walked`)}</span></div>
+      <div class="stat-tile" style="--i:5"><span class="stat-num">${realmsDone}</span><span class="stat-lbl">${t("profile.realms", `realm${realmsDone === 1 ? "" : "s"} behind you`)}</span></div>
     </div>`;
   // Trophy case — the active character's earned milestones (the full data
   // model already exists; Insights shows it too, but the profile is the natural
@@ -39808,11 +39800,15 @@ const ShellScenes = (() => {
       }
     } catch { dog = null; }
 
-    // Fear-shadow blob that grows on the "avoidance" beat.
+    // Fear-shadow blob that grows on the "avoidance" beat. UNLIT on purpose:
+    // a StandardMaterial here caught the moon and fire like any other surface
+    // and the metaphor's centrepiece rendered as a grey boulder floating by
+    // the camp. A shadow is an absence — flat near-black, no depth write, so
+    // it reads as a void drifting in front of the night rather than a prop.
     const shadow = new THREE.Mesh(
       new THREE.IcosahedronGeometry(0.55, 1),
-      new THREE.MeshStandardMaterial({
-        color: 0x101624, roughness: 0.95, transparent: true, opacity: 0.55, flatShading: true,
+      new THREE.MeshBasicMaterial({
+        color: 0x04060e, transparent: true, opacity: 0.78, depthWrite: false,
       })
     );
     shadow.position.set(0.2, 0.45, -1.1);

@@ -116,22 +116,43 @@ function defaultCharacter() {
   };
 }
 
+// Names the dice can suggest when the traveler hasn't typed one — short,
+// cross-cultural, none gendered enough to fight a random bodyType. The dice
+// never overwrites a name the user wrote themselves.
+const DICE_NAMES = ["Roya", "Sam", "Nika", "Ari", "Dana", "Kian", "Sara",
+                    "Leo", "Mina", "Ava", "Omid", "Noor", "Rey", "Tara"];
+
 // Generate a random character (used by the "Surprise me" button in the creator)
 function randomCharacter() {
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)].id;
+  // Weighted pick: uniform dice made 1-in-6 travelers bald and 2-in-3 wear
+  // glasses — statistically fine, but the dice exists to make an inviting
+  // FIRST character, and rare looks shouldn't be the default experience.
+  // Anything not listed in w shares the remaining weight equally.
+  const pickW = (arr, w) => {
+    const rest = arr.filter((o) => !(o.id in w));
+    const listed = arr.filter((o) => o.id in w);
+    const restW = Math.max(0, 1 - listed.reduce((s, o) => s + w[o.id], 0)) / Math.max(1, rest.length);
+    let r = Math.random();
+    for (const o of arr) {
+      const p = o.id in w ? w[o.id] : restW;
+      if ((r -= p) <= 0) return o.id;
+    }
+    return arr[0].id;
+  };
   const presets = ["calm", "encouraging", "brief"];
   return {
     name: "",
     bodyType:   pick(BODY_TYPES),
     skinTone:   pick(SKIN_TONES),
     hairColor:  pick(HAIR_COLORS),
-    hairStyle:  pick(HAIR_STYLES),
+    hairStyle:  pickW(HAIR_STYLES, { bald: 0.04, buzz: 0.10 }),
     topColor:   pick(TOP_COLORS),
     topStyle:   pick(TOP_STYLES),
     eyeColor:   pick(EYE_COLORS),
-    glasses:    pick(GLASSES),
-    facialHair: pick(FACIAL_HAIR),
-    headwear:   Math.random() < 0.4 ? pick(HEADWEAR) : "none",
+    glasses:    pickW(GLASSES, { none: 0.62 }),
+    facialHair: pickW(FACIAL_HAIR, { none: 0.72 }),
+    headwear:   Math.random() < 0.25 ? pick(HEADWEAR) : "none",
     voicePreset: presets[Math.floor(Math.random() * presets.length)],
     primaryPhobia: null,
     additionalPhobias: [],
@@ -896,6 +917,15 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
       topColor: r.topColor, eyeColor: r.eyeColor, glasses: r.glasses,
       facialHair: r.facialHair, voicePreset: r.voicePreset,
     });
+    // If the traveler is still nameless, let the dice suggest one — into the
+    // input, still fully editable. A typed name is never touched: the story
+    // addresses the traveler by name at the threshold, and an empty roll used
+    // to arrive there as nobody.
+    const nameInput = root.querySelector("#charName");
+    if (nameInput && !nameInput.value.trim()) {
+      nameInput.value = DICE_NAMES[Math.floor(Math.random() * DICE_NAMES.length)];
+      nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    }
     root.querySelectorAll(".starter-preset").forEach(b => b.classList.remove("active"));
   }
   const random = document.getElementById("creatorRandom");
