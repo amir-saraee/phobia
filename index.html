@@ -858,9 +858,80 @@ if ("serviceWorker" in navigator) {
     }
     .stage .trust-hud .trust-name {
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      max-width: 110px;
     }
   }
+  /* ---- Behavioral experiments (the in-scene quest deck) ---- */
+  /* Top-LEFT column under the camera pill (top-right belongs to the quick-bar
+     + trust HUD, bottom-left to the touch joystick, bottom-centre to the
+     hold-bar). Interactive, unlike the trust HUD. */
+  .stage .exp-panel {
+    position: absolute; top: 64px; left: 10px; z-index: 7;
+    width: 252px; max-width: min(66vw, 272px);
+    background: rgba(10, 14, 28, .62);
+    border: 1px solid rgba(159, 170, 231, .38);
+    border-radius: 12px;
+    color: var(--text);
+    backdrop-filter: blur(6px);
+    font-size: 12.5px;
+    overflow: hidden;
+  }
+  .stage .exp-panel.collapsed { width: auto; }
+  .exp-head {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 11px; cursor: pointer; user-select: none;
+    font-weight: 700; letter-spacing: .2px;
+  }
+  .exp-head .exp-n { color: #9faae7; font-weight: 600; font-size: 11px; }
+  .exp-list { display: flex; flex-direction: column; gap: 6px; padding: 0 9px 9px; }
+  .exp-item {
+    text-align: left; border: 1px solid rgba(255,255,255,.14); border-radius: 9px;
+    background: rgba(20, 26, 48, .55); color: var(--text);
+    padding: 7px 9px; cursor: pointer; font-size: 12px; line-height: 1.35;
+  }
+  .exp-item:hover { border-color: #9faae7; }
+  .exp-item.done { opacity: .55; }
+  .exp-item .exp-check { color: var(--ok); margin-right: 4px; }
+  .exp-pick { padding: 2px 9px 10px; }
+  .exp-pick .exp-q { font-size: 12px; color: var(--muted); margin: 4px 0 7px; line-height: 1.35; }
+  .exp-chip {
+    display: block; width: 100%; text-align: left; margin-top: 5px;
+    border: 1px solid rgba(255,255,255,.18); border-radius: 9px;
+    background: rgba(28, 34, 60, .6); color: var(--text);
+    padding: 7px 9px; cursor: pointer; font-size: 12px;
+  }
+  .exp-chip:hover { border-color: var(--accent); }
+  .exp-run { padding: 2px 11px 11px; }
+  .exp-run .exp-how { font-size: 11.5px; color: var(--muted); margin: 3px 0 8px; line-height: 1.4; }
+  .exp-bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,.14); overflow: hidden; }
+  .exp-bar i { display: block; height: 100%; width: 0%; border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--ok)); transition: width .25s linear; }
+  .exp-result { padding: 2px 11px 11px; }
+  .exp-result .exp-out { font-size: 12.5px; line-height: 1.45; margin: 4px 0 6px; }
+  .exp-result .exp-vs { font-size: 11px; color: #a9e8d2; }
+  .exp-cancel {
+    margin-top: 7px; font-size: 11px; color: var(--muted); background: none;
+    border: none; cursor: pointer; padding: 0; text-decoration: underline;
+  }
+  @media (max-width: 480px) {
+    .stage .exp-panel { top: 58px; left: 8px; font-size: 12px; width: 216px; }
+    /* restored from the trust-hud block this CSS was spliced into */
+    .stage .trust-hud .trust-name { max-width: 110px; }
+  }
+  /* Evidence lines — completion screen, realm page and (print) report. */
+  .evidence-block {
+    margin: 10px 0; border-radius: var(--radius-lg); padding: 13px 16px;
+    background: linear-gradient(180deg, rgba(24, 34, 30, .5), rgba(15, 24, 22, .6));
+    border: 1px solid #2e6b58;
+  }
+  .evidence-block h3 { margin: 0 0 8px; font-size: 14px; color: #8fe3c9; }
+  .evidence-line {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 7px 0; border-top: 1px solid rgba(255,255,255,.07);
+    font-size: 13px;
+  }
+  .evidence-line:first-of-type { border-top: none; padding-top: 2px; }
+  .evidence-line .ev-note { color: var(--text); line-height: 1.4; }
+  .evidence-line .ev-vs { font-size: 11.5px; color: var(--muted); }
   .stage .trust-hud .trust-row {
     display: flex; justify-content: space-between; align-items: center;
     margin-bottom: 5px;
@@ -10413,7 +10484,10 @@ function viewReport() {
   const keys = Object.keys(PHOBIAS).filter(k =>
     (state.progress[k]?.highestCompleted ?? -1) >= 0 ||
     log.some(l => l.phobia === k) ||
-    getWorldsteps(k).length > 0
+    getWorldsteps(k).length > 0 ||
+    // A realm where only behavioural experiments ran still belongs in the
+    // report — the expectancy-violation record is clinical data on its own.
+    (window.PhobiaExperiments && PhobiaExperiments.evidenceOf(k).length > 0)
   );
   const fmtD = ts => ts ? new Date(ts).toLocaleDateString() : "—";
   const first = log[0], last = log[log.length - 1];
@@ -10452,6 +10526,26 @@ function viewReport() {
             <tbody>${rows}</tbody>
           </table>` : ""}
         ${ws.length ? `<p class="report-line"><strong>Real-world (in-vivo) steps, self-reported:</strong></p><ul class="report-ws">${wsRows}</ul>` : ""}
+        ${(() => {
+          // Behavioural experiments — stated expectancy vs observed outcome.
+          // For a clinician this is the expectancy-violation record: which
+          // predictions the client tested in-scene and what they observed.
+          const ev = window.PhobiaExperiments ? PhobiaExperiments.evidenceOf(k) : [];
+          if (!ev.length) return "";
+          const rows3 = ev.map((l) => `
+            <tr>
+              <td>${fmtD(l.ts)}</td>
+              <td>${l.rung + 1}</td>
+              <td>${escapeHtml(l.predicted)}</td>
+              <td>${escapeHtml(l.note)}</td>
+            </tr>`).join("");
+          return `
+            <p class="report-line"><strong>Behavioural experiments</strong> (in-scene, prediction stated before each test):</p>
+            <table class="report-table">
+              <thead><tr><th>Date</th><th>Level</th><th>Stated expectation</th><th>Observed outcome</th></tr></thead>
+              <tbody>${rows3}</tbody>
+            </table>`;
+        })()}
         ${(() => {
           const checks = getChecks(k);
           if (!checks.length) return "";
@@ -10914,6 +11008,23 @@ function viewLadder(phobiaKey) {
         <ol class="trial-path">${items}</ol>
       </section>
       ${bridgeBlock}
+      ${(() => {
+        // The evidence log: every experiment run in this realm, newest first.
+        // This is the realm's collected proof — the thing the numbers panel
+        // summarises, itemised.
+        const ev = window.PhobiaExperiments ? PhobiaExperiments.evidenceOf(phobiaKey) : [];
+        if (!ev.length) return "";
+        const rows = ev.slice(-6).reverse().map((l) => `
+          <div class="evidence-line">
+            <span class="ev-note">${escapeHtml(l.note)}</span>
+            <span class="ev-vs">${tf("exp.vs2", "You expected: “{p}”", { p: escapeHtml(l.predicted) })} · ${new Date(l.ts).toLocaleDateString()}</span>
+          </div>`).join("");
+        return `
+          <section class="evidence-block">
+            <h3>${tf("exp.ladderH", "🧾 Evidence collected here — {n} test{s}", { n: ev.length, s: ev.length === 1 ? "" : "s" })}</h3>
+            ${rows}
+          </section>`;
+      })()}
       ${companionBlock}
       ${goalBlock}
       ${progressLink}
@@ -11694,6 +11805,22 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       ${celebration}
       ${rewardStrip}
       ${shadowStrip}
+      ${(() => {
+        // Experiments run this session — the prediction vs what happened, at
+        // the moment the comparison lands hardest.
+        const ses = window.PhobiaExperiments && PhobiaExperiments.lastSessionFor(phobiaKey, levelIdx);
+        if (!ses || !ses.results.length) return "";
+        return `
+          <div class="evidence-block">
+            <h3>${t("exp.sessionH", "🧪 What you tested")}</h3>
+            ${ses.results.map((r) => `
+              <div class="evidence-line">
+                <strong>${escapeHtml(r.title)}</strong>
+                <span class="ev-note">${escapeHtml(r.note)}</span>
+                <span class="ev-vs">${tf("exp.vs2", "You expected: “{p}”", { p: escapeHtml(r.predicted) })}</span>
+              </div>`).join("")}
+          </div>`;
+      })()}
       ${sparkBlock}
       ${bridgeInvite}
       ${mirrorPrompt}
@@ -11725,11 +11852,353 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
 }
 
 // ---------- Exposure scene mount ----------
+// ---------- Behavioral experiments ----------
+// The gameplay was "stand near it while a timer fills" — waiting, not play.
+// The clinical literature's answer and the game-design answer turn out to be
+// the same feature: BEHAVIOURAL EXPERIMENTS. Pick a small test ("call him
+// over", "look straight down for three breaths"), say what you expect to
+// happen, run it, and let the world answer. The prediction→outcome gap is
+// where the learning lives (expectancy violation), and it is also what gives
+// a scene verbs, goals and feedback — i.e. gameplay.
+//
+// Contract:
+//  - Experiments are OPTIONAL bonus content. Rung completion stays the hold;
+//    nothing here gates progress, and retreat never fails an experiment — the
+//    run just quietly pauses until conditions resume.
+//  - Prediction comes FIRST (that's the therapeutic point): a run only arms
+//    after the traveller picks one of three expectations.
+//  - Detection is passive, from signals the scenes already publish. The
+//    module lives in the classic-script scope (needs t/awardCourage/state);
+//    the 3D module scope feeds it plain numbers via window hooks:
+//    begin()/frame()/signal()/end().
+const PhobiaExperiments = (() => {
+  // per-frame context assembled in frame(); detectors are tiny closures that
+  // accumulate their own state and return progress 0..1.
+  const near = (dist, sec) => (ctx, st, dt) => {
+    if (ctx.dist != null && ctx.dist < dist) st.a = (st.a || 0) + dt;
+    return (st.a || 0) / sec;
+  };
+  const gaze = (dist, sec) => (ctx, st, dt) => {
+    if (ctx.dist != null && ctx.dist < dist && ctx.gazeDot > 0.72) st.a = (st.a || 0) + dt;
+    return (st.a || 0) / sec;
+  };
+  const facingAway = (dist, sec) => (ctx, st, dt) => {
+    if (ctx.dist != null && ctx.dist < dist && ctx.gazeDot < -0.25) st.a = (st.a || 0) + dt;
+    return (st.a || 0) / sec;
+  };
+  const still = (sec) => (ctx, st, dt) => {
+    st.a = ctx.speed < 0.12 ? (st.a || 0) + dt : 0;   // a step resets the stillness
+    return (st.a || 0) / sec;
+  };
+  const endure = (sec) => (ctx, st, dt) => { st.a = (st.a || 0) + dt; return st.a / sec; };
+  const traverse = (m) => (ctx, st, dt) => {
+    st.a = (st.a || 0) + ctx.speed * dt;
+    return st.a / m;
+  };
+  const pitchBelow = (rad, sec) => (ctx, st, dt) => {
+    if (ctx.pitch < rad) st.a = (st.a || 0) + dt;
+    return (st.a || 0) / sec;
+  };
+  const pitchCycles = (n) => (ctx, st, dt) => {
+    st.phase = st.phase || "up";
+    if (st.phase === "up" && ctx.pitch < -0.75) { st.phase = "down"; }
+    else if (st.phase === "down" && ctx.pitch > -0.15) { st.phase = "up"; st.c = (st.c || 0) + 1; }
+    return (st.c || 0) / n;
+  };
+  const onEvent = (name, n = 1) => (ctx, st) => {
+    if (ctx.events.has(name)) st.c = (st.c || 0) + 1;
+    return (st.c || 0) / n;
+  };
+  // event, then get the creature close within a window (the "he answered" test)
+  const eventThenNear = (name, dist, windowSec) => (ctx, st, dt) => {
+    if (ctx.events.has(name)) st.armedAt = ctx.elapsed;
+    if (st.armedAt != null && ctx.elapsed - st.armedAt < windowSec
+        && ctx.dist != null && ctx.dist < dist) return 1;
+    return st.armedAt != null ? 0.35 : 0;
+  };
+  const contact = (sec) => (ctx, st, dt) => {
+    if (ctx.landed > 0.55) st.a = (st.a || 0) + dt;
+    return (st.a || 0) / sec;
+  };
+  const endureThreat = (sec, dist) => (ctx, st, dt) => {
+    if (ctx.threat && ctx.dist != null && ctx.dist < dist) st.a = (st.a || 0) + dt;
+    return (st.a || 0) / sec;
+  };
+  const slowApproach = (dist, vmax) => (ctx, st, dt) => {
+    if (ctx.speed > vmax && ctx.dist != null && ctx.dist < dist + 2.5) { st.a = 0; return 0; }
+    if (ctx.dist != null && ctx.dist < dist) return 1;
+    if (ctx.dist != null) return Math.max(0, Math.min(0.9, 1 - (ctx.dist - dist) / 4));
+    return 0;
+  };
+
+  // The decks. minRung gates availability; predictions are the three
+  // expectations offered before arming; out is the factual line written into
+  // evidence when the run completes. Content stays English-with-keys like the
+  // whispers (translatable later); the chrome strings are t()'d at render.
+  const DECKS = {
+    dogs: [
+      { id: "watch", minRung: 0, title: "Watch him for 20 seconds", how: "Stay anywhere in the room. Just keep him in view.",
+        predictions: ["He'll come at me", "He'll mostly ignore me", "I won't manage 20s"],
+        out: "You watched. He did dog things — sniffed, wandered, lay down.", make: () => gaze(8, 20) },
+      { id: "call", minRung: 1, title: "Call him over", how: "Press C (or the Call button), then hold your ground.",
+        predictions: ["He'll rush and jump on me", "He'll trot over, easy", "He won't listen"],
+        out: "You called. He came the way dogs come to a friend.", make: () => eventThenNear("dog.call", 2.6, 12) },
+      { id: "bark", minRung: 2, title: "Stay through a bark", how: "When he barks, plant your feet and breathe out slow.",
+        predictions: ["A bark means a bite is next", "It'll be loud but end", "I'll have to run"],
+        out: "He barked. You stayed. Loud — and only loud.", make: () => onEvent("dog.barkEndured") },
+      { id: "sniff", minRung: 2, title: "Let him sniff your fist", how: "Walk close, offer a closed hand, hold still a moment.",
+        predictions: ["He'll snap at it", "He'll sniff and move on", "I'll pull back first"],
+        out: "A nose on your knuckles. That's how dogs shake hands.", make: () => contact(0.8) },
+      { id: "back", minRung: 3, title: "Turn your back on him", how: "Within a few metres, face away and count five slow seconds.",
+        predictions: ["He'll lunge the moment I turn", "Nothing will happen", "I won't be able to"],
+        out: "Five seconds with your back turned. He didn't need watching.", make: () => facingAway(4.5, 5) },
+    ],
+    spiders: [
+      { id: "sight", minRung: 0, title: "Keep it in sight for 15 seconds", how: "Any distance. Watching IS the work.",
+        predictions: ["It'll dart at me", "It'll mostly hold still", "I'll look away first"],
+        out: "Fifteen seconds of looking. It kept being a small thing on a wall.", make: () => gaze(6, 15) },
+      { id: "close", minRung: 1, title: "Stand within arm's reach", how: "Close the distance slowly. Ten seconds there.",
+        predictions: ["It'll run up at me", "It'll freeze or retreat", "I'll step back first"],
+        out: "Arm's reach, ten seconds. It wanted nothing to do with you.", make: () => near(1.3, 10) },
+      { id: "stillMove", minRung: 2, title: "Hold still while it moves", how: "When it stirs, don't step back. Six seconds.",
+        predictions: ["Movement means it's coming for me", "It's just relocating", "I'll flinch away"],
+        out: "It moved. You didn't. Its errand had nothing to do with you.", make: () => endureThreat(6, 5) },
+      { id: "reach", minRung: 3, title: "Half a metre, six seconds", how: "The closest you've ever chosen to stand.",
+        predictions: ["It'll jump the gap", "Nothing will change", "My nerve will break"],
+        out: "Half a metre. The gap stayed a gap.", make: () => near(0.9, 6) },
+    ],
+    snakes: [
+      { id: "tongue", minRung: 0, title: "Watch the tongue work", how: "Fifteen seconds. The flicker is smell, not threat.",
+        predictions: ["Tongue out means a strike", "It's just tasting the air", "I'll back off first"],
+        out: "The tongue read the air and told it nothing about you mattered.", make: () => gaze(4.5, 15) },
+      { id: "slow", minRung: 1, title: "Approach slowly", how: "Close to two metres — slow steps, pause between each.",
+        predictions: ["Any approach triggers it", "Slow reads as calm", "I'll rush and spook it"],
+        out: "You arrived slowly, and it stayed easy. Your pace was the message.", make: () => slowApproach(2.2, 0.85) },
+      { id: "rear", minRung: 2, title: "Stay through the rear-up", how: "If it rises, hold your distance — don't close, don't bolt.",
+        predictions: ["Rearing means it will strike", "It's a warning that passes", "I'll run"],
+        out: "It rose, held, and settled. A warning is a conversation, not an attack.", make: () => endureThreat(2.5, 4.5) },
+      { id: "strike", minRung: 3, title: "Stand at strike distance", how: "Ten seconds inside the range your body says is too close.",
+        predictions: ["It will use the range", "Range isn't intent", "I won't last ten"],
+        out: "Ten seconds in range. Range turned out not to be intent.", make: () => near(1.7, 10) },
+    ],
+    heights: [
+      { id: "down3", minRung: 0, title: "Look straight down, three breaths", how: "At the edge, tip your gaze all the way down and breathe.",
+        predictions: ["I'll get pulled toward it", "It'll surge then settle", "I can't look down"],
+        out: "Three breaths looking straight down. The pull was a feeling, not a force.", make: () => pitchBelow(-0.8, 8) },
+      { id: "cycles", minRung: 1, title: "Horizon, then down — three times", how: "Look far out, then straight down. Three round trips.",
+        predictions: ["Each look down gets worse", "Each one gets easier", "I'll stop at one"],
+        out: "Three round trips. The third was smaller than the first — you felt it.", make: () => pitchCycles(3) },
+      { id: "stand", minRung: 2, title: "Stand still at the drop", how: "Twelve seconds, feet planted, no stepping back.",
+        predictions: ["My legs will give", "Standing is just standing", "I'll retreat"],
+        out: "Twelve still seconds at the drop. Your legs held — they always were going to.", make: () => still(12) },
+    ],
+    dark: [
+      { id: "still20", minRung: 0, title: "Stand still in it", how: "Twenty seconds, no walking, hands down.",
+        predictions: ["Something will use the dark", "It's the same room, unlit", "I'll bolt for the switch"],
+        out: "Twenty still seconds. The room stayed the room.", make: () => still(20) },
+      { id: "cross", minRung: 1, title: "Cross the dark without stopping", how: "Pick the far side and walk to it.",
+        predictions: ["I'll walk into something", "I know this room", "I'll freeze halfway"],
+        out: "You crossed it. Your feet knew the floor the whole way.", make: () => traverse(8) },
+      { id: "stay", minRung: 2, title: "Give it a full minute", how: "Sixty seconds in the dark, spent however you like.",
+        predictions: ["A minute is too long", "A minute is just a minute", "I'll count every second"],
+        out: "A whole minute. Somewhere in the middle, it got boring — that's the win.", make: () => endure(60) },
+    ],
+    enclosed: [
+      { id: "still20", minRung: 0, title: "Be still in the small space", how: "Twenty seconds without moving. Notice the air keeps arriving.",
+        predictions: ["The air will run short", "Air doesn't care about walls", "I'll need the door"],
+        out: "Twenty still seconds. The air kept arriving, breath after breath.", make: () => still(20) },
+      { id: "walk", minRung: 1, title: "Walk its full length", how: "Pace the space end to end, unhurried.",
+        predictions: ["Moving will make it tighter", "It's bigger than it feels", "I'll cut it short"],
+        out: "You paced it out. It was bigger than your chest said it was.", make: () => traverse(6) },
+      { id: "stay", minRung: 2, title: "Give it a full minute", how: "Sixty seconds inside, at your own pace.",
+        predictions: ["I'll be counting the walls", "It'll fade into background", "I'll leave early"],
+        out: "A full minute, and the walls lost your attention before it ended.", make: () => endure(60) },
+    ],
+  };
+
+  // ---- evidence storage (per character, like worldsteps) ----
+  function evidenceOf(phobiaKey) {
+    const cs = activeCharSlice();
+    if (!cs.evidence) cs.evidence = {};
+    if (!Array.isArray(cs.evidence[phobiaKey])) cs.evidence[phobiaKey] = [];
+    return cs.evidence[phobiaKey];
+  }
+  function evidenceCount() {
+    const cs = activeCharSlice();
+    return Object.values(cs.evidence || {}).reduce((s, a) => s + a.length, 0);
+  }
+  function addEvidence(phobiaKey, line) {
+    const list = evidenceOf(phobiaKey);
+    list.push(line);
+    if (list.length > 120) list.splice(0, list.length - 120);
+    saveState();
+  }
+  function doneBefore(phobiaKey, id) {
+    return evidenceOf(phobiaKey).some((l) => l.id === id);
+  }
+
+  // ---- live session ----
+  let S = null;          // { phobiaKey, levelIdx, panel, deck, run, els, elapsed, events, lastPos, shownAt }
+  let lastSession = null; // summary viewComplete reads after unmount
+
+  function el(tag, cls, html) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html != null) e.innerHTML = html;
+    return e;
+  }
+
+  function begin(phobiaKey, levelIdx, stage) {
+    end();
+    const deck = (DECKS[phobiaKey] || []).filter((x) => levelIdx >= x.minRung);
+    if (!deck.length || !stage) return;
+    const panel = el("div", "exp-panel collapsed");
+    panel.setAttribute("role", "group");
+    panel.setAttribute("aria-label", t("exp.aria", "Optional experiments"));
+    S = { phobiaKey, levelIdx, stage, panel, deck, run: null, elapsed: 0,
+          events: new Set(), lastPos: null, results: [], startTs: Date.now() };
+    lastSession = null;
+    renderList();
+    stage.appendChild(panel);
+  }
+
+  function renderList() {
+    if (!S) return;
+    const open = !S.panel.classList.contains("collapsed");
+    S.panel.innerHTML = "";
+    const head = el("div", "exp-head",
+      `🧪 ${t("exp.head", "Experiments")} <span class="exp-n">${open ? t("exp.optional", "optional · pick one") : S.deck.length}</span>`);
+    head.addEventListener("click", () => { S.panel.classList.toggle("collapsed"); renderList(); });
+    S.panel.appendChild(head);
+    if (!open) return;
+    const list = el("div", "exp-list");
+    S.deck.forEach((x) => {
+      const done = doneBefore(S.phobiaKey, x.id) || S.results.some((r) => r.id === x.id);
+      const b = el("button", "exp-item" + (done ? " done" : ""),
+        `${done ? `<span class="exp-check">✓</span>` : ""}${escapeHtml(x.title)}`);
+      b.addEventListener("click", () => renderPick(x));
+      list.appendChild(b);
+    });
+    S.panel.appendChild(list);
+  }
+
+  function renderPick(x) {
+    if (!S) return;
+    S.panel.classList.remove("collapsed");
+    S.panel.innerHTML = "";
+    const head = el("div", "exp-head", `🧪 ${escapeHtml(x.title)}`);
+    S.panel.appendChild(head);
+    const pick = el("div", "exp-pick",
+      `<p class="exp-q">${t("exp.predict", "Before you try — what do you expect?")}</p>`);
+    x.predictions.forEach((p, i) => {
+      const c = el("button", "exp-chip", escapeHtml(p));
+      c.addEventListener("click", () => arm(x, i));
+      pick.appendChild(c);
+    });
+    const back = el("button", "exp-cancel", t("exp.back", "back"));
+    back.addEventListener("click", renderList);
+    pick.appendChild(back);
+    S.panel.appendChild(pick);
+  }
+
+  function arm(x, predIdx) {
+    if (!S) return;
+    S.run = { x, predIdx, st: {}, tick: x.make(), progress: 0 };
+    S.panel.innerHTML = "";
+    S.panel.appendChild(el("div", "exp-head", `🧪 ${escapeHtml(x.title)}`));
+    const run = el("div", "exp-run",
+      `<p class="exp-how">${escapeHtml(x.how)}</p><div class="exp-bar"><i></i></div>`);
+    const cancel = el("button", "exp-cancel", t("exp.cancel", "stop this experiment"));
+    cancel.addEventListener("click", () => { S.run = null; renderList(); });
+    run.appendChild(cancel);
+    S.panel.appendChild(run);
+    S.barEl = S.panel.querySelector(".exp-bar i");
+  }
+
+  function complete() {
+    const { x, predIdx } = S.run;
+    S.run = null;
+    const first = !doneBefore(S.phobiaKey, x.id);
+    const pts = first ? 18 + 4 * S.levelIdx : 6;
+    const line = {
+      id: x.id, ts: Date.now(), rung: S.levelIdx,
+      predicted: x.predictions[predIdx], note: x.out,
+    };
+    addEvidence(S.phobiaKey, line);
+    S.results.push({ id: x.id, title: x.title, predicted: line.predicted, note: x.out, pts });
+    try { awardCourage(pts, "experiment"); } catch {}
+    try { PhobiaAudio.ui("spark"); } catch {}
+    S.panel.innerHTML = "";
+    S.panel.appendChild(el("div", "exp-head", `✅ ${escapeHtml(x.title)}`));
+    S.panel.appendChild(el("div", "exp-result",
+      `<p class="exp-out">${escapeHtml(x.out)}</p>
+       <p class="exp-vs">${tf("exp.vs", "You expected: “{p}” · +{n} courage", { p: escapeHtml(line.predicted), n: pts })}</p>`));
+    setTimeout(() => { if (S && !S.run) renderList(); }, 6500);
+  }
+
+  // Called every frame from the 3D module scope with plain numbers.
+  function frame(d) {
+    if (!S) return;
+    S.elapsed += d.dt;
+    // player speed from position deltas — the module keeps its own last-pos
+    let speed = 0;
+    if (S.lastPos && d.px != null) {
+      speed = Math.hypot(d.px - S.lastPos.x, d.pz - S.lastPos.z) / Math.max(0.001, d.dt);
+      if (speed > 30) speed = 0;   // teleport (scene swap, respawn) — not walking
+    }
+    if (d.px != null) S.lastPos = { x: d.px, z: d.pz };
+    if (!S.run) { S.events.clear(); return; }
+    let dist = null, gazeDot = 0;
+    if (d.hasFocus) {
+      const dx = d.cx - d.px, dz = d.cz - d.pz;
+      dist = Math.hypot(dx, dz);
+      const len = Math.max(0.001, Math.hypot(d.fx, d.fz) * Math.hypot(dx, dz));
+      gazeDot = (d.fx * dx + d.fz * dz) / len;
+    }
+    const ctx = {
+      dist, gazeDot, speed,
+      pitch: Math.asin(Math.max(-1, Math.min(1, d.fy || 0))),
+      fear: d.fear || 0, threat: !!d.threat, landed: d.landed || 0,
+      events: S.events, elapsed: S.elapsed,
+    };
+    let p = 0;
+    try { p = S.run.tick(ctx, S.run.st, Math.min(0.1, d.dt)); } catch { p = 0; }
+    S.events.clear();
+    S.run.progress = Math.max(S.run.progress, Math.min(1, p));
+    if (S.barEl) S.barEl.style.width = (S.run.progress * 100).toFixed(0) + "%";
+    if (p >= 1) complete();
+  }
+
+  function signal(name) { if (S) S.events.add(name); }
+
+  function end() {
+    if (!S) return;
+    if (S.results.length) {
+      lastSession = { phobiaKey: S.phobiaKey, levelIdx: S.levelIdx, ts: Date.now(), results: S.results };
+    }
+    if (S.panel && S.panel.parentNode) S.panel.parentNode.removeChild(S.panel);
+    S = null;
+  }
+
+  return { begin, frame, signal, end, evidenceOf, evidenceCount,
+    lastSessionFor(phobiaKey, levelIdx) {
+      if (!lastSession) return null;
+      if (lastSession.phobiaKey !== phobiaKey || lastSession.levelIdx !== levelIdx) return null;
+      if (Date.now() - lastSession.ts > 10 * 60 * 1000) return null;
+      return lastSession;
+    },
+  };
+})();
+window.PhobiaExperiments = PhobiaExperiments;
+
 function mountExposure(phobiaKey, levelIdx) {
   const p = PHOBIAS[phobiaKey];
   const lv = p.levels[levelIdx];
   const stage = document.getElementById("stage");
   const minHold = parseInt(stage.dataset.minHold, 10) || 6;
+  // The experiment deck for this realm/rung (renders nothing when the realm
+  // has no deck). Torn down by unmount() via PhobiaExperiments.end().
+  try { PhobiaExperiments.begin(phobiaKey, levelIdx, stage); } catch {}
 
   // ---------- Immersion ----------
   // The scene was a ~1150×560 card with a step badge above it and a button row
@@ -20695,6 +21164,9 @@ function unmount() {
   // read in setupDogs but never written, so a late HDRI landed on a renderer
   // whose context had already been force-lost.
   if (active.scene && active.scene.userData) active.scene.userData.disposed = true;
+  // Close out any experiment run — stores the session summary viewComplete
+  // reads, and removes the panel from the stage.
+  try { window.PhobiaExperiments && window.PhobiaExperiments.end(); } catch {}
   // Stop both the rAF and the WebXR animation loop drivers
   cancelAnimationFrame(active.raf);
   if (active.renderer) {
@@ -21713,6 +22185,29 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // every phobia gets them from the one set of signals the engine already
     // publishes (PhobiaThreat, fear, and the contact the body/hands measure).
     try { detectEventBeats(t, dt); } catch (e) { console.warn("event beats:", e); }
+    // Behavioral experiments read the same signal set the narrator beats do —
+    // plain numbers across the module/classic boundary.
+    try {
+      if (window.PhobiaExperiments) {
+        const fwd = _audVec2.set(0, 0, -1).applyQuaternion(camera.quaternion);
+        let cx = null, cy = null, cz = null, hasFocus = false;
+        const th = window.PhobiaThreat;
+        if (_beat.creature) {
+          _beat.creature.getWorldPosition(_audVec3);
+          cx = _audVec3.x; cy = _audVec3.y; cz = _audVec3.z; hasFocus = true;
+        } else if (th) { cx = th.x; cy = th.y; cz = th.z; hasFocus = true; }
+        window.PhobiaExperiments.frame({
+          dt: dt || 0.016,
+          px: controls && controls.position ? controls.position.x : null,
+          pz: controls && controls.position ? controls.position.z : null,
+          fx: fwd.x, fy: fwd.y, fz: fwd.z,
+          cx, cy, cz, hasFocus,
+          fear: window.PhobiaFear ? PhobiaFear.get() : 0,
+          threat: !!window.PhobiaThreat,
+          landed: Math.max((body && body._contactLanded) || 0, (hands && hands.contactK) || 0),
+        });
+      }
+    } catch {}
     // Update the spatial-audio listener so HRTF panning tracks the camera.
     // We sample the camera's forward + up vectors every frame so any sound
     // played via PhobiaAudio.spatial(pos) is correctly localised.
@@ -29890,6 +30385,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
 
   function commandDog(cmd) {
     if (intensity === "barking" && cmd !== "stand") return;
+    // Experiments listen for command use ("call him over" arms on this).
+    try { window.PhobiaExperiments && window.PhobiaExperiments.signal("dog." + cmd); } catch {}
     switch (cmd) {
       case "sit":
         dogCtrl.sit();
@@ -31671,6 +32168,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           const held = pd < barkDistSnap + 0.8 && pd < 3.5;
           if (held && window.PhobiaFX?.achievement) {
             window.PhobiaFX.achievement("dogs.barkHeld", "🐕", "Bark weathered", "It barked. You stayed.");
+            try { window.PhobiaExperiments && window.PhobiaExperiments.signal("dog.barkEndured"); } catch {}
           }
           barkAt = 0;
         }
