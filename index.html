@@ -3701,6 +3701,33 @@ if ("serviceWorker" in navigator) {
     border: 1px solid var(--border-2);
   }
   .path-block .bridge-head h3 { color: #b9c4ee; }
+  /* Who's in the yard — the dog realm's two named residents and how well each
+     one knows this traveller. */
+  .companion-block {
+    margin-top: 18px; border-radius: var(--radius-lg); padding: 16px 18px;
+    background: linear-gradient(180deg, rgba(40,32,24,.55), rgba(26,20,15,.65));
+    border: 1px solid #6b543a;
+  }
+  .companion-block .bridge-head h3 { color: #f0cfa0; }
+  .dog-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .dog-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px;
+    background: var(--panel); border: 1px solid var(--border-2);
+    border-radius: 12px; padding: 10px 14px;
+  }
+  .dog-row.mid  { border-color: #8a6a42; }
+  .dog-row.high { border-color: #c79a56; background: linear-gradient(180deg, rgba(44,34,20,.6), var(--panel)); }
+  .dog-id { display: flex; flex-direction: column; min-width: 140px; }
+  .dog-id strong { font-size: 15px; }
+  .dog-species { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .dog-bond { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 190px; }
+  .dog-band { font-size: 13px; color: #f0cfa0; font-weight: 600; }
+  .dog-track { height: 5px; border-radius: 3px; background: rgba(255,255,255,.13); overflow: hidden; }
+  .dog-track i {
+    display: block; height: 100%; border-radius: 3px;
+    background: linear-gradient(90deg, #c79a56, #f0cfa0); transition: width .5s ease;
+  }
+  .dog-when { font-size: 11px; color: var(--muted); }
   .bridge-head h3 { margin: 0 0 4px; color: #8fe3c9; }
   .bridge-sub { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 12px; }
   .bridge-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
@@ -8056,6 +8083,46 @@ function realmStatus(phobiaKey) {
   const walked = trials >= totalTrials;          // every trial faced in here
   return { trials, totalTrials, steps, totalSteps, walked, tamed: walked && steps >= totalSteps };
 }
+// ---------- The dogs, as individuals ----------
+// The scene has always known these two: a name, a temperament that changes by
+// the day, and a trust value that persists per breed and per traveller. None
+// of it ever reached a page the user reads, so the realm advertised "the Hound
+// Shadow" while the room contained a shiba called Buddy who remembered them.
+//
+// Trust is the arc the whole realm is actually about — a dog you were afraid
+// of becoming a dog you know — so it gets said in relationship terms rather
+// than as a percentage. The bands match the thresholds the scene itself uses
+// for proximity permission (see setTrust: minDistance shrinks with trust).
+const DOG_COMPANIONS = [
+  { breed: "shiba", species: "shiba", nameKey: "fobia.dogName",       fallback: "Buddy", rungs: "trials 1–2" },
+  { breed: "husky", species: "husky", nameKey: "fobia.dogName.husky", fallback: "Koda",  rungs: "trials 3–5" },
+];
+function dogTrustBand(trust, met) {
+  if (!met)            return { label: "hasn't met you yet",      tone: "none" };
+  if (trust < 0.12)    return { label: "knows your face",         tone: "low" };
+  if (trust < 0.35)    return { label: "comes when you call",     tone: "low" };
+  if (trust < 0.60)    return { label: "lets you stand close",    tone: "mid" };
+  if (trust < 0.85)    return { label: "leans into your hand",    tone: "high" };
+  return { label: "trusts you completely", tone: "high" };
+}
+function dogCompanions() {
+  // loadCharacter() returns null before a traveller is created — the optional
+  // chain matters, the && chain does not (it only proves the function exists).
+  const charId = (window.Character?.loadCharacter?.()?.id) || "default";
+  return DOG_COMPANIONS.map((c) => {
+    let name = c.fallback, trust = 0, seen = null;
+    try {
+      name = localStorage.getItem(c.nameKey) || c.fallback;
+      trust = Math.max(0, Math.min(1, parseFloat(localStorage.getItem(`fobia.dogs.trust.${charId}.${c.breed}`) || "0")));
+      seen = JSON.parse(localStorage.getItem(`fobia.dogs.lastSeen.${c.breed}`) || "null");
+    } catch {}
+    // "Met" is having been in the room together, which trust alone can't say:
+    // a traveller who kept their distance the whole time is still someone the
+    // dog has met, and trust would read 0 for them exactly as for a stranger.
+    const met = !!seen || trust > 0;
+    return Object.assign({}, c, { name, trust, seen, met, band: dogTrustBand(trust, met) });
+  });
+}
 function worldstepCount() {
   const cs = activeCharSlice();
   return Object.values(cs.worldsteps || {}).reduce((s, arr) => s + arr.length, 0);
@@ -10367,6 +10434,46 @@ function viewLadder(phobiaKey) {
 
   const bridgeBlock = bridgeBlockFor(phobiaKey, prog);
 
+  // Who actually lives here. Only the dog realm has named individuals with a
+  // remembered relationship — the spider and the snake are creatures, not
+  // companions — so this renders for dogs alone rather than being faked for
+  // every realm. It is the realm's real arc, stated: the animal you were
+  // afraid of is one that increasingly knows you.
+  let companionBlock = "";
+  if (phobiaKey === "dogs") {
+    const rows = dogCompanions().map((c) => {
+      const pct = Math.round(c.trust * 100);
+      // Three states, not two: a traveller can have earned trust before this
+      // build started recording encounters, and telling them "you haven't been
+      // in the room together" directly under "knows your face" reads as a bug.
+      const when = c.seen && c.seen.temper
+        ? tf("dog.lastSeen", "last time it seemed {t}", { t: escapeHtml(c.seen.temper) })
+        : c.met
+          ? t("dog.metBefore", "you've met before")
+          : t("dog.notYet", "you haven't been in the room together");
+      return `
+        <li class="dog-row ${c.band.tone}">
+          <div class="dog-id">
+            <strong>${escapeHtml(c.name)}</strong>
+            <span class="dog-species">${t("dog." + c.species, c.species)} · ${t("dog.rungs." + c.breed, c.rungs)}</span>
+          </div>
+          <div class="dog-bond">
+            <span class="dog-band">${c.band.label}</span>
+            <span class="dog-track"><i style="width:${pct}%"></i></span>
+            <span class="dog-when">${when}</span>
+          </div>
+        </li>`;
+    }).join("");
+    companionBlock = `
+      <section class="companion-block">
+        <div class="bridge-head">
+          <h3>${t("dog.head", "🐾 Who's in the yard")}</h3>
+          <span class="bridge-sub">${t("dog.sub", "Two dogs live in this realm, and they remember you between visits. Time near them — not just time in here — is what moves this.")}</span>
+        </div>
+        <ul class="dog-list">${rows}</ul>
+      </section>`;
+  }
+
   // The Mirror: baseline invite on first visit, then a quiet chip with the
   // latest score + delta and a re-check link. Rated about real life — this
   // is the realm's outcome measure, not another game stat.
@@ -10417,6 +10524,7 @@ function viewLadder(phobiaKey) {
         <ol class="trial-path">${items}</ol>
       </section>
       ${bridgeBlock}
+      ${companionBlock}
       ${goalBlock}
       ${progressLink}
       ${infoBlock}
@@ -28482,6 +28590,15 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         : (localStorage.getItem("fobia.dogName") || "Buddy");
     } catch { return breed === "husky" ? "Koda" : "Buddy"; }
   })();
+  // Leave a trace of this encounter for the pages outside the scene. The
+  // temperament is drawn per visit and was only ever legible for the seconds
+  // it was on screen; written down, it lets the realm page say who the
+  // traveller actually met last time instead of describing a species.
+  try {
+    localStorage.setItem(`fobia.dogs.lastSeen.${breed}`, JSON.stringify({
+      temper: temper.label, rung: levelIdx, ts: Date.now(),
+    }));
+  } catch {}
   function makeNameSprite(text) {
     const c = document.createElement("canvas");
     c.width = 512; c.height = 128;
