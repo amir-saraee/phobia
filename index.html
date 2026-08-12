@@ -10714,13 +10714,22 @@ function viewProfiles() {
   const streak = computeStreak();
   const totalSessions = state.log.length;
   const rungsClimbed = Object.values(state.progress).reduce((s, p) => s + Math.max(0, (p.highestCompleted ?? -1) + 1), 0);
-  const laddersDone = Object.entries(PHOBIAS).filter(([k, p]) => (state.progress[k]?.highestCompleted ?? -1) >= p.levels.length - 1).length;
+  // Two different achievements, and calling both "ladders done" hid the one
+  // that matters. Walking the five trials is the rehearsal; a realm is only
+  // behind you once the real steps are walked too (see realmStatus). The
+  // profile said "1 ladder done" while the map still showed the realm unfinished.
+  const statuses = Object.keys(PHOBIAS).map((k) => realmStatus(k));
+  const valleysWalked = statuses.filter((s) => s.walked).length;
+  const realmsDone = statuses.filter((s) => s.tamed).length;
+  const stepsTaken = worldstepCount();
   const statStrip = `
     <div class="stat-strip">
       <div class="stat-tile" style="--i:0"><span class="stat-num">${streak}</span><span class="stat-lbl">🔥 day streak</span></div>
       <div class="stat-tile" style="--i:1"><span class="stat-num">${totalSessions}</span><span class="stat-lbl">session${totalSessions === 1 ? "" : "s"}</span></div>
       <div class="stat-tile" style="--i:2"><span class="stat-num">${rungsClimbed}</span><span class="stat-lbl">rungs climbed</span></div>
-      <div class="stat-tile" style="--i:3"><span class="stat-num">${laddersDone}</span><span class="stat-lbl">ladder${laddersDone === 1 ? "" : "s"} done</span></div>
+      <div class="stat-tile" style="--i:3"><span class="stat-num">${stepsTaken}</span><span class="stat-lbl">🌍 real step${stepsTaken === 1 ? "" : "s"}</span></div>
+      <div class="stat-tile" style="--i:4"><span class="stat-num">${valleysWalked}</span><span class="stat-lbl">valley${valleysWalked === 1 ? "" : "s"} walked</span></div>
+      <div class="stat-tile" style="--i:5"><span class="stat-num">${realmsDone}</span><span class="stat-lbl">realm${realmsDone === 1 ? "" : "s"} behind you</span></div>
     </div>`;
   // Trophy case — the active character's earned milestones (the full data
   // model already exists; Insights shows it too, but the profile is the natural
@@ -13163,8 +13172,9 @@ function generateProgressCard() {
   // Stats
   const totalSessions = state.log.length;
   const completedRungs = Object.values(state.progress || {}).reduce((s, p) => s + (p.highestCompleted + 1), 0);
-  const ladders = Object.entries(PHOBIAS).filter(([k, p]) =>
-    state.progress && state.progress[k] && state.progress[k].highestCompleted >= p.levels.length - 1).length;
+  // The shareable card is the one artefact that leaves the app, so it should
+  // not claim a realm is complete on rehearsals alone.
+  const ladders = Object.keys(PHOBIAS).filter((k) => realmStatus(k).walked).length;
   const predicted = state.log.filter(l => l.predicted != null);
   const avgGap = predicted.length
     ? predicted.reduce((s, l) => s + (l.predicted - l.suds), 0) / predicted.length
@@ -13182,7 +13192,7 @@ function generateProgressCard() {
   drawStat( 80, 380, String(totalSessions),  "TOTAL SESSIONS");
   drawStat(380, 380, String(completedRungs), "RUNGS CLIMBED");
   drawStat(680, 380, streak >= 1 ? `🔥 ${streak}` : "—", "DAY STREAK");
-  drawStat( 80, 540, ladders > 0 ? String(ladders) : "—", "LADDERS COMPLETE");
+  drawStat( 80, 540, ladders > 0 ? String(ladders) : "—", "VALLEYS WALKED");
   drawStat(380, 540, avgGap == null ? "—" : (avgGap >= 0 ? "+" : "") + avgGap.toFixed(1), "AVG OVER-PREDICTION");
 
   // Per-phobia mini chart
