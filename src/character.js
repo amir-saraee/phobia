@@ -572,8 +572,8 @@ function viewCharacterCreator(existing, allPhobias) {
   return `
     <div class="creator">
       <div class="creator-intro">
-        <h2>Meet yourself.</h2>
-        <p class="lead-sm">This character walks every step with you. The skin, the hair, the shirt — that's what you'll see in third-person on every rooftop, in every room. Make them yours.</p>
+        <h2>${window.t ? window.t("creator.h", "Before you walk the valley, become someone.") : "Before you walk the valley, become someone."}</h2>
+        <p class="lead-sm">${window.t ? window.t("creator.lead", "This traveler walks every step with you — their hand on the railing, their feet at the cellar stairs. Choose a face, then name the fear you want to meet. The story continues from there.") : "This traveler walks every step with you — their hand on the railing, their feet at the cellar stairs. Choose a face, then name the fear you want to meet. The story continues from there."}</p>
       </div>
 
       <div class="creator-grid">
@@ -682,15 +682,15 @@ function viewCharacterCreator(existing, allPhobias) {
       <div class="creator-phobias">
         <div class="creator-section-head">
           <span class="creator-section-num">5</span>
-          <h3>Which fears are on your mind?</h3>
+          <h3>${window.t ? window.t("creator.fearsH", "Which fear opens your path?") : "Which fear opens your path?"}</h3>
         </div>
-        <p class="lead-sm">Pick one or several. The first becomes your primary — you can change it from your profile.</p>
+        <p class="lead-sm">${window.t ? window.t("creator.fearsP", "Pick one or several. The first becomes the chapter you walk into — you can change it from your profile.") : "Pick one or several. The first becomes the chapter you walk into — you can change it from your profile."}</p>
         <div class="phobia-grid">${phobiaOptions}</div>
       </div>
 
       <div class="creator-actions">
         <button class="btn-ghost" id="creatorRandom">🎲 Surprise me</button>
-        <button class="btn-primary" id="creatorSave">Save &amp; begin</button>
+        <button class="btn-primary" id="creatorSave">${window.t ? window.t("creator.save", "Save & enter the valley") : "Save & enter the valley"}</button>
         ${existing ? `<button class="btn-ghost" id="creatorCancel">Cancel</button>` : ""}
       </div>
     </div>

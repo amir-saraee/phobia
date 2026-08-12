@@ -186,6 +186,29 @@ if ("serviceWorker" in navigator) {
   @media (min-width: 600px) {
     .app { padding: var(--space-6) var(--space-6) var(--space-16); }
   }
+  /* Full-bleed 3D title / threshold: the canvas IS the page. */
+  body.landing-mode { overflow: hidden; }
+  .app.landing-mode {
+    max-width: none;
+    padding: 0;
+    height: 100%;
+    min-height: 100dvh;
+  }
+  .app.landing-mode header.brand {
+    position: absolute;
+    z-index: 30;
+    top: 0; left: 0; right: 0;
+    margin: 0;
+    padding: 10px 16px;
+    background: linear-gradient(180deg, rgba(8,12,22,.78) 0%, transparent 100%);
+    pointer-events: none;
+  }
+  .app.landing-mode header.brand > * { pointer-events: auto; }
+  .app.landing-mode #view {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+  .app.landing-mode #view.view-enter { animation: none; }
   header.brand {
     display: flex; align-items: center; justify-content: space-between;
     margin-bottom: 20px;
@@ -3226,6 +3249,118 @@ if ("serviceWorker" in navigator) {
   }
   body.light-mode .story-disclaimer { color: #8a5b00; }
 
+  /* ---- Full-3D cinematic landing / threshold ---- */
+  .landing {
+    position: relative;
+    width: 100%;
+    height: 100dvh;
+    min-height: 520px;
+    overflow: hidden;
+    background: #070b14;
+    color: #e8eef7;
+  }
+  .landing-stage {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+  }
+  .landing-stage canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+  }
+  .landing-hud {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    text-align: center;
+    padding: 88px 20px 28px;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, rgba(7,11,20,.35) 0%, transparent 22%, transparent 48%, rgba(7,11,20,.55) 72%, rgba(7,11,20,.88) 100%);
+  }
+  .landing-hud > * { pointer-events: auto; max-width: 640px; }
+  .landing-kicker {
+    letter-spacing: 3.2px; text-transform: uppercase;
+    font-size: 11px; color: var(--accent); margin: 0 0 6px; font-weight: 700;
+  }
+  .landing-title {
+    margin: 0 0 10px;
+    font-size: clamp(32px, 6.4vw, 56px); letter-spacing: .4px; line-height: 1.06;
+    background: linear-gradient(180deg, #ffffff, #9fb4dc);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .landing-copy {
+    margin: 0 0 16px;
+    font-size: clamp(15px, 2.2vw, 18px);
+    line-height: 1.55;
+    color: #d5deee;
+    text-shadow: 0 2px 18px rgba(0,0,0,.55);
+  }
+  .landing-copy em { color: #fff; font-style: italic; }
+  .landing-actions {
+    display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+    margin-bottom: 14px;
+  }
+  .landing-beats {
+    display: flex; gap: 8px; justify-content: center; align-items: center;
+    margin-top: 4px;
+  }
+  .landing-beat {
+    width: 9px; height: 9px; border-radius: 50%;
+    border: 0; padding: 0; min-height: 0;
+    background: rgba(232,238,247,.28);
+    cursor: pointer;
+    transition: transform .2s ease, background .2s ease, box-shadow .2s ease;
+  }
+  .landing-beat[aria-current="true"] {
+    background: var(--accent);
+    transform: scale(1.35);
+    box-shadow: 0 0 10px rgba(124,209,197,.7);
+  }
+  .landing-realms {
+    display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+    margin: 4px 0 12px; max-width: 720px;
+  }
+  .landing-realm {
+    display: flex; flex-direction: column; gap: 2px; align-items: center;
+    background: rgba(20,28,50,.72); border: 1px solid rgba(58,74,114,.85);
+    border-radius: 12px; padding: 8px 10px; min-width: 104px;
+    cursor: pointer; color: #e8eef7; backdrop-filter: blur(8px);
+    transition: transform .2s ease, border-color .2s ease;
+  }
+  .landing-realm:hover:not(:disabled) { transform: translateY(-3px); border-color: var(--accent); }
+  .landing-realm:disabled { opacity: .5; cursor: default; }
+  .landing-realm strong { font-size: 12px; }
+  .landing-realm span { font-size: 10.5px; color: var(--accent); }
+  .landing-hint {
+    font-size: 11px; letter-spacing: 1.8px; text-transform: uppercase;
+    color: #94a3b8; margin: 8px 0 0;
+  }
+  .landing-disclaimer {
+    max-width: 520px; margin-top: 12px; font-size: 12px; color: #fde68a;
+    background: rgba(245, 158, 11, .10); border: 1px solid rgba(245, 158, 11, .28);
+    padding: 8px 12px; border-radius: 10px;
+  }
+  .landing-skip {
+    position: absolute; top: 58px; right: 16px; z-index: 6;
+    background: rgba(20,28,50,.55); border: 1px solid #3a4a72; color: #c5d0e4;
+    border-radius: 999px; padding: 6px 12px; font-size: 12px; cursor: pointer;
+    min-height: 36px;
+  }
+  [dir="rtl"] .landing-skip { right: auto; left: 16px; }
+  @media (max-width: 640px) {
+    .landing-hud { padding: 76px 14px 22px; }
+    .landing-skip { top: 54px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .landing-beat[aria-current="true"] { transform: none; }
+  }
+
   /* ---- Journey map (the Valley of Fears) ---- */
   /* NOTE: named .jworld because the legacy "how a session works" block already
      owns the .journey class (a grid) — reusing it laid the camp and realm list
@@ -4240,7 +4375,7 @@ const PhobiaAudio = (() => {
     dogPant:       [0.0144, 0.052],
     dogSniff:      [0.0132, 0.055],
     dogFootfall:   [0.0234, 0.058],
-    dogSample:     [0.50, 0.42],      // recorded bark/growl/pant/woof trim
+    dogSample:     [0.50, 0.48],      // recorded bark/growl/pant/woof — keep close to the take
     collarJingle:  [0.040, 0.048],
     dogMouthGrab:  [0.0438, 0.052],
     dogLapping:    [0.0300, 0.044],
@@ -4590,6 +4725,163 @@ const PhobiaAudio = (() => {
         for (const id of timers) clearTimeout(id);
         timers.clear();
       },
+    };
+  }
+
+  // ---- Fire crackle ----
+  // A campfire is not a hiss. It's a low roar (filtered noise) with irregular
+  // pops as pockets of sap burst. Sparse pops + a dark bed reads as wood fire
+  // instead of a gas ring.
+  function startFireCrackle(opts = {}) {
+    const c = ensureCtx(); if (!c) return { stop() {} };
+    const level = opts.gain == null ? 0.055 : opts.gain;
+    const pos = opts.pos || { x: 0, y: 0.3, z: 0 };
+    const out = spatial(pos, { refDistance: 1.4, maxDistance: 18, reverb: 0.12 });
+    const src = c.createBufferSource();
+    src.buffer = pinkNoiseBuffer(3.2);
+    src.loop = true;
+    const lp = c.createBiquadFilter();
+    lp.type = "lowpass"; lp.frequency.value = 780; lp.Q.value = 0.55;
+    const bp = c.createBiquadFilter();
+    bp.type = "bandpass"; bp.frequency.value = 420; bp.Q.value = 0.7;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, level), c.currentTime + 0.8);
+    const lfo = c.createOscillator();
+    const lfoG = c.createGain();
+    lfo.type = "sine"; lfo.frequency.value = 0.28;
+    lfoG.gain.value = level * 0.22;
+    lfo.connect(lfoG).connect(g.gain);
+    src.connect(lp).connect(bp).connect(g).connect(out);
+    src.start(); lfo.start();
+    let alive = true;
+    const timers = new Set();
+    const later = (fn, ms) => {
+      const id = setTimeout(() => { timers.delete(id); if (alive) fn(); }, ms);
+      timers.add(id);
+    };
+    const pop = () => {
+      if (!alive) return;
+      const now = c.currentTime;
+      const ns = c.createBufferSource(); ns.buffer = noiseBuffer(0.12);
+      const pbp = c.createBiquadFilter();
+      pbp.type = "bandpass";
+      pbp.frequency.value = 900 + Math.random() * 1600;
+      pbp.Q.value = 1.8;
+      const pg = c.createGain();
+      pg.gain.setValueAtTime(0.0001, now);
+      pg.gain.exponentialRampToValueAtTime(0.045 + Math.random() * 0.04, now + 0.004);
+      pg.gain.exponentialRampToValueAtTime(0.0004, now + 0.05 + Math.random() * 0.06);
+      ns.connect(pbp).connect(pg).connect(out);
+      ns.start(now); ns.stop(now + 0.14);
+      later(pop, 400 + Math.random() * 1600);
+    };
+    later(pop, 300 + Math.random() * 700);
+    return {
+      stop() {
+        alive = false;
+        for (const id of timers) clearTimeout(id);
+        timers.clear();
+        try {
+          g.gain.cancelScheduledValues(c.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.5);
+          src.stop(c.currentTime + 0.55);
+          lfo.stop(c.currentTime + 0.55);
+        } catch {}
+      },
+    };
+  }
+
+  // ---- Outdoor life ----
+  // A yard / clearing is air, then something happens: a leaf, a twig, an
+  // insect, a distant animal. Sparse and placed, same idea as startRoomLife.
+  function startOutdoorLife(opts = {}) {
+    const c = ensureCtx(); if (!c) return { stop() {} };
+    const level = opts.level == null ? 1 : opts.level;
+    const night = !!opts.night;
+    let alive = true;
+    const timers = new Set();
+    const later = (fn, ms) => {
+      const id = setTimeout(() => { timers.delete(id); if (alive) fn(); }, ms);
+      timers.add(id);
+    };
+    const leaf = () => {
+      const now = c.currentTime;
+      const out = spatial(
+        { x: (Math.random() - 0.5) * 10, y: 0.4 + Math.random() * 1.6, z: -2 - Math.random() * 8 },
+        { refDistance: 2.2, maxDistance: 28, air: true }
+      );
+      const src = c.createBufferSource(); src.buffer = noiseBuffer(0.35);
+      const bp = c.createBiquadFilter();
+      bp.type = "bandpass"; bp.frequency.value = 1800 + Math.random() * 1400; bp.Q.value = 0.8;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.016 * level, now + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.0004, now + 0.28);
+      src.connect(bp).connect(g).connect(out);
+      src.start(now); src.stop(now + 0.35);
+      later(leaf, 5000 + Math.random() * 11000);
+    };
+    const twig = () => {
+      const now = c.currentTime;
+      const out = spatial(
+        { x: (Math.random() - 0.5) * 8, y: 0.05, z: -1 - Math.random() * 6 },
+        { refDistance: 1.6, maxDistance: 18 }
+      );
+      const o = c.createOscillator(); o.type = "sawtooth";
+      const f0 = 180 + Math.random() * 140;
+      o.frequency.setValueAtTime(f0, now);
+      o.frequency.exponentialRampToValueAtTime(f0 * 0.55, now + 0.08);
+      const lp = c.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = 1100; lp.Q.value = 0.7;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.012 * level, now + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0004, now + 0.09);
+      o.connect(lp).connect(g).connect(out); o.start(now); o.stop(now + 0.12);
+      later(twig, 14000 + Math.random() * 22000);
+    };
+    const insect = () => {
+      const now = c.currentTime;
+      const dur = night ? (1.4 + Math.random() * 2.2) : (0.5 + Math.random() * 0.9);
+      const out = spatial(
+        { x: (Math.random() - 0.5) * 12, y: 0.15, z: -3 - Math.random() * 9 },
+        { refDistance: 2.4, maxDistance: 30, air: true }
+      );
+      const src = c.createBufferSource(); src.buffer = noiseBuffer(dur + 0.1);
+      const bp = c.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = (night ? 3800 : 4600) + Math.random() * 900;
+      bp.Q.value = night ? 8 : 5;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime((night ? 0.010 : 0.008) * level, now + 0.2);
+      g.gain.exponentialRampToValueAtTime(0.0004, now + dur);
+      src.connect(bp).connect(g).connect(out);
+      src.start(now); src.stop(now + dur);
+      later(insect, (night ? 4000 : 8000) + Math.random() * 10000);
+    };
+    later(leaf, 1800 + Math.random() * 4000);
+    later(twig, 8000 + Math.random() * 12000);
+    later(insect, 2200 + Math.random() * 5000);
+    return {
+      stop() {
+        alive = false;
+        for (const id of timers) clearTimeout(id);
+        timers.clear();
+      },
+    };
+  }
+
+  // Night valley bed for the 3D landing: wind + muffled forest + fire + life.
+  function startNightValley(opts = {}) {
+    const handles = [];
+    try { handles.push(startAmbienceBed("wind", { gain: opts.windGain == null ? 0.028 : opts.windGain })); } catch {}
+    try { handles.push(startAmbienceBed("forest", { gain: opts.forestGain == null ? 0.018 : opts.forestGain, lowpass: 1400 })); } catch {}
+    try { handles.push(startFireCrackle({ gain: opts.fireGain == null ? 0.048 : opts.fireGain, pos: opts.firePos || { x: 0, y: 0.25, z: 0 } })); } catch {}
+    try { handles.push(startOutdoorLife({ night: true, level: opts.life == null ? 0.85 : opts.life })); } catch {}
+    return {
+      stop() { handles.forEach((h) => { try { h && h.stop && h.stop(); } catch {} }); },
     };
   }
 
@@ -6612,7 +6904,7 @@ const PhobiaAudio = (() => {
     unlock, setMuted, isMuted, duck, ui,
     startMonitorBeep, startCreaks,
     startWind, startWaterLap, startUnderwater, startRoomTone, startAmbienceBed, startCityHum,
-    startRoomLife,
+    startRoomLife, startFireCrackle, startOutdoorLife, startNightValley,
     startBarking, startSkittering, startMRI, startBreathing, startHeartbeat,
     breathCatch,
     startVertigoHeartbeat,
@@ -8717,6 +9009,7 @@ function serializeRoute(view, params = {}) {
   switch (view) {
     case "welcome":   return "/";
     case "select":    return "/fears";
+    case "threshold": return "/begin";
     case "about":     return "/about";
     case "journal":   return "/journal";
     case "report":    return "/report";
@@ -8741,6 +9034,7 @@ function parseRoute(hash) {
   if (parts.length === 0) return { view: "welcome", params: {} };
   switch (parts[0]) {
     case "fears":    return { view: "select",    params: {} };
+    case "begin":    return { view: "threshold", params: {} };
     case "about":    return { view: "about",     params: {} };
     case "journal":  return { view: "journal",   params: {} };
     case "report":   return { view: "report",    params: {} };
@@ -8838,6 +9132,14 @@ function render(view, params) {
     window.AvatarPreview.unmount();
   }
   if (window.PhobiaVoice) window.PhobiaVoice.stop();
+  if (window._landingAudio) {
+    try { window._landingAudio.stop(); } catch {}
+    window._landingAudio = null;
+  }
+  const isLanding = view === "welcome" || view === "threshold";
+  document.body.classList.toggle("landing-mode", isLanding);
+  const appEl = document.getElementById("app");
+  if (appEl) appEl.classList.toggle("landing-mode", isLanding);
   // Any leftover tutorial overlays from a previous mount must be removed,
   // otherwise they linger on body when the view re-renders.
   document.querySelectorAll(".tour-overlay").forEach(el => el.remove());
@@ -8879,7 +9181,7 @@ function render(view, params) {
         ${langBtn}
         ${audioBtn}
         ${settingsBtn}
-        ${view !== "welcome" && view !== "character" ? `<button class="home-btn" id="home" aria-label="Back to the journey map">${t("hud.camp", "🏕 Camp")}</button>` : ""}
+        ${view !== "welcome" && view !== "character" && view !== "threshold" ? `<button class="home-btn" id="home" aria-label="Back to the journey map">${t("hud.camp", "🏕 Camp")}</button>` : ""}
       </nav>
     </header>
     <main id="view" role="main"></main>
@@ -8889,6 +9191,7 @@ function render(view, params) {
   // Set focus to main content for screen readers when navigating
   if (v && v.setAttribute) { v.setAttribute("tabindex", "-1"); }
   if (view === "welcome")     v.innerHTML = viewWelcome();
+  if (view === "threshold")   v.innerHTML = viewThreshold();
   if (view === "character")   v.innerHTML = viewCharacterPage(params.editing);
   if (view === "select")      v.innerHTML = viewSelect();
   if (view === "ladder")      v.innerHTML = viewLadder(params.phobia);
@@ -8922,9 +9225,10 @@ function render(view, params) {
   if (view === "custom")    attachCustomHandlers(params.editing);
   if (view === "exposure")  mountExposure(params.phobia, params.level);
   if (view === "breathe")   runBreathing();
-  if (view === "welcome")   mountStory();
+  if (view === "welcome" || view === "threshold" || view === "select" || view === "ladder") mountShell3D(view, params);
+  if (view === "welcome")   mountLandingHUD();
+  if (view === "threshold") mountThresholdHUD();
   if (view === "select")    mountJourney();
-  if (view === "welcome" || view === "select" || view === "ladder") mountShell3D(view, params);
 
   // Move focus to the new view's heading so keyboard + screen-reader users
   // don't get stranded on the just-removed element (which drops focus to
@@ -8945,7 +9249,7 @@ function render(view, params) {
   // it after the animation finishes so future re-renders can re-trigger it.
   // Skipped for the exposure scene because the canvas already does its own
   // smooth scene-ready fade — stacking animations looks janky.
-  if (v && view !== "exposure") {
+  if (v && view !== "exposure" && view !== "welcome" && view !== "threshold") {
     v.classList.remove("view-enter");
     // Force a reflow so removing+adding the class re-runs the animation
     void v.offsetWidth;
@@ -8957,8 +9261,10 @@ function render(view, params) {
 function viewCharacterPage(editing) {
   if (!window.Character) return `<div class="panel"><p>Loading…</p></div>`;
   const existing = editing ? window.Character.loadCharacter() : null;
+  const kicker = editing ? "" : `<p class="landing-kicker" style="text-align:center;margin-bottom:10px">${t("story.creatorKicker", "chapter one — become someone")}</p>`;
   return `
     <div class="panel">
+      ${kicker}
       ${window.Character.viewCharacterCreator(existing, pickablePhobias(existing))}
     </div>
   `;
@@ -8971,8 +9277,10 @@ function attachCharacterHandlers(editing) {
     existing, pickablePhobias(existing),
     (savedChar) => {
       window._prevActiveCharId = null;
-      // After saving, take them straight to the ladder for their primary phobia
-      go("ladder", { phobia: savedChar.primaryPhobia });
+      // First creation: a 3D threshold scene names the fear and opens the path.
+      // Editing an existing traveler returns to their ladder.
+      if (editing) go("ladder", { phobia: savedChar.primaryPhobia });
+      else go("threshold");
     },
     () => {
       // Cancelling a NEW character: restore the previously-active character so
@@ -9567,6 +9875,12 @@ function handleAction(d, params) {
       go(existing ? "select" : "character", existing ? {} : { editing: false });
       break;
     }
+    case "enter-path": {
+      const ch = window.Character && window.Character.loadCharacter();
+      if (ch && ch.primaryPhobia) go("ladder", { phobia: ch.primaryPhobia });
+      else go("select");
+      break;
+    }
     case "select-phobia":   try { PhobiaAudio.ui("whoosh"); } catch {} go("ladder", { phobia: d.phobia }); break;
     case "start-level":     try { PhobiaAudio.ui("whoosh"); } catch {} go("predict", { phobia: d.phobia, level: parseInt(d.level, 10) }); break;
     case "confirm-predict": {
@@ -9702,85 +10016,163 @@ function starfieldHTML(n) {
 
 function viewWelcome() {
   const ch = window.Character && window.Character.loadCharacter();
-  const heroFigure = (window.Character && window.Character.avatarSVG)
-    ? `<div class="story-figure" id="storyFigure3d" title="Drag to spin your traveler">${window.Character.avatarSVG(ch || { skinTone: "fair", hairColor: "brown", hairStyle: "short", topColor: "teal", eyeColor: "brown" }, 120)}</div>`
-    : "";
   const heroLine = ch
     ? tf("story.welcomeBack", "Welcome back, {name}. The valley kept your place.", { name: `<strong>${escapeHtml(ch.name || "traveler")}</strong>` })
     : t("story.firstLine", "Everyone carries a fear. This one is yours to face — one small, safe step at a time.");
   const cta = ch
     ? `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaBack", "Continue the journey")}</button>`
-    : `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaNew", "✨ Create your traveler")}</button>`;
-
+    : `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaNew", "Create your traveler")}</button>`;
   const realmTeasers = FEATURED.filter(k => PHOBIAS[k]).map(k => `
-    <button class="story-realm" data-action="select-phobia" data-phobia="${k}" ${ch ? "" : `disabled title="Create your traveler first"`}>
-      <span class="story-realm-thumb" aria-hidden="true">${phobiaThumbnail(k)}</span>
-      <span class="story-realm-name">${escapeHtml(realmOf(k).realmName)}</span>
-      <span class="story-realm-fear">${escapeHtml(PHOBIAS[k].name)}</span>
+    <button class="landing-realm" data-action="select-phobia" data-phobia="${k}" ${ch ? "" : `disabled title="${t("story.createFirst", "Create your traveler first")}"`}>
+      <strong>${escapeHtml(realmOf(k).realmName)}</strong>
+      <span>${escapeHtml(PHOBIAS[k].label)}</span>
     </button>`).join("");
 
+  const beats = [
+    { kicker: t("story.kicker", "a tiny game about big fears"), title: t("story.title", "The Valley of Fears"), copy: heroLine, extra: "" },
+    { kicker: t("story.beat", "the story"), title: t("story.b1h", "Fear starts small."), copy: t("story.b1p", "A bark behind a fence. A spider in the bath. A balcony you didn't step onto. A room that felt too tight to breathe in."), extra: "" },
+    { kicker: t("story.beat", "the story"), title: t("story.b2h", "Avoid it, and it grows."), copy: t("story.b2p", "Every time you cross the street, take the stairs, leave the light on — the relief feels wonderful. And the shadow learns you fear it. That relief is exactly what feeds it."), extra: "" },
+    { kicker: t("story.beat", "the story"), title: t("story.b3h", "But fear has a secret."), copy: t("story.b3p", "Stay near it — gently, on your own terms — and it rises, peaks, and <em>falls by itself</em>. Your body learns what nobody could tell you: it's safe. Face the shadow, and it shrinks."), extra: "" },
+    { kicker: t("story.beat", "the story"), title: t("story.b4h", "That's the whole game."), copy: t("story.b4p", 'Six famous fears live in this valley. Each holds five trials, from "barely a whisper" to "the real thing". Walk them at your own pace — you can leave any trial at any moment, and leaving is never a defeat.'), extra: `<div class="landing-realms" id="landingRealms">${realmTeasers}</div>` },
+    { kicker: t("story.beat", "the story"), title: t("story.b5h", "Your journey starts at the campfire."), copy: t("story.b5p", "Make a traveler — a face, a name, the fears you want to face. They walk every scene with you: their hand on the railing, their feet at the cellar stairs."), extra: `<p class="landing-disclaimer">${t("story.disclaimer", "<strong>A practice game, not therapy.</strong> Real exposure work for phobias belongs with a trained clinician who paces it and supports you. Use Mira for curiosity, education, or as a conversation starter — not treatment.")}</p>` },
+  ];
+
+  const dots = beats.map((_, i) =>
+    `<button type="button" class="landing-beat" data-beat="${i}" aria-label="${t("story.beatN", "Story beat")} ${i + 1}" ${i === 0 ? `aria-current="true"` : ""}></button>`
+  ).join("");
+
   return `
-  <div class="story" id="storyRoot">
-    <section class="story-beat beat-hero lit">
-      <div class="story-sky" aria-hidden="true">${starfieldHTML(70)}<div class="story-moon"></div></div>
-      ${heroFigure}
-      <p class="story-kicker">${t("story.kicker", "a tiny game about big fears")}</p>
-      <h1 class="story-title">${t("story.title", "The Valley of Fears")}</h1>
-      <div class="story-bubble">${heroLine}</div>
-      <div class="actions story-actions">${cta}</div>
-      <div class="scroll-hint" aria-hidden="true"><span>${t("story.hint", "the story")}</span>▾</div>
-    </section>
-
-    <section class="story-beat" data-beat="1">
-      <div class="beat-shadow sz-1" aria-hidden="true"><i class="eye"></i><i class="eye"></i></div>
-      <h2 class="story-line">${t("story.b1h", "Fear starts small.")}</h2>
-      <p class="story-text">${t("story.b1p", "A bark behind a fence. A spider in the bath. A balcony you didn't step onto. A room that felt too tight to breathe in.")}</p>
-    </section>
-
-    <section class="story-beat" data-beat="2">
-      <div class="beat-shadow sz-3" aria-hidden="true"><i class="eye"></i><i class="eye"></i></div>
-      <h2 class="story-line">${t("story.b2h", "Avoid it, and it grows.")}</h2>
-      <p class="story-text">${t("story.b2p", "Every time you cross the street, take the stairs, leave the light on — the relief feels wonderful. And the shadow learns you fear it. That relief is exactly what feeds it.")}</p>
-    </section>
-
-    <section class="story-beat" data-beat="3">
-      <div class="story-curve" aria-hidden="true">
-        <svg viewBox="0 0 320 120" preserveAspectRatio="none">
-          <path class="curve-path" d="M8,104 C60,100 84,26 128,22 C176,18 216,74 264,92 C288,99 304,102 312,103"
-                fill="none" stroke-width="3" stroke-linecap="round"/>
-          <text x="96" y="14" class="curve-label">it peaks…</text>
-          <text x="196" y="78" class="curve-label">…then falls on its own</text>
-        </svg>
-      </div>
-      <h2 class="story-line">${t("story.b3h", "But fear has a secret.")}</h2>
-      <p class="story-text">${t("story.b3p", "Stay near it — gently, on your own terms — and it rises, peaks, and <em>falls by itself</em>. Your body learns what nobody could tell you: it's safe. Face the shadow, and it shrinks.")}</p>
-    </section>
-
-    <section class="story-beat" data-beat="4">
-      <div class="beat-shadow sz-0 tamed" aria-hidden="true"><i class="eye"></i><i class="eye"></i></div>
-      <h2 class="story-line">${t("story.b4h", "That's the whole game.")}</h2>
-      <p class="story-text">${t("story.b4p", 'Six famous fears live in this valley. Each holds five trials, from "barely a whisper" to "the real thing". Walk them at your own pace — you can leave any trial at any moment, and leaving is never a defeat.')}</p>
-      <div class="story-realms">${realmTeasers}</div>
-    </section>
-
-    <section class="story-beat beat-final" data-beat="5">
-      <h2 class="story-line">${t("story.b5h", "Your journey starts at the campfire.")}</h2>
-      <p class="story-text">${t("story.b5p", "Make a traveler — a face, a name, the fears you want to face. They walk every scene with you: their hand on the railing, their feet at the cellar stairs.")}</p>
-      <div class="actions story-actions">${cta}</div>
-      <p class="story-disclaimer">${t("story.disclaimer", "<strong>A practice game, not therapy.</strong> Real exposure work for phobias belongs with a trained clinician who paces it and supports you. Use Mira for curiosity, education, or as a conversation starter — not treatment.")}</p>
-    </section>
+  <div class="landing" id="landingRoot">
+    <div class="landing-stage" id="landing3d" aria-hidden="true"></div>
+    <button type="button" class="landing-skip" data-action="begin">${ch ? t("story.skipBack", "Skip to camp") : t("story.skipNew", "Skip to traveler")}</button>
+    <div class="landing-hud">
+      <p class="landing-kicker" id="landingKicker">${beats[0].kicker}</p>
+      <h1 class="landing-title" id="landingTitle">${beats[0].title}</h1>
+      <p class="landing-copy" id="landingCopy">${beats[0].copy}</p>
+      <div id="landingExtra"></div>
+      <div class="landing-actions">${cta}</div>
+      <div class="landing-beats" role="tablist" aria-label="${t("story.beats", "Story chapters")}">${dots}</div>
+      <p class="landing-hint">${t("story.hint3d", "drag to look · click chapters")}</p>
+    </div>
+    <textarea id="landingBeats" hidden>${escapeHtml(JSON.stringify(beats.map(b => ({ kicker: b.kicker, title: b.title, copy: b.copy, extra: b.extra }))))}</textarea>
   </div>`;
 }
 
-function mountStory() {
-  const rootEl = document.getElementById("storyRoot");
-  if (!rootEl) return;
-  const beats = rootEl.querySelectorAll(".story-beat");
-  if (!("IntersectionObserver" in window)) { beats.forEach(b => b.classList.add("lit")); return; }
-  const io = new IntersectionObserver((entries) => {
-    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add("lit"); io.unobserve(e.target); } });
-  }, { threshold: 0.35 });
-  beats.forEach(b => io.observe(b));
+function mountLandingHUD() {
+  const root = document.getElementById("landingRoot");
+  if (!root) return;
+  let beats = [];
+  try {
+    const raw = document.getElementById("landingBeats");
+    const src = raw && (raw.value || raw.textContent || "");
+    if (src) beats = JSON.parse(src);
+  } catch { beats = []; }
+  const kicker = document.getElementById("landingKicker");
+  const title = document.getElementById("landingTitle");
+  const copy = document.getElementById("landingCopy");
+  const extra = document.getElementById("landingExtra");
+  const dots = [...root.querySelectorAll(".landing-beat")];
+  let idx = 0;
+  let paused = false;
+  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function show(i, fromUser) {
+    if (fromUser) paused = true;
+    idx = Math.max(0, Math.min(beats.length - 1, i));
+    const b = beats[idx] || {};
+    if (kicker) kicker.textContent = b.kicker || "";
+    if (title) title.textContent = b.title || "";
+    if (copy) copy.innerHTML = b.copy || "";
+    if (extra) extra.innerHTML = b.extra || "";
+    dots.forEach((d, n) => d.setAttribute("aria-current", n === idx ? "true" : "false"));
+    if (window.ShellScenes && window.ShellScenes.setLandingBeat) {
+      try { window.ShellScenes.setLandingBeat(idx); } catch {}
+    }
+    // Re-bind data-action on injected realm buttons.
+    if (extra) {
+      extra.querySelectorAll("[data-action]").forEach((el) => {
+        el.addEventListener("click", (e) => {
+          if (el.dataset.stop) e.stopPropagation();
+          try { PhobiaAudio.unlock(); } catch {}
+          handleAction(el.dataset, {});
+        });
+      });
+    }
+  }
+  dots.forEach((d) => d.addEventListener("click", () => show(parseInt(d.dataset.beat, 10) || 0, true)));
+  root.addEventListener("wheel", (e) => {
+    if (Math.abs(e.deltaY) < 18) return;
+    e.preventDefault();
+    show(idx + (e.deltaY > 0 ? 1 : -1), true);
+  }, { passive: false });
+  let touchY = null;
+  root.addEventListener("touchstart", (e) => { touchY = e.touches[0] && e.touches[0].clientY; }, { passive: true });
+  root.addEventListener("touchend", (e) => {
+    if (touchY == null) return;
+    const y = e.changedTouches[0] && e.changedTouches[0].clientY;
+    const dy = touchY - y;
+    touchY = null;
+    if (Math.abs(dy) > 48) show(idx + (dy > 0 ? 1 : -1), true);
+  }, { passive: true });
+  window.addEventListener("keydown", function onKey(e) {
+    if (!root.isConnected) { window.removeEventListener("keydown", onKey); return; }
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); show(idx + 1, true); }
+    if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); show(idx - 1, true); }
+  });
+  if (!reduce && beats.length > 1) {
+    const timer = setInterval(() => {
+      if (!root.isConnected) { clearInterval(timer); return; }
+      if (paused) return;
+      show((idx + 1) % beats.length);
+    }, 7800);
+  }
+  show(0);
+}
+
+function viewThreshold() {
+  const ch = window.Character && window.Character.loadCharacter();
+  if (!ch) {
+    // Deep-link with no traveler — send them to create one.
+    setTimeout(() => go("character", { editing: false }), 0);
+    return `<div class="landing"><div class="landing-hud"><p class="landing-copy">${t("story.needTraveler", "First, become someone.")}</p></div></div>`;
+  }
+  const realm = realmOf(ch.primaryPhobia);
+  const fear = PHOBIAS[ch.primaryPhobia];
+  // The name is optional in the creator (and "🎲 Surprise me" doesn't fill it
+  // in), so plenty of travellers arrive here unnamed. Substituting the generic
+  // fallback made the headline read "traveler, you named your fear." — an
+  // address to nobody, lowercase, at the most personal beat in the game. When
+  // there's no name, use a headline that doesn't need one.
+  const rawName = ((ch.name || "") + "").trim();
+  const name = escapeHtml(rawName);
+  const whisper = (realm.whispers && realm.whispers[0]) || "";
+  return `
+  <div class="landing" id="thresholdRoot">
+    <div class="landing-stage" id="landing3d" aria-hidden="true"></div>
+    <div class="landing-hud">
+      <p class="landing-kicker">${t("story.thresholdKicker", "the path opens")}</p>
+      <h1 class="landing-title">${rawName
+        ? tf("story.thresholdTitle", "{name}, you named your fear.", { name })
+        : t("story.thresholdTitleAnon", "You named your fear.")}</h1>
+      <p class="landing-copy">${tf("story.thresholdCopy", "The way to <em>{realm}</em> is waiting — {epithet}. {whisper}", {
+        realm: escapeHtml(realm.realmName),
+        epithet: escapeHtml(realm.epithet || ""),
+        whisper: escapeHtml(whisper),
+      })}</p>
+      <div class="landing-actions">
+        <button class="btn-primary btn-xl" data-action="enter-path">${tf("story.enterPath", "Step into {realm}", { realm: escapeHtml(realm.realmName) })}</button>
+        <button class="btn-ghost" data-action="open-select">${t("story.seeValley", "See the whole valley")}</button>
+      </div>
+      ${fear ? `<p class="landing-hint">${escapeHtml(fear.label)} · ${escapeHtml(fear.name)}</p>` : ""}
+    </div>
+  </div>`;
+}
+
+function mountThresholdHUD() {
+  // Audio unlock on first gesture; the 3D mount starts the night bed.
+  const root = document.getElementById("thresholdRoot");
+  if (!root) return;
+  const unlock = () => { try { PhobiaAudio.unlock(); } catch {} };
+  root.addEventListener("pointerdown", unlock, { once: true });
 }
 
 // The journey map: a night valley the traveler scrolls down through — the
@@ -10165,13 +10557,19 @@ function mountShell3D(view, params) {
         if (el && window.ShellScenes && window.ShellScenes.mountRealm(el, params && params.phobia)) {
           el.closest(".realm-hero")?.classList.add("has3d");
         }
-      } else if (view === "welcome") {
-        // Title screen: the traveler as a real 3D turntable (drag to spin).
-        const el = document.getElementById("storyFigure3d");
+      } else if (view === "welcome" || view === "threshold") {
+        const el = document.getElementById("landing3d");
         const ch = window.Character && window.Character.loadCharacter();
-        if (el && window.AvatarPreview && window.AvatarPreview.mount) {
-          const hexes = charHexes(ch) || charHexes({ skinTone: "fair", hairColor: "brown", hairStyle: "short", topColor: "teal", eyeColor: "brown" });
-          if (hexes) { window.AvatarPreview.mount(el, hexes); el.classList.add("has3d"); }
+        if (el && window.ShellScenes && window.ShellScenes.mountLanding) {
+          const focus = (view === "threshold" && ch && ch.primaryPhobia) ? ch.primaryPhobia : null;
+          window.ShellScenes.mountLanding(el, {
+            charHexes: charHexes(ch) || charHexes({
+              skinTone: "fair", hairColor: "brown", hairStyle: "long",
+              topColor: "teal", eyeColor: "hazel", bodyType: "woman",
+            }),
+            focusPhobia: focus,
+            mode: view,
+          });
         }
       }
     } catch { /* 2D fallback stays */ }
@@ -11970,13 +12368,12 @@ function startSceneAudio(phobiaKey, levelIdx) {
       break;
     }
     case "dogs": {
-      // Recorded room + muffled birds outside the glass. Synth room tone stays
-      // as a whisper under the bed so a failed fetch never goes silent.
-      handles.push(A.startRoomTone(0.12));
+      // A room that opens onto a yard: indoor air + the meadow through glass.
+      handles.push(A.startRoomTone(0.10));
       if (A.startAmbienceBed) {
-        handles.push(A.startAmbienceBed("room", { gain: 0.038 }));
-        // Birds beyond the window — low-passed as if through closed glass.
-        handles.push(A.startAmbienceBed("birds", { gain: 0.028, lowpass: 2400 }));
+        handles.push(A.startAmbienceBed("room", { gain: 0.032 }));
+        handles.push(A.startAmbienceBed("birds", { gain: 0.036, lowpass: 2200 }));
+        handles.push(A.startAmbienceBed("wind", { gain: 0.014, lowpass: 900 }));
       }
       if (A.startRoomLife) {
         handles.push(A.startRoomLife({
@@ -11984,10 +12381,13 @@ function startSceneAudio(phobiaKey, levelIdx) {
           room: { x: 0, z: -0.2, rx: 4.6, rz: 5.4 },
         }));
       }
+      if (A.startOutdoorLife) {
+        handles.push(A.startOutdoorLife({ night: false, level: 0.55 }));
+      }
       break;
     }
     case "spiders": {
-      handles.push(A.startRoomTone(0.18));
+      handles.push(A.startRoomTone(0.16));
       handles.push(A.startSkittering());
       if (levelIdx >= 3) handles.push(A.startBreathing(0.35));
       break;
@@ -12019,9 +12419,11 @@ function startSceneAudio(phobiaKey, levelIdx) {
     case "snakes": {
       handles.push(A.startWind(0.12));
       if (A.startAmbienceBed) {
-        handles.push(A.startAmbienceBed("forest", { gain: 0.040 }));
-        handles.push(A.startAmbienceBed("wind", { gain: 0.022 }));
+        handles.push(A.startAmbienceBed("forest", { gain: 0.048 }));
+        handles.push(A.startAmbienceBed("wind", { gain: 0.024 }));
+        handles.push(A.startAmbienceBed("birds", { gain: 0.022 }));
       }
+      if (A.startOutdoorLife) handles.push(A.startOutdoorLife({ night: false, level: 0.9 }));
       handles.push(A.startHiss(0.15 + intensity * 0.4));
       if (levelIdx >= 3) handles.push(A.startBreathing(0.3));
       break;
@@ -12046,8 +12448,15 @@ function startSceneAudio(phobiaKey, levelIdx) {
       break;
     }
     case "dark": {
-      handles.push(A.startRoomTone(0.3 + intensity * 0.3));
-      if (A.startCreaks) handles.push(A.startCreaks(0.4 + intensity * 0.6));   // creaks/thumps grow with the dark
+      handles.push(A.startRoomTone(0.28 + intensity * 0.28));
+      if (A.startCreaks) handles.push(A.startCreaks(0.4 + intensity * 0.6));
+      if (A.startRoomLife) {
+        handles.push(A.startRoomLife({
+          window: { x: 1.6, y: 0.8, z: -4.2 },
+          room: { x: 0, z: 0, rx: 3.2, rz: 4.0 },
+          level: 0.55,
+        }));
+      }
       if (levelIdx >= 2) handles.push(A.startBreathing(0.4 + intensity * 0.2));
       break;
     }
@@ -15944,7 +16353,7 @@ function buildHead(o) {
     faceM.map = maps.albedo;
     if (maps.normal) {
       faceM.normalMap = maps.normal;
-      if (faceM.normalScale) faceM.normalScale.set(0.55, 0.55);
+      if (faceM.normalScale) faceM.normalScale.set(0.82, 0.82);
     }
     if (maps.roughness) {
       faceM.roughnessMap = maps.roughness;
@@ -38184,8 +38593,8 @@ function buildAvatarFigure(c) {
     if (rig.breath) rig.breath.scale.set(1 + br * 0.020, 1 + br * 0.014, 1 + br * 0.026);
     // Soft walk demo: ~0.55 of full stride so proportions stay readable while
     // still showing heel-strike / mid-swing clearly against the refs.
-    const walkAmt = 0.55;
-    const walkPhase = walkPhase0 + t * 3.4;
+    const walkAmt = 0.62;
+    const walkPhase = walkPhase0 + t * 3.55;
     const G = _GAIT;
     const thigh = (rig.dims && rig.dims.thighLen) || 0.38;
     const shin = (rig.dims && rig.dims.shinLen) || 0.38;
@@ -38206,25 +38615,27 @@ function buildAvatarFigure(c) {
       leg.knee.rotation.x = kneeWant;
       leg.foot.rotation.x = _solePitch(s) * walkAmt * 0.85 - (leg.hip.rotation.x + leg.knee.rotation.x) * 0.15;
     });
-    const shift = Math.sin(walkPhase) * 0.04;
-    rig.pelvis.rotation.set(0, shift * 0.55, Math.sin(walkPhase) * 0.025);
-    rig.spine.rotation.set(0.03, -shift * 0.35, -shift * 0.02);
-    rig.chest.rotation.set(0.02, -shift * 0.45, -shift * 0.025);
-    rig.group.position.y = br * 0.004 + Math.abs(Math.sin(walkPhase)) * 0.012 * walkAmt;
+    const shift = Math.sin(walkPhase) * 0.045;
+    rig.pelvis.rotation.set(0.02, shift * 0.62, Math.sin(walkPhase) * 0.03);
+    rig.spine.rotation.set(0.035, -shift * 0.40, -shift * 0.025);
+    rig.chest.rotation.set(0.025, -shift * 0.52, -shift * 0.03);
+    rig.group.position.y = br * 0.004 + Math.abs(Math.sin(walkPhase)) * 0.016 * walkAmt;
     // Head + eyes scan slowly; eyes lead, head follows.
     const look = Math.sin(t * 0.33) * 0.18 + Math.sin(t * 0.11) * 0.08;
     rig.neck.rotation.set(0.02, look * 0.30, Math.sin(t * 0.27) * 0.02);
     rig.head.rotation.set(Math.sin(t * 0.24) * 0.03, look * 0.55, Math.sin(t * 0.31) * 0.02);
     if (rig.face) rig.face.setGaze(look * 0.45 + Math.sin(t * 0.9) * 0.04, Math.sin(t * 0.5) * 0.04);
-    // Opposite-arm counter-swing matched to the walk-cycle sheet.
+    // Opposite-arm counter-swing: right arm with left leg. Shoulder arc and
+    // trailing elbow match Body.update / the walk-cycle reference sheet.
     rig.arms.forEach((a) => {
       const armPhase = walkPhase + (a.side > 0 ? 0 : Math.PI);
-      const swing = Math.sin(armPhase) * 0.42 * walkAmt;
-      a.root.rotation.set(swing + 0.04, 0, a.side * 0.12);
-      a.elbow.rotation.x = -(0.32 + Math.max(0, Math.sin(armPhase - 0.5)) * 0.28 * walkAmt);
-      // Match Body's resting hand — the creator is where the character is
-      // looked at most closely, and it was the one place still asking for a
-      // near-straight hand.
+      const swing = Math.sin(armPhase) * (a.side > 0 ? 0.72 : 0.78) * walkAmt;
+      a.root.rotation.set(
+        swing + 0.05,
+        0,
+        a.side * 0.10 + Math.sin(armPhase * 0.5) * 0.04 * walkAmt
+      );
+      a.elbow.rotation.x = -(0.42 + Math.max(0, Math.sin(armPhase - 0.55)) * 0.48 * walkAmt);
       if (a.hand.userData.setCurl) a.hand.userData.setCurl(0.05 + Math.max(0, Math.sin(armPhase)) * 0.07, 0.04);
     });
     if (rig.hairFlutter) {
@@ -38281,11 +38692,19 @@ const AvatarPreview = (() => {
     // proper reflections instead of looking matte.
     const previewEnv = getRoomEnvMap(renderer);
     if (previewEnv) scene.environment = previewEnv;
-    // Soft floor disc so the figure has somewhere to stand
-    const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(1.0, 32),
-      new THREE.MeshStandardMaterial({ color: 0x222637, roughness: 1.0 })
-    );
+    // Grass disc so the figure stands in the same world as the valley, not a void.
+    let floorMat = new THREE.MeshStandardMaterial({ color: 0x2a3a28, roughness: 1.0 });
+    try {
+      const grass = makeGrassMaps();
+      if (grass && grass.albedo) {
+        [grass.albedo, grass.normal, grass.roughness].forEach((tex) => { if (tex) tex.repeat.set(2, 2); });
+        floorMat = new THREE.MeshStandardMaterial({
+          map: grass.albedo, normalMap: grass.normal, roughnessMap: grass.roughness,
+          color: 0xffffff, roughness: 1, envMapIntensity: 0.35,
+        });
+      }
+    } catch {}
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(1.15, 36), floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.005;
     scene.add(floor);
@@ -38381,6 +38800,7 @@ window.AvatarPreview = AvatarPreview;
 // every route render. DPR is capped; reduced-motion renders one still frame.
 const ShellScenes = (() => {
   const registry = new Set();
+  let landingCtl = null;
   const reduceMotion = () =>
     window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -38529,6 +38949,30 @@ const ShellScenes = (() => {
         for (const g of tufts) g.rotation.z = Math.sin(t * 1.6 + g.userData.phase) * 0.06;
       },
     };
+  }
+
+  function pineTree(h = 2.2) {
+    const g = new THREE.Group();
+    const trunk = new THREE.Mesh(
+      new THREE.CylinderGeometry(h * 0.028, h * 0.045, h * 0.42, 6),
+      new THREE.MeshStandardMaterial({ color: 0x3a2a1c, roughness: 0.96 })
+    );
+    trunk.position.y = h * 0.21;
+    trunk.castShadow = true;
+    g.add(trunk);
+    const dark = new THREE.MeshStandardMaterial({ color: 0x163024, roughness: 0.92 });
+    const lit = new THREE.MeshStandardMaterial({ color: 0x1f4630, roughness: 0.88 });
+    for (let i = 0; i < 3; i++) {
+      const hh = h * (0.58 - i * 0.13);
+      const cone = new THREE.Mesh(
+        new THREE.ConeGeometry(h * (0.30 - i * 0.055), hh, 7),
+        i === 2 ? lit : dark
+      );
+      cone.position.y = h * 0.40 + i * h * 0.20;
+      cone.castShadow = true;
+      g.add(cone);
+    }
+    return g;
   }
 
   // Fireflies: a handful of warm motes drifting slow figure-eights.
@@ -38689,14 +39133,13 @@ const ShellScenes = (() => {
     seat.position.set(0.95, 0.09, 0.75);
     seat.castShadow = true; seat.receiveShadow = true;
     scene.add(seat);
-    // Distant tree line — dark silhouettes ringing the clearing.
-    const treeM = new THREE.MeshStandardMaterial({ color: 0x121b2a, roughness: 1 });
+    // Distant tree line — layered pines ringing the clearing.
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2 + 0.15 + (Math.random() - 0.5) * 0.3;
       const r = 4.6 + Math.random() * 1.0;
-      const hgt = 1.6 + Math.random() * 1.1;
-      const tree = new THREE.Mesh(new THREE.ConeGeometry(0.42 + Math.random() * 0.2, hgt, 7), treeM);
-      tree.position.set(Math.cos(a) * r, hgt / 2 - 0.02, Math.sin(a) * r);
+      const tree = pineTree(1.7 + Math.random() * 1.2);
+      tree.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+      tree.rotation.y = Math.random() * Math.PI;
       scene.add(tree);
     }
     const fire = buildFire(scene, { scale: 1 });
@@ -38714,6 +39157,24 @@ const ShellScenes = (() => {
     }
     camera.position.set(0.15, 1.15, 3.5);
     camera.lookAt(-0.15, 0.75, 0);
+    const campAudio = [];
+    const startCampAudio = () => {
+      if (campAudio.length) return;
+      try {
+        if (window.PhobiaAudio && window.PhobiaAudio.unlock) window.PhobiaAudio.unlock();
+        if (window.PhobiaAudio && window.PhobiaAudio.startFireCrackle) {
+          campAudio.push(window.PhobiaAudio.startFireCrackle({ gain: 0.042, pos: { x: 0, y: 0.3, z: 0 } }));
+        }
+        if (window.PhobiaAudio && window.PhobiaAudio.startAmbienceBed) {
+          campAudio.push(window.PhobiaAudio.startAmbienceBed("wind", { gain: 0.018 }));
+        }
+      } catch {}
+    };
+    startCampAudio();
+    container.addEventListener("pointerdown", startCampAudio, { once: true });
+    ctx.cleanupExtra = () => {
+      campAudio.forEach((h) => { try { h && h.stop && h.stop(); } catch {} });
+    };
     ctx.onTick = (dt, t) => {
       fire.update(dt, t);
       flies.update(t);
@@ -39085,9 +39546,315 @@ const ShellScenes = (() => {
     };
   }
 
-  function unmountAll() { [...registry].forEach(disposeCtx); }
+  // ---- Full-viewport night valley: title screen + post-create threshold ----
+  const LANDING_BEATS = [
+    { pos: [5.6, 2.55, 8.8], look: [0.15, 0.9, 0.15] },
+    { pos: [2.4, 1.45, 4.8], look: [1.55, 0.42, 0.85] },
+    { pos: [0.55, 1.65, 3.5], look: [0.05, 0.85, 0.05] },
+    { pos: [1.15, 1.48, 3.7], look: [-0.7, 0.95, 0.2] },
+    { pos: [3.8, 3.15, 6.4], look: [1.6, 1.35, -10] },
+    { pos: [0.2, 1.22, 3.15], look: [-0.78, 0.98, 0.12] },
+  ];
+  const REALM_MARKERS = {
+    dogs:     { p: [7.2, 0, -8.4],  c: 0xc4a574 },
+    spiders:  { p: [-7.4, 0, -6.2], c: 0x6b7a4a },
+    snakes:   { p: [8.6, 0, -1.8],  c: 0x4a8a62 },
+    heights:  { p: [-5.2, 0, -11],  c: 0x8aa4c8 },
+    dark:     { p: [2.4, 0, -12.4], c: 0x3a4a78 },
+    enclosed: { p: [-8.8, 0, -0.6], c: 0x7a5a48 },
+  };
 
-  return { mountCamp, mountRealm, unmountAll, ready: true };
+  function mountLanding(container, opts = {}) {
+    const ctx = makeCtx(container, { fov: 38, fog: 0x0a1220, fogDensity: 0.028, exposure: 0.95 });
+    if (!ctx) return null;
+    const { scene, camera, renderer } = ctx;
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x0a1220, 0.032);
+    // Size to the real viewport — makeCtx may have sampled a 0×0 first layout.
+    const nw = container.clientWidth || window.innerWidth || 800;
+    const nh = container.clientHeight || window.innerHeight || 600;
+    renderer.setSize(nw, nh);
+    camera.aspect = nw / nh;
+    camera.updateProjectionMatrix();
+
+    const moon = new THREE.DirectionalLight(0xb8c8e8, 0.55);
+    moon.position.set(-6, 10, -4);
+    moon.castShadow = true;
+    moon.shadow.mapSize.set(1024, 1024);
+    moon.shadow.camera.left = -10; moon.shadow.camera.right = 10;
+    moon.shadow.camera.top = 10;   moon.shadow.camera.bottom = -6;
+    moon.shadow.camera.near = 2;   moon.shadow.camera.far = 28;
+    moon.shadow.bias = -0.00035;
+    scene.add(moon);
+    scene.add(new THREE.AmbientLight(0x243048, 0.62));
+    const env = (typeof getRoomEnvMap === "function") ? getRoomEnvMap(renderer) : null;
+    if (env) scene.environment = env;
+
+    groundPatch(scene, "grass", 18, 10);
+    const tufts = grassTufts(scene, 42, 1.6, 9.5, 0x3d5a28);
+
+    // Packed-earth ring around the fire.
+    try {
+      const earth = makeEarthMaps();
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.55, 1.55, 40),
+        new THREE.MeshStandardMaterial({
+          map: earth.albedo, normalMap: earth.normal, roughnessMap: earth.roughness,
+          color: 0xffffff, roughness: 1, envMapIntensity: 0.3,
+        })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.008;
+      ring.receiveShadow = true;
+      scene.add(ring);
+    } catch {}
+
+    const fire = buildFire(scene, { scale: 1.05 });
+    const flies = fireflies(scene, 16, 3.4);
+
+    // Moon disc
+    const moonMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.55, 24, 18),
+      new THREE.MeshBasicMaterial({ color: 0xf4edd0 })
+    );
+    moonMesh.position.set(-9, 8.2, -14);
+    scene.add(moonMesh);
+    const moonGlow = new THREE.PointLight(0xdde6ff, 0.55, 40, 2);
+    moonGlow.position.copy(moonMesh.position);
+    scene.add(moonGlow);
+
+    // Star field
+    {
+      const n = 160;
+      const pos = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = 16 + Math.random() * 18;
+        pos[i * 3] = Math.cos(a) * r;
+        pos[i * 3 + 1] = 4 + Math.random() * 10;
+        pos[i * 3 + 2] = Math.sin(a) * r - 4;
+      }
+      const sg = new THREE.BufferGeometry();
+      sg.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      scene.add(new THREE.Points(sg, new THREE.PointsMaterial({
+        color: 0xdfe9ff, size: 0.06, transparent: true, opacity: 0.85, depthWrite: false,
+      })));
+    }
+
+    // Tree ring
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2 + 0.2;
+      const r = 9.5 + (i % 3) * 1.1 + Math.random() * 0.6;
+      const tree = pineTree(2.1 + Math.random() * 1.6);
+      tree.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+      tree.rotation.y = Math.random() * Math.PI;
+      scene.add(tree);
+    }
+
+    // Tent + log (same language as the camp vignette)
+    const tent = new THREE.Group();
+    const tentM = new THREE.MeshStandardMaterial({ color: 0x7a5b3a, roughness: 0.9, side: THREE.DoubleSide });
+    const tentDarkM = new THREE.MeshStandardMaterial({ color: 0x4c3a26, roughness: 0.95, side: THREE.DoubleSide });
+    const panelL = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.15), tentM);
+    panelL.position.set(0, 0.5, -0.42); panelL.rotation.x = -0.63;
+    const panelR = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.15), tentM);
+    panelR.position.set(0, 0.5, 0.42); panelR.rotation.x = 0.63;
+    const back = new THREE.Mesh(new THREE.CircleGeometry(0.62, 3), tentDarkM);
+    back.rotation.y = Math.PI / 2; back.rotation.z = Math.PI / 6;
+    back.position.set(-0.74, 0.35, 0);
+    [panelL, panelR, back].forEach((p) => { p.castShadow = true; tent.add(p); });
+    tent.position.set(-2.15, 0, -1.7);
+    tent.rotation.y = 0.7;
+    scene.add(tent);
+    const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.1, 0.95, 10),
+      new THREE.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.95 }));
+    seat.rotation.z = Math.PI / 2; seat.rotation.y = -0.4;
+    seat.position.set(0.95, 0.09, 0.78);
+    seat.castShadow = true;
+    scene.add(seat);
+
+    // Distant realm glows
+    const markerLights = {};
+    Object.keys(REALM_MARKERS).forEach((key) => {
+      const m = REALM_MARKERS[key];
+      const g = new THREE.Group();
+      const glow = new THREE.Mesh(
+        new THREE.SphereGeometry(0.22, 12, 10),
+        new THREE.MeshBasicMaterial({ color: m.c, transparent: true, opacity: 0.7 })
+      );
+      glow.position.y = 1.15;
+      g.add(glow);
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.03, 0.04, 1.1, 6),
+        new THREE.MeshStandardMaterial({ color: 0x2a2430, roughness: 0.9 })
+      );
+      pole.position.y = 0.55;
+      g.add(pole);
+      const light = new THREE.PointLight(m.c, 0.55, 6, 2);
+      light.position.y = 1.2;
+      g.add(light);
+      g.position.set(m.p[0], 0, m.p[2]);
+      scene.add(g);
+      markerLights[key] = { group: g, glow, light };
+    });
+
+    // Traveler
+    let figure = null;
+    if (opts.charHexes) {
+      try {
+        figure = buildAvatarFigure(opts.charHexes);
+        figure.position.set(-0.9, 0, 0.28);
+        figure.rotation.y = 0.85;
+        figure.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+        scene.add(figure);
+      } catch { figure = null; }
+    }
+
+    // Photo-coated dog in the yard — the fear lives in the world from beat one.
+    let dog = null;
+    try {
+      if (typeof buildDog === "function") {
+        dog = buildDog({ breed: "shiba", targetHeight: 0.52, coat: 0xc4a574 });
+        dog.position.set(1.65, 0, 0.95);
+        dog.rotation.y = -0.9;
+        dog.userData.onReady = () => {
+          const acts = dog.userData.parts && dog.userData.parts.actions;
+          if (acts && acts.Idle) { try { acts.Idle.reset(); acts.Idle.play(); } catch {} }
+        };
+        scene.add(dog);
+      }
+    } catch { dog = null; }
+
+    // Fear-shadow blob that grows on the "avoidance" beat.
+    const shadow = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.55, 1),
+      new THREE.MeshStandardMaterial({
+        color: 0x101624, roughness: 0.95, transparent: true, opacity: 0.55, flatShading: true,
+      })
+    );
+    shadow.position.set(0.2, 0.45, -1.1);
+    shadow.scale.setScalar(0.55);
+    scene.add(shadow);
+
+    const look = new THREE.Vector3();
+    const camPos = new THREE.Vector3();
+    const beats = LANDING_BEATS.map((b) => ({ pos: b.pos.slice(), look: b.look.slice() }));
+    let beat = opts.mode === "threshold" ? 4 : 0;
+    let beatT = beat;
+    let yawOff = 0, pitchOff = 0;
+    let dragging = false, lastX = 0, lastY = 0, pid = null;
+    const el = renderer.domElement;
+    el.style.cursor = "grab";
+    el.style.touchAction = "none";
+    const onDown = (e) => { dragging = true; lastX = e.clientX; lastY = e.clientY; pid = e.pointerId; el.style.cursor = "grabbing"; try { el.setPointerCapture(pid); } catch {} };
+    const onMove = (e) => {
+      if (!dragging) return;
+      yawOff += (e.clientX - lastX) * 0.004;
+      pitchOff = Math.max(-0.35, Math.min(0.35, pitchOff + (e.clientY - lastY) * 0.003));
+      lastX = e.clientX; lastY = e.clientY;
+    };
+    const onUp = () => { if (!dragging) return; dragging = false; el.style.cursor = "grab"; try { el.releasePointerCapture(pid); } catch {} };
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+
+    const focus = opts.focusPhobia && REALM_MARKERS[opts.focusPhobia];
+    if (opts.mode === "threshold" && focus) {
+      beats[4] = {
+        pos: [focus.p[0] * 0.35 + 1.2, 2.4, focus.p[2] * 0.35 + 4.5],
+        look: [focus.p[0], 1.1, focus.p[2]],
+      };
+      beat = 4; beatT = 3.2;
+    }
+
+    landingCtl = {
+      setBeat(i) { beat = Math.max(0, Math.min(beats.length - 1, i | 0)); },
+    };
+
+    // Night valley audio — first gesture unlocks if autoplay is blocked.
+    const startAudio = () => {
+      if (window._landingAudio) return;
+      try {
+        if (window.PhobiaAudio && window.PhobiaAudio.unlock) window.PhobiaAudio.unlock();
+        if (window.PhobiaAudio && window.PhobiaAudio.startNightValley) {
+          window._landingAudio = window.PhobiaAudio.startNightValley({
+            firePos: { x: 0, y: 0.3, z: 0 },
+          });
+        }
+      } catch {}
+    };
+    startAudio();
+    container.addEventListener("pointerdown", startAudio, { once: true });
+
+    const prevCleanup = ctx.cleanupExtra;
+    ctx.cleanupExtra = () => {
+      if (typeof prevCleanup === "function") try { prevCleanup(); } catch {}
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      if (landingCtl) landingCtl = null;
+      if (window._landingAudio) {
+        try { window._landingAudio.stop(); } catch {}
+        window._landingAudio = null;
+      }
+    };
+
+    ctx.onTick = (dt, t) => {
+      fire.update(dt, t);
+      flies.update(t);
+      tufts.update(t);
+      if (figure && figure.userData && figure.userData.animate) figure.userData.animate(t);
+      if (dog && dog.userData && dog.userData.parts && dog.userData.parts.mixer) {
+        try { dog.userData.parts.mixer.update(dt); } catch {}
+      }
+      const want = beat === 2 ? 1.85 : (beat < 2 ? 0.55 : 0.42);
+      shadow.scale.setScalar(shadow.scale.x + (want - shadow.scale.x) * Math.min(1, dt * 1.6));
+      shadow.rotation.y += dt * 0.25;
+      shadow.position.y = 0.45 + Math.sin(t * 0.8) * 0.04;
+      Object.keys(markerLights).forEach((key) => {
+        const mk = markerLights[key];
+        const hot = opts.focusPhobia === key || (beat === 4 && !opts.focusPhobia);
+        const I = hot ? 1.15 : 0.45;
+        mk.light.intensity += (I - mk.light.intensity) * Math.min(1, dt * 2);
+        mk.glow.scale.setScalar(1 + Math.sin(t * 1.4) * 0.06 * (hot ? 1.4 : 0.6));
+      });
+      beatT += (beat - beatT) * Math.min(1, dt * 1.15);
+      const i0 = Math.max(0, Math.min(beats.length - 2, Math.floor(beatT)));
+      const frac = Math.max(0, Math.min(1, beatT - i0));
+      const a = beats[i0], b = beats[i0 + 1] || a;
+      const s = frac * frac * (3 - 2 * frac);
+      camPos.set(
+        a.pos[0] + (b.pos[0] - a.pos[0]) * s,
+        a.pos[1] + (b.pos[1] - a.pos[1]) * s,
+        a.pos[2] + (b.pos[2] - a.pos[2]) * s
+      );
+      look.set(
+        a.look[0] + (b.look[0] - a.look[0]) * s,
+        a.look[1] + (b.look[1] - a.look[1]) * s,
+        a.look[2] + (b.look[2] - a.look[2]) * s
+      );
+      // Orbit offset from drag
+      const ox = camPos.x - look.x, oz = camPos.z - look.z;
+      const dist = Math.hypot(ox, oz);
+      const ang = Math.atan2(ox, oz) + yawOff;
+      camera.position.set(
+        look.x + Math.sin(ang) * dist,
+        camPos.y + pitchOff * 1.4,
+        look.z + Math.cos(ang) * dist
+      );
+      camera.lookAt(look);
+    };
+    ctx.start();
+    return ctx;
+  }
+
+  function setLandingBeat(i) {
+    if (landingCtl && landingCtl.setBeat) landingCtl.setBeat(i);
+  }
+
+  function unmountAll() { [...registry].forEach(disposeCtx); landingCtl = null; }
+
+  return { mountCamp, mountRealm, mountLanding, setLandingBeat, unmountAll, ready: true };
 })();
 window.ShellScenes = ShellScenes;
 
