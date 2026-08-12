@@ -3361,23 +3361,37 @@ if ("serviceWorker" in navigator) {
   .realm-hero-text .realm-kicker { color: #9fe8dc; }
   .realm-hero-text h2 { margin: 2px 0; font-size: clamp(24px, 4.4vw, 34px); color: #fff; }
   .realm-hero-text .realm-epithet { color: #b8c4dd; }
-  .guardian-box {
-    position: relative; z-index: 1; min-width: 108px;
-    display: flex; flex-direction: column; align-items: center; gap: 5px;
+  /* "Your ground" — the traveller's own record, sitting where the guardian's
+     strength meter used to. Numbers, not a monster. */
+  /* Sits UNDER the hero, not inside it. In the hero it covered the artwork and
+     pushed the realm's epithet behind a panel — the numbers deserve room and
+     the realm deserves its title back. */
+  .ground-box {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column; gap: 8px;
+    background: linear-gradient(180deg, var(--panel), var(--panel-3));
+    border: 1px solid var(--border-2); border-radius: var(--radius-lg);
+    padding: 12px 16px; margin-top: 10px;
   }
-  .shadow-blob {
-    width: calc(34px + var(--rem, 1) * 44px); height: calc(28px + var(--rem, 1) * 36px);
-    border-radius: 48% 52% 55% 45% / 60% 58% 42% 40%;
-    background: radial-gradient(circle at 50% 30%, #222c4c, #0a0f20 78%);
-    border: 1px solid #33406a;
-    display: flex; align-items: center; justify-content: center; gap: 9px;
-    animation: blobDrift 6s ease-in-out infinite;
-    box-shadow: 0 12px 30px rgba(0,0,0,.5);
+  .ground-title {
+    font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase;
+    color: #aab6d4; font-weight: 700;
   }
-  .guardian.tamed-bird { font-size: 34px; animation: heroFloat 4s ease-in-out infinite; }
-  .guardian-meter { width: 92px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.14); overflow: hidden; }
-  .guardian-meter-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #8f9bff, #5f6fd6); }
-  .guardian-label { font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: #aab6d4; font-weight: 700; text-align: center; }
+  .ground-meter { height: 5px; border-radius: 3px; background: rgba(255,255,255,.14); overflow: hidden; }
+  .ground-meter-fill {
+    height: 100%; border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--ok));
+    transition: width .5s ease;
+  }
+  .ground-stats { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+  .ground-stat { display: flex; flex-direction: column; line-height: 1.15; }
+  .ground-stat .gs-v { font-size: 17px; font-weight: 800; color: var(--text); }
+  .ground-stat .gs-v i { font-style: normal; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .ground-stat .gs-l { font-size: 9.5px; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .ground-note { font-size: 11px; color: #a9e8d2; line-height: 1.35; }
+  @media (max-width: 600px) {
+    .ground-box { min-width: 0; width: 100%; max-width: none; }
+  }
   .realm-bubble {
     display: flex; align-items: center; gap: 10px;
     background: var(--panel); border: 1px solid var(--border-2); border-radius: 14px;
@@ -3492,7 +3506,7 @@ if ("serviceWorker" in navigator) {
     display: block; position: absolute; inset: 0; z-index: 1;
   }
   .realm-3d canvas { width: 100% !important; height: 100% !important; display: block; }
-  .realm-hero.has3d .realm-hero-text, .realm-hero.has3d .guardian-box { z-index: 2; pointer-events: none; }
+  .realm-hero.has3d .realm-hero-text, .realm-hero.has3d .ground-box { z-index: 2; pointer-events: none; }
   /* Title screen: swap the flat SVG for the 3D turntable when it mounts */
   .story-figure { width: 200px; height: 230px; display: flex; align-items: center; justify-content: center; }
   .story-figure.has3d svg { display: none; }
@@ -3663,6 +3677,16 @@ if ("serviceWorker" in navigator) {
     background: linear-gradient(180deg, rgba(22, 40, 34, .55), rgba(14, 26, 24, .65));
     border: 1px solid #2e6b58;
   }
+  /* The Valley — the in-game trials, given a matching frame so the two paths
+     read as a pair. The Real Path used to sit below the oath, the Guide's
+     notes and all five trials, i.e. where nobody scrolls; it is the part that
+     actually transfers out of the game, so it now sits directly under them. */
+  .path-block {
+    margin-top: 18px; border-radius: var(--radius-lg); padding: 16px 18px;
+    background: linear-gradient(180deg, rgba(24, 28, 48, .55), rgba(14, 18, 34, .65));
+    border: 1px solid var(--border-2);
+  }
+  .path-block .bridge-head h3 { color: #b9c4ee; }
   .bridge-head h3 { margin: 0 0 4px; color: #8fe3c9; }
   .bridge-sub { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 12px; }
   .bridge-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
@@ -9034,7 +9058,7 @@ function openMenu() {
     <ul class="menu-list">
       <li><button data-go="welcome">${t("menu.title", "🌌 Title screen — the story")}</button></li>
       <li><button data-go="select">${t("menu.valley", "🗺 The Valley of Fears")}</button></li>
-      ${ch ? `<li><button data-go="ladder" data-phobia="${ch.primaryPhobia || ""}">${t("menu.trials", "⚔ Continue your trials")}</button></li>` : ""}
+      ${ch ? `<li><button data-go="ladder" data-phobia="${ch.primaryPhobia || ""}">${t("menu.trials", "Continue your trials")}</button></li>` : ""}
       <li><button data-go="journal">${t("menu.sparks", "✦ Book of Sparks")}</button></li>
       <li><button data-go="insights">${t("menu.story", "📜 Your story so far")}</button></li>
       <li><button data-go="report">${t("menu.report", "📄 Progress report — print / share")}</button></li>
@@ -9587,7 +9611,7 @@ function viewWelcome() {
     ? tf("story.welcomeBack", "Welcome back, {name}. The valley kept your place.", { name: `<strong>${escapeHtml(ch.name || "traveler")}</strong>` })
     : t("story.firstLine", "Everyone carries a fear. This one is yours to face — one small, safe step at a time.");
   const cta = ch
-    ? `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaBack", "⚔ Continue the journey")}</button>`
+    ? `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaBack", "Continue the journey")}</button>`
     : `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaNew", "✨ Create your traveler")}</button>`;
 
   const realmTeasers = FEATURED.filter(k => PHOBIAS[k]).map(k => `
@@ -9712,12 +9736,15 @@ function viewSelect() {
     const total = p.levels.length;
     const cleared = done >= total;
     const isCurrent = k === curKey;
-    const remaining = 1 - done / total;   // 1 = untouched shadow, 0 = tamed
+    const remaining = 1 - done / total;   // drives the card's mist, not a monster
     const pips = Array.from({ length: total }, (_, j) =>
       `<i class="pip ${j < done ? "lit" : ""}" title="Trial ${j + 1}${j < done ? " — faced" : ""}"></i>`).join("");
+    // The card used to report the guardian's health ("the Hound Shadow is
+    // weakening"). Nothing in the realm weakens — the traveller advances. Say
+    // that instead, in their own terms, so the map and the ladder agree.
     const stateLine = cleared ? realm.clearedLine
-      : done > 0 ? tf("node.weakening", `{g} is weakening — {n} trial${total - done === 1 ? "" : "s"} left.`, { g: realm.guardianName, n: total - done })
-      : tf("node.holds", "{g} still holds this place.", { g: realm.guardianName });
+      : done > 0 ? tf("node.faced", `You've faced {n} of {total} here.`, { n: done, total })
+      : t("node.untouched", "You haven't set foot here yet.");
     return `
       <li class="realm-node ${i % 2 ? "side-r" : "side-l"} ${cleared ? "cleared" : ""} ${isCurrent ? "current" : ""}"
           data-action="select-phobia" data-phobia="${k}" tabindex="0" role="button"
@@ -9776,7 +9803,7 @@ function viewSelect() {
           <p>${doneToday ? t("quest.doneP", "You showed up today — the flame is lit. Another step is always welcome.") : t("quest.todoP", "One small step a day keeps the flame lit. You can step out at any moment.")}</p>
         </div>
         <button class="${doneToday ? "btn-ghost" : "btn-primary"}" data-action="start-level" data-phobia="${questKey}" data-level="${questDone}">
-          ${doneToday ? t("quest.btnDone", "Take another step") : t("quest.btnTodo", "⚔ Take today's step")}
+          ${doneToday ? t("quest.btnDone", "Take another step") : t("quest.btnTodo", "Take today's step")}
         </button>
       </div>` : ""}
       ${needBackup ? `
@@ -10120,18 +10147,49 @@ function viewLadder(phobiaKey) {
   const total = p.levels.length;
   const done = Math.min(total, prog.highestCompleted + 1);
   const cleared = done >= total;
-  const remaining = 1 - done / total;
   const realmIdx = journeyKeys().indexOf(phobiaKey);
 
-  // The guardian: this fear made visible. Shrinks with every faced trial;
-  // once all five are done it becomes the tamed bird.
+  // ---- Your ground ----
+  // This used to be a shadow with a strength meter you drained. That framing
+  // fought the therapy: exposure works by DISCONFIRMING the threat, and a bar
+  // labelled "the Hound Shadow · strength 5/5" teaches the opposite — that it
+  // really is a monster, and that you got better by beating it. Gains
+  // attributed to a ritual don't generalise. The meter was also simply untrue:
+  // the dog never weakened, you just stood closer.
+  //
+  // So measure the only thing that actually changes — the traveller. Every
+  // number here is one they produced, from state.log: how far up the ladder
+  // they've gone, how long they stayed, what they rated it, and what they
+  // PREDICTED they'd rate it. That last pair is the whole mechanism made
+  // visible ("you expected 8, it was 4"), and it was already being collected.
+  const held = previous.map(l => l.heldSec).filter(n => typeof n === "number" && n > 0);
+  const rated = previous.filter(l => typeof l.suds === "number");
+  const longest = held.length ? Math.max(...held) : null;
+  const firstFear = rated.length ? rated[0].suds : null;
+  const lastFear = rated.length ? rated[rated.length - 1].suds : null;
+  const guessPairs = previous.filter(l => typeof l.predicted === "number" && typeof l.suds === "number");
+  const overGuess = guessPairs.length
+    ? guessPairs.reduce((s, l) => s + (l.predicted - l.suds), 0) / guessPairs.length
+    : null;
+  const realSteps = getWorldsteps(phobiaKey).length;
+  const groundStat = (label, value) =>
+    `<div class="ground-stat"><span class="gs-v">${value}</span><span class="gs-l">${label}</span></div>`;
+  const groundStats = [
+    groundStat(t("ground.trials", "trials faced"), `${done}<i>/${total}</i>`),
+    longest != null ? groundStat(t("ground.longest", "longest stay"), `${Math.round(longest)}<i>s</i>`) : "",
+    // Only worth showing once there are two readings to compare.
+    (firstFear != null && lastFear != null && rated.length > 1)
+      ? groundStat(t("ground.fear", "fear, first → last"), `${firstFear}<i>→</i>${lastFear}`) : "",
+    realSteps > 0 ? groundStat(t("ground.real", "real steps"), `${realSteps}`) : "",
+  ].filter(Boolean).join("");
   const guardian = `
-    <div class="guardian-box" aria-hidden="true">
-      ${cleared
-        ? `<div class="guardian tamed-bird">🕊</div>`
-        : `<div class="guardian shadow-blob" style="--rem:${remaining.toFixed(2)}"><i class="eye"></i><i class="eye"></i></div>`}
-      <div class="guardian-meter"><div class="guardian-meter-fill" style="width:${(remaining * 100).toFixed(0)}%"></div></div>
-      <span class="guardian-label">${cleared ? t("guardian.tamed", "tamed") : `${escapeHtml(realm.guardianName)} · ${t("guardian.strength", "strength")} ${total - done}/${total}`}</span>
+    <div class="ground-box">
+      <span class="ground-title">${cleared ? t("ground.cleared", "You walked all of it") : t("ground.head", "Your ground here")}</span>
+      <div class="ground-meter"><div class="ground-meter-fill" style="width:${((done / total) * 100).toFixed(0)}%"></div></div>
+      <div class="ground-stats">${groundStats}</div>
+      ${overGuess != null && overGuess >= 1
+        ? `<span class="ground-note">${tf("ground.overguess", "You expect it worse than it is — by {n} points on average.", { n: overGuess.toFixed(1) })}</span>`
+        : ""}
     </div>`;
 
   // The Guide's notes — the full clinical background, kept intact but tucked
@@ -10259,7 +10317,7 @@ function viewLadder(phobiaKey) {
   const heroCta = `
     <div class="ladder-cta">
       <button class="btn-primary" data-action="start-level" data-phobia="${phobiaKey}" data-level="${nextIdx}">
-        ⚔ ${escapeHtml(ctaLabel)} <span class="arr">→</span>
+        ${escapeHtml(ctaLabel)} <span class="arr">→</span>
       </button>
       <span class="ladder-cta-sub">${tf("ladder.sub", "{n} trials · any order, your pace · Esc grounds you at any moment", { n: total })}</span>
     </div>`;
@@ -10302,17 +10360,23 @@ function viewLadder(phobiaKey) {
           <h2>${escapeHtml(realm.realmName)}</h2>
           <p class="realm-epithet">${escapeHtml(realm.epithet)}</p>
         </div>
-        ${guardian}
       </header>
+      ${guardian}
       ${ch ? `<div class="realm-bubble"><span class="realm-bubble-avatar" aria-hidden="true">${window.Character.avatarSVG(ch, 40)}</span><span>“${escapeHtml(cleared ? realm.clearedLine : realm.line)}”</span></div>` : ""}
       ${tabs}
       ${mirrorBlock}
       ${heroCta}
-      ${progressLink}
-      ${goalBlock}
-      ${infoBlock}
-      <ol class="trial-path">${items}</ol>
+      <section class="path-block">
+        <div class="bridge-head">
+          <h3>${t("valley.head", "🏕 The Valley")}</h3>
+          <span class="bridge-sub">${t("valley.sub", "Five trials in here, at your pace. This is the rehearsal — safe, repeatable, and yours to stop at any moment.")}</span>
+        </div>
+        <ol class="trial-path">${items}</ol>
+      </section>
       ${bridgeBlock}
+      ${goalBlock}
+      ${progressLink}
+      ${infoBlock}
     </div>
   `;
 }
@@ -10662,7 +10726,7 @@ function viewPredict(phobiaKey, levelIdx) {
 
       <div class="actions">
         <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">${t("complete.back", "Back to the realm")}</button>
-        <button class="btn-primary" data-action="confirm-predict" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("predict.enter", "⚔ Enter the trial")}</button>
+        <button class="btn-primary" data-action="confirm-predict" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("predict.enter", "Enter the trial")}</button>
       </div>
     </div>
   `;
@@ -11095,7 +11159,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       </div>
 
       <div class="actions">
-        ${!isLast ? `<button class="btn-primary" data-action="next-level" data-phobia="${phobiaKey}" data-level="${next}">${tf("complete.next", "⚔ Next trial: {t}", { t: escapeHtml(p.levels[next].title) })}</button>` : `<button class="btn-primary" data-action="back-ladder" data-phobia="${phobiaKey}">${t("complete.tamed", "🕊 The realm is tamed — see it")}</button>`}
+        ${!isLast ? `<button class="btn-primary" data-action="next-level" data-phobia="${phobiaKey}" data-level="${next}">${tf("complete.next", "Next trial: {t}", { t: escapeHtml(p.levels[next].title) })}</button>` : `<button class="btn-primary" data-action="back-ladder" data-phobia="${phobiaKey}">${t("complete.tamed", "🕊 The realm is tamed — see it")}</button>`}
         <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">${t("complete.back", "Back to the realm")}</button>
       </div>
     </div>
@@ -38524,14 +38588,57 @@ const ShellScenes = (() => {
     camera.lookAt(0, 0.5, 0);
   }
 
+  // The realm hero loads the raw GLTF through buildCreature, so it never went
+  // through buildDog — which is where the photo-projected coat is applied. The
+  // result was a flat brown shiba on the ladder page above a photo-coated one
+  // in the scene: the storefront and the game looked like different products.
+  // Same side projection, same maps, minus the scene-only fur/tint layers.
+  function applyVignetteCoat(root, breed) {
+    const urls = DOG_COAT_MAPS[breed];
+    if (!urls || !urls.photo) return;
+    const box = geometryBox(root);
+    root.traverse((o) => {
+      if (o.isMesh && o.geometry) applySidePhotoUVs(o.geometry, box);
+    });
+    loadDogCoatTextures(breed).then((maps) => {
+      if (!maps || !root.parent) return;
+      root.traverse((o) => {
+        if (!o.isMesh || !o.material) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => {
+          if (!m || !m.color) return;
+          const lum = 0.299 * m.color.r + 0.587 * m.color.g + 0.114 * m.color.b;
+          if (lum < 0.06 || lum > 0.92) return;     // eyes / nose / teeth
+          if (maps.albedo) { m.map = maps.albedo; m.color.setRGB(1, 1, 1); }
+          if (maps.normal) m.normalMap = maps.normal;
+          if (maps.roughness) m.roughnessMap = maps.roughness;
+          m.vertexColors = false;
+          m.roughness = 0.82;
+          m.needsUpdate = true;
+        });
+      });
+      try { ctxRenderOnce(root); } catch {}
+    });
+  }
+  // The vignette renders on demand, so a late-arriving texture needs one more
+  // frame or the coat only appears after the user drags the turntable.
+  function ctxRenderOnce(node) {
+    let p = node;
+    while (p && !p.userData._vignetteCtx) p = p.parent;
+    const c = p && p.userData._vignetteCtx;
+    if (c) c.renderer.render(c.scene, c.camera);
+  }
+
   function creatureTurntable(ctx, url, opts) {
     creatureStage(ctx, opts);
     const holder = new THREE.Group();
+    holder.userData._vignetteCtx = ctx;
     ctx.scene.add(holder);
     if (opts.dress) { try { opts.dress(holder, ctx); } catch {} }
     const creature = buildCreature(url, { targetSize: opts.targetSize, axis: opts.axis || "max" });
     holder.add(creature);
     creature.userData.onReady = () => {
+      if (opts.coatBreed) { try { applyVignetteCoat(creature, opts.coatBreed); } catch {} }
       const parts = creature.userData.parts;
       if (parts && parts.play) parts.play(opts.clip || "idle", 0.2, { timeScale: opts.timeScale || 1 });
       // Frame by measured height so shiba / spider / snake all fill the stage.
@@ -38555,7 +38662,7 @@ const ShellScenes = (() => {
   // Per-realm set dressing: a couple of props that say "this is a place".
   function realmDog(ctx) {
     creatureTurntable(ctx, DOG_MODELS.shiba, {
-      targetSize: 1.05, clip: "idle", spin: 0.3, ground: "planks",
+      targetSize: 1.05, clip: "idle", spin: 0.3, ground: "planks", coatBreed: "shiba",
       dress(holder, c) {
         try {
           const rugMaps = makeRugMaps();
