@@ -15487,7 +15487,14 @@ class FPControls {
       // belongs to the LEGS, not to a constant: a short character taking the
       // same strides as a tall one over-reaches on every step. setStrideBase()
       // feeds the real leg length in once the body exists.
-      const paceK = Math.sqrt(Math.max(0.12, Math.hypot(this._vel.x, this._vel.z)));
+      // √v stride growth holds up to the old comfort speed; above it the
+      // stride flattens hard (0.12·Δv) and the remaining pace comes out of
+      // cadence. Without this, raising the walk cap re-created the trudge the
+      // cap existed to prevent: reach at heel strike grows with stride, and
+      // the hips must drop to meet it — long strides ARE the 8 cm heave.
+      const _v = Math.max(0.12, Math.hypot(this._vel.x, this._vel.z));
+      const _vc = (this._walkCap || 1.3) * 0.8;
+      const paceK = Math.sqrt(Math.min(_v, _vc)) + 0.12 * Math.max(0, _v - _vc);
       const sb = this._strideBase || 0.56;
       // Nobody strides out sideways or backwards the way they do forwards —
       // both are shorter, quicker steps. Keeping one step length for every
@@ -15830,11 +15837,17 @@ class FPControls {
     // …and legs of a given length have a speed they can walk at CALMLY. Step
     // length grows with √v, the reach at heel strike grows with it, and the
     // hips have to drop to meet it — so pace buys vertical heave at a brutal
-    // rate. At Froude 0.19 this rig heaved 8 cm a step and read as trudging;
-    // 0.14 puts it at ~5 cm, which is what an unhurried walk looks like. Works
-    // out to ~1.05 m/s on a 0.78 m leg. Scenes can still ask for anything
-    // SLOWER (wading, a fear creep) — this only stops them outrunning the legs.
-    this._walkCap = Math.sqrt(0.14 * 9.81 * (m / 0.72));
+    // rate. At Froude 0.19 this rig heaved 8 cm a step and read as trudging.
+    //
+    // 0.14 fixed the trudge and created a different failure: ~1.05 m/s on a
+    // 0.78 m leg as the game's TOP speed. Every room crossing felt like
+    // wading — the single loudest "movement feels bad" complaint. 0.22 puts
+    // the cap at ~1.32 m/s (a purposeful walk); the stride-growth flattening
+    // in the phase engine keeps heel-strike reach — and with it the heave —
+    // near the unhurried-walk arc, so the extra pace comes out of CADENCE
+    // rather than vault height. Scenes can still ask for anything SLOWER
+    // (wading, a fear creep) — this only stops them outrunning the legs.
+    this._walkCap = Math.sqrt(0.22 * 9.81 * (m / 0.72));
   }
 
   // ---- Event-driven camera startle (FP only) ----
@@ -27791,9 +27804,21 @@ class DogController {
         // walk, it swings its shoulders round over a step or two. 2.2 rad/s
         // (≈125°/s) walking, 4.0 galloping, is what a real animal manages
         // without planting its feet sideways.
+        //
+        // But a CONSTANT 2.2 with the old 0.20 alignment speed floor produced
+        // the opposite artefact: a target behind the dog meant ~1.4 s of
+        // near-stationary pivot — a model on a turntable, legs idling at
+        // timeScale 0.5. Measured live: yaw rate pegged at exactly 2.2 for
+        // twelve straight ticks while ground speed sat at 0.1 m/s. A real dog
+        // swings its shoulders FASTER the more it has to turn, and it does it
+        // while already moving — so the rate gains up to +1.6 rad/s with
+        // misalignment, and the speed floor below rises to keep it arcing.
         const prevYaw = this.dog.rotation.y;
+        const _hx = Math.sin(this.dog.rotation.y), _hz = Math.cos(this.dog.rotation.y);
+        const _align0 = Math.max(0, (_hx * dx + _hz * dz) / dist);
         this.dog.rotation.y = this._easeYaw(this.dog.rotation.y, this.targetYaw,
-          d * (galloping ? 8 : 5), (galloping ? 4.0 : 2.2) * d);
+          d * (galloping ? 8 : 5),
+          ((galloping ? 4.0 : 2.2) + (galloping ? 0 : 1.6) * (1 - _align0)) * d);
         // Bank into it. A quadruped leans its body toward the inside of a turn;
         // a level body swinging round its own axis is the giveaway of a model
         // on a turntable. Applied to the MODEL so it rolls in the dog's own
@@ -27812,9 +27837,15 @@ class DogController {
         // clip while the body still moved at walk speed, so a "sprinting" dog
         // crawled across the room with churning legs.
         const gait = galloping ? this.gallopSpeed : this.walkSpeed;
-        // Soft hand-meet: throttle to ~55% walk so the dog eases into reach
-        // instead of trotting into the player's knees.
-        const softMul = (!galloping && this._softApproach) ? 0.55 : 1;
+        // Soft hand-meet: ease into reach instead of trotting into the
+        // player's knees. This used to be a flat 0.55× for the WHOLE walk —
+        // a dog called from across the room crawled the entire way at
+        // ~0.5 m/s (measured) and read as reluctant. The throttle is the
+        // LANDING, not the trip: full pace beyond ~2.4 m, blending down to
+        // 0.55× only inside arm's reach.
+        const softMul = (!galloping && this._softApproach)
+          ? 0.55 + 0.45 * Math.max(0, Math.min(1, (dist - 1.1) / 1.3))
+          : 1;
         const targetUx = dx / dist, targetUz = dz / dist;
         // Travel along the body's current heading while it turns toward the
         // target. Moving directly down the target vector made the paws slide
@@ -27822,7 +27853,8 @@ class DogController {
         const headingUx = Math.sin(this.dog.rotation.y);
         const headingUz = Math.cos(this.dog.rotation.y);
         const alignment = Math.max(0, headingUx * targetUx + headingUz * targetUz);
-        const desiredSpeed = gait * softMul * ease * (0.20 + 0.80 * alignment);
+        // Speed floor 0.38: misaligned = a moving arc, never a turntable.
+        const desiredSpeed = gait * softMul * ease * (0.38 + 0.62 * alignment);
         const speedRate = desiredSpeed > this._moveSpeed
           ? (galloping ? 5.5 : 3.2)
           : (galloping ? 8.0 : 5.5);
@@ -29739,8 +29771,10 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     arcApproachTgt = null;   // a direct leg cancels any pending curve
     // A dog called from across the room comes at a happy run, not a march —
     // gallop the long legs, walk the short ones. Never run at the player
-    // while the rung wants menace kept at bay.
-    if (dist - centerOff > 3.0 && dogCtrl.mood !== "aggressive") {
+    // while the rung wants menace kept at bay. (Threshold 2.2, was 3.0: a
+    // 2.9 m call sat just under the old line and produced a full-width
+    // banana-walk at throttled walk speed — the "reluctant crawl".)
+    if (dist - centerOff > 2.2 && dogCtrl.mood !== "aggressive") {
       dogCtrl.gallopTo(tx, tz);
     } else if (opts && opts.arc && dist - centerOff > 1.6) {
       // Banana walk: dogs greet on a CURVE — a straight head-on approach is
