@@ -912,10 +912,51 @@ if ("serviceWorker" in navigator) {
     margin-top: 7px; font-size: 11px; color: var(--muted); background: none;
     border: none; cursor: pointer; padding: 0; text-decoration: underline;
   }
+  @media (max-width: 600px) {
+    /* Below 600px the hold-pill owns the top-left slot (it is the phone's
+       only hold readout) — the experiments chip drops beneath it. */
+    .stage .exp-panel { top: 92px; left: 8px; font-size: 12px; width: 216px; }
+    /* The demo chip becomes a full-width strip instead of a floating bubble
+       four lines tall in the middle of the view. (.stage prefix: the base
+       .demo-chip rule sits LATER in the sheet, so this needs the extra
+       specificity to win the cascade.) */
+    .stage .demo-chip {
+      top: 4px; left: 10px; right: 10px; transform: none;
+      width: auto; max-width: none; border-radius: 10px;
+      font-size: 11px; padding: 4px 10px; line-height: 1.35;
+    }
+  }
   @media (max-width: 480px) {
-    .stage .exp-panel { top: 58px; left: 8px; font-size: 12px; width: 216px; }
     /* restored from the trust-hud block this CSS was spliced into */
     .stage .trust-hud .trust-name { max-width: 110px; }
+  }
+  /* ---- Instant demo ---- */
+  .demo-chip {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    z-index: 8; max-width: min(86%, 560px);
+    background: rgba(10, 14, 28, .68); border: 1px solid rgba(159, 170, 231, .4);
+    border-radius: 999px; padding: 7px 16px;
+    font-size: 12.5px; color: var(--text); text-align: center;
+    backdrop-filter: blur(6px); pointer-events: none;
+  }
+  .landing-actions .demo-cta, .story-actions .demo-cta { display: block; margin: 10px auto 0; font-size: 13px; }
+  .demo-end {
+    position: absolute; inset: 0; z-index: 12;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(5, 8, 18, .55); backdrop-filter: blur(3px);
+  }
+  .demo-end-card {
+    max-width: 430px; width: calc(100% - 40px);
+    background: linear-gradient(180deg, var(--panel), var(--panel-3));
+    border: 1px solid var(--border-2); border-radius: var(--radius-lg);
+    padding: 22px 24px; text-align: center;
+  }
+  .demo-end-card h3 { margin: 8px 0 8px; font-size: 20px; }
+  .demo-end-card p { font-size: 13.5px; color: var(--muted); line-height: 1.55; margin: 0 0 14px; }
+  .demo-end-card .actions { display: flex; flex-direction: column; gap: 8px; }
+  .demo-stay {
+    margin-top: 12px; font-size: 12px; color: var(--muted);
+    background: none; border: none; cursor: pointer; text-decoration: underline;
   }
   /* Evidence lines — completion screen, realm page and (print) report. */
   .evidence-block {
@@ -9073,6 +9114,7 @@ function serializeRoute(view, params = {}) {
     case "welcome":   return "/";
     case "select":    return "/fears";
     case "threshold": return "/begin";
+    case "demo":      return "/try";
     case "about":     return "/about";
     case "journal":   return "/journal";
     case "report":    return "/report";
@@ -9098,6 +9140,7 @@ function parseRoute(hash) {
   switch (parts[0]) {
     case "fears":    return { view: "select",    params: {} };
     case "begin":    return { view: "threshold", params: {} };
+    case "try":      return { view: "demo",      params: {} };
     case "about":    return { view: "about",     params: {} };
     case "journal":  return { view: "journal",   params: {} };
     case "report":   return { view: "report",    params: {} };
@@ -9260,6 +9303,13 @@ function render(view, params) {
   if (view === "ladder")      v.innerHTML = viewLadder(params.phobia);
   if (view === "predict")     v.innerHTML = viewPredict(params.phobia, params.level);
   if (view === "exposure")    v.innerHTML = viewExposure(params.phobia, params.level);
+  // The instant demo IS the dogs first rung — same view, same mount — with a
+  // flag the exposure chrome reads: no character needed (Body falls back to
+  // its defaults), the exit goes to an invitation instead of the rate flow,
+  // and nothing writes ladder progress. Seven screens stood between a new
+  // visitor and the first 3D moment; this is the shortcut past all of them.
+  if (view === "demo")      { window.__demoMode = true; v.innerHTML = viewExposure("dogs", 0); }
+  else if (window.__demoMode) window.__demoMode = false;
   if (view === "rate")        v.innerHTML = viewRate(params.phobia, params.level);
   if (view === "breathe")     v.innerHTML = viewBreathe(params.phobia, params.level);
   if (view === "complete") {
@@ -9287,6 +9337,7 @@ function render(view, params) {
   if (view === "character") attachCharacterHandlers(params.editing);
   if (view === "custom")    attachCustomHandlers(params.editing);
   if (view === "exposure")  mountExposure(params.phobia, params.level);
+  if (view === "demo")      mountExposure("dogs", 0);
   if (view === "breathe")   runBreathing();
   if (view === "welcome" || view === "threshold" || view === "select" || view === "ladder") mountShell3D(view, params);
   if (view === "welcome")   mountLandingHUD();
@@ -9938,6 +9989,8 @@ function handleAction(d, params) {
       go(existing ? "select" : "character", existing ? {} : { editing: false });
       break;
     }
+    case "try-demo": go("demo"); break;
+    case "demo-end": try { showDemoEnd(); } catch {} break;
     case "enter-path": {
       const ch = window.Character && window.Character.loadCharacter();
       if (ch && ch.primaryPhobia) go("ladder", { phobia: ch.primaryPhobia });
@@ -10084,7 +10137,8 @@ function viewWelcome() {
     : t("story.firstLine", "Everyone carries a fear. This one is yours to face — one small, safe step at a time.");
   const cta = ch
     ? `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaBack", "Continue the journey")}</button>`
-    : `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaNew", "Create your traveler")}</button>`;
+    : `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaNew", "Create your traveler")}</button>
+       <button class="btn-ghost demo-cta" data-action="try-demo">${t("story.tryFirst", "👣 Step inside first — 60 seconds, nothing to set up")}</button>`;
   const realmTeasers = FEATURED.filter(k => PHOBIAS[k]).map(k => `
     <button class="landing-realm" data-action="select-phobia" data-phobia="${k}" ${ch ? "" : `disabled title="${t("story.createFirst", "Create your traveler first")}"`}>
       <strong>${escapeHtml(realmOf(k).realmName)}</strong>
@@ -12191,6 +12245,34 @@ const PhobiaExperiments = (() => {
 })();
 window.PhobiaExperiments = PhobiaExperiments;
 
+// The demo's exit: not a rating screen (a visitor rated nothing) but an
+// invitation. Overlaid on the stage so the room stays visible behind it —
+// the point is "this is real, and it can be yours", not a modal wall.
+function showDemoEnd() {
+  const stage = document.getElementById("stage");
+  if (!stage || stage.querySelector(".demo-end")) return;
+  const d = document.createElement("div");
+  d.className = "demo-end";
+  d.innerHTML = `
+    <div class="demo-end-card">
+      <span class="bridge-invite-kicker">${t("demo.kicker", "that was a minute of the valley")}</span>
+      <h3>${t("demo.h", "The valley is real — and it can remember you.")}</h3>
+      <p>${t("demo.p", "Make a traveler and every step counts: the trust you build with the dog stays built, your fear curve starts drawing itself, and five more fears are waiting with their own rooms.")}</p>
+      <div class="actions">
+        <button class="btn-primary" data-action="begin">✨ ${t("demo.create", "Create your traveler")}</button>
+        <button class="btn-ghost" data-action="open-select">${t("demo.valley", "🗺 See the whole valley")}</button>
+      </div>
+      <button class="demo-stay">${t("demo.stay", "keep exploring this room")}</button>
+    </div>`;
+  d.querySelector(".demo-stay").addEventListener("click", () => d.remove());
+  // Buttons appended after render() miss the per-render [data-action] bind
+  // pass (it's querySelectorAll-at-render, not delegation) — wire directly.
+  d.querySelectorAll("[data-action]").forEach((el) => {
+    el.addEventListener("click", () => { try { handleAction(el.dataset, {}); } catch {} });
+  });
+  stage.appendChild(d);
+}
+
 function mountExposure(phobiaKey, levelIdx) {
   const p = PHOBIAS[phobiaKey];
   const lv = p.levels[levelIdx];
@@ -12199,6 +12281,29 @@ function mountExposure(phobiaKey, levelIdx) {
   // The experiment deck for this realm/rung (renders nothing when the realm
   // has no deck). Torn down by unmount() via PhobiaExperiments.end().
   try { PhobiaExperiments.begin(phobiaKey, levelIdx, stage); } catch {}
+  // ---- Instant-demo chrome ----
+  // Same scene, different exits: the Continue button leads to the invitation
+  // instead of the rate flow (no ladder writes for a visitor with no
+  // traveler), a small chip names the situation, and after ~75 s the
+  // invitation offers itself once. Everything else — the hold, the dog, the
+  // experiments — is the real product, deliberately.
+  if (window.__demoMode) {
+    const cont = document.getElementById("continueBtn");
+    if (cont) {
+      cont.dataset.action = "demo-end";
+      cont.textContent = t("demo.stepOut", "Step out — I've had a taste");
+      cont.classList.remove("holding");
+    }
+    const chip = document.createElement("div");
+    chip.className = "demo-chip";
+    chip.innerHTML = `✨ ${t("demo.chip", "A taste of the valley — walk to the dog, call it (C), try an experiment")}`;
+    stage.appendChild(chip);
+    setTimeout(() => {
+      if (window.__demoMode && location.hash.replace(/^#/, "") === "/try" && !document.querySelector(".demo-end")) {
+        try { showDemoEnd(); } catch {}
+      }
+    }, 75000);
+  }
 
   // ---------- Immersion ----------
   // The scene was a ~1150×560 card with a step badge above it and a button row
@@ -12210,7 +12315,18 @@ function mountExposure(phobiaKey, levelIdx) {
     try { return localStorage.getItem("fobia.immersive") !== "0"; } catch { return true; }
   })();
   const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
-  if (immersiveOn) stage.classList.add("theater");
+  if (immersiveOn) {
+    stage.classList.add("theater");
+    // Theater makes the stage ~100dvh tall. On phones the page above it
+    // (header + step badge) pushes the stage's BOTTOM below the fold — which
+    // is exactly where the joystick lives, so touch players got half a
+    // joystick clipped off-screen. Scroll the stage to the top of the
+    // viewport AFTER the router's own scroll-to-top runs (that one fires
+    // post-render, which is why a bare rAF here lost the race).
+    setTimeout(() => {
+      try { stage.scrollIntoView({ block: "start" }); } catch {}
+    }, 180);
+  }
 
   // Fullscreen hides every sibling of #stage, which includes the hold bar and
   // the continue button — leaving the user with no way to see progress or move
@@ -12416,6 +12532,19 @@ function mountExposure(phobiaKey, levelIdx) {
       // with hair, eyes that match, optional glasses + beard).
       const character = window.Character && window.Character.loadCharacter();
       const opts = {};
+      // Demo visitors have no character yet — give them the same warm default
+      // traveler the landing shows (woman, long brown hair, teal), not the
+      // Body class's bare fallbacks. The bald default read as a mannequin.
+      if (!character && window.__demoMode && window.Character) {
+        const C = window.Character;
+        const demoChar = { skinTone: "fair", hairColor: "brown", hairStyle: "long", topColor: "teal", eyeColor: "hazel", bodyType: "woman" };
+        opts.skinColor  = C.hexToInt(C.skinHex(demoChar));
+        opts.shirtColor = C.hexToInt(C.topHex(demoChar));
+        opts.hairColor  = C.hexToInt(C.hairHex(demoChar));
+        opts.eyeColor   = C.hexToInt(C.eyeHex(demoChar));
+        opts.bodyType = "woman"; opts.hairStyle = "long";
+        opts.glasses = "none"; opts.facialHair = "none"; opts.headwear = "none"; opts.topStyle = "tee";
+      }
       if (character) {
         // Only forward colours that actually resolved. A legacy character
         // saved before a palette existed yields undefined here, and an
@@ -12705,7 +12834,9 @@ function mountExposure(phobiaKey, levelIdx) {
 
       if (facingSec < minHold) {
         const remain = minHold - facingSec;
-        continueBtn.textContent = `Stay with it · ${remain}s`;
+        // The demo's button is an exit, not a hold coach — the per-tick label
+        // rewrite would clobber "Step out — I've had a taste" within a second.
+        if (!window.__demoMode) continueBtn.textContent = `Stay with it · ${remain}s`;
         if (isLookOnlyScene || !hasFearInputs) {
           holdLabel.textContent = `${facingSec} / ${minHold}s · stay with it`;
         } else if (inZone) {
@@ -12721,7 +12852,9 @@ function mountExposure(phobiaKey, levelIdx) {
         // The BUTTON flips immediately — the user's exit is never gated.
         continueBtn.classList.remove("holding");
         continueBtn.classList.add("ready-pulse");
-        continueBtn.textContent = "I'm ready — continue";
+        continueBtn.textContent = window.__demoMode
+          ? t("demo.stepOut", "Step out — I've had a taste")
+          : "I'm ready — continue";
         holdLabel.textContent = `held ${facingSec}s — well done`;
         window.__rungHoldComplete = true;   // scenes read this for a diegetic beat
         celebrationDue = Date.now();
