@@ -958,6 +958,49 @@ if ("serviceWorker" in navigator) {
     margin-top: 12px; font-size: 12px; color: var(--muted);
     background: none; border: none; cursor: pointer; text-decoration: underline;
   }
+  /* ---- Self-check quiz ---- */
+  .quiz-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px; margin: 14px 0 10px;
+  }
+  .quiz-card {
+    text-align: left; padding: 13px 15px; cursor: pointer;
+    background: linear-gradient(180deg, var(--panel), var(--panel-3));
+    border: 1px solid var(--border-2); border-radius: 14px; color: var(--text);
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .quiz-card:hover { border-color: var(--accent); }
+  .quiz-card strong { font-size: 15px; }
+  .quiz-card .quiz-realm { font-size: 12px; color: var(--muted); }
+  .quiz-note { opacity: .75; }
+  .quiz-next { text-align: left; margin-top: 12px; border-top: 1px solid rgba(255,255,255,.09); padding-top: 12px; }
+  .quiz-next-head { font-size: 14px; margin: 0 0 6px; }
+  .quiz-next-sub { font-size: 12.5px; color: var(--muted); margin: 0 0 4px; }
+  .quiz-steps { margin: 0 0 6px; padding-left: 20px; font-size: 13px; line-height: 1.55; }
+  .fc-clin {
+    font-size: 12.5px; line-height: 1.5; color: #ffd9a8;
+    background: rgba(90, 62, 20, .25); border: 1px solid rgba(255, 200, 130, .3);
+    border-radius: 10px; padding: 8px 11px; margin: 8px 0 0;
+  }
+  /* ---- Discovery nudges (camp) ---- */
+  .nudge-card {
+    display: flex; align-items: center; gap: 10px;
+    max-width: 640px; margin: 12px auto 0; padding: 9px 12px;
+    background: rgba(16, 24, 40, .6); border: 1px solid var(--border-2);
+    border-radius: 12px; font-size: 13px; text-align: left;
+  }
+  .nudge-card .nudge-txt { flex: 1; line-height: 1.4; }
+  .nudge-card .nudge-go { font-size: 12px; padding: 5px 11px; white-space: nowrap; }
+  .nudge-card .nudge-x {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 13px; padding: 4px;
+  }
+  /* Readable (not-yet-lived) sparks */
+  .spark-slot.readable { opacity: .82; border-style: dashed; }
+  .spark-slot.readable .spark-unlived {
+    display: block; margin-top: 6px; font-size: 10.5px; letter-spacing: .4px;
+    text-transform: uppercase; color: var(--muted);
+  }
   /* Evidence lines — completion screen, realm page and (print) report. */
   .evidence-block {
     margin: 10px 0; border-radius: var(--radius-lg); padding: 13px 16px;
@@ -8938,7 +8981,86 @@ function openWorldstepModal(phobiaKey, stepIdx) {
 // shows the score + band + delta vs baseline inline, then re-renders the
 // current view so chips update. `at` tags the stage: baseline | mid | post |
 // manual — the report charts these over time.
-function openFearCheckModal(phobiaKey, at) {
+// ---------- Self-check quiz (the topic-interested visitor's front door) ----
+// A 60-second screener that needs no character and no commitment: pick the
+// fear, answer the Mirror's five questions about real life, get a severity
+// band plus the matching realm and its first real-world steps. The answers
+// seed that realm's Mirror baseline, so a visitor who later becomes a
+// traveler starts with their history already begun.
+function viewQuiz() {
+  const cards = FEATURED.filter((k) => PHOBIAS[k]).map((k) => {
+    const p = PHOBIAS[k];
+    const realm = realmOf(k);
+    return `
+      <button class="quiz-card" data-action="quiz-pick" data-phobia="${k}">
+        <strong>${escapeHtml(t(`phobia.${k}.label`, p.label))}</strong>
+        <span class="quiz-realm">${escapeHtml(realm.realmName)} · ${escapeHtml(realm.epithet)}</span>
+      </button>`;
+  }).join("");
+  return `
+    <div class="panel quiz-panel">
+      <span class="badge">${t("quiz.badge", "🪞 A 60-second self-check")}</span>
+      <h2 style="margin-top:10px">${t("quiz.h2", "Which fear runs your life?")}</h2>
+      <p>${t("quiz.p", "Pick the one that costs you the most, answer five honest questions about <strong>real life</strong>, and see where it stands — plus the first real-world steps people use to face it. A self-check, not a diagnosis.")}</p>
+      <div class="quiz-grid">${cards}</div>
+      <p class="small quiz-note">${t("quiz.note", "Private to this device — nothing is sent anywhere.")}</p>
+      <div class="actions">
+        <button class="btn-ghost" data-action="begin">${t("quiz.skip", "Skip — take me to the valley")}</button>
+      </div>
+    </div>`;
+}
+
+// ---------- One-per-session discovery nudges ----------
+// The features that keep people are the ones they never find: the fear curve,
+// the evidence file, the printable report. One quiet signpost per page-load,
+// each retiring forever once acted on, dismissed, or found unaided.
+function nudgesDone() {
+  try { return JSON.parse(localStorage.getItem("fobia.nudges.v1") || "[]"); } catch { return []; }
+}
+function markNudgeDone(id) {
+  try {
+    const d = nudgesDone();
+    if (!d.includes(id)) { d.push(id); localStorage.setItem("fobia.nudges.v1", JSON.stringify(d)); }
+  } catch {}
+}
+function nudgeBlock() {
+  // The choice is STICKY for the page-load, not consumed by it: the camp view
+  // renders more than once per navigation (shell re-renders), and a
+  // consume-once flag meant render #1 got the nudge and render #2 — the one
+  // that stays on screen — got nothing. "" = decided that this load shows none.
+  const done = nudgesDone();
+  if (window.__nudgeThisLoad !== undefined && (window.__nudgeThisLoad === "" || done.includes(window.__nudgeThisLoad))) {
+    if (window.__nudgeThisLoad !== "" ) return "";   // acted on mid-load — gone
+    return "";
+  }
+  let n = null;
+  const pick = (id) => window.__nudgeThisLoad === undefined || window.__nudgeThisLoad === id;
+  if (pick("report") && !done.includes("report") && Object.keys(PHOBIAS).some((k) => { try { return realmStatus(k).walked; } catch { return false; } })) {
+    n = { id: "report", icon: "📄", act: "open-report",
+      txt: t("nudge.report", "A realm is fully walked. The printable report is something you could hand a therapist."),
+      btn: t("nudge.reportBtn", "See the report") };
+  } else if (pick("evidence") && !done.includes("evidence") && window.PhobiaExperiments && PhobiaExperiments.evidenceCount() >= 1) {
+    const ch = window.Character && window.Character.loadCharacter();
+    n = { id: "evidence", icon: "🧾", act: "select-phobia", phobia: (ch && ch.primaryPhobia) || "dogs",
+      txt: t("nudge.evidence", "Your first experiment is in the evidence file — the realm page keeps your proof."),
+      btn: t("nudge.evidenceBtn", "See the evidence") };
+  } else if (pick("insights") && !done.includes("insights") && state.log.length >= 3) {
+    n = { id: "insights", icon: "📈", act: "open-insights",
+      txt: t("nudge.insights", "Three sessions in — your fear curve has started drawing itself."),
+      btn: t("nudge.insightsBtn", "See the curve") };
+  }
+  if (!n) { if (window.__nudgeThisLoad === undefined) window.__nudgeThisLoad = ""; return ""; }
+  window.__nudgeThisLoad = n.id;
+  return `
+    <div class="nudge-card" data-nudge="${n.id}">
+      <span class="nudge-icon">${n.icon}</span>
+      <span class="nudge-txt">${n.txt}</span>
+      <button class="btn-ghost nudge-go" data-action="${n.act}" ${n.phobia ? `data-phobia="${n.phobia}"` : ""} data-nudge-id="${n.id}">${n.btn}</button>
+      <button class="nudge-x" data-action="nudge-dismiss" data-id="${n.id}" aria-label="${t("nudge.dismiss", "Dismiss")}">✕</button>
+    </div>`;
+}
+
+function openFearCheckModal(phobiaKey, at, mOpts = {}) {
   const p = PHOBIAS[phobiaKey];
   if (!p) return;
   const realm = realmOf(phobiaKey);
@@ -8999,10 +9121,42 @@ function openFearCheckModal(phobiaKey, at) {
     } else if (!baseline) {
       deltaLine = `<p class="fc-delta">${t("mirror.first", "This is your starting point. The next mirrors will show the change.")}</p>`;
     }
+    // Quiz mode: the score alone answers nothing — pair it with where to go.
+    // The matching realm, the first real-world steps people actually use, and
+    // (only when the fear reads loud) the see-a-clinician line.
+    let quizNext = "";
+    if (mOpts.quiz) {
+      const steps = bridgeOf(phobiaKey).slice(0, 3).map((s) =>
+        `<li>${escapeHtml(s.t)}</li>`).join("");
+      const clinLine = band.tone === "hot"
+        ? `<p class="fc-clin">${t("quiz.clin", "A fear this loud deserves real support: a trained clinician can pace exposure safely with you — and this self-check is a good conversation starter.")}</p>`
+        : "";
+      quizNext = `
+        <div class="quiz-next">
+          <p class="quiz-next-head">${tf("quiz.realm", "This fear lives in <strong>{realm}</strong> — {epithet}.", { realm: escapeHtml(realm.realmName), epithet: escapeHtml(realm.epithet) })}</p>
+          <p class="quiz-next-sub">${t("quiz.steps", "The first real-world steps people use to face it:")}</p>
+          <ol class="quiz-steps">${steps}</ol>
+          ${clinLine}
+          <div class="actions" style="margin-top:10px">
+            <button class="btn-primary" id="quizEnter">${tf("quiz.enter", "Step into {realm}", { realm: escapeHtml(realm.realmName) })}</button>
+            <button class="btn-ghost" id="quizValley">${t("quiz.valley", "🗺 See the whole valley")}</button>
+          </div>
+        </div>`;
+    }
     res.innerHTML = `
       <div class="fc-score band-${band.tone}"><strong>${total}</strong><span>/ 20 — ${band.label}</span></div>
-      ${deltaLine}`;
+      ${deltaLine}
+      ${quizNext}`;
     res.hidden = false;
+    if (mOpts.quiz) {
+      const enter = res.querySelector("#quizEnter");
+      if (enter) enter.addEventListener("click", () => { close(); go("ladder", { phobia: phobiaKey }); });
+      const valley = res.querySelector("#quizValley");
+      if (valley) valley.addEventListener("click", () => { close(); go("select"); });
+      // hide the questions so the result reads as its own page
+      const itemsEl = overlay.querySelector(".fc-items");
+      if (itemsEl) itemsEl.style.display = "none";
+    }
     saveBtn.textContent = t("mirror.done", "Done");
     saveBtn.onclick = () => {
       close();
@@ -9115,6 +9269,7 @@ function serializeRoute(view, params = {}) {
     case "select":    return "/fears";
     case "threshold": return "/begin";
     case "demo":      return "/try";
+    case "quiz":      return "/check";
     case "about":     return "/about";
     case "journal":   return "/journal";
     case "report":    return "/report";
@@ -9141,6 +9296,7 @@ function parseRoute(hash) {
     case "fears":    return { view: "select",    params: {} };
     case "begin":    return { view: "threshold", params: {} };
     case "try":      return { view: "demo",      params: {} };
+    case "check":    return { view: "quiz",      params: {} };
     case "about":    return { view: "about",     params: {} };
     case "journal":  return { view: "journal",   params: {} };
     case "report":   return { view: "report",    params: {} };
@@ -9310,6 +9466,11 @@ function render(view, params) {
   // visitor and the first 3D moment; this is the shortcut past all of them.
   if (view === "demo")      { window.__demoMode = true; v.innerHTML = viewExposure("dogs", 0); }
   else if (window.__demoMode) window.__demoMode = false;
+  if (view === "quiz")        v.innerHTML = viewQuiz();
+  // A page found on your own needs no signpost: seeing insights or the report
+  // retires the camp nudge that would have pointed there.
+  if (view === "insights")    markNudgeDone("insights");
+  if (view === "report")      markNudgeDone("report");
   if (view === "rate")        v.innerHTML = viewRate(params.phobia, params.level);
   if (view === "breathe")     v.innerHTML = viewBreathe(params.phobia, params.level);
   if (view === "complete") {
@@ -9991,13 +10152,25 @@ function handleAction(d, params) {
     }
     case "try-demo": go("demo"); break;
     case "demo-end": try { showDemoEnd(); } catch {} break;
+    case "open-quiz": go("quiz"); break;
+    case "quiz-pick": {
+      const k = d.phobia;
+      if (PHOBIAS[k]) openFearCheckModal(k, getChecks(k).length ? "manual" : "baseline", { quiz: true });
+      break;
+    }
+    case "nudge-dismiss": {
+      markNudgeDone(d.id);
+      const card = document.querySelector(`.nudge-card[data-nudge="${d.id}"]`);
+      if (card) card.remove();
+      break;
+    }
     case "enter-path": {
       const ch = window.Character && window.Character.loadCharacter();
       if (ch && ch.primaryPhobia) go("ladder", { phobia: ch.primaryPhobia });
       else go("select");
       break;
     }
-    case "select-phobia":   try { PhobiaAudio.ui("whoosh"); } catch {} go("ladder", { phobia: d.phobia }); break;
+    case "select-phobia":   if (d.nudgeId) markNudgeDone(d.nudgeId); try { PhobiaAudio.ui("whoosh"); } catch {} go("ladder", { phobia: d.phobia }); break;
     case "start-level":     try { PhobiaAudio.ui("whoosh"); } catch {} go("predict", { phobia: d.phobia, level: parseInt(d.level, 10) }); break;
     case "confirm-predict": {
       const lvl = parseInt(d.level, 10);
@@ -10138,7 +10311,8 @@ function viewWelcome() {
   const cta = ch
     ? `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaBack", "Continue the journey")}</button>`
     : `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaNew", "Create your traveler")}</button>
-       <button class="btn-ghost demo-cta" data-action="try-demo">${t("story.tryFirst", "👣 Step inside first — 60 seconds, nothing to set up")}</button>`;
+       <button class="btn-ghost demo-cta" data-action="try-demo">${t("story.tryFirst", "👣 Step inside first — 60 seconds, nothing to set up")}</button>
+       <button class="btn-ghost demo-cta" data-action="open-quiz">${t("story.quizLink", "🪞 Or start with the 60-second self-check")}</button>`;
   const realmTeasers = FEATURED.filter(k => PHOBIAS[k]).map(k => `
     <button class="landing-realm" data-action="select-phobia" data-phobia="${k}" ${ch ? "" : `disabled title="${t("story.createFirst", "Create your traveler first")}"`}>
       <strong>${escapeHtml(realmOf(k).realmName)}</strong>
@@ -10425,6 +10599,7 @@ function viewSelect() {
           <button class="backup-later" data-action="backup-later">${t("camp.backupLater", "later")}</button>
         </span>
       </div>` : ""}
+      ${nudgeBlock()}
       <p class="camp-hint">${t("camp.hint", "the path descends through the valley — choose a realm ▾")}</p>
     </section>
     <ol class="realm-list">${nodes}</ol>
@@ -10749,6 +10924,10 @@ function isSameLocalDay(ts) {
 // learning reads as loot, not homework.
 function viewJournal() {
   const owned = getSparks();
+  // Unearned sparks used to be "?" boxes — the app's best CBT writing,
+  // hidden from exactly the visitor who came to read. They're readable now,
+  // marked as not-yet-lived; a trial still turns a page ahead into a page
+  // that's yours, which is the collecting delight the book keeps.
   const cards = INSIGHT_CARDS.map((c, i) => {
     const has = owned.includes(c.id);
     return has ? `
@@ -10757,17 +10936,18 @@ function viewJournal() {
         <strong>${escapeHtml(t(`card.${c.id}.title`, c.title))}</strong>
         <p>${escapeHtml(t(`card.${c.id}.text`, c.text))}</p>
       </div>` : `
-      <div class="spark-slot locked" style="--i:${i}" title="Face another trial to earn this spark">
-        <span class="spark-icon">?</span>
-        <strong>${tf("journal.lockedT", "Spark {n}", { n: i + 1 })}</strong>
-        <p>${t("journal.lockedP", "Still out there. Face another trial to earn it.")}</p>
+      <div class="spark-slot readable" style="--i:${i}" title="${t("journal.readableTip", "Read ahead — it becomes yours when you live it in a trial")}">
+        <span class="spark-icon">${c.icon}</span>
+        <strong>${escapeHtml(t(`card.${c.id}.title`, c.title))}</strong>
+        <p>${escapeHtml(t(`card.${c.id}.text`, c.text))}</p>
+        <span class="spark-unlived">${t("journal.unlived", "📖 read ahead — not yet lived")}</span>
       </div>`;
   }).join("");
   return `
     <div class="panel journal-panel">
       <span class="badge">${t("spark.book", "Book of Sparks")}</span>
-      <h2 style="margin-top:10px">${t("journal.h2", "The wisdom you've earned")}</h2>
-      <p>${t("journal.p1", "Every finished trial leaves a spark — one piece of the psychology of fear, collected by living it rather than reading it.")} ${owned.length ? tf("journal.have", "You hold <strong>{a} of {b}</strong>.", { a: owned.length, b: INSIGHT_CARDS.length }) : t("journal.empty", "Your book is empty — face your first trial to begin it.")}</p>
+      <h2 style="margin-top:10px">${t("journal.h2", "The wisdom of the valley")}</h2>
+      <p>${t("journal.p2", "The psychology of fear, one spark at a time — read it all now, or collect each piece by living it in a trial.")} ${owned.length ? tf("journal.have", "You hold <strong>{a} of {b}</strong>.", { a: owned.length, b: INSIGHT_CARDS.length }) : ""}</p>
       <div class="spark-grid">${cards}</div>
       <div class="actions"><button class="btn-primary" data-action="open-select">${t("journal.backValley", "🗺 Back to the valley")}</button></div>
     </div>`;
