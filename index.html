@@ -958,6 +958,15 @@ if ("serviceWorker" in navigator) {
     margin-top: 12px; font-size: 12px; color: var(--muted);
     background: none; border: none; cursor: pointer; text-decoration: underline;
   }
+  /* Fainter paths — the six non-featured fears, named on the map */
+  .jw-faint-head { font-size: 12.5px; color: var(--muted); margin: 10px 0 7px; }
+  .jw-faint-row { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin-bottom: 12px; }
+  .jw-faint {
+    font-size: 12px; padding: 5px 12px; cursor: pointer;
+    background: rgba(20, 26, 46, .55); color: var(--muted);
+    border: 1px dashed var(--border-2); border-radius: 999px;
+  }
+  .jw-faint:hover { color: var(--text); border-color: var(--accent); border-style: solid; }
   /* ---- Self-check quiz ---- */
   .quiz-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -10606,6 +10615,21 @@ function viewSelect() {
     <section class="jw-dawn">
       <h3>${t("dawn.h", "Beyond the valley")}</h3>
       ${tamedCount > 0 ? `<p class="jw-dawn-count">${tf("dawn.tamed", "🕊 {a} of {b} shadows tamed — the dawn is closer.", { a: tamedCount, b: keys.length })}</p>` : ""}
+      ${(() => {
+        // The six non-featured fears were reachable only by deep link — code
+        // that works, hidden like it doesn't. They're bonus paths now: named,
+        // discoverable, honestly framed as less-traveled (lighter scenes, no
+        // experiment decks). journeyKeys() already promotes any of them the
+        // traveler actually works on.
+        const faint = ["water", "flying", "needles", "speaking", "driving", "storms"]
+          .filter((k) => PHOBIAS[k] && !keys.includes(k));
+        if (!faint.length) return "";
+        return `
+          <p class="jw-faint-head">${t("dawn.faintP", "Six fainter paths also cross these hills — less traveled, still real:")}</p>
+          <div class="jw-faint-row">
+            ${faint.map((k) => `<button class="jw-faint" data-action="select-phobia" data-phobia="${k}">${escapeHtml(t(`phobia.${k}.label`, PHOBIAS[k].label))}</button>`).join("")}
+          </div>`;
+      })()}
       <p>${t("dawn.p", "Fears the map doesn't know yet — forge your own path for them.")}</p>
       <div class="actions" style="justify-content:center">
         <button class="btn-ghost" data-action="open-custom">${t("dawn.forge", "🛠 Forge a custom fear")}</button>
@@ -11248,11 +11272,14 @@ function viewLadder(phobiaKey) {
         // summarises, itemised.
         const ev = window.PhobiaExperiments ? PhobiaExperiments.evidenceOf(phobiaKey) : [];
         if (!ev.length) return "";
-        const rows = ev.slice(-6).reverse().map((l) => `
+        const rows = ev.slice(-6).reverse().map((l) => {
+          const txt = PhobiaExperiments.lineText(phobiaKey, l);
+          return `
           <div class="evidence-line">
-            <span class="ev-note">${escapeHtml(l.note)}</span>
-            <span class="ev-vs">${tf("exp.vs2", "You expected: “{p}”", { p: escapeHtml(l.predicted) })} · ${new Date(l.ts).toLocaleDateString()}</span>
-          </div>`).join("");
+            <span class="ev-note">${escapeHtml(txt.note)}</span>
+            <span class="ev-vs">${tf("exp.vs2", "You expected: “{p}”", { p: escapeHtml(txt.predicted) })} · ${new Date(l.ts).toLocaleDateString()}</span>
+          </div>`;
+        }).join("");
         return `
           <section class="evidence-block">
             <h3>${tf("exp.ladderH", "🧾 Evidence collected here — {n} test{s}", { n: ev.length, s: ev.length === 1 ? "" : "s" })}</h3>
@@ -12296,6 +12323,13 @@ const PhobiaExperiments = (() => {
     stage.appendChild(panel);
   }
 
+  // Localized field lookup. Content keys follow the whisper convention —
+  // exp.<phobia>.<id>.<title|how|p0|p1|p2|out> with the English inline as
+  // fallback — so the decks read Persian in fa without forking the data.
+  function xt(phobiaKey, x, field, fallback) {
+    return t(`exp.${phobiaKey}.${x.id}.${field}`, fallback);
+  }
+
   function renderList() {
     if (!S) return;
     const open = !S.panel.classList.contains("collapsed");
@@ -12309,7 +12343,7 @@ const PhobiaExperiments = (() => {
     S.deck.forEach((x) => {
       const done = doneBefore(S.phobiaKey, x.id) || S.results.some((r) => r.id === x.id);
       const b = el("button", "exp-item" + (done ? " done" : ""),
-        `${done ? `<span class="exp-check">✓</span>` : ""}${escapeHtml(x.title)}`);
+        `${done ? `<span class="exp-check">✓</span>` : ""}${escapeHtml(xt(S.phobiaKey, x, "title", x.title))}`);
       b.addEventListener("click", () => renderPick(x));
       list.appendChild(b);
     });
@@ -12320,12 +12354,12 @@ const PhobiaExperiments = (() => {
     if (!S) return;
     S.panel.classList.remove("collapsed");
     S.panel.innerHTML = "";
-    const head = el("div", "exp-head", `🧪 ${escapeHtml(x.title)}`);
+    const head = el("div", "exp-head", `🧪 ${escapeHtml(xt(S.phobiaKey, x, "title", x.title))}`);
     S.panel.appendChild(head);
     const pick = el("div", "exp-pick",
       `<p class="exp-q">${t("exp.predict", "Before you try — what do you expect?")}</p>`);
     x.predictions.forEach((p, i) => {
-      const c = el("button", "exp-chip", escapeHtml(p));
+      const c = el("button", "exp-chip", escapeHtml(xt(S.phobiaKey, x, "p" + i, p)));
       c.addEventListener("click", () => arm(x, i));
       pick.appendChild(c);
     });
@@ -12339,9 +12373,9 @@ const PhobiaExperiments = (() => {
     if (!S) return;
     S.run = { x, predIdx, st: {}, tick: x.make(), progress: 0 };
     S.panel.innerHTML = "";
-    S.panel.appendChild(el("div", "exp-head", `🧪 ${escapeHtml(x.title)}`));
+    S.panel.appendChild(el("div", "exp-head", `🧪 ${escapeHtml(xt(S.phobiaKey, x, "title", x.title))}`));
     const run = el("div", "exp-run",
-      `<p class="exp-how">${escapeHtml(x.how)}</p><div class="exp-bar"><i></i></div>`);
+      `<p class="exp-how">${escapeHtml(xt(S.phobiaKey, x, "how", x.how))}</p><div class="exp-bar"><i></i></div>`);
     const cancel = el("button", "exp-cancel", t("exp.cancel", "stop this experiment"));
     cancel.addEventListener("click", () => { S.run = null; renderList(); });
     run.appendChild(cancel);
@@ -12354,20 +12388,39 @@ const PhobiaExperiments = (() => {
     S.run = null;
     const first = !doneBefore(S.phobiaKey, x.id);
     const pts = first ? 18 + 4 * S.levelIdx : 6;
+    // Evidence stores the prediction INDEX plus the canonical English strings:
+    // the live surfaces re-resolve through t() at render (so the log follows
+    // the UI language), while the printable report always uses the stored
+    // English — it is the clinician-facing document and stays clinical-LTR.
     const line = {
-      id: x.id, ts: Date.now(), rung: S.levelIdx,
+      id: x.id, ts: Date.now(), rung: S.levelIdx, predIdx,
       predicted: x.predictions[predIdx], note: x.out,
     };
     addEvidence(S.phobiaKey, line);
-    S.results.push({ id: x.id, title: x.title, predicted: line.predicted, note: x.out, pts });
+    S.results.push({ id: x.id, title: xt(S.phobiaKey, x, "title", x.title),
+      predicted: xt(S.phobiaKey, x, "p" + predIdx, line.predicted),
+      note: xt(S.phobiaKey, x, "out", x.out), pts });
     try { awardCourage(pts, "experiment"); } catch {}
     try { PhobiaAudio.ui("spark"); } catch {}
     S.panel.innerHTML = "";
-    S.panel.appendChild(el("div", "exp-head", `✅ ${escapeHtml(x.title)}`));
+    S.panel.appendChild(el("div", "exp-head", `✅ ${escapeHtml(xt(S.phobiaKey, x, "title", x.title))}`));
     S.panel.appendChild(el("div", "exp-result",
-      `<p class="exp-out">${escapeHtml(x.out)}</p>
-       <p class="exp-vs">${tf("exp.vs", "You expected: “{p}” · +{n} courage", { p: escapeHtml(line.predicted), n: pts })}</p>`));
+      `<p class="exp-out">${escapeHtml(xt(S.phobiaKey, x, "out", x.out))}</p>
+       <p class="exp-vs">${tf("exp.vs", "You expected: “{p}” · +{n} courage", { p: escapeHtml(xt(S.phobiaKey, x, "p" + predIdx, line.predicted)), n: pts })}</p>`));
     setTimeout(() => { if (S && !S.run) renderList(); }, 6500);
+  }
+
+  // Resolve a stored evidence line into display text in the CURRENT language.
+  // Legacy lines (no predIdx) fall back to their stored English strings.
+  function lineText(phobiaKey, l) {
+    const x = (DECKS[phobiaKey] || []).find((d) => d.id === l.id);
+    if (!x) return { note: l.note, predicted: l.predicted };
+    return {
+      note: xt(phobiaKey, x, "out", l.note || x.out),
+      predicted: l.predIdx != null
+        ? xt(phobiaKey, x, "p" + l.predIdx, x.predictions[l.predIdx] || l.predicted)
+        : l.predicted,
+    };
   }
 
   // Called every frame from the 3D module scope with plain numbers.
@@ -12414,7 +12467,7 @@ const PhobiaExperiments = (() => {
     S = null;
   }
 
-  return { begin, frame, signal, end, evidenceOf, evidenceCount,
+  return { begin, frame, signal, end, evidenceOf, evidenceCount, lineText,
     lastSessionFor(phobiaKey, levelIdx) {
       if (!lastSession) return null;
       if (lastSession.phobiaKey !== phobiaKey || lastSession.levelIdx !== levelIdx) return null;
@@ -33108,6 +33161,34 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   let heldCycles = 0, retreatPraised = false, holdPraised = false;
   let completionBeatDone = false;
   let arousalFloor = 0, engageDur = 0;
+  // ---- Creature readout (the dog's trust-hud pattern) ----
+  // The coil-pounce machine was fully built and fully invisible: the player
+  // had no way to know a dart was relocation, a crouch was their own approach
+  // speed, or a hop was already over. Reading the animal is the transferable
+  // skill — the readout teaches it in plain language.
+  let spHudEl = null, spHudPhrase = "", spHudDwell = 0;
+  setTimeout(() => {
+    const stage = document.getElementById("stage");
+    if (!stage || spider.userData.disposed) return;
+    let hud = stage.querySelector(".trust-hud");
+    if (!hud) {
+      hud = document.createElement("div");
+      hud.className = "trust-hud";
+      hud.innerHTML = `
+        <div class="trust-row"><div class="trust-name">${t("creature.spider", "House spider")}</div></div>
+        <div class="trust-mood"></div>`;
+      stage.appendChild(hud);
+    }
+    spHudEl = hud;
+  }, 90);
+  function spiderPhrase() {
+    if (pounceState === "coiling")   return t("sp.coiling", "It crouched — you came in fast. Hold still, or give it a step.");
+    if (pounceState === "pouncing")  return t("sp.pouncing", "A hop — startle, not attack. It's already over.");
+    if (pounceState === "recoiling") return t("sp.recoiling", "Retreating. It wants distance more than you do.");
+    if (skitterState === "skittering") return t("sp.skitter", "Moving — relocating, not approaching. Darting is how small things stay alive.");
+    if (skitterState === "pausing")  return t("sp.pausing", "Paused mid-run. It re-reads the room between bursts.");
+    return t("sp.still", "Still. Spiders spend most of their lives exactly like this.");
+  }
   const GUARD = B.guardDist ?? 0.7;
   const LENS_FLOOR = 0.85;      // spider XZ never closer than this to the camera
 
@@ -33731,6 +33812,16 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         // Observability for scene-verification hooks (nothing in-app reads this).
         spider.userData.spiderDebug = { pounceState, skitterState, elapsed: +elapsed.toFixed(1), nextPounceAt: isFinite(nextPounceAt) ? +nextPounceAt.toFixed(1) : "Inf", distP: +distP.toFixed(2),
           skitterT: +skitterT.toFixed(2), nextSkitter: +nextSkitter.toFixed(2), microShuffleAt: +microShuffleAt.toFixed(2) };
+        // Creature readout — min dwell 0.9 s so a two-frame pause never flickers the line.
+        spHudDwell -= d;
+        if (spHudEl) {
+          const ph = spiderPhrase();
+          if (ph !== spHudPhrase && spHudDwell <= 0) {
+            spHudPhrase = ph; spHudDwell = 0.9;
+            const m = spHudEl.querySelector(".trust-mood");
+            if (m) m.textContent = ph;
+          }
+        }
       }
     },
     dispose() {
@@ -33738,6 +33829,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       try { if (moodChipOff) moodChipOff(); } catch {}
       try { if (spCanvasDom) { spCanvasDom.removeEventListener("pointerdown", onSpDown); spCanvasDom.removeEventListener("pointerup", onSpUp); } } catch {}
       try { spider.userData.disposed = true; if (spider.userData.parts && spider.userData.parts.mixer) spider.userData.parts.mixer.stopAllAction(); } catch {}
+      try { if (spHudEl) { spHudEl.remove(); spHudEl = null; } } catch {}
       try { window.__holdCelebrationGate = null; window.__rungHoldComplete = false; } catch {}
       try { liveAudio.forEach(h => h && h.stop && h.stop()); } catch {}
       try {
@@ -36234,6 +36326,38 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   snakeCtl.ctrl = new SnakeController(snake, scene, camera);
   snake.userData.ctrl = snakeCtl.ctrl;   // observability for scene-verification hooks
   const SNAKE_BOUNDS = { minX: -3.4, maxX: 3.4, minZ: -9.3, maxZ: 1.2 };
+  // ---- Creature readout (trust-hud pattern; see the spider's) ----
+  // The five states + the strike phases were all machine and no window: a
+  // rear-up read as "attack incoming" when it is a WARNING that passes, and
+  // the approach-speed gate — the scene's whole lesson — was invisible.
+  let snHudEl = null, snHudPhrase = "", snHudDwell = 0;
+  setTimeout(() => {
+    const stage = document.getElementById("stage");
+    if (!stage || snake.userData.disposed) return;
+    let hud = stage.querySelector(".trust-hud");
+    if (!hud) {
+      hud = document.createElement("div");
+      hud.className = "trust-hud";
+      hud.innerHTML = `
+        <div class="trust-row"><div class="trust-name">${t("creature.snake", "Grass snake")}</div></div>
+        <div class="trust-mood"></div>`;
+      stage.appendChild(hud);
+    }
+    snHudEl = hud;
+  }, 90);
+  function snakePhrase() {
+    const sp = snakeCtl.strikePhase;
+    if (sp === "telegraph") return t("sn.telegraph", "Drawn back — the warning is loud now. Step back slowly.");
+    if (sp === "lunge")     return t("sn.lunge", "A strike at the air — range display, and it ends here.");
+    if (sp === "recoil")    return t("sn.recoil", "Recoiling — the warning is spent. It settles if you let it.");
+    switch (snakeCtl.state) {
+      case "watch":     return t("sn.watch", "It noticed you. Watching is a snake's whole first language.");
+      case "defensive": return t("sn.defensive", "Risen — a warning, not an attack. Your pace is the message: slow, or one step back.");
+      case "retreat":   return t("sn.retreat", "Leaving. Given a choice, a snake chooses away.");
+      case "wander":    return t("sn.wander", "Traveling its own path. You're terrain, not target.");
+      default:          return t("sn.bask", "At ease — tongue reading the air. The flicker is smell, not threat.");
+    }
+  }
   const SNAKE_REF_SPEED = 0.5;   // m/s at Walk clip timeScale 1 — tuned by eye
   const STRIKE_LENS_FLOOR = 0.7; // head world-pos never crosses this from the lens
   let slitherSound = null;       // lazy spatial rustle handle
@@ -36567,6 +36691,18 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       speed: +snakeCtl.speed.toFixed(2), playerDist: +(playerDist || 0).toFixed(2),
       approachSpeed: +(approachSpeed || 0).toFixed(2),
     };
+    // Creature readout — strike phrases may override the dwell (a telegraph
+    // must never wait 0.9 s behind "it noticed you").
+    snHudDwell -= dtN;
+    if (snHudEl) {
+      const ph = snakePhrase();
+      const urgent = snakeCtl.strikePhase !== "none";
+      if (ph !== snHudPhrase && (snHudDwell <= 0 || urgent)) {
+        snHudPhrase = ph; snHudDwell = 0.9;
+        const m = snHudEl.querySelector(".trust-mood");
+        if (m) m.textContent = ph;
+      }
+    }
 
     // --- Head tracking while watching (composes on the rear pitch) ---
     // The smoothed yaw+pitch are handed to the controller, which applies them
@@ -36957,6 +37093,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       try { if (window.PhobiaThreat === _snakeThreatPos) window.PhobiaThreat = null; } catch {}
       try { const bar = document.querySelector('.scene-cmd-bar[data-scene="snakes"]'); if (bar) bar.dataset.wired = ""; } catch {}
       try { snake.userData.disposed = true; if (snake.userData.parts && snake.userData.parts.mixer) snake.userData.parts.mixer.stopAllAction(); } catch {}
+      try { if (snHudEl) { snHudEl.remove(); snHudEl = null; } } catch {}
       // Stop the moving slither rustle (it's a looping source, not a one-shot).
       try { if (slitherSound) { slitherSound.stop(); slitherSound = null; } } catch {}
       // Free the set-dressing this overhaul added (generated textures + materials).
