@@ -19020,7 +19020,6 @@ function buildHumanRig(o = {}) {
     { y: 0.878, rx: .1712, rz: .1188, w: [[bi(pelvis), 1]], mat: shirtTop, sq: sqT },
     { y: 0.860, rx: .1668, rz: .1152, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
     { y: 0.826, rx: .1700, rz: .1180, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
-    { y: 0.790, rx: .1640, rz: .1170, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
     // Close the trunk NARROW and high. At .1420 the end cap was a disc wider
     // than the gap between the thighs, hanging below the crotch — that pale
     // wedge between the legs was this, seen from underneath. The first shrink
@@ -19028,8 +19027,20 @@ function buildHumanRig(o = {}) {
     // where its down-facing normals catch the fill light and read as a pale
     // wedge of skin between the trousers. Tuck it up INTO the thigh gap and
     // narrow it to the inseam shadow's width.
-    { y: 0.784, rx: .1120, rz: .0920, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
-    { y: 0.776, rx: .0560, rz: .0680, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT, cap: 1 },
+    //
+    // Two more things were still showing there. `_sweep` pushes a cap's pole
+    // out along the axis by 0.85 × the ring radius, so the .056 closing ring
+    // grew a 5.6 cm cone hanging down between the thighs — the pale triangle
+    // on the traveler page. And the block stepped from .164 to .112 in 6 mm
+    // while standing ~3 cm proud of the thighs' front (chestZ deepens the
+    // whole trunk): a shelf with a hard lower edge, like shorts over tights.
+    // So the lower block now draws in toward the thighs' own depth over
+    // 2.5 cm, and closes on a ring small enough that its pole is ~1 cm,
+    // high enough that the thighs' inner mass meets in front of it.
+    { y: 0.804, rx: .1560, rz: .1040, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
+    { y: 0.792, rx: .1180, rz: .0860, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
+    { y: 0.784, rx: .0620, rz: .0580, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
+    { y: 0.779, rx: .0180, rz: .0200, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT, cap: 1 },
   ];
   // Chest / hip widths diverge by body type; `k` is 1 at the shoulders, 0 at
   // the seat, so one lerp shapes the whole silhouette.
@@ -19111,12 +19122,33 @@ function buildHumanRig(o = {}) {
     // sin(ang) < 0 is the back of the leg.
     const back = (a, p = 1.6) => (ang) => 1 + a * Math.pow(Math.max(0, -Math.sin(ang)), p);
     const front = (a, p = 1.6) => (ang) => 1 + a * Math.pow(Math.max(0, Math.sin(ang)), p);
+    // The ring's local +X is world +X in a downward sweep, so the INNER thigh
+    // (toward the other leg) is cos(ang) < 0 on the right leg, > 0 on the left.
+    const inner = (a, p = 1.4) => (ang) => 1 + a * Math.pow(Math.max(0, -sx * Math.cos(ang)), p);
+    const both = (f, g) => (ang) => f(ang) * g(ang);
+    // The hip junction. Torso and thigh are two tubes, so the thigh's top has
+    // to stay INSIDE the trousers block, under the shirt hem, in every pose.
+    // It used to start 9.6 cm above the hip joint (authored .888), above the
+    // hem (8.2 cm) and ~3 cm wider than the shirt there, with its capped top
+    // weighted 38 % to the thigh: the dark cap poked out at both hips even in
+    // the bind pose, and Idle_Loop's stance (thighs abducted 9° and 11–15°,
+    // one flexed ~23°) lifted it further — the "waistband flaps". Now the top
+    // ring is small and sits inside the block (authored .858), and the rings
+    // above the joint (.82) are pelvis-heavy, so under 15° of abduction the
+    // hip bulge rises ~1–2 cm and stays under the trousers' top edge.
+    //
+    // The adductors are INNER mass. Without them the thighs started 3.8 cm
+    // apart on the wider-hipped body types, and the torso's closing cap
+    // showed through the gap as a pale wedge at the crotch. Swelling the inner
+    // side of the upper thigh makes the two meet at the midline, then fades
+    // out by mid-thigh where a real thigh gap begins.
     const leg = [
-      { y: 0.888, z: 0, rx: .098, rz: .105, w: [[P, .62], [T, .38]], mat: MAT.PANTS, cap: 1 },
+      { y: 0.858, z: 0, rx: .062, rz: .084, w: [[P, .80], [T, .20]], mat: MAT.PANTS, cap: 1, rmod: inner(.34) },
       // Hamstring mass high on the back of the thigh, fading by mid-shaft.
-      { y: 0.848, z: 0, rx: .103, rz: .111, w: [[P, .28], [T, .72]], mat: MAT.PANTS, rmod: back(.060) },
-      { y: 0.792, z: 0, rx: .0995, rz: .107, w: [[T, 1]], mat: MAT.PANTS, rmod: back(.050) },
-      { y: 0.692, z: 0, rx: .0920, rz: .099, w: [[T, 1]], mat: MAT.PANTS, rmod: back(.034) },
+      { y: 0.842, z: 0, rx: .084, rz: .100, w: [[P, .55], [T, .45]], mat: MAT.PANTS, rmod: both(back(.045), inner(.34)) },
+      { y: 0.824, z: 0, rx: .102, rz: .110, w: [[P, .30], [T, .70]], mat: MAT.PANTS, rmod: both(back(.060), inner(.26)) },
+      { y: 0.792, z: 0, rx: .0995, rz: .107, w: [[P, .08], [T, .92]], mat: MAT.PANTS, rmod: both(back(.050), inner(.21)) },
+      { y: 0.692, z: 0, rx: .0920, rz: .099, w: [[T, 1]], mat: MAT.PANTS, rmod: both(back(.034), inner(.06)) },
       { y: 0.582, z: 0, rx: .0820, rz: .089, w: [[T, 1]], mat: MAT.PANTS },
       { y: 0.492, z: .002, rx: .0730, rz: .079, w: [[T, 1]], mat: MAT.PANTS },
       { y: 0.450, z: .003, rx: .0700, rz: .0762, w: [[T, .74], [S, .26]], mat: MAT.PANTS },
@@ -19510,6 +19542,86 @@ function makeContactShadow(r, strength) {
   m.renderOrder = 1;
   m.userData.noCollide = true;
   return m;
+}
+
+// ---------- Soft window sunbeam ----------
+// A shaft of light has no surface. A flat-shaded open cone draws its
+// silhouette as a hard line across the room — a grey glass sheet hanging in
+// the air. This shader fakes the volume instead: brightness follows how
+// squarely you look through the cone (edge-on → zero, so there is no edge), is
+// strongest at the window and thins toward the floor, and carries a slow
+// drifting unevenness like air with dust in it.
+//
+// Shared by the dog room and the arrival/traveler room (ShellScenes), which
+// renders straight to the canvas instead of through a composer — hence the
+// tone-mapping and colour-space chunks: into the dog room's linear render
+// target they compile to nothing, straight to the canvas they keep the beam
+// on the same ACES curve as the MeshBasicMaterial it replaces.
+// `origin` is the window centre, `dir` the key light's travel direction,
+// `len` the distance to the floor along it, `opts.wallZ` the z of the
+// window wall (room interior on +z); set `.userData.uTime.value` per frame
+// to animate the drift (optional — it reads fine frozen).
+function makeSoftSunbeam(origin, dir, len, opts = {}) {
+  const uTime = { value: 0 };
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(opts.rTop ?? 0.55, opts.rBottom ?? 0.95, len, opts.segments ?? 24, 1, true),
+    new THREE.ShaderMaterial({
+      uniforms: {
+        uColor: { value: new THREE.Color(opts.color ?? 0xffe0b4) },
+        uOpacity: { value: opts.opacity ?? 0.05 },
+        uTime,
+        // Window wall as (normal, constant): signed distance = n·p + w.
+        // Default is "no wall" (distance 1 everywhere).
+        uPlane: { value: opts.wallZ != null
+          ? new THREE.Vector4(0, 0, 1, -opts.wallZ)
+          : new THREE.Vector4(0, 0, 0, 1) },
+      },
+      vertexShader: `
+        varying vec3 vN; varying vec3 vV; varying float vT; varying vec3 vW;
+        void main() {
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vN = normalize(mat3(modelMatrix) * normal);
+          vV = normalize(cameraPosition - wp.xyz);
+          vT = uv.y;
+          vW = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }`,
+      fragmentShader: `
+        uniform vec3 uColor; uniform float uOpacity; uniform float uTime; uniform vec4 uPlane;
+        varying vec3 vN; varying vec3 vV; varying float vT; varying vec3 vW;
+        void main() {
+          float facing = abs(dot(normalize(vN), normalize(vV)));
+          float core = facing * facing * facing;
+          // Both ends of the open cone must fade, or the tube's rim reads.
+          // The window end is tilted against the wall: part of its rim sits
+          // ~0.2 m behind the wall, where the depth test cut it along the
+          // glass as a pale arc, and part up to ~0.5 m in front, where the
+          // tube simply stopped. So: a fade over the last 12 % of the length,
+          // and a fade to zero at the wall plane.
+          float along = smoothstep(0.0, 0.35, vT) * (0.45 + 0.55 * vT)
+                      * (1.0 - smoothstep(0.88, 1.0, vT));
+          float wall = smoothstep(0.0, 0.3, dot(uPlane.xyz, vW) + uPlane.w);
+          float drift = 0.82 + 0.18 * sin(vW.x * 3.1 + vW.z * 2.3 + uTime * 0.35)
+                              * sin(vW.y * 4.7 - uTime * 0.22);
+          gl_FragColor = vec4(uColor * (uOpacity * 2.6 * core * along * wall * drift), 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+  );
+  // Kept out of screen-space AO: the SSAO normal pass draws every mesh as
+  // solid, and it outlined the beam with dark halos.
+  beam.userData.ssaoSkip = true;
+  beam.userData.noCollide = true;
+  beam.userData.noPick = true;
+  beam.userData.uTime = uTime;
+  beam.position.copy(origin).addScaledVector(dir, len / 2);
+  beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().negate());
+  return beam;
 }
 
 // ---------- First-person body (world-anchored) ----------
@@ -22472,34 +22584,95 @@ class Hands {
 // cannot do black crush, edge-weighted chromatic pull, or a vignette that
 // throbs with the heartbeat — which is why scenes opt into this pass and the
 // CSS pipeline survives only as the low-tier fallback.
+// The grade itself, shared by the stand-alone pass and the fused output pass
+// below so the two can never drift apart. `col` is display-referred sRGB.
+const FEAR_GRADE_GLSL = `
+  uniform float uFear; uniform float uBeat;
+  // Radial chromatic pull, edge-weighted, grows with fear + heartbeat
+  float fearCA(float r) { return (0.0038 * uFear + 0.0022 * uBeat) * smoothstep(0.15, 0.75, r); }
+  vec3 fearGrade(vec3 col, float r) {
+    float lum = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(col, vec3(lum), uFear * 0.30);                    // desaturate
+    col = (col - 0.5) * (1.0 + uFear * 0.18) + 0.5;             // contrast
+    col = max(col - uFear * 0.035, 0.0);                        // black crush
+    col *= mix(vec3(1.0), vec3(0.93, 0.97, 1.06), uFear * 0.55); // cold pull
+    // Film vignette: tightens with fear, throbs on the heartbeat. At fear 0
+    // the corner term (~0.17) replaces the static .vignette overlay div.
+    float vr = r * (1.35 + uFear * 0.50 + uBeat * 0.25);
+    float vig = smoothstep(0.68, 1.18, vr);
+    return col * (1.0 - vig * (0.30 + uFear * 0.50));
+  }`;
 const FearGradeShader = {
   uniforms: { tDiffuse: { value: null }, uFear: { value: 0 }, uBeat: { value: 0 } },
   vertexShader: `
     varying vec2 vUv;
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float uFear; uniform float uBeat; varying vec2 vUv;
+    uniform sampler2D tDiffuse; varying vec2 vUv;
+    ${FEAR_GRADE_GLSL}
     void main() {
       vec2 c = vUv - 0.5; float r = length(c);
-      // Radial chromatic pull, edge-weighted, grows with fear + heartbeat
-      float ca = (0.0038 * uFear + 0.0022 * uBeat) * smoothstep(0.15, 0.75, r);
+      float ca = fearCA(r);
       vec3 col;
       col.r = texture2D(tDiffuse, vUv + c * ca).r;
       col.g = texture2D(tDiffuse, vUv).g;
       col.b = texture2D(tDiffuse, vUv - c * ca).b;
-      float lum = dot(col, vec3(0.299, 0.587, 0.114));
-      col = mix(col, vec3(lum), uFear * 0.30);                    // desaturate
-      col = (col - 0.5) * (1.0 + uFear * 0.18) + 0.5;             // contrast
-      col = max(col - uFear * 0.035, 0.0);                        // black crush
-      col *= mix(vec3(1.0), vec3(0.93, 0.97, 1.06), uFear * 0.55); // cold pull
-      // Film vignette: tightens with fear, throbs on the heartbeat. At fear 0
-      // the corner term (~0.17) replaces the static .vignette overlay div.
-      float vr = r * (1.35 + uFear * 0.50 + uBeat * 0.25);
-      float vig = smoothstep(0.68, 1.18, vr);
-      col *= 1.0 - vig * (0.30 + uFear * 0.50);
-      gl_FragColor = vec4(col, 1.0);
+      gl_FragColor = vec4(fearGrade(col, r), 1.0);
     }`
 };
+
+// OutputPass (tone map + sRGB) with the fear grade fused on the end: one
+// full-resolution read/write instead of two, for whenever SMAA is not in the
+// chain between them (medium tier always; high tier at DPR ≥ 1.75). Measured
+// 0.4–0.5 ms saved at DPR 2 in the dog room (M4, paired A/B). Output matches
+// the two-pass chain to 1/255 at fear 0; with fear up, 0.4 % of channels
+// differ by more than 2/255, all in the chromatic fringe on hard edges. The chromatic pull samples the
+// scene-referred buffer, so each tap is tone-mapped before its channel is
+// taken — same result as grading the OutputPass image, three ACES evaluations
+// per pixel instead of one texture round trip. Shares uFear/uBeat objects with
+// `src` so the per-frame writes to gradePass drive both.
+const OUTPUT_GRADE_FRAG = `
+  precision highp float;
+  uniform sampler2D tDiffuse;
+  #include <tonemapping_pars_fragment>
+  #include <colorspace_pars_fragment>
+  varying vec2 vUv;
+  ${FEAR_GRADE_GLSL}
+  vec3 toDisplay(vec3 c) {
+    #ifdef LINEAR_TONE_MAPPING
+      c = LinearToneMapping(c);
+    #elif defined( REINHARD_TONE_MAPPING )
+      c = ReinhardToneMapping(c);
+    #elif defined( CINEON_TONE_MAPPING )
+      c = OptimizedCineonToneMapping(c);
+    #elif defined( ACES_FILMIC_TONE_MAPPING )
+      c = ACESFilmicToneMapping(c);
+    #elif defined( AGX_TONE_MAPPING )
+      c = AgXToneMapping(c);
+    #endif
+    #ifdef SRGB_TRANSFER
+      c = sRGBTransferOETF(vec4(c, 1.0)).rgb;
+    #endif
+    return c;
+  }
+  void main() {
+    vec2 c = vUv - 0.5; float r = length(c);
+    float ca = fearCA(r);
+    vec3 col = toDisplay(texture2D(tDiffuse, vUv).rgb);
+    if (ca > 1e-5) {
+      col.r = toDisplay(texture2D(tDiffuse, vUv + c * ca).rgb).r;
+      col.b = toDisplay(texture2D(tDiffuse, vUv - c * ca).rgb).b;
+    }
+    gl_FragColor = vec4(fearGrade(col, r), 1.0);
+  }`;
+function makeOutputGradePass(src) {
+  const p = new OutputPass();
+  p.uniforms.uFear = src.uniforms.uFear;
+  p.uniforms.uBeat = src.uniforms.uBeat;
+  p.material.fragmentShader = OUTPUT_GRADE_FRAG;
+  p.material.needsUpdate = true;
+  return p;
+}
 
 function unmount() {
   if (!active) return;
@@ -23104,8 +23277,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // 1. RenderPass    — base scene render
   // 2. SSAOPass      — contact AO darkens corners + object-floor seams
   // 3. UnrealBloom   — emissive bleed (suns, lit windows, lightning, eyes)
-  // 4. SMAAPass      — clean edge anti-aliasing (sharp without flicker)
-  // 5. OutputPass    — final tone-mapped sRGB output
+  // 4. OutputPass    — final tone-mapped sRGB output
+  // 5. SMAAPass      — edge anti-aliasing, high tier below DPR 1.75 only
+  // 6. fear grade    — opt-in; fused into (4) whenever (5) is off
   // SSAO and SMAA are off on low-power devices to keep the frame budget.
   const w = container.clientWidth || 800;
   const h = container.clientHeight || 360;
@@ -23157,8 +23331,28 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         }
         this.minDistance = 0.012 / range;
         this.maxDistance = 0.35 / range;
-        return ssaoRender(rdr, writeBuffer, readBuffer, deltaTime, maskActive);
+        if (this.renderToScreen || !rdr.capabilities.isWebGL2) {
+          return ssaoRender(rdr, writeBuffer, readBuffer, deltaTime, maskActive);
+        }
+        // The stock Default output copies the whole frame into the write
+        // buffer and then multiplies the AO onto that copy: one full-
+        // resolution pass that moves pixels and changes nothing (0.5–1.0 ms
+        // at DPR 2 on an M4, paired A/B in the dog room; the spread is the
+        // GPU's clock state). The same multiply goes straight onto the read
+        // buffer instead, in place — needsSwap is off below.
+        this.overrideVisibility();
+        this.renderOverride(rdr, this.normalMaterial, this.normalRenderTarget, 0x7777ff, 1.0);
+        this.restoreVisibility();
+        u.kernelRadius.value = this.kernelRadius;
+        u.minDistance.value = this.minDistance;
+        u.maxDistance.value = this.maxDistance;
+        this.renderPass(rdr, this.ssaoMaterial, this.ssaoRenderTarget);
+        this.renderPass(rdr, this.blurMaterial, this.blurRenderTarget);
+        this.copyMaterial.uniforms.tDiffuse.value = this.blurRenderTarget.texture;
+        this.copyMaterial.blending = THREE.CustomBlending;
+        this.renderPass(rdr, this.copyMaterial, readBuffer);
       };
+      ssaoPass.needsSwap = false;
       ssaoPass.overrideVisibility = function () {
         const cache = this._visibilityCache;
         this.scene.traverse((o) => {
@@ -23188,24 +23382,47 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
            // and windows shouldn't get caught up in it.
   );
   if (!IS_LOW_POWER) composer.addPass(bloomPass);
-  composer.addPass(new OutputPass());
+  const outputPass = new OutputPass();
+  composer.addPass(outputPass);
   // SMAA — subpixel-morphological anti-aliasing. Cheaper than FXAA, cleaner.
   // Active on high quality only; medium uses MSAA via the renderer attribute.
   // Runs AFTER OutputPass so edge detection sees display-referred sRGB and
   // catches edges that only appear after tone mapping; the fear-grade pass
   // (chromatic pull) is appended after this so aberration doesn't feed AA.
+  //
+  // Only below a pixel ratio of 1.75, though. SMAA is three full-resolution
+  // passes; at DPR 2 it cost ~1.4 ms of a 9.9 ms dog-room render (M4,
+  // 1944×1372, paired A/B), and at that density a stair-step covers a quarter
+  // of the area it does at DPR 1. sizePost() re-decides whenever the ratio
+  // changes — the adaptive-resolution controller stepping down brings it back.
+  // With the in-place SSAO blend and the fused grade below, the whole post
+  // chain measured 9.9 → 7.4 ms at DPR 2 (18.8 → 16.0 with the GPU clocked
+  // down); at DPR 1.5, where SMAA stays, 12.6 → 12.0.
+  let smaaPass = null;
   if (QUALITY === "high") {
     try {
-      composer.addPass(new SMAAPass(w * renderer.getPixelRatio(), h * renderer.getPixelRatio()));
+      smaaPass = new SMAAPass(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
+      composer.addPass(smaaPass);
     } catch (e) {
       console.warn("SMAA unavailable:", e);
+    }
+  }
+  // Scene-opt-in fear grade — appended after setup() returns, see below.
+  // `gradePass` runs after SMAA (its chromatic pull must not feed the edge
+  // detector); `outGradePass` is the same grade fused into the tone-map /
+  // sRGB pass for when SMAA is off, one full-resolution pass instead of two.
+  let gradePass = null, outGradePass = null;
+  function wireFinish() {
+    const smaaOn = !!(smaaPass && smaaPass.enabled);
+    if (gradePass && outGradePass) {
+      outputPass.enabled = smaaOn;
+      gradePass.enabled = smaaOn;
+      outGradePass.enabled = !smaaOn;
     }
   }
   // addPass() sized every pass at full device resolution; put SSAO and bloom
   // on their reduced targets from the first frame, not the first resize.
   try { sizePost(w, h); } catch {}
-  // Scene-opt-in fear grade — appended after setup() returns, see below.
-  let gradePass = null;
 
   let updateFn = null;
   let controls = null;
@@ -23622,6 +23839,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     if (result && result.fearGradePass && QUALITY !== "low") {
       gradePass = new ShaderPass(FearGradeShader);
       composer.addPass(gradePass);
+      outGradePass = makeOutputGradePass(gradePass);
+      composer.addPass(outGradePass);
+      wireFinish();
       // The pass owns the base vignette now; the overlay div would double it.
       vignette.style.display = "none";
     }
@@ -24164,6 +24384,8 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     const bs = bloomHalf ? 0.34 : 0.5;
     bloomPass.setSize(Math.max(1, Math.round(w * pr * bs)), Math.max(1, Math.round(h * pr * bs)));
     if (ssaoPass) ssaoPass.setSize(Math.max(1, Math.round(w * pr * 0.5)), Math.max(1, Math.round(h * pr * 0.5)));
+    if (smaaPass) smaaPass.enabled = pr < 1.75;
+    wireFinish();
   }
   function onResize() {
     const w = container.clientWidth, h = container.clientHeight;
@@ -31628,6 +31850,35 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   const ROOM_W = ROOM.x1 - ROOM.x0;           // 6.6 m interior
   const ROOM_D = ROOM.z1 - ROOM.z0;           // 10.8 m interior
 
+  // Fit the sun's shadow camera to the room. It was a fixed 16 × 16 m square
+  // with a 25.5 m depth range; the room — every receiver, and the walls and
+  // ceiling that gate the sun — projects to far less than that along this
+  // light, so most of the 2048² map was spent on empty ground outside the
+  // shell. Box = interior + wall thickness + the sill/bird outside the glass.
+  // Everything outside a directional shadow frustum renders LIT, so the box
+  // must hold every receiver; that's why it is the whole room, not the beam.
+  if (key.castShadow) {
+    const sc = key.shadow.camera;
+    key.updateMatrixWorld(); key.target.updateMatrixWorld();
+    sc.position.setFromMatrixPosition(key.matrixWorld);
+    sc.lookAt(new THREE.Vector3().setFromMatrixPosition(key.target.matrixWorld));
+    sc.updateMatrixWorld();
+    const pad = 0.35, v = new THREE.Vector3();
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, zNear = Infinity, zFar = -Infinity;
+    for (const x of [ROOM.x0 - pad, ROOM.x1 + pad])
+      for (const y of [-1.05, ROOM.ceilY + 0.15])
+        for (const z of [ROOM.z0 - pad, ROOM.z1 + pad]) {
+          v.set(x, y, z).applyMatrix4(sc.matrixWorldInverse);
+          x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x);
+          y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y);
+          zNear = Math.min(zNear, -v.z); zFar = Math.max(zFar, -v.z);
+        }
+    sc.left = x0; sc.right = x1; sc.bottom = y0; sc.top = y1;
+    sc.near = Math.max(0.05, zNear - 0.5); sc.far = zFar + 0.5;
+    sc.updateProjectionMatrix();
+    key.userData.shadowFit = [x1 - x0, y1 - y0, sc.far - sc.near];   // for QA
+  }
+
   // Floor — oak planks with baked normal/roughness maps, sized to the room
   // shell so nothing pokes outside it. The repeat is set from the room's real
   // size at a fixed 1.4 m × 1.4 m tile, so boards keep their true width when
@@ -32031,57 +32282,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     .sub(new THREE.Vector3(...mood.keyPos)).normalize();    // key → target direction
   const beamLen = (beamW.y - (-1)) / Math.max(0.05, -kdir.y); // distance to floor along kdir
   const beamP = beamW.clone().addScaledVector(kdir, beamLen); // floor patch centre
-  // A shaft of light has no surface. The old beam was a flat-shaded open
-  // cone, so its silhouette was a hard line across the room — a grey glass
-  // sheet hanging in the air, the single most "rendered" thing in view.
-  // This shader fakes the volume instead: brightness follows how squarely
-  // you look through the cone (edge-on → zero, so there is no edge), is
-  // strongest at the window and thins toward the floor, and carries a slow
-  // drifting unevenness like air with dust in it.
-  const sunbeam = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.55, 0.95, beamLen, 24, 1, true),
-    new THREE.ShaderMaterial({
-      uniforms: {
-        uColor: { value: new THREE.Color(0xffe0b4) },
-        uOpacity: { value: mood.beamO },
-        uTime: { value: 0 },
-      },
-      vertexShader: `
-        varying vec3 vN; varying vec3 vV; varying float vT; varying vec3 vW;
-        void main() {
-          vec4 wp = modelMatrix * vec4(position, 1.0);
-          vN = normalize(mat3(modelMatrix) * normal);
-          vV = normalize(cameraPosition - wp.xyz);
-          vT = uv.y;
-          vW = wp.xyz;
-          gl_Position = projectionMatrix * viewMatrix * wp;
-        }`,
-      fragmentShader: `
-        uniform vec3 uColor; uniform float uOpacity; uniform float uTime;
-        varying vec3 vN; varying vec3 vV; varying float vT; varying vec3 vW;
-        void main() {
-          float facing = abs(dot(normalize(vN), normalize(vV)));
-          float core = facing * facing * facing;
-          float along = smoothstep(0.0, 0.35, vT) * (0.45 + 0.55 * vT);
-          float drift = 0.82 + 0.18 * sin(vW.x * 3.1 + vW.z * 2.3 + uTime * 0.35)
-                              * sin(vW.y * 4.7 - uTime * 0.22);
-          gl_FragColor = vec4(uColor * (uOpacity * 2.6 * core * along * drift), 1.0);
-        }`,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    })
-  );
-  // Kept out of screen-space AO: the SSAO normal pass draws every mesh as
-  // solid, and it outlined the beam with dark halos.
-  sunbeam.userData.ssaoSkip = true;
-  sunbeam.position.copy(beamW).addScaledVector(kdir, beamLen / 2);
-  sunbeam.quaternion.setFromUnitVectors(
-    new THREE.Vector3(0, 1, 0), kdir.clone().negate()
-  );
-  sunbeam.userData.noCollide = true;
-  sunbeam.userData.noPick = true;
+  // Soft volumetric fake (makeSoftSunbeam): the old flat-shaded open cone
+  // drew a hard line across the room, the most "rendered" thing in view.
+  const sunbeam = makeSoftSunbeam(beamW, kdir, beamLen, { opacity: mood.beamO, wallZ: wz });
   scene.add(sunbeam);
   // The bounce light sits above the beam's floor patch — daylight visibly
   // pools where the beam actually lands.
@@ -32724,8 +32927,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       dogCtrl.headCock(0.55);
       dogCtrl._nudgeT = Math.max(dogCtrl._nudgeT || 0, 1.2); // invite a nuzzle soon
     }
-    // Trust grants are cooldown-gated (1.2 s): click-spam still pets the dog
-    // (pulse + wag + hearts) but doesn't farm the bond.
+    // The pet's answer (relief pulse, pant/woof) is gated at 1.2 s so
+    // click-spam still pets the dog (pulse + wag + hearts) without stacking
+    // sounds; bumpTrust owns the trust cooldown and taper for touch.
     const nowSec = performance.now() / 1000;
     if (nowSec - lastPetGrantT > 1.2) {
       lastPetGrantT = nowSec;
@@ -33128,18 +33332,37 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   // Diminishing returns + a per-session cap keep trust a relationship, not a
   // farmable stat: each repeat of the same affordance earns less this
   // session, and no session moves the bond more than SESSION_TRUST_CAP.
+  //
+  // Touch has its own, stricter curve. A treat or a fetch costs a real
+  // round trip of several seconds, so those keep a small floor; a click costs
+  // nothing. With the old flat 0.005 floor for every kind, plus a passive drip
+  // that rolled 2.5×/s while the pet pulse was up (and every click topped the
+  // pulse back up), clicking the dog every 0.4 s reached the whole session cap
+  // in 7.5 s (measured, rung 4 husky from 0). Touch now tapers to nothing,
+  // stops at a sub-cap well under the session cap, and waits out a cooldown
+  // that lengthens with each grant — so treats, fetch and time together still
+  // matter more than a fast mouse.
   const SESSION_TRUST_CAP = 0.25;
-  let petGains = 0, treatGains = 0, fetchGains = 0, sessionTrustGain = 0, lastPetGrantT = -99;
+  const TRUST_KINDS = {
+    //            first grant  ×per repeat  floor   sub-cap    cooldown s (+ per grant, ≤6)
+    pet:     { base: 0.05,  decay: 0.72, floor: 0,     cap: 0.10,     cool: 1.5, grow: 0.6 },
+    passive: { base: 0.006, decay: 0.8,  floor: 0,     cap: 0.03,     cool: 2.5, grow: 0 },
+    treat:   { base: 0.10,  decay: 0.65, floor: 0.005, cap: Infinity, cool: 0,   grow: 0 },
+    fetch:   { base: 0.07,  decay: 0.8,  floor: 0.005, cap: Infinity, cool: 0,   grow: 0 },
+  };
+  const trustLedger = {};           // kind → { n, gained, lastT }
+  let sessionTrustGain = 0, lastPetGrantT = -99, passiveContactT = 0;
   function bumpTrust(kind, reason) {
-    const base  = kind === "pet" ? 0.05 : kind === "treat" ? 0.10 : kind === "fetch" ? 0.07 : 0.005;
-    const n     = kind === "pet" ? petGains : kind === "treat" ? treatGains : kind === "fetch" ? fetchGains : 0;
-    const decay = kind === "treat" ? 0.65 : 0.8;
-    let delta = Math.max(0.005, base * Math.pow(decay, n));
-    delta = Math.min(delta, Math.max(0, SESSION_TRUST_CAP - sessionTrustGain));
-    if (kind === "pet")   petGains++;
-    if (kind === "treat") treatGains++;
-    if (kind === "fetch") fetchGains++;
-    if (delta > 0) { sessionTrustGain += delta; setTrust(trust + delta); }
+    const K = TRUST_KINDS[kind] || TRUST_KINDS.passive;
+    const L = trustLedger[kind] || (trustLedger[kind] = { n: 0, gained: 0, lastT: -99 });
+    const nowSec = performance.now() / 1000;
+    const cool = Math.min(6, K.cool + K.grow * L.n);
+    if (nowSec - L.lastT >= cool) {
+      let delta = Math.max(K.floor, K.base * Math.pow(K.decay, L.n));
+      delta = Math.min(delta, Math.max(0, K.cap - L.gained), Math.max(0, SESSION_TRUST_CAP - sessionTrustGain));
+      L.n++; L.lastT = nowSec;
+      if (delta > 1e-4) { L.gained += delta; sessionTrustGain += delta; setTrust(trust + delta); }
+    }
     popHeart();                       // affection feedback even when capped
     if (reason && window.PhobiaVoice) window.PhobiaVoice.speak(reason);
   }
@@ -33288,7 +33511,10 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       handleWorldClick(hit, e.shiftKey || e.metaKey, px, py, canvasDom);
     });
   }
-  setTimeout(bindCanvasClicks, 60);
+  // Registered like every other scene timer: leaving within the 60 ms let this
+  // fire after dispose and bind the dog's click handlers to the NEXT scene's
+  // canvas (the query is just "#stage canvas").
+  dogTimers.push(setTimeout(() => { if (!dog.userData.disposed) bindCanvasClicks(); }, 60));
 
   // Screen-space distance from a click to the dog's on-screen silhouette, plus
   // the dog's apparent pixel radius. Lets a near-miss count as a pet — the dog
@@ -33408,7 +33634,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       };
     });
   }
-  setTimeout(wireCommandBar, 0);
+  // Same for the command bar: a dogs → dogs rung switch inside one task
+  // would otherwise wire the new rung's buttons to this disposed scene.
+  dogTimers.push(setTimeout(() => { if (!dog.userData.disposed) wireCommandBar(); }, 0));
 
   // ----- Keyboard shortcuts -----
   // Single-letter keys for the four commands (ignored when typing in inputs).
@@ -34619,7 +34847,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         if (dustPos[i * 3 + 1] < -0.95) spawnMote(i, false);
       }
       dustAttr.needsUpdate = true;
-      sunbeam.material.uniforms.uTime.value = t;
+      sunbeam.userData.uTime.value = t;
 
       // ---- Dog autonomously drinks from the water bowl ----
       // Every 60-120 s the dog wanders to the bowl, lowers its head, and
@@ -34697,9 +34925,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           } catch {}
         } else if (window.PhobiaAudio && window.PhobiaAudio.dogSniff) {
           for (let i = 0; i < 3; i++) {
-            setTimeout(() => {
+            dogTimers.push(setTimeout(() => {
               try { window.PhobiaAudio.dogSniff(0.35, { x: bowlX, y: -0.8, z: bowlZ }); } catch {}
-            }, i * 700);
+            }, i * 700));
           }
         }
       }
@@ -35160,9 +35388,13 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       }
 
       // ---- Pet pulse → trust gain (passive over time when very close) ----
-      if (petPulse > 0.5 && Math.random() < d * 2.5) {   // dt-based: same odds/second at any Hz
-        // While actively petting, occasionally bump trust + spawn a heart
-        bumpTrust("passive");
+      // Accrues from time with the hand on the dog (one grant per 2.5 s of
+      // contact) rather than a per-frame dice roll: the roll fired 2.5×/s
+      // for as long as clicks kept the pulse up. bumpTrust's passive curve
+      // tapers and sub-caps it on top.
+      if (petPulse > 0.5) {
+        passiveContactT += d;
+        if (passiveContactT >= 2.5) { passiveContactT = 0; bumpTrust("passive"); }
       }
 
       // ---- Bark scheduling (mood-aware) ----
@@ -35782,6 +36014,53 @@ class SpiderController {
   }
 }
 
+// The claws are NOT on the leg chain. Spider.glb skins the last ~60 vertices
+// of every leg (the pointed tarsus end) to a *Foot* IK bone parented straight
+// to Root — FrontFootL, MidFrontFootL, …, FrontFoot2R — the same split the
+// dog pack's paws had. Anything that measures or plants the feet has to read
+// these vertices; the Leg3 bones are a joint a tarsus-length higher.
+function spiderClawVerts(model) {
+  const out = [];
+  model.traverse((o) => {
+    if (!o.isSkinnedMesh) return;
+    const si = o.geometry.attributes.skinIndex, sw = o.geometry.attributes.skinWeight;
+    if (!si || !sw) return;
+    const foot = new Set();
+    o.skeleton.bones.forEach((b, i) => { if (/Foot/.test(b.name)) foot.add(i); });
+    if (!foot.size) return;
+    const idx = [];
+    for (let i = 0; i < si.count; i++) {
+      let wm = 0, im = -1;
+      for (let k = 0; k < 4; k++) { const w = sw.getComponent(i, k); if (w > wm) { wm = w; im = si.getComponent(i, k); } }
+      if (foot.has(im)) idx.push(i);
+    }
+    if (idx.length) out.push({ mesh: o, idx });
+  });
+  return out;
+}
+// Wall pose for a spider on a face whose outward normal is world +z: local up
+// (+y, its back) → +z, local forward (+z, head) → +y, local +x → −x.
+const SPIDER_WALL_Q = new THREE.Quaternion().setFromRotationMatrix(
+  new THREE.Matrix4().makeBasis(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0)));
+// Lowest claw coordinate along world "y" or "z" for the current pose.
+const _clawV = new THREE.Vector3();
+function spiderClawMin(claws, axis, root) {
+  // getVertexPosition reads bone.matrixWorld as it stands, and the armature is
+  // a SIBLING of the skinned mesh — refreshing the mesh alone leaves the bones
+  // wherever the last render (or buildCreature's pre-scale pass) put them.
+  if (root) root.updateMatrixWorld(true);
+  let lo = Infinity;
+  for (const c of claws) {
+    c.mesh.updateMatrixWorld(true);
+    for (const i of c.idx) {
+      c.mesh.getVertexPosition(i, _clawV);
+      c.mesh.localToWorld(_clawV);
+      if (_clawV[axis] < lo) lo = _clawV[axis];
+    }
+  }
+  return lo;
+}
+
 // ---------- Spiders ----------
 // Spider temperaments. Bounded the same way the dog's are, and the same fields
 // are off limits: guardDist, inZoneDist, fearMul, approachBias, skitterSpeed and
@@ -35852,7 +36131,11 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   }
 
   // ---- Cellar lighting: one motivated bare bulb + cold fill + tracking rim ----
-  const bulbBase = new THREE.Vector3(0.8, mood.bulbY, -3.0);
+  // The wall rung's pier stands where the bulb hangs on every other rung —
+  // the bulb and its cord were INSIDE it: the room's one bloom source hidden,
+  // and the shadow-casting light boxed in by a shadow-casting column. Hang it
+  // in front of the face instead, off to the side, so it rakes the spider.
+  const bulbBase = B.onWall ? new THREE.Vector3(-1.3, mood.bulbY, -1.7) : new THREE.Vector3(0.8, mood.bulbY, -3.0);
   const bulbMat = new THREE.MeshStandardMaterial({ color: mood.bulbC, emissive: mood.bulbC, emissiveIntensity: 2.4, fog: false });
   const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), bulbMat);
   bulb.position.copy(bulbBase);
@@ -35867,8 +36150,13 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   bulbLight.position.copy(bulbBase);
   bulbLight.castShadow = !IS_LOW_POWER;
   if (bulbLight.castShadow) {
-    bulbLight.shadow.mapSize.set(sceneQuality() === "high" ? 2048 : 1024, sceneQuality() === "high" ? 2048 : 1024);
-    bulbLight.shadow.camera.near = 0.3; bulbLight.shadow.camera.far = 14;
+    // A point light renders its casters six times, into a cube. At 2048² per
+    // face the shadow pass was 4.4 ms of an 11.2 ms rung-4 frame (M4, DPR 2);
+    // 1024² saved 1.6 ms of that, and a face texel is still 3–8 mm on the
+    // floor 2–5 m from the bulb, where the spider is. far = the light's range: past
+    // 9 m the bulb contributes nothing, so depth precision was spent on dark.
+    bulbLight.shadow.mapSize.set(1024, 1024);
+    bulbLight.shadow.camera.near = 0.3; bulbLight.shadow.camera.far = 9;
     bulbLight.shadow.bias = -0.0004; bulbLight.shadow.normalBias = 0.02;
   }
   scene.add(bulbLight); shellPieces.push(bulbLight);
@@ -36001,7 +36289,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   if (sceneQuality() !== "low") {
     const boxMat = new THREE.MeshStandardMaterial({ color: 0x8a6d47, roughness: 0.95 });
     const boxDefs = [[-2.8, -0.65, -6.5, 0.6, 0.15], [-2.55, -0.72, -6.1, 0.5, -0.3], [-2.95, -0.4, -6.6, 0.55, 0.1]];
-    for (const [bx, by, bz, bs, brot] of boxDefs) { const box = addShell(new THREE.Mesh(new THREE.BoxGeometry(bs, bs, bs), boxMat), true); box.position.set(bx, by, bz); box.rotation.y = brot; }
+    for (const [bx, by, bz, bs, brot] of boxDefs) { const box = addShell(new THREE.Mesh(new THREE.BoxGeometry(bs, bs, bs), boxMat), true); box.position.set(bx, by, bz); box.rotation.y = brot; box.userData.noCollide = false; }   // solid, not walk-through
   }
 
   // ---- Room reverb + cellar ambient (dead concrete acoustics) ----
@@ -36014,8 +36302,9 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   // Build spider — real rigged GLTF (Quaternius, CC0). `size` drives how close
   // it reads; on the apex rung it sits VERTICAL on a wall at eye level.
   const distance = 8.2 - size * 7.2;
+  const spiderSpan = 0.75 + size * 0.95;     // leg span, m (buildCreature axis "max")
   const spider = buildCreature(CREATURE_MODELS.spider, {
-    targetSize: 0.75 + size * 0.95,
+    targetSize: spiderSpan,
     axis: "max",
     coat: coatFor("spider", SPIDER_COATS),
   });
@@ -36025,18 +36314,32 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     // A cellar support pillar gives the vertical spider a real surface to sit
     // on at eye level (the back wall is 7 m away). Concrete column, floor→ceiling.
     const wallZ = B.wallZ ?? -2.6;
-    const pillar = new THREE.Mesh(
-      new THREE.BoxGeometry(0.7, wallH, 0.5),
-      new THREE.MeshStandardMaterial({ map: wMaps.albedo ? wMaps.albedo.clone() : null, color: 0x5d6167, roughness: 0.95, envMapIntensity: 0.22 })
-    );
-    if (pillar.material.map) { pillar.material.map.repeat.set(1, 1.4); pillar.material.map.needsUpdate = true; }
+    // As wide as the spider's leg span (buildCreature's targetSize, axis max)
+    // plus a margin: at 0.7 m, lying flat, the 1.7 m apex spider's outer legs
+    // hung in the air beyond both edges. Wide enough for its climb too (±
+    // homeRadius along x) — a pier rather than a column.
+    const pillarW = Math.max(0.7, spiderSpan * 1.12 + 2 * (B.homeRadius ?? 0.5));
+    // Same plaster as the walls, at the walls' texture density (they tile 3.5×
+    // over 8 m). It used a CLONE of the wall albedo, and the cloned
+    // CanvasTexture sampled as black: the apex spider sat on a pitch-black
+    // slab that swallowed its silhouette.
+    const pillarGeo = new THREE.BoxGeometry(pillarW, wallH, 0.5);
+    const puv = pillarGeo.attributes.uv;
+    for (let i = 0; i < puv.count; i++) puv.setX(i, puv.getX(i) * pillarW / 8.0);
+    const pillar = new THREE.Mesh(pillarGeo, wallMat);
     pillar.position.set(1.0, -1 + wallH / 2, wallZ - 0.25);
-    pillar.castShadow = !IS_LOW_POWER; pillar.receiveShadow = true; pillar.userData.noCollide = true;
+    // Solid: you could walk straight through the pier the spider sits on.
+    pillar.castShadow = !IS_LOW_POWER; pillar.receiveShadow = true;
     scene.add(pillar); shellPieces.push(pillar);
-    // Vertical on the pillar's front face at eye level (Package B rung-5 placement).
+    // Flat on the pillar's front face at eye level (Package B rung-5 placement):
+    // belly into the concrete, back to the viewer, head up. The old roll about
+    // z stood the spider on an imaginary wall at its left — its body plane was
+    // PERPENDICULAR to the face, claws 63 cm into the concrete and 80 cm out
+    // into the room (measured), and from the locked first-person spot the
+    // apex spider was an edge-on sliver. z is set properly once the claws can
+    // be measured (grounding in the update loop).
     spider.position.set(1.0, -1 + (B.wallEyeY ?? 0.5) + 1.0, wallZ + 0.02);
-    spider.rotation.z = -Math.PI / 2;   // roll so "down" is into the surface
-    spider.rotation.y = 0;
+    spider.quaternion.copy(SPIDER_WALL_Q);
   } else {
     // Somewhere else on the floor each visit. Radial distance still belongs to
     // the rung; only the lateral placement and a small depth jitter move. The
@@ -36050,6 +36353,15 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   }, 900));
   const spiderCtrl = new SpiderController(spider, scene, camera);
   spider.userData.ctrl = spiderCtrl;   // observability for scene-verification hooks
+  let spiderClaws = null;              // claw vertices (spiderClawVerts), set on ready
+  // Ground speed the Walk clip implies at timeScale 1. A fixed 0.9 m/s served
+  // every rung, but the clip's stride is in model units, so it scales with the
+  // spider. Measured by driving the clip at constant speed and minimising the
+  // planted claws' slip: best at 0.9 m/s for the 1.27 m rung-3 spider → 0.71
+  // per metre of span. Even there the claws slip ~25 % of body speed — the
+  // pack's eight feet sweep at 0.56–0.97 m/s, so no single rate fits them all.
+  const walkRef = 0.71 * spiderSpan;
+  const spPrevPos = new THREE.Vector3(); let spPrevOk = false;
   spiderCtrl.suspend = true;   // stays suspended until the model is ready
   spider.userData.onReady = () => {
     try {
@@ -36078,7 +36390,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       spiderCtrl.height = pp.height || 0.3;
       spiderCtrl.span = pp.span || 0.9;
       spiderCtrl.baseY = spider.position.y;
-      spiderCtrl._needsGround = !onWall;   // self-calibrate feet onto the floor
+      spiderClaws = spiderClawVerts(model);
+      spiderCtrl._needsGround = true;   // self-calibrate the claws onto floor / pillar face
       spiderCtrl.suspend = false;
     } catch (e) { console.warn("[spiders] onReady:", e); }
   };
@@ -36108,7 +36421,13 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   let skitterTargetYaw = 0;           // heading goal — turned toward, never snapped
   let skitterSpeedMul = 1;            // 1 = full dart, ~0.3 = idle micro-shuffle
   let microShuffleAt = 1.5 + Math.random() * 2.0;
+  let dartClock = 0;                  // time since the last full dart (shuffles don't reset it)
+  let pauseDur = 0.6;                 // this pause's length, rolled at entry
   let wallSpin = 0;                   // wall rung: heading spin about the wall normal
+  let recoilTgt = null;               // where this recoil is heading (fixed at entry)
+  let wallDetach = 0;                 // wall rung: 0 flat on the face, 1 turned to the player mid-leap
+  const _spWallQ = new THREE.Quaternion(), _spFaceQ = new THREE.Quaternion();
+  const _spWallAxis = new THREE.Vector3(0, 0, 1), _spYAxis = new THREE.Vector3(0, 1, 0);
   let spPrevPlayer = null, spApproachSpeed = 0, startleCd = 0;  // player's radial rush (m/s)
   let spiderControls = null;
   let scriptedGesture = null;   // overrides the default "rest" gesture briefly
@@ -36143,7 +36462,11 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     spHudEl = hud;
   }, 90);
   function spiderPhrase() {
-    if (pounceState === "coiling")   return t("sp.coiling", "It crouched — you came in fast. Hold still, or give it a step.");
+    // The readout used to keep describing a spider that had been carried out
+    // ("Still. Spiders spend most of their lives…") for the rest of the rung.
+    if (spiderReleased) return t("sp.gone", "Gone — carried outside. The room is just a room again.");
+    if (jarPhase === "held" || (jarPhase === "lifting" && jar && !jar.userData.staleMiss)) return t("sp.jarred", "Under the glass. Contained, and calm.");
+    if (pounceState === "coiling")   return t("sp.coiling", "It crouched — it's winding up. Hold still, or give it a step.");
     if (pounceState === "pouncing")  return t("sp.pouncing", "A hop — startle, not attack. It's already over.");
     if (pounceState === "recoiling") return t("sp.recoiling", "Retreating. It wants distance more than you do.");
     if (skitterState === "skittering") return t("sp.skitter", "Moving — relocating, not approaching. Darting is how small things stay alive.");
@@ -36152,6 +36475,15 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   }
   const GUARD = B.guardDist ?? 0.7;
   const LENS_FLOOR = 0.85;      // spider XZ never closer than this to the camera
+  // Clearances sized to the animal (half its leg span is 0.45–0.85 m here):
+  // the player collider, how close a dart may end, and how near a wall the
+  // body may go, so the legs don't pass through feet, walls or the jar.
+  const spHalfSpan = spiderSpan / 2;
+  const spObstR = Math.max(0.3, spiderSpan * 0.3);
+  const spWallGap = Math.max(0.3, spHalfSpan * 0.85);
+  // Jar big enough to hold what it catches: the 0.40 m rim was narrower than
+  // every rung's half-span, so legs poked through the glass while "contained".
+  const jarScale = Math.max(1, (spHalfSpan + 0.08) / 0.42);
 
   // ----- Glass jar (humane catch) -----
   // The user can lower a real glass jar over the spider. The spider stays
@@ -36160,6 +36492,11 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   // Clicking the floor near the spider also lowers the jar there.
   let jarMode = false;
   let jar = null;
+  // Set once the spider has been jarred and carried outside. It is parked at
+  // y = −50, but its x/z stayed live in the obstacle list, the fear inputs,
+  // the hints and the jar button — an invisible 0.6 m collider at the room's
+  // origin and a fear trace still tracking "the spider" after it had gone.
+  let spiderReleased = false;
   let jarPhase = "idle"; // idle | falling | held | lifting
   let jarLifeT = 0;
   function buildJar() {
@@ -36183,7 +36520,33 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     top.rotation.x = -Math.PI / 2;
     top.position.y = 0.85;
     g.add(top);
+    // Wider, not longer: the spider is flat, so only the rim has to grow. A
+    // uniform scale made the apex rung's jar 1.9 m long, its glass end 0.7 m
+    // from your eye — the whole view washed out through it.
+    g.scale.set(jarScale, 1, jarScale);
     return g;
+  }
+  // Where the jar starts and rests. Floor rungs: open end down, lowered from
+  // just under the ceiling (it used to start at y = 4, 2.4 m above the 1.6 m
+  // ceiling, and lift out through it too). Wall rung: laid on its side, open
+  // end toward the pillar, pressed flat against the face over the spider — an
+  // upright jar there stood half inside the concrete and covered only the top
+  // half of the spider.
+  const JAR_H = 0.85;
+  function jarRest() {
+    if (onWall) return { x: spider.position.x, y: spider.position.y, z: (B.wallZ ?? -2.6) + 0.004 };
+    return { x: spider.position.x, y: -0.95, z: spider.position.z };
+  }
+  function placeJar(rest, k) {   // k: 0 = start (away), 1 = seated
+    const e = 1 - Math.pow(1 - k, 2);
+    if (onWall) {
+      jar.rotation.set(Math.PI / 2, 0, 0);    // local +y (open → closed) → world +z
+      jar.position.set(rest.x, rest.y, rest.z + (1 - e) * 1.2);
+    } else {
+      const yStart = ROOM.ceilY - JAR_H - 0.03;
+      jar.rotation.set(0, 0, 0);
+      jar.position.set(rest.x, yStart + (rest.y - yStart) * e, rest.z);
+    }
   }
   function dropJarAt(x, z) {
     if (jarPhase !== "idle") return;
@@ -36195,8 +36558,10 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     // On the wall rung the spider is at eye level (y≈0.5), so the jar must come
     // to REST at the spider's height and press it against the wall — dropping to
     // the floor "caught" a spider a metre and a half above the empty glass.
-    jar.userData.landY = onWall ? spider.position.y : -0.95;
-    jar.position.set(x, 4.0, z);    // start above, descends onto the spider
+    const rest = jarRest();
+    if (!onWall) { rest.x = x; rest.z = z; }
+    jar.userData.rest = rest;
+    placeJar(rest, 0);
     jarPhase = "falling";
     jarLifeT = 0;
     // The spider sees it coming — a rear-up startle (the rig's Jump clip)
@@ -36223,7 +36588,15 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     spMouse.x = ((clientX - rect.left) / rect.width)  * 2 - 1;
     spMouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     spRaycaster.setFromCamera(spMouse, camera);
-    return spRaycaster.intersectObject(scene, true)[0] || null;
+    // The dust motes are a THREE.Points cloud between you and the spider on
+    // most rungs, and the default Points threshold is a whole metre: the first
+    // hit was a mote, so a click on the spider read as a click on the floor
+    // (and in jar mode dropped the glass at the mote — "It moved"). The
+    // third-person avatar (noPick) stood in the way on rungs 1–3 too. Same
+    // filter as the dog scene: meshes only, noPick honoured up the chain.
+    spRaycaster.params.Points = { threshold: 0.001 };
+    const pickable = (o) => { for (let q = o; q; q = q.parent) if (q.userData && q.userData.noPick) return false; return true; };
+    return spRaycaster.intersectObject(scene, true).find(h => h.object.isMesh && !h.object.isSprite && pickable(h.object)) || null;
   }
   let spDownX = 0, spDownY = 0, spDownT = 0, spDownPid = -1;
   function onSpDown(e) {
@@ -36236,7 +36609,10 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     const locked = !!(spiderControls && spiderControls.isPointerLocked && spiderControls.isPointerLocked());
     if (spiderControls && spiderControls.wasJustLocked && spiderControls.wasJustLocked()) return;
     const dx = e.clientX - spDownX, dy = e.clientY - spDownY;
-    if (!locked && (Math.hypot(dx, dy) > 6 || performance.now() - spDownT > 350)) return;
+    // A fingertip wobbles 8–15 px and a nervous tap is slow — the dog scene's
+    // touch forgiveness, so the phone build can actually catch the spider.
+    const touch = e.pointerType === "touch" || IS_COARSE_POINTER;
+    if (!locked && (Math.hypot(dx, dy) > (touch ? 16 : 6) || performance.now() - spDownT > (touch ? 600 : 350))) return;
     const rect = spCanvasDom.getBoundingClientRect();
     const px = locked ? rect.left + rect.width / 2 : e.clientX;
     const py = locked ? rect.top + rect.height / 2 : e.clientY;
@@ -36286,15 +36662,20 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             // Face the spider: camera forward is (-sin yaw,-cos yaw), so the yaw
             // that looks AT a target is atan2(cam-target) = atan2(-dx,-dz).
             // atan2(dx,dz) aimed 180 deg the wrong way (turned AWAY from it).
-            const targetYaw = Math.atan2(-dx, -dz);
-            const targetPitch = Math.atan2(dy, Math.hypot(dx, dz));
+            // Yaw is unbounded, so aim at the NEAREST equivalent of the target
+            // (the raw difference could spin the long way round), and steer
+            // through _lookTo: with lookSmoothing on, a bare c.yaw write was
+            // pulled straight back to the old target by the filter.
             const fromY = c.yaw, fromP = c.pitch;
+            const targetYaw = fromY + Math.atan2(Math.sin(Math.atan2(-dx, -dz) - fromY), Math.cos(Math.atan2(-dx, -dz) - fromY));
+            const targetPitch = Math.atan2(dy, Math.hypot(dx, dz));
+            const look = (y, pt) => { if (c._lookTo) c._lookTo(y, pt); else { c.yaw = y; c.pitch = pt; } };
             let k = 0;
             const id = setInterval(() => {
               k += 0.05;
-              if (k >= 1) { c.yaw = targetYaw; c.pitch = targetPitch; clearInterval(id); return; }
-              c.yaw   = fromY + (targetYaw - fromY) * k;
-              c.pitch = fromP + (targetPitch - fromP) * k;
+              if (k >= 1) { look(targetYaw, targetPitch); clearInterval(id); return; }
+              const e2 = k * k * (3 - 2 * k);
+              look(fromY + (targetYaw - fromY) * e2, fromP + (targetPitch - fromP) * e2);
             }, 16);
             sceneTimers.push(id);
             if (window.PhobiaVoice) window.PhobiaVoice.speak("Look at it. Really look. The fear will rise. Then settle.");
@@ -36302,7 +36683,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           }
           case "jar":
             // Arms the next click to lower the jar (or drops it on the spider directly)
-            if (jarPhase !== "idle") return;
+            if (jarPhase !== "idle" || spiderReleased) return;
             jarMode = true;
             // If they clicked the button while reasonably close, just drop directly
             if (c) {
@@ -36364,6 +36745,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       if (jarPhase !== "idle") {
         return { gesture: "rest", hint: "contained — slow breath, it releases in a moment" };
       }
+      if (spiderReleased) return { gesture: "rest", hint: "" };
       if (controls) {
         const dx = spider.position.x - controls.position.x;
         const dz = spider.position.z - controls.position.z;
@@ -36391,14 +36773,23 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       const A = window.PhobiaAudio;
       const loose = jarPhase === "idle" && spider.position.y > -10;
       // No-overlap collider (shrunk during a pounce so retreat stays possible).
-      if (controls && controls.setObstacles && jarPhase === "idle") {
-        controls.setObstacles([{ x: spider.position.x, z: spider.position.z, r: pounceState === "pouncing" ? 0.15 : 0.3 }]);
+      // Sized to the animal: 0.3 m was smaller than even the rung-1 spider's
+      // body, so darts ended with its legs through your feet.
+      if (controls && controls.setObstacles && jarPhase === "idle" && !spiderReleased) {
+        controls.setObstacles([{ x: spider.position.x, z: spider.position.z, r: pounceState === "pouncing" ? 0.15 : spObstR }]);
       } else if (controls && controls.setObstacles) {
         controls.setObstacles(null);
       }
 
       // ---- Feed the fear model (honest, non-inverted gaze) ----
-      if (controls && window.PhobiaFear) {
+      if (controls && window.PhobiaFear && spiderReleased) {
+        // Gone: nothing left to be near or to look at. The duration term
+        // decays on its own (engaged → false).
+        window.PhobiaFear.setInput("proximity", 0);
+        window.PhobiaFear.setInput("gaze", 0);
+        engageDur = Math.max(0, engageDur - d * 0.35);
+        window.PhobiaFear.setInput("duration", Math.max(engageDur / 24, arousalFloor));
+      } else if (controls && window.PhobiaFear) {
         const SP = spider.position, CP = controls.position;
         const dxs = CP.x - SP.x, dzs = CP.z - SP.z;   // camera-minus-target: yaw==dirTo when FACING it (matches dog convention)
         const distS = Math.hypot(dxs, dzs);
@@ -36461,9 +36852,10 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       // Dust motes drift.
       for (let i = 0; i < dustData.length; i++) {
         const dd = dustData[i];
-        dustPos[i * 3] += dd.vx * d + Math.sin(t + dd.phaseX) * 0.0010;
+        // The wobble was a per-FRAME 1 mm — twice the drift at 120 Hz.
+        dustPos[i * 3] += dd.vx * d + Math.sin(t + dd.phaseX) * 0.06 * d;
         dustPos[i * 3 + 1] += dd.vy * d;
-        dustPos[i * 3 + 2] += dd.vz * d + Math.cos(t + dd.phaseY) * 0.0010;
+        dustPos[i * 3 + 2] += dd.vz * d + Math.cos(t + dd.phaseY) * 0.06 * d;
         if (dustPos[i * 3 + 1] < -0.95) spawnMote(i);
       }
       dustAttr.needsUpdate = true;
@@ -36472,21 +36864,26 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       if (jar && jarPhase === "falling") {
         jarLifeT += d;
         const k = Math.min(1, jarLifeT / 0.5);
-        const yStart = 4.0, yEnd = (jar.userData.landY != null ? jar.userData.landY : -0.95);
-        jar.position.y = yStart + (yEnd - yStart) * (1 - Math.pow(1 - k, 2));
+        placeJar(jar.userData.rest, k);
         if (k >= 1) {
-          jar.position.y = yEnd; jarPhase = "held"; jarLifeT = 0;
+          jarPhase = "held"; jarLifeT = 0;
           // A catch that landed while the spider fled MISSES — flag it so the
           // lift path knows not to remove the spider (it wasn't caught). Uses a
           // full 3D distance so the glass actually encloses the spider (the wall
           // rung sits it off the floor).
-          if (jar.userData.staleMiss || Math.hypot(jar.position.x - spider.position.x, jar.position.y - spider.position.y, jar.position.z - spider.position.z) > 0.6) {
+          const rest = jar.userData.rest;
+          const off = onWall ? Math.hypot(rest.x - spider.position.x, rest.y - spider.position.y)
+                             : Math.hypot(rest.x - spider.position.x, rest.z - spider.position.z);
+          if (jar.userData.staleMiss || off > 0.6 * jarScale) {
             jar.userData.staleMiss = true;
             jarPhase = "lifting"; jarLifeT = 0;
             if (window.PhobiaVoice) window.PhobiaVoice.speak("It moved — try again when it settles.");
           } else {
-            spider.position.x = jar.position.x; spider.position.z = jar.position.z;
+            if (!onWall) { spider.position.x = rest.x; spider.position.z = rest.z; }
             pounceState = "idle";
+            // Under the glass it settles — breath and a faint twitch, never a
+            // frozen prop (SpiderController.calm), back on its Idle clip.
+            if (spider.userData.parts && spider.userData.parts.play) spider.userData.parts.play("Idle", 0.25);
           }
         }
       } else if (jar && jarPhase === "held") {
@@ -36502,7 +36899,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       } else if (jar && jarPhase === "lifting") {
         jarLifeT += d;
         const k = Math.min(1, jarLifeT / 0.6);
-        jar.position.y = (jar.userData.landY != null ? jar.userData.landY : -0.95) + k * 5.0;
+        placeJar(jar.userData.rest, 1 - k);
         // Only shrink the spider on a real catch (it's "taken outside"); a miss
         // leaves it in place.
         if (!jar.userData.staleMiss) spider.scale.setScalar(1 - k);
@@ -36511,24 +36908,13 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           jar.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
           const missed = jar.userData.staleMiss;
           jar = null; jarPhase = "idle";
-          if (missed) { spider.scale.setScalar(1); }
-          else { spider.position.set(0, -50, 0); }   // released — gone for the rung
+          if (missed) { spider.scale.setScalar(1); if (spider.userData.parts && spider.userData.parts.play) spider.userData.parts.play("Idle", 0.2); }
+          else { spider.position.set(0, -50, 0); spiderReleased = true; }   // released — gone for the rung
         }
       }
 
       const p = spider.userData.parts;
       if (p && p.mixer) {
-        // Self-calibrate grounding once: the rest-pose leg tips sit at a fixed
-        // offset from the group origin (bind-pose bbox differs from the animated
-        // stance), so measure the lowest tip and plant it on the floor.
-        if (spiderCtrl._needsGround) {
-          spiderCtrl._needsGround = false;
-          let lowTip = Infinity;
-          spider.traverse(o => { if (o.isBone && /Leg3[LR]$/.test(o.name)) { const v = new THREE.Vector3(); o.getWorldPosition(v); lowTip = Math.min(lowTip, v.y); } });
-          // Plant the rest-pose tip a touch above the floor so the gait's
-          // downward dips land at floor level rather than sinking through.
-          if (isFinite(lowTip)) spiderCtrl.baseY = -1 - (lowTip - spider.position.y) + 0.045;
-        }
         const dxp = controls ? controls.position.x - spider.position.x : 0;
         const dzp = controls ? controls.position.z - spider.position.z : 0;
         const distP = Math.hypot(dxp, dzp) || 0.0001;
@@ -36559,8 +36945,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           const m = Math.hypot(vx, vz) || 1;
           skitterDir = { x: vx / m, z: vz / m };
           skitterTargetYaw = Math.atan2(dxp, dzp);   // face the player; retreat backward
-          if (p.play) p.play("Walk", 0.05, { timeScale: 2.2 });
-          if (A && A.skitterTicks) try { A.skitterTicks({ x: spider.position.x, y: -0.9, z: spider.position.z }, { duration: skitterDur, intensity: 0.7, legRate: 55 }); } catch {}
+          if (p.play) p.play("Walk", 0.05);
+          if (A && A.skitterTicks) try { A.skitterTicks({ x: spider.position.x, y: spider.position.y + 0.1, z: spider.position.z }, { duration: skitterDur, intensity: 0.7, legRate: 55 }); } catch {}
           if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.4);
         }
 
@@ -36570,18 +36956,23 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           const esc = B.escalate ? clamp01((elapsed - (B.firstSkitterAt ?? 0)) / (B.settleAfter ?? 45)) : 0;
           const baseSpd = (B.skitterSpeed ?? 1.2) * (1 + 0.4 * esc);
           const evr = B.skitterEvery ?? [2.5, 4.5];
+          if (skitterState !== "skittering") dartClock += d;
           if (skitterState === "lurking") {
-            if (skitterT > microShuffleAt && skitterT < nextSkitter * 0.8) {
+            // Darts run on their own clock. The shuffle used to reset the one
+            // shared timer, so a dart only ever fired when the shuffle delay
+            // happened to exceed 0.8 × the dart gap: with you further than
+            // 3.5 m, rung 2 never darted and rung 3 almost never did.
+            if (skitterT > microShuffleAt && dartClock < nextSkitter * 0.8) {
               skitterState = "skittering"; skitterT = 0;
               skitterDur = 0.10 + Math.random() * 0.10; skitterSpeedMul = 0.3;
               const ang = Math.random() * Math.PI * 2;
               skitterDir = { x: Math.sin(ang), z: Math.cos(ang) };
               skitterTargetYaw = ang;
               microShuffleAt = 1.5 + Math.random() * 2.5;
-              if (p.play) p.play("Walk", 0.06, { timeScale: 1.2 });
-              if (A && A.skitterTicks) try { A.skitterTicks({ x: spider.position.x, y: -0.9, z: spider.position.z }, { duration: 0.10, intensity: 0.22, legRate: 26 }); } catch {}
-            } else if (skitterT > nextSkitter) {
-              skitterState = "skittering"; skitterT = 0;
+              if (p.play) p.play("Walk", 0.06);
+              if (A && A.skitterTicks) try { A.skitterTicks({ x: spider.position.x, y: spider.position.y + 0.1, z: spider.position.z }, { duration: 0.10, intensity: 0.22, legRate: 26 }); } catch {}
+            } else if (dartClock > nextSkitter) {
+              skitterState = "skittering"; skitterT = 0; dartClock = 0;
               skitterDur = 0.22 + Math.random() * 0.4; skitterSpeedMul = 1;
               // Heading = approachBias·(toward player) + jag·(sideways) + wander.
               const bias = B.approachBias ?? 0;
@@ -36596,14 +36987,19 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               const keepK = Math.max(0, 1 - nextSkitter / 2.5) * 0.65;
               vx = vx * (1 - keepK) + skitterDir.x * keepK;
               vz = vz * (1 - keepK) + skitterDir.z * keepK;
-              // Non-pounce rungs stop short of the player (guardDist).
-              if (!B.pounce && distP < (B.guardDist ?? 1.2) + 0.4) { vx -= (dxp / distP) * 0.8; vz -= (dzp / distP) * 0.8; }
+              // Non-pounce rungs stop short of the player (guardDist). Pounce
+              // rungs hold off just outside the pounce's own minimum range: once
+              // the darts actually fired on cadence, the approach bias walked the
+              // spider inside GUARD·1.2 and parked it there, where the pounce can
+              // never trigger (0 pounces in 80 s at rung 4, measured).
+              const keep = B.pounce ? GUARD * 1.2 + 0.3 : (B.guardDist ?? 1.2) + 0.4;
+              if (distP < keep) { vx -= (dxp / distP) * 0.8; vz -= (dzp / distP) * 0.8; }
               const m = Math.hypot(vx, vz) || 1;
               skitterDir = { x: vx / m, z: vz / m };
               skitterTargetYaw = Math.atan2(skitterDir.x, skitterDir.z);
-              if (p.play) p.play("Walk", 0.06, { timeScale: Math.max(1, Math.min(2.6, baseSpd / 0.9)) });
-              if (A && A.bristleRustle) try { A.bristleRustle({ x: spider.position.x, y: -0.9, z: spider.position.z }, { intensity: 0.5 + size * 0.4 }); } catch {}
-              if (A && A.skitterTicks) try { A.skitterTicks({ x: spider.position.x, y: -0.9, z: spider.position.z }, { duration: skitterDur, intensity: 0.5 + size * 0.5, legRate: 34 + Math.min(26, baseSpd * 12) }); } catch {}
+              if (p.play) p.play("Walk", 0.06);
+              if (A && A.bristleRustle) try { A.bristleRustle({ x: spider.position.x, y: spider.position.y + 0.1, z: spider.position.z }, { intensity: 0.5 + size * 0.4 }); } catch {}
+              if (A && A.skitterTicks) try { A.skitterTicks({ x: spider.position.x, y: spider.position.y + 0.1, z: spider.position.z }, { duration: skitterDur, intensity: 0.5 + size * 0.5, legRate: 34 + Math.min(26, baseSpd * 12) }); } catch {}
             }
           } else if (skitterState === "skittering") {
             const speed = baseSpd * skitterSpeedMul;
@@ -36612,8 +37008,11 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               spider.position.x += skitterDir.x * speed * d;
               spider.position.y += (skitterDir.z) * speed * d * 0.5;
               spider.position.x = Math.max(homeAnchor.x - (B.homeRadius ?? 0.5), Math.min(homeAnchor.x + (B.homeRadius ?? 0.5), spider.position.x));
-              spider.position.y = Math.max(-0.4, Math.min(1.0, spider.position.y));
-            } else if (distP > 0.45) {
+              // Keep the whole animal on the face: −0.4…1.0 let a 1.7 m spider's
+              // legs through the floor and the 1.6 m ceiling.
+              spider.position.y = Math.max(-1 + spHalfSpan * 0.9, Math.min(ROOM.ceilY - spHalfSpan * 0.9, spider.position.y));
+            } else if (distP > Math.max(spObstR + 0.32, B.pounce ? GUARD * 1.2 + 0.05 : 0)
+                       || skitterDir.x * dxp + skitterDir.z * dzp < 0) {   // a dart AWAY is always allowed
               spider.position.x += skitterDir.x * speed * d;
               spider.position.z += skitterDir.z * speed * d;
               // Keep home-zone rungs near their spot.
@@ -36623,17 +37022,17 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
                 if (hr > B.homeRadius) { spider.position.x = homeAnchor.x + hdx / hr * B.homeRadius; spider.position.z = homeAnchor.z + hdz / hr * B.homeRadius; }
               }
             }
-            // Clip rate re-synced to the ACTUAL translation speed every frame
-            // (mirror the snake at SNAKE_REF_SPEED) — the burst-start rate froze
-            // while baseSpd escalated and the 0.3x shuffle cycled at full rate.
-            if (p.current) p.current.timeScale = Math.max(0.8, Math.min(2.6, speed / 0.9));
             if (skitterT > skitterDur) {
               skitterState = "pausing"; skitterT = 0;
+              // Rolled ONCE: re-rolling `0.3 + rand·0.7` every frame made the
+              // pause a race against a fresh die each tick (median 0.43 s at
+              // 60 Hz, shorter at 120 Hz) instead of uniform 0.3–1.0 s.
+              pauseDur = 0.3 + Math.random() * 0.7;
               if (p.play) p.play("Idle", 0.12);
               if (skitterSpeedMul >= 1 && distP < 1.5 && window.PhobiaFear) window.PhobiaFear.pulseEvent(0.35 + 0.4 * (1 - distP / 1.5));
             }
           } else {   // pausing
-            if (skitterT > 0.3 + Math.random() * 0.7) {
+            if (skitterT > pauseDur) {
               skitterState = "lurking"; skitterT = 0;
               microShuffleAt = 1.2 + Math.random() * 2.2;
               nextSkitter = (distP > 3.5 ? evr[1] : evr[0]) + Math.random() * (evr[1] - evr[0]);
@@ -36652,19 +37051,28 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             let dy = faceYaw - spider.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
             spider.rotation.y += dy * Math.min(1, k);
           }
-          spider.position.x = Math.max(ROOM.x0 + 0.3, Math.min(ROOM.x1 - 0.3, spider.position.x));
-          spider.position.z = Math.max(ROOM.z0 + 0.3, Math.min(2.5, spider.position.z));
+          spider.position.x = Math.max(ROOM.x0 + spWallGap, Math.min(ROOM.x1 - spWallGap, spider.position.x));
+          spider.position.z = Math.max(ROOM.z0 + spWallGap, Math.min(2.5, spider.position.z));
         } else if (loose && onWall) {
-          // Heading spin in the wall plane. The base pose is a pure z-roll, so
-          // a spin about the wall normal composes as plain addition on
-          // rotation.z: spin 0 IS the shipped watching pose; while climbing the
-          // body swings toward the travel direction and eases back after.
+          // Heading spin about the wall normal (world +z). Spin 0 is the
+          // head-up watching pose; while climbing, the head (−sin s, cos s in
+          // the face plane) swings toward the travel direction — the climb
+          // moves x by dir.x and y by dir.z·0.5 — and eases back after.
           const spinTarget = (skitterState === "skittering" && pounceState === "idle")
-            ? Math.atan2(skitterDir.z * 0.5, skitterDir.x)
+            ? Math.atan2(-skitterDir.x, skitterDir.z * 0.5)
             : 0;
           let dsp = spinTarget - wallSpin; dsp = Math.atan2(Math.sin(dsp), Math.cos(dsp));
           wallSpin += dsp * Math.min(1, d * (skitterState === "skittering" ? 10 : 3));
-          spider.rotation.z = -Math.PI / 2 + wallSpin;
+          // Mid-leap it turns off the face to come at you head-first, and lies
+          // back down flat on the way home.
+          const detachT = pounceState === "pouncing" ? 1 : 0;
+          wallDetach += (detachT - wallDetach) * Math.min(1, d * (detachT ? 14 : 4));
+          _spWallQ.setFromAxisAngle(_spWallAxis, wallSpin).multiply(SPIDER_WALL_Q);
+          if (wallDetach > 0.001) {
+            _spFaceQ.setFromAxisAngle(_spYAxis, Math.atan2(dxp, dzp));
+            _spWallQ.slerp(_spFaceQ, wallDetach);
+          }
+          spider.quaternion.copy(_spWallQ);
         }
 
         // ---- Alert posture from proximity ----
@@ -36676,6 +37084,11 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             spiderCtrl.setCoil(0);
             if (elapsed > nextPounceAt && distP < (B.inZoneDist ?? 3.4) && distP > GUARD * 1.2) {
               pounceState = "coiling"; pounceT = 0; coilStartDist = distP; pounceFired = false;
+              // A coil can land mid-dart; the skitter machine is frozen while it
+              // runs, so a dart left "skittering" kept the Walk loop cycling in
+              // place, chased its old heading through the coil (and fought the
+              // pounce's own turn), and resumed on the Idle clip after the recoil.
+              if (skitterState === "skittering") { skitterState = "lurking"; skitterT = 0; if (p.play) p.play("Idle", 0.1); }
               const cd = B.coilDur ?? [0.7, 1.1];
               thisCoil = cd[0] + Math.random() * (cd[1] - cd[0]);
               if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.3);
@@ -36686,7 +37099,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             // RETREAT CANCELS — real, learnable agency.
             if (distP > coilStartDist + 0.5 || distP > (B.inZoneDist ?? 3.4) + 0.6) {
               pounceState = "recoiling"; pounceT = 0; spiderCtrl.setCoil(0);
-              nextPounceAt = elapsed + 4 + Math.random() * 3;
+              if (!completionBeatDone) nextPounceAt = elapsed + 4 + Math.random() * 3;
               if (!retreatPraised && window.PhobiaVoice) { retreatPraised = true; window.PhobiaVoice.speak("It backed down when you did. You control this distance."); }
             } else if (pounceT > thisCoil) {
               pounceState = "pouncing"; pounceT = 0; spiderCtrl.setCoil(0);
@@ -36735,19 +37148,42 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             if (pounceT > 0.35 || distP <= aim + 0.2) { pounceState = "recoiling"; pounceT = 0; }
           } else if (pounceState === "recoiling") {
             pounceT += d;
-            const homeX = onWall ? homeAnchor.x : (controls.position.x - (dxp / distP) * ((B.inZoneDist ?? 3.4)));
-            const homeZ = onWall ? homeAnchor.z : (spider.position.z - (dzp / distP) * 1.2);
-            const homeY = onWall ? (-1 + (B.wallEyeY ?? 0.5) + 1.0) : spider.position.y;
-            spider.position.x += (homeX - spider.position.x) * Math.min(1, d * 3);
-            spider.position.z += (homeZ - spider.position.z) * Math.min(1, d * 3);
-            if (onWall) spider.position.y += (homeY - spider.position.y) * Math.min(1, d * 3);
-            if (p.play && pounceT < 0.1) p.play("Walk", 0.06, { timeScale: 2.0 });
+            // Target fixed at recoil entry. homeZ used to be "1.2 m back from
+            // where the spider is NOW", a point that moved with it, so z kept
+            // retreating at ~3.6 m/s for the whole 0.9 s whatever the distance;
+            // nor did it respect the home radius. Floor: back out to the edge
+            // of its zone along the line from you, inside its home and the room.
+            if (!recoilTgt) {
+              if (onWall) recoilTgt = { x: homeAnchor.x, y: -1 + (B.wallEyeY ?? 0.5) + 1.0, z: homeAnchor.z };
+              else {
+                let hx = controls.position.x - (dxp / distP) * (B.inZoneDist ?? 3.4);
+                let hz = controls.position.z - (dzp / distP) * (B.inZoneDist ?? 3.4);
+                if (B.homeRadius != null) {
+                  const ox = hx - homeAnchor.x, oz = hz - homeAnchor.z, or = Math.hypot(ox, oz);
+                  if (or > B.homeRadius) { hx = homeAnchor.x + ox / or * B.homeRadius; hz = homeAnchor.z + oz / or * B.homeRadius; }
+                }
+                hx = Math.max(ROOM.x0 + spWallGap, Math.min(ROOM.x1 - spWallGap, hx));
+                hz = Math.max(ROOM.z0 + spWallGap, Math.min(2.5, hz));
+                recoilTgt = { x: hx, y: spider.position.y, z: hz };
+              }
+            }
+            const kr = Math.min(1, d * 5);
+            spider.position.x += (recoilTgt.x - spider.position.x) * kr;
+            spider.position.z += (recoilTgt.z - spider.position.z) * kr;
+            if (onWall) spider.position.y += (recoilTgt.y - spider.position.y) * kr;
+            if (p.play && pounceT < 0.1) p.play("Walk", 0.06);
             if (pounceT > 0.9) {
               if (Math.hypot(spider.position.x - controls.position.x, spider.position.z - controls.position.z) < 1.8) heldCycles++;
+              // Back ON the face, not hovering the last few percent of an ease.
+              if (onWall) spider.position.set(recoilTgt.x, recoilTgt.y, recoilTgt.z);
+              recoilTgt = null;
               pounceState = "idle"; pounceT = 0;
               if (p.play) p.play("Idle", 0.15);
               const pev = B.pounceEvery ?? [10, 16];
-              nextPounceAt = elapsed + (pev[0] + Math.random() * (pev[1] - pev[0])) * (1 + Math.min(0.6, heldCycles * 0.15));
+              // Never after the completion beat: the beat is accepted during a
+              // recoil, and this line used to overwrite its Infinity 0.9 s later
+              // — "It settled. You outlasted it." then another pounce.
+              if (!completionBeatDone) nextPounceAt = elapsed + (pev[0] + Math.random() * (pev[1] - pev[0])) * (1 + Math.min(0.6, heldCycles * 0.15));
             }
           }
         }
@@ -36763,13 +37199,59 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         }
 
         // ---- Drive the procedural spider (owns mixer.update + the pose layer) ----
+        // ---- Walk clip rate from the ACTUAL motion, signed ----
+        // One place owns it now. The per-state rates were fixed guesses (2.2
+        // for the startle, 2.0 for the recoil, speed/0.9 for darts), and two of
+        // those states move the spider BACKWARD while it faces you — the legs
+        // walked forward as the body slid back (a moonwalk). The rate is the
+        // body's speed over the clip's own measured stride speed (walkRef),
+        // negative when the motion is against the facing direction.
+        if (d > 0.0015) {
+          if (spPrevOk && p.current && /Walk/i.test(p.current.getClip().name)) {
+            const vx = (spider.position.x - spPrevPos.x) / d;
+            const vy = (spider.position.y - spPrevPos.y) / d;
+            const vz = (spider.position.z - spPrevPos.z) / d;
+            let fwd, spd;
+            if (onWall) { fwd = -Math.sin(wallSpin) * vx + Math.cos(wallSpin) * vy; spd = Math.hypot(vx, vy); }
+            else { fwd = Math.sin(spider.rotation.y) * vx + Math.cos(spider.rotation.y) * vz; spd = Math.hypot(vx, vz); }
+            if (spd > 0.03) {
+              const mag = Math.max(0.6, Math.min(3.4, spd / walkRef));
+              p.current.timeScale = fwd < -0.25 * spd ? -mag : mag;
+            }
+          }
+          spPrevPos.copy(spider.position); spPrevOk = true;
+        }
         spiderCtrl.walkAmt = skitterState === "skittering" ? 1 : 0;
-        spiderCtrl.suspend = jarPhase !== "idle" || spider.position.y < -10;
+        // Under the jar the layer runs CALM (breath + faint twitch) instead of
+        // being suspended — a fully frozen spider read as a dead prop at arm's
+        // length, and a missed jar left it stuck in the Jump pose. `calm` was
+        // never set anywhere before.
+        spiderCtrl.suspend = spider.position.y < -10;
+        spiderCtrl.calm = jarPhase === "held" || (jarPhase === "lifting" && jar && !jar.userData.staleMiss);
         // On the wall rung the SCENE owns y at all times (climb + pounce hop +
         // recoil). If the controller's absolute y-write ran, it would snap the
         // climbing spider back to baseY every frame — a dead vertical skitter.
         spiderCtrl.suspendY = onWall;
         spiderCtrl.update(t, d);
+        // Self-calibrate grounding once, AFTER the mixer has written the Idle
+        // pose (on the ready frame the bones were still in bind pose). The
+        // bind-pose bbox differs from the animated stance, so measure where the
+        // claws really are and put them on the surface. This used to measure
+        // the Leg3 bones — a joint a tarsus-length above the claws — and add
+        // 4.5 cm "so the gait's dips land at floor level": every claw sat
+        // 3.2–3.5 cm under the concrete, idle and walking alike (measured,
+        // rung 2).
+        if (spiderCtrl._needsGround && spiderClaws && spiderClaws.length && !spiderCtrl.suspend) {
+          spiderCtrl._needsGround = false;
+          if (onWall) {
+            const face = B.wallZ ?? -2.6;
+            const lo = spiderClawMin(spiderClaws, "z", spider);
+            if (isFinite(lo)) { spider.position.z += face + 0.004 - lo; homeAnchor.z = spider.position.z; }
+          } else {
+            const lo = spiderClawMin(spiderClaws, "y", spider);
+            if (isFinite(lo)) { spiderCtrl.baseY = -1 - (lo - spider.position.y); spider.position.y = spiderCtrl.baseY; }
+          }
+        }
         // Observability for scene-verification hooks (nothing in-app reads this).
         spider.userData.spiderDebug = { pounceState, skitterState, elapsed: +elapsed.toFixed(1), nextPounceAt: isFinite(nextPounceAt) ? +nextPounceAt.toFixed(1) : "Inf", distP: +distP.toFixed(2),
           skitterT: +skitterT.toFixed(2), nextSkitter: +nextSkitter.toFixed(2), microShuffleAt: +microShuffleAt.toFixed(2) };
@@ -38803,8 +39285,17 @@ class SnakeController {
     this._slitherPhase = 0; this._breathPhase = 0;
     this.slitherAmt = 0.35; this._slitherAmtSm = 0; this._slitherSpeed = 0;
     this.rearTarget = 0; this._rear = 0;
+    // Rear pitch per bone, radians at full rear, about the snake's x axis
+    // (negative = up/back). The pack's Idle is ALREADY a fully upright cobra
+    // S, so no chest/neck pitch can make it taller — both directions lower
+    // the head (measured). What reads as "it lifts its head and holds your
+    // eye" is the face drawing back and tilting up at you: at rung 4 this set
+    // raises the snout 11 cm, draws it back 11 cm and tilts the face 19° up,
+    // eyes level (the old −0.16/−0.30/+0.22 dropped the eyes 11 cm).
+    this.rearK = { chest: 0, neck: -0.20, head: -0.15 };
     this.jawTarget = 0; this._jaw = 0;
     this._tongueT = -1; this._tongueNext = 1.5; this._tongueFast = false;
+    this._tickEcho = null;    // the flick's second dry tick, fired from the update (no stray timer)
     this._poseYOff = 0; this._rig = null; this._needsGround = false;
     this.surfY = 0;   // scene-fed surface lift (riding up onto the basking rock)
     // Post-mixer head tracking (scene computes/smooths the yaw/pitch and hands
@@ -38812,6 +39303,11 @@ class SnakeController {
     // used to += the neck/head bones directly, outside any protection).
     this.headYaw = 0; this.headPitch = 0;
     this.suspend = true;
+    this._q1 = new THREE.Quaternion(); this._q2 = new THREE.Quaternion();
+    this._v1 = new THREE.Vector3(); this._v2 = new THREE.Vector3(); this._s = new THREE.Vector3();
+    this._m1 = new THREE.Matrix4();
+    this._hp0 = new THREE.Vector3(); this._hq0 = new THREE.Quaternion();
+    this._mp0 = new THREE.Vector3(); this._mq0 = new THREE.Quaternion();
   }
   setRear(r) { this.rearTarget = Math.max(0, Math.min(1, r)); }
   setJaw(j) { this.jawTarget = Math.max(0, Math.min(1, j)); }
@@ -38827,6 +39323,23 @@ class SnakeController {
     p.mixer.update(d);
     if (this.suspend) return;
     this._bodyLife(t, d);
+  }
+  // Rotate `bone` by `angle` about an axis in the SNAKE's own frame (x = its
+  // left, y = up, z = forward), through the bone's pivot. Snake.glb's bones
+  // are heavily pre-rotated, so a raw Euler channel means something different
+  // on every bone: `.y` on Tail…Tail3 is the bone's own long axis (the slither
+  // TWISTED the tail in place instead of bending it), and head tracking
+  // through `.y` tilted the skull sideways about (−0.46, −0.28, −0.84) instead
+  // of turning it. Same method as DogController._rotDog.
+  _rotSnake(bone, ax, ay, az, angle) {
+    if (!bone || !angle) return;
+    const q = this._q1, qs = this._q2;
+    bone.getWorldQuaternion(q);
+    this.snake.getWorldQuaternion(qs);
+    q.premultiply(qs.invert()).invert();          // snake frame → bone local
+    this._v1.set(ax, ay, az).applyQuaternion(q).normalize();
+    qs.setFromAxisAngle(this._v1, angle);
+    bone.quaternion.multiply(qs);
   }
   _bodyLife(t, d) {
     const model = this.parts.model;
@@ -38851,6 +39364,10 @@ class SnakeController {
        rig.mouth, rig.lowerMouth, ...rig.tongue]
         .forEach(b => { if (b) set.add(b); });
       this._lifeBones = [...set].map(b => ({ b, base: { x: b.rotation.x, y: b.rotation.y, z: b.rotation.z }, fin: { x: NaN, y: NaN, z: NaN } }));
+      // POSITIONS too, for the two bones this layer now moves (Mouth follows
+      // the head; Tongue1 slides out of the lip notch) — same restore/capture.
+      this._posNets = [rig.mouth, rig.tongue[0]].filter(Boolean)
+        .map(b => ({ b, base: b.position.clone(), fin: new THREE.Vector3(NaN, NaN, NaN) }));
     }
     for (const r of this._lifeBones) {
       const rot = r.b.rotation;
@@ -38860,19 +39377,47 @@ class SnakeController {
         r.base.x = rot.x; r.base.y = rot.y; r.base.z = rot.z;
       }
     }
+    for (const r of this._posNets) {
+      if (r.b.position.equals(r.fin)) r.b.position.copy(r.base); else r.base.copy(r.b.position);
+    }
     const poseYPrev = this._poseYOff || 0;
     this._poseYOff = 0;
 
-    // Belly grounding self-calibration (reared idle floats; plant the belly).
+    // Belly grounding self-calibration. It used to plant the lowest BONE
+    // origin 2 cm above the ground, but bones run down the body's centreline
+    // (Tail1 sits 0.13 model units above its own belly), so every rung's belly
+    // was buried 0.6–5 cm — measured 3.2–5.3 cm into the basking rock at rung
+    // 4. Measure the skin itself.
     if (this._needsGround) {
       this._needsGround = false;
-      let lowY = Infinity; const _v = new THREE.Vector3();
-      const belly = [rig.body, rig.chest, ...rig.tail];
-      for (const bn of belly) { if (bn) { bn.getWorldPosition(_v); lowY = Math.min(lowY, _v.y); } }
-      if (isFinite(lowY)) this.baseY = this.snake.position.y - (lowY - this.snake.position.y) + 0.02;
+      this.snake.updateMatrixWorld(true);
+      let lowY = Infinity; const v = this._v2;
+      model.traverse((o) => {
+        if (!o.isSkinnedMesh) return;
+        const n = o.geometry.attributes.position.count;
+        for (let i = 0; i < n; i += 2) { o.getVertexPosition(i, v); o.localToWorld(v); if (v.y < lowY) lowY = v.y; }
+      });
+      // Belly on the clearing's ground (y = −1); the rock lift (surfY) rides
+      // on top of baseY. The skin's offset below the root does not depend on
+      // where the root is right now.
+      if (isFinite(lowY)) this.baseY = -1 - (lowY - this.snake.position.y);
     }
 
-    // ---- Body slither ---- a small travelling wave down Chest→Body→Tail.
+    // Clip-pose world transforms of Head and Mouth, before any delta. The FACE
+    // (eyes, snout, jaw, teeth: 2464 of 3258 vertices) is skinned to Mouth,
+    // which is a child of ROOT, not of Head; Head carries 66 vertices at the
+    // back of the skull. So every head/neck delta below moved the back of the
+    // skull while the face stayed put — a 15 cm tear under a full rear, and a
+    // hood-like bulge when tracking. Mouth is re-attached after the deltas.
+    if (rig.head && rig.mouth) {
+      rig.head.updateWorldMatrix(true, false);
+      rig.mouth.updateWorldMatrix(false, false);
+      rig.head.matrixWorld.decompose(this._hp0, this._hq0, this._s);
+      rig.mouth.matrixWorld.decompose(this._mp0, this._mq0, this._s);
+    }
+
+    // ---- Body slither ---- a small travelling wave down Chest→Body→Tail,
+    // as a lateral BEND (about the snake's up axis).
     // (The Walk clip carries the primary undulation; this adds life at rest.)
     this._slitherAmtSm += (this.slitherAmt - this._slitherAmtSm) * Math.min(1, d * 6);
     this._slitherPhase += d * (2.2 + this._slitherSpeed * 3.0);
@@ -38881,40 +39426,89 @@ class SnakeController {
     for (let i = 0; i < chain.length; i++) {
       const amp = SL * (0.35 + i * 0.18);
       const ph = this._slitherPhase - i * 0.7;
-      chain[i].rotation.y += Math.sin(ph) * amp * this._slitherAmtSm;
+      this._rotSnake(chain[i], 0, 1, 0, Math.sin(ph) * amp * this._slitherAmtSm);
     }
-    if (rig.neck) rig.neck.rotation.y += Math.sin(this._slitherPhase + 0.4) * SL * 0.5 * this._slitherAmtSm;
+    this._rotSnake(rig.neck, 0, 1, 0, Math.sin(this._slitherPhase + 0.4) * SL * 0.5 * this._slitherAmtSm);
 
     // ---- Breath ---- a slow ripple down the forebody, so a settled bask is
     // never statue-still between tongue flicks (quicker when reared/agitated).
     this._breathPhase += d * (this._rear > 0.3 ? 2.4 : 1.5);
     const br = Math.sin(this._breathPhase);
-    if (rig.chest) rig.chest.rotation.x += br * 0.008;
-    if (rig.body) rig.body.rotation.x -= br * 0.005;
+    this._rotSnake(rig.chest, 1, 0, 0, -br * 0.008);
+    this._rotSnake(rig.body, 1, 0, 0, br * 0.005);
 
-    // ---- Cobra rear ---- lift the front third into an S: neck+head pitch up,
-    // chest joins the lift, body counter-curves so the belly stays planted —
-    // plus a slow hypnotic weave while held and a real root lift.
+    // ---- Cobra rear ---- the face draws back and tilts up at you (rearK),
+    // plus a slow hypnotic weave while held. No root lift any more: it raised
+    // the WHOLE snake 10 % of its height, belly and tail off the ground.
     this._rear += (this.rearTarget - this._rear) * Math.min(1, d * 4);
     if (this._rear > 0.01) {
-      const r = this._rear;
-      if (rig.neck) rig.neck.rotation.x -= 0.35 * r;
-      if (rig.head) rig.head.rotation.x -= 0.25 * r;
-      if (rig.chest) rig.chest.rotation.x -= 0.22 * r;
-      if (rig.body) rig.body.rotation.x += 0.10 * r;
-      if (rig.neck) rig.neck.rotation.z += Math.sin(t * 1.3) * 0.05 * r;
-      this._poseYOff += 0.10 * r * this.height;
+      const r = this._rear, K = this.rearK;
+      this._rotSnake(rig.chest, 1, 0, 0, K.chest * r);
+      this._rotSnake(rig.neck, 1, 0, 0, K.neck * r);
+      this._rotSnake(rig.head, 1, 0, 0, K.head * r);
+      this._rotSnake(rig.neck, 0, 0, 1, Math.sin(t * 1.3) * 0.05 * r);
     }
 
-    // ---- Jaw ---- open the LowerMouth (hinges on local x; bind ~-0.38).
+    // ---- Head tracking (scene-fed yaw+pitch, in the snake's frame) ----
+    // + yaw turns toward +x (the scene's atan2 convention); + pitch looks UP,
+    // which about the snake's x axis is a NEGATIVE angle.
+    if (Math.abs(this.headYaw) > 0.001) {
+      this._rotSnake(rig.neck, 0, 1, 0, this.headYaw * 0.5);
+      this._rotSnake(rig.head, 0, 1, 0, this.headYaw * 0.5);
+    }
+    if (Math.abs(this.headPitch) > 0.001) {
+      this._rotSnake(rig.neck, 1, 0, 0, -this.headPitch * 0.5);
+      this._rotSnake(rig.head, 1, 0, 0, -this.headPitch * 0.5);
+    }
+
+    // ---- Re-attach the face to the head ----
+    // Mouth keeps the clip's own motion (its rotation relative to Head varies
+    // by up to 0.78 rad in Attack) plus whatever world-space delta the layer
+    // above gave Head.
+    if (rig.head && rig.mouth) {
+      const hp1 = this._v1, hq1 = this._q1, qD = this._q2;
+      rig.head.updateWorldMatrix(true, false);
+      rig.head.matrixWorld.decompose(hp1, hq1, this._s);
+      qD.copy(this._hq0).invert().premultiply(hq1);                    // hq1 · hq0⁻¹
+      const np = this._v2.copy(this._mp0).sub(this._hp0).applyQuaternion(qD).add(hp1);
+      const par = rig.mouth.parent;
+      par.updateWorldMatrix(true, false);
+      rig.mouth.position.copy(np).applyMatrix4(this._m1.copy(par.matrixWorld).invert());
+      par.getWorldQuaternion(hq1);
+      rig.mouth.quaternion.copy(hq1.invert()).multiply(qD.multiply(this._mq0));
+    }
+
+    // ---- Jaw ---- open the LowerMouth (hinges on local x; bind ~-0.38); the
+    // face tips UP a little as it gapes (it used to pitch the whole face down:
+    // Mouth IS the face).
     this._jaw += (this.jawTarget - this._jaw) * Math.min(1, d * (this.jawTarget > this._jaw ? 18 : 10));
     if (this._jaw > 0.01) {
       if (rig.lowerMouth) rig.lowerMouth.rotation.x -= this._jaw * 0.6;
-      if (rig.mouth) rig.mouth.rotation.x += this._jaw * 0.12;
+      this._rotSnake(rig.mouth, 1, 0, 0, -this._jaw * 0.10);
     }
 
-    // ---- Tongue flick ---- self-scheduling forked flick (d-driven, no timer).
+    // ---- Tongue flick ---- self-scheduling (d-driven, no timer).
+    // A real flick slides the tongue OUT through the lip notch, mouth closed,
+    // and waves the fork. The pack's rest pose already has the tongue 1.5–9 cm
+    // past the snout, and the old flick swung Tongue1 up 86° — straight up
+    // through the top of the snout, every flick. Now: retracted inside the
+    // mouth at rest, slid out along its own axis for the flick, fork waving.
+    const tg = rig.tongue;
+    if (tg[0] && tg[2] && rig.mouth && !this._tongueAxis) {
+      // Tongue axis (Tongue1 → Tongue3) in Mouth-local space, and how far back
+      // it must sit for the tip to clear inside the snout: the rest overhang
+      // plus a margin, as a fraction of the tongue's own length.
+      rig.mouth.updateWorldMatrix(true, true);
+      const a = new THREE.Vector3(), b = new THREE.Vector3();
+      tg[0].getWorldPosition(a); tg[2].getWorldPosition(b);
+      const len = a.distanceTo(b);
+      const mq = new THREE.Quaternion(); rig.mouth.getWorldQuaternion(mq);
+      const ws = new THREE.Vector3(); rig.mouth.getWorldScale(ws);
+      this._tongueAxis = b.clone().sub(a).normalize().applyQuaternion(mq.invert());
+      this._tongueRetract = (len * 0.95) / Math.max(1e-6, ws.x);     // Mouth-local units
+    }
     const FLICK_DUR = 0.42;
+    let ext = 0, fork = 0, u = 0;
     if (this._tongueT < 0) {
       this._tongueNext -= d;
       if (this._tongueNext <= 0) {
@@ -38922,25 +39516,19 @@ class SnakeController {
         // Faint dry tongue tick (a pair), only when close enough to hear.
         const A = window.PhobiaAudio;
         if (A && A.tongueFlick && this.camera) {
-          const hp = new THREE.Vector3(); (rig.head || rig.mouth || this.snake).getWorldPosition(hp);
+          const hp = new THREE.Vector3(); (rig.mouth || rig.head || this.snake).getWorldPosition(hp);
           if (hp.distanceTo(this.camera.position) < 4) {
             const inten = this._tongueFast ? 0.7 : 0.45;
             try { A.tongueFlick(hp, { intensity: inten }); } catch {}
-            setTimeout(() => { try { A.tongueFlick(hp, { intensity: inten - 0.05 }); } catch {} }, 55);
+            this._tickEcho = { t: 0.055, hp, inten: inten - 0.05 };
           }
         }
       }
     } else {
       this._tongueT += d;
-      const u = this._tongueT / FLICK_DUR;
-      let ext; if (u < 0.35) ext = u / 0.35; else if (u < 0.7) ext = 1; else ext = Math.max(0, 1 - (u - 0.7) / 0.3);
-      const fork = (u > 0.3 && u < 0.75) ? Math.sin((u - 0.3) / 0.45 * Math.PI) : 0;
-      const tg = rig.tongue;
-      if (tg[0]) tg[0].rotation.x += ext * 1.5;
-      if (tg[1]) tg[1].rotation.x += ext * 1.0;
-      if (tg[2]) tg[2].rotation.x += ext * 0.7;
-      if (tg[2]) tg[2].rotation.z += Math.sin(u * 40) * 0.22 * fork;
-      if (tg[1]) tg[1].rotation.z += 0.16 * fork;
+      u = this._tongueT / FLICK_DUR;
+      if (u < 0.3) ext = u / 0.3; else if (u < 0.75) ext = 1; else ext = Math.max(0, 1 - (u - 0.75) / 0.25);
+      fork = (u > 0.25 && u < 0.8) ? Math.sin((u - 0.25) / 0.55 * Math.PI) : 0;
       if (u >= 1) {
         this._tongueT = -1;
         const rmin = this._tongueFast ? 0.5 : (this.tongueRest ? this.tongueRest[0] : 2.2);
@@ -38948,16 +39536,22 @@ class SnakeController {
         this._tongueNext = rmin + Math.random() * (rmax - rmin);
       }
     }
-
-    // ---- Head tracking (scene-fed yaw+pitch, applied inside the safety net) ----
-    if (Math.abs(this.headYaw) > 0.001) {
-      if (rig.neck) rig.neck.rotation.y += this.headYaw * 0.5;
-      if (rig.head) rig.head.rotation.y += this.headYaw * 0.5;
+    if (this._tickEcho) {
+      this._tickEcho.t -= d;
+      if (this._tickEcho.t <= 0) {
+        const e = this._tickEcho; this._tickEcho = null;
+        try { window.PhobiaAudio && window.PhobiaAudio.tongueFlick && window.PhobiaAudio.tongueFlick(e.hp, { intensity: e.inten }); } catch {}
+      }
     }
-    if (Math.abs(this.headPitch) > 0.001) {
-      // + = look UP (same sign convention as the rear: rotation.x < 0 pitches up).
-      if (rig.neck) rig.neck.rotation.x -= this.headPitch * 0.5;
-      if (rig.head) rig.head.rotation.x -= this.headPitch * 0.5;
+    if (this._tongueAxis) {
+      // ext 0 → fully back inside, 1 → the pack's rest reach.
+      tg[0].position.addScaledVector(this._tongueAxis, -this._tongueRetract * (1 - ext));
+      if (fork > 0) {
+        // Fork waves up and down, fast, about the snake's left-right axis.
+        const w = Math.sin(u * 44) * fork;
+        this._rotSnake(tg[1], 1, 0, 0, w * 0.22);
+        this._rotSnake(tg[2], 1, 0, 0, w * 0.30);
+      }
     }
 
     // ---- Single absolute y-write (belly plant + pose offset + surface lift) ----
@@ -38967,6 +39561,7 @@ class SnakeController {
     for (const r of this._lifeBones) {
       r.fin.x = r.b.rotation.x; r.fin.y = r.b.rotation.y; r.fin.z = r.b.rotation.z;
     }
+    for (const r of this._posNets) r.fin.copy(r.b.position);
   }
 }
 
@@ -39135,9 +39730,25 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   const logMat = new THREE.MeshStandardMaterial({ color: 0x5a4630, roughness: 0.92, envMapIntensity: 0.25, normalMap: earthMaps.normal ? earthMaps.normal.clone() : null });
   const log = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 4.5, 12), logMat);
   log.rotation.z = Math.PI / 2; log.rotation.y = 0.4; log.position.set(-3.2, -0.7, -3.5); log.castShadow = true; log.receiveShadow = true; log.userData.noCollide = true;
+  // Its axis runs (−0.921, 0, 0.389) after the two rotations; 4.5 m long.
+  // The rock moves with the rung (_snakeZ) and the log did not: on rung 3 the
+  // log's end was 1.14 m from the rock's centre — 0.66 m of it buried in a
+  // slab of 1.4 m radius — and about 28 % of spawns coiled the snake INSIDE
+  // the log. Slide it along −x until it clears the rock's base (r 1.6) by a
+  // log radius and a margin.
+  const LOG_AX = { x: -0.921, z: 0.389 }, LOG_HALF = 2.25, LOG_R = 0.4;
+  const logSeg = () => ({ ax: log.position.x - LOG_AX.x * LOG_HALF, az: log.position.z - LOG_AX.z * LOG_HALF,
+                          bx: log.position.x + LOG_AX.x * LOG_HALF, bz: log.position.z + LOG_AX.z * LOG_HALF });
+  const segDist = (px, pz, sg) => {
+    const vx = sg.bx - sg.ax, vz = sg.bz - sg.az;
+    const k = Math.max(0, Math.min(1, ((px - sg.ax) * vx + (pz - sg.az) * vz) / (vx * vx + vz * vz)));
+    return Math.hypot(px - (sg.ax + vx * k), pz - (sg.az + vz * k));
+  };
+  { const need = 1.6 + LOG_R + 0.25, have = segDist(0, _snakeZ, logSeg()); if (have < need) log.position.x -= (need - have) / 0.92; }
   scene.add(log); shellPieces.push(log);
   const bushMat = new THREE.MeshStandardMaterial({ color: 0x4c6a2e, roughness: 0.95, flatShading: true });
-  for (const [bx, by, bz] of [[4.5, -0.7, -5], [-4.5, -0.6, -7], [3.0, -0.65, -1]]) {
+  const BUSHES = [[4.5, -0.7, -5], [-4.5, -0.6, -7], [3.0, -0.65, -1]];
+  for (const [bx, by, bz] of BUSHES) {
     const bush = new THREE.Group();
     for (let j = 0; j < 4; j++) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.4 + Math.random() * 0.3, 6, 5), bushMat); b.position.set((Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.6); b.castShadow = !IS_LOW_POWER; bush.add(b); }
     bush.position.set(bx, by, bz); bush.userData.noCollide = true; scene.add(bush); shellPieces.push(bush);
@@ -39174,6 +39785,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   });
   // Lying somewhere else on the path each visit. Radial distance is the rung's.
   snake.position.set(V.range(-1.1, 1.1), -1, -distance + V.range(-0.35, 0.35));
+  if (segDist(snake.position.x, snake.position.z, logSeg()) < LOG_R + 0.5) snake.position.x = Math.abs(snake.position.x);
   let moodChipOff = null;
   sceneTimers.push(setTimeout(() => {
     moodChipOff = mountMoodChip("It seems " + (temper.label || temper.id) + " today");
@@ -39216,7 +39828,11 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       } catch (e) { console.warn("[snakes] scale material:", e); }
       pp.play("Idle");
       headAnchor.position.set(0, pp.height * 0.78, pp.span * 0.18);
-      pp.headBone = pp.model.getObjectByName("Head") || null;
+      // "Head" for every look-at, hand-sniff anchor, strike clamp and threat
+      // beacon means the FACE — the Mouth bone. The pack's "Head" bone carries
+      // only the back of the skull (66 of 3258 vertices), 21 cm below the eyes
+      // at rung 4, so all of those aimed behind and under the face.
+      pp.headBone = pp.model.getObjectByName("Mouth") || pp.model.getObjectByName("Head") || null;
       pp.neckBone = pp.model.getObjectByName("Neck") || null;
       // Wake the procedural controller + calibrate belly grounding.
       if (snakeCtl.ctrl) {
@@ -39237,6 +39853,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   let snakesControls = null;
   let stillness = 0;       // 0..1, builds while user holds the "Hold still" button
   const baseSnakeZ = snake.position.z;
+  const snakeHomeX = snake.position.x;
   let stillHeld = false;
 
   // ---- Snake locomotion controller ----
@@ -39320,7 +39937,55 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     }
   }
   const SNAKE_REF_SPEED = 0.5;   // m/s at Walk clip timeScale 1 — tuned by eye
-  const STRIKE_LENS_FLOOR = 0.7; // head world-pos never crosses this from the lens
+  // Strike geometry. The snout tip (the face's most forward vertex, tracked
+  // live through the Attack clip) stops STRIKE_STOP short of your body centre
+  // along the strike line — ~25 cm clear of the body; the root may run at
+  // most STRIKE_ROOT_RUN (a strike covers a fraction of the body length).
+  const STRIKE_STOP = 0.55;
+  const STRIKE_ROOT_RUN = 0.35;
+  let _snoutIdx = null;
+  // Runs AFTER the controller has posed this frame, through the lunge AND the
+  // recoil (the Attack clip keeps reaching forward past the 0.30 s lunge).
+  // Measured before the pose update it lagged a frame of root travel and clip
+  // extension, and the snout still reached 0.41 m from you.
+  function strikeSnoutStop(controls) {
+    const ph = snakeCtl.strikePhase;
+    if (!controls || !snakeCtl._lungeDir || (ph !== "lunge" && ph !== "recoil")) return;
+    const ld = snakeCtl._lungeDir;
+    snake.updateMatrixWorld(true);
+    snoutTip(_snkV1);
+    const along = (controls.position.x - _snkV1.x) * ld.x + (controls.position.z - _snkV1.z) * ld.z;
+    snakeCtl._snoutAlong = along;
+    if (along < STRIKE_STOP) {
+      const back = STRIKE_STOP - along;
+      snake.position.x -= ld.x * back; snake.position.z -= ld.z * back;
+    }
+  }
+  function snoutTip(out) {
+    const pp = snake.userData.parts;
+    if (_snoutIdx === null) {
+      _snoutIdx = false;
+      // Most forward (snake-frame +z) vertex skinned to the face bone.
+      const v = new THREE.Vector3(); let best = -Infinity;
+      snake.updateMatrixWorld(true);
+      pp.model.traverse((o) => {
+        if (!o.isSkinnedMesh) return;
+        const mi = o.skeleton.bones.findIndex((b) => b.name === "Mouth");
+        if (mi < 0) return;
+        const si = o.geometry.attributes.skinIndex, sw = o.geometry.attributes.skinWeight;
+        for (let i = 0; i < si.count; i++) {
+          let wm = 0, im = -1;
+          for (let k = 0; k < 4; k++) { const w = sw.getComponent(i, k); if (w > wm) { wm = w; im = si.getComponent(i, k); } }
+          if (im !== mi) continue;
+          o.getVertexPosition(i, v); o.localToWorld(v); snake.worldToLocal(v);
+          if (v.z > best) { best = v.z; _snoutIdx = { mesh: o, i }; }
+        }
+      });
+    }
+    if (_snoutIdx) { _snoutIdx.mesh.getVertexPosition(_snoutIdx.i, out); _snoutIdx.mesh.localToWorld(out); }
+    else if (pp && pp.headBone) pp.headBone.getWorldPosition(out);
+    return out;
+  }
   let slitherSound = null;       // lazy spatial rustle handle
   let prevPlayerDist = null, approachSpeed = 0;  // radial m/s toward the snake
   let prevPlayerPos = null;                      // last player XZ (own-velocity approach calc)
@@ -39341,7 +40006,27 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     p.z = Math.max(SNAKE_BOUNDS.minZ, Math.min(SNAKE_BOUNDS.maxZ, p.z));
     return p;
   }
+  // Set pieces are noCollide for the player's sake, but the snake has to go
+  // AROUND them: wander and crossing targets used to be picked with no test,
+  // so it slid straight through the log and could stop inside the bush.
+  function snakePathClear(x0, z0, x1, z1) {
+    const sg = logSeg();
+    for (let k = 1; k <= 10; k++) {
+      const x = x0 + (x1 - x0) * k / 10, z = z0 + (z1 - z0) * k / 10;
+      if (segDist(x, z, sg) < LOG_R + 0.3) return false;
+      for (const [bx, , bz] of BUSHES) if (Math.hypot(x - bx, z - bz) < 1.0) return false;
+    }
+    return true;
+  }
   function snakePickWanderTarget(controls) {
+    for (let tries = 0; tries < 10; tries++) {
+      const t = snakePickWanderTarget1(controls);
+      if (snakePathClear(snake.position.x, snake.position.z, t.x, t.z)) return t;
+    }
+    snakeCtl.crossing = false;
+    return snakeClampToBounds({ x: snakeHomeX, z: baseSnakeZ });
+  }
+  function snakePickWanderTarget1(controls) {
     // Higher rungs sometimes cross the open path 2–4 m ahead of the player —
     // the classic "it moved!" beat — otherwise roam near home turf.
     if (B.cross && controls && Math.random() < (B.crossChance ?? 0.45)) {
@@ -39352,10 +40037,15 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       return snakeClampToBounds({ x: side * (2.0 + Math.random() * 1.2), z: aheadZ });
     }
     snakeCtl.crossing = false;
-    const t = snakeClampToBounds({
-      x: (Math.random() - 0.5) * 5.0,
-      z: baseSnakeZ + (Math.random() - 0.5) * 4.0,
-    });
+    // Within the rung's home patch (homeRadius — "shifts in its patch" on
+    // rung 2, and each temperament's roamMul): it was a fixed 5 × 4 m box.
+    let t;
+    if (B.homeRadius != null) {
+      const a = Math.random() * Math.PI * 2, r = B.homeRadius * Math.sqrt(Math.random());
+      t = snakeClampToBounds({ x: snakeHomeX + Math.cos(a) * r, z: baseSnakeZ + Math.sin(a) * r });
+    } else {
+      t = snakeClampToBounds({ x: (Math.random() - 0.5) * 5.0, z: baseSnakeZ + (Math.random() - 0.5) * 4.0 });
+    }
     // Never pick a destination on top of the player.
     if (controls) {
       const dx = t.x - controls.position.x, dz = t.z - controls.position.z;
@@ -39471,8 +40161,11 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     if (B.strike && snakeCtl.state !== "defensive" && snakeCtl.defenseCooldown <= 0
         && !completionBeatDone
         && controls && playerDist < (B.strikeDist ?? 1.45) && approachSpeed > (B.strikeApproach ?? 0.9)) {
-      snakeCtl.heading = Math.atan2(controls.position.x - snake.position.x, controls.position.z - snake.position.z);
-      snake.rotation.y = snakeCtl.heading;
+      // No instant snap, no glide. A retreating snake (0.85 m/s, facing away)
+      // used to flip 180° in one frame and then coast ~0.23 m TOWARD you on
+      // the Idle pose through the warning — shrinking the very room you had
+      // to cancel it in. It stops dead, and turns to you during the telegraph.
+      snakeCtl.speed = 0;
       snakeEnter("defensive", controls);
     }
 
@@ -39504,6 +40197,13 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       snakeCtl.strikeT += dtN;
       if (snakeCtl.strikePhase === "telegraph") {
         snakeCtl.striking = true; snakeCtl.jawTarget = 0.5;
+        // Draw round to face you — fast (a snake can whip its forebody round),
+        // but through the warning, not in a frame.
+        if (controls) {
+          let dh = Math.atan2(controls.position.x - snake.position.x, controls.position.z - snake.position.z) - snakeCtl.heading;
+          dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+          snakeCtl.heading += Math.max(-6 * dtN, Math.min(6 * dtN, dh));
+        }
         // RETREAT CANCELS — the disconfirming window (mirror the spider coil-cancel).
         if (playerDist > 1.9 || approachSpeed < -0.2) {
           snakeCtl.strikePhase = "recoil"; snakeCtl.strikeT = 0; snakeCtl.jawTarget = 0;
@@ -39512,6 +40212,8 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
         } else if (snakeCtl.strikeT > TELE_DUR) {
           snakeCtl.strikePhase = "lunge"; snakeCtl.strikeT = 0; snakeCtl.jawTarget = 1.0; snakeCtl.strikeFired = false;
           snakeCtl._lungeFrom = { x: snake.position.x, z: snake.position.z };
+          snakeCtl._lungeDir = { x: Math.sin(snakeCtl.heading), z: Math.cos(snakeCtl.heading) };
+          snakeCtl._lungeTravel = 0;
           const sp2 = snake.userData.parts; if (sp2 && sp2.play) sp2.play("Attack", 0.05, { once: true, timeScale: 1.3 });
           headAnchor.getWorldPosition(_snkV1);
           if (window.PhobiaAudio) { if (window.PhobiaAudio.snakeStrike) window.PhobiaAudio.snakeStrike(_snkV1); else if (window.PhobiaAudio.hissOnce) window.PhobiaAudio.hissOnce(_snkV1, 1.0); }
@@ -39525,19 +40227,23 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           arousalFloor = Math.max(arousalFloor, 0.8);
         }
       } else if (snakeCtl.strikePhase === "lunge") {
-        // Fast forward dart toward the player, clamped so the HEAD bone's world
-        // pos never crosses the lens floor (full-3D, like the spider pounce).
-        const dirx = controls ? controls.position.x - snake.position.x : 0;
-        const dirz = controls ? controls.position.z - snake.position.z : 0;
-        const dd = Math.hypot(dirx, dirz) || 1e-3;
-        const step = 3.2 * dtN;
-        snake.position.x += (dirx / dd) * step;
-        snake.position.z += (dirz / dd) * step;
+        // A strike is ballistic: along the heading it was aimed on at release
+        // (it used to chase your LIVE position while the body kept the old
+        // heading — a sideways skid if you stepped aside), with a short root
+        // run, and the SNOUT stops STRIKE_STOP short of you. The old clamp was
+        // a 3D 0.7 m lens floor on the Head bone — the back of the skull, which
+        // never came within 0.78 m of the eye on any rung — so it never fired,
+        // and the root's 0.96 m run carried the snout past where you stood,
+        // shoving you back, under the line "Nothing reached you".
+        const ld = snakeCtl._lungeDir || { x: Math.sin(snakeCtl.heading), z: Math.cos(snakeCtl.heading) };
+        const room = Math.max(0, STRIKE_ROOT_RUN - (snakeCtl._lungeTravel || 0));
+        const step = Math.min(room, 3.2 * dtN);
+        snake.position.x += ld.x * step; snake.position.z += ld.z * step;
+        snakeCtl._lungeTravel = (snakeCtl._lungeTravel || 0) + step;
         const sp3 = snake.userData.parts;
         if (controls && sp3 && sp3.headBone) {
           sp3.headBone.getWorldPosition(_snkHead);
-          const d3 = _snkHead.distanceTo(controls.position);
-          if (d3 < STRIKE_LENS_FLOOR) { const s = STRIKE_LENS_FLOOR - d3; snake.position.x -= (dirx / dd) * s; snake.position.z -= (dirz / dd) * s; }
+          // (the snout stop itself runs after the pose update — strikeSnoutStop)
           if (!snakeCtl.strikeFired) {
             snakeCtl.strikeFired = true;
             if (controls.kickShake) controls.kickShake(0.06);
@@ -39634,6 +40340,10 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     snakeCtl.ctrl.setSlither(slAmp * Math.min(1, 0.5 + size * 0.6));
     snakeCtl.ctrl._slitherSpeed = Math.min(1, snakeCtl.speed / SNAKE_REF_SPEED);
     let rearAmt = (st === "watch" || st === "defensive" || snakeCtl.striking) ? (0.6 + 0.4 * size) : (sniffing ? 0.5 : 0);
+    // Watching from out past rearDist is a low, alert posture; it lifts fully
+    // only when you come within rearDist (the key was never read, so rungs 4–5
+    // reared at watchDist, 3.4 / 3.6 m, instead of 2.6 / 3.0 m).
+    if (st === "watch" && B.rearDist != null && playerDist > B.rearDist && !sniffing) rearAmt *= 0.35;
     // Strike recoil visibly RE-COILS: the rear collapses 0.9→0.4 across the
     // beat, so the forebody gathers back before the retreat slither.
     if (snakeCtl.strikePhase === "recoil") rearAmt = 0.9 - 0.5 * Math.min(1, snakeCtl.strikeT / 0.35);
@@ -39642,13 +40352,24 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     // the slab near its centre and ease back off while wandering (fed into the
     // controller's single absolute y-write, never a second y path).
     { const rockD = Math.hypot(snake.position.x - rock.position.x, snake.position.z - rock.position.z);
-      snakeCtl.ctrl.surfY = rockD < 1.5 ? 0.09 * clamp01((1.5 - rockD) / 0.4) : 0; }
+      // The slab's top is 0.10 m above the grass (y −0.99 + 0.18/2), flat
+      // out to r 1.4 and meeting the grass at ~1.5. The lift was 0.09 and full
+      // only inside r 1.1, so a coiled snake near the rim sat 3–5 cm INTO the
+      // stone (measured). The root is one point on a coil ~1 m across, so the
+      // ramp still eases over the rim rather than stepping at it.
+      snakeCtl.ctrl.surfY = rockD < 1.55 ? 0.10 * clamp01((1.55 - rockD) / 0.35) : 0; }
     snakeCtl.ctrl.setJaw(snakeCtl.jawTarget || 0);
     snakeCtl.ctrl._tongueFast = sniffing || st === "watch" || snakeCtl.striking;
     if (hasRig) snakeCtl.ctrl.update(t, dtN);
+    // Pick the snout-tip vertex in the IDLE pose, before any strike: picked on
+    // the first lunge frame, the Attack clip had already pitched the head and
+    // "most forward" landed on a vertex 8–12 cm behind the real tip.
+    if (_snoutIdx === null && hasRig && snakeCtl.strikePhase === "none" && snake.userData.ready) { snake.updateMatrixWorld(true); snoutTip(_snkV1); }
+    strikeSnoutStop(controls);
     // Observability for scene-verification hooks (mirrors spiderDebug).
     snake.userData.snakeDebug = {
-      state: snakeCtl.state, strikePhase: snakeCtl.strikePhase,
+      state: snakeCtl.state, strikePhase: snakeCtl.strikePhase, snoutAlong: snakeCtl._snoutAlong,
+      snoutIdx: _snoutIdx ? _snoutIdx.i : null,
       speed: +snakeCtl.speed.toFixed(2), playerDist: +(playerDist || 0).toFixed(2),
       approachSpeed: +(approachSpeed || 0).toFixed(2),
     };
@@ -39820,7 +40541,16 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     if (backBtn) backBtn.onclick = (e) => {
       e.stopPropagation();
       const c = snakesControls; if (!c) return;
-      c.position.z = Math.min(c.opts.bounds.maxZ - 0.2, c.position.z + 1.0);
+      // A step AWAY from the snake (it went +1 m along world z, which on the
+      // apex rung could be sideways or even toward a snake that had wandered
+      // to your side), and the approach-speed tracker forgets the jump — the
+      // 1 m teleport read as a rush and could set off the strike.
+      const ax = c.position.x - snake.position.x, az = c.position.z - snake.position.z;
+      const al = Math.hypot(ax, az) || 1;
+      const b = c.opts.bounds || {};
+      c.position.x = Math.max((b.minX ?? -Infinity) + 0.2, Math.min((b.maxX ?? Infinity) - 0.2, c.position.x + ax / al));
+      c.position.z = Math.max((b.minZ ?? -Infinity) + 0.2, Math.min((b.maxZ ?? Infinity) - 0.2, c.position.z + az / al));
+      prevPlayerPos = null; approachSpeed = 0;
       if (window.PhobiaVoice) window.PhobiaVoice.speak("Stepped back. Notice your feet again.");
     };
     const leafBtn = bar.querySelector('[data-cmd="leaf"]');
@@ -39968,9 +40698,12 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
               snakeCtl.ctrl.requestTongueFlick(true);
               sceneTimers.push(setTimeout(() => { try { snakeCtl.ctrl.requestTongueFlick(true); } catch {} }, 900));
             }
-            // After 4 s, fade away
+            // After 4 s, fade away — THIS leaf. The timer used to act on the
+            // shared `leaf`, so a second leaf dropped within 4 s was deleted
+            // by the first one's timer, sometimes mid-fall.
+            const mine = leaf;
             sceneTimers.push(setTimeout(() => {
-              if (!leaf) return;
+              if (!mine || leaf !== mine) return;
               scene.remove(leaf); leaf.geometry.dispose(); leaf.material.dispose(); leaf = null;
             }, 4000));
           }
@@ -40038,9 +40771,9 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       if (dustPoints && dustAttr) {
         for (let i = 0; i < dustData.length; i++) {
           const dd = dustData[i];
-          dustPos[i * 3] += dd.vx * dtN + Math.sin(t + dd.phaseX) * 0.0010;
+          dustPos[i * 3] += dd.vx * dtN + Math.sin(t + dd.phaseX) * 0.06 * dtN;   // was per-frame
           dustPos[i * 3 + 1] += dd.vy * dtN;
-          dustPos[i * 3 + 2] += dd.vz * dtN + Math.cos(t + dd.phaseY) * 0.0010;
+          dustPos[i * 3 + 2] += dd.vz * dtN + Math.cos(t + dd.phaseY) * 0.06 * dtN;
           if (dustPos[i * 3 + 1] < -0.95) spawnMote(i);
         }
         dustAttr.needsUpdate = true;
@@ -43658,13 +44391,9 @@ const ShellScenes = (() => {
     const beamDir = new THREE.Vector3(0.5, -1, -1).sub(new THREE.Vector3(-4.4, 3.0, -8.0)).normalize();
     const beamOrigin = new THREE.Vector3(WIN.cx, WIN.cy, R.z0 + 0.15);
     const beamLen = (beamOrigin.y + 1) / Math.max(0.05, -beamDir.y);
-    const beam = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.55, 0.95, beamLen, 14, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0xffe0b4, transparent: true, opacity: 0.06,
-        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })
-    );
-    beam.position.copy(beamOrigin).addScaledVector(beamDir, beamLen / 2);
-    beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), beamDir.clone().negate());
+    // The dog room's soft beam, not a flat additive cone: that one drew its
+    // outline as two hard diagonal lines across the arrival room.
+    const beam = makeSoftSunbeam(beamOrigin, beamDir, beamLen, { opacity: 0.05, wallZ: R.z0 });
     scene.add(beam);
 
     // Enough dressing that it reads as somewhere someone lives.
@@ -43802,6 +44531,7 @@ const ShellScenes = (() => {
     };
 
     ctx.onTick = (dt, t) => {
+      beam.userData.uTime.value = t;
       if (!dragging) {
         vel *= 0.92;
         spin += vel;
