@@ -48,20 +48,26 @@ const PhobiaInfo = {
   },
 
   dogs: {
-    summary: "Cynophobia is the fear of dogs. It often follows a childhood incident or witnessing one — the brain locks onto the memory and treats every dog as that dog.",
-    prevalence: "About 7–9% of adults report dog phobia symptoms.",
-    physical: ["Tensed shoulders", "Quick shallow breathing", "Sweaty palms", "Frozen feet"],
-    cognitive: ["\"It's about to bite.\"", "\"I'll panic if it barks.\"", "\"The owner can't control it.\""],
-    behaviour: ["Crossing the street to avoid a dog", "Declining visits to friends with pets"],
-    science: "Most dog encounters are uneventful. Each non-event — staying near a dog without being harmed — chips away at the over-trained fear circuit. Looking at the dog (not away) accelerates the relearning.",
-    tips: [
-      "Read the dog's body language: relaxed mouth, soft eyes, tail in neutral all mean \"chill.\"",
-      "Don't make sudden moves; slow down rather than freeze.",
-      "Speak to it softly. Your calm voice settles the dog and your own breath.",
-      "If the dog approaches, let it sniff a closed fist before opening your hand.",
-      "If a dog is barking, soften your gaze and step back slowly — you control the distance."
+    summary: "Cynophobia is an intense, lasting fear of dogs. It can start with a frightening moment with a dog, with watching someone else be scared of one, or simply with being told dogs are dangerous — and many people can't remember how it began at all. However it started, the brain's alarm has learned to treat every dog as that dog.",
+    prevalence: "Specific phobias affect roughly 7–9% of adults in any given year, and animal phobias — dogs among them — are one of the most common kinds. Exposure-based treatment helps most people who try it; for specific phobias it can sometimes be done in a single long session with a therapist.",
+    physical: ["Heart pounding, breath quick and shallow", "Shoulders up, jaw tight", "Sweaty palms, shaky legs", "Freezing — or a strong urge to run"],
+    cognitive: ["\"It's going to bite me.\"", "\"It's going to run at me / jump on me.\"", "\"If it barks, I'll panic.\"", "\"The owner can't control it.\""],
+    behaviour: [
+      "Crossing the street, or turning back, when a dog appears",
+      "Checking every path and park for dogs before going out",
+      "Never turning your back on a dog; keeping it in sight at all times",
+      "Holding someone's arm, or standing behind them, near a dog",
+      "Declining visits to friends who have pets"
     ],
-    warning: "If a real dog attack is in your past, work with a trauma therapist alongside any exposure practice."
+    science: "Avoidance is what keeps the fear alive: every escape brings relief, and the relief teaches the brain \"that was close — the dog was dangerous\". Staying near a dog instead — long enough for the alarm to rise and fall on its own, and for your prediction (\"it'll bite\") to be tested — teaches the opposite. Keep watching the dog rather than looking away, just with soft eyes: dogs read a long, hard stare as rude.",
+    tips: [
+      "Read the body, not the noise: a loose, wiggly body, soft eyes and a wide wag mean relaxed. A stiff body, a hard stare or a growl mean \"give me some space\".",
+      "Move slowly and stay loose. A still, relaxed person is boring to a dog — which is exactly what you want.",
+      "Let a dog come to you and sniff. Sniffing is how dogs say hello; you don't have to do anything.",
+      "If you choose to pet, stroke the side or chest (not over the head), stop after a few seconds, and see whether it leans in for more.",
+      "Most barking is alerting or excitement, not attack — watch the tail and body. Giving space to a real warning is good dog manners; stepping away from every dog is avoidance."
+    ],
+    warning: "If a real dog attack is in your past, or the fear is stopping you from leaving the house, work with a therapist (ideally trauma-informed) alongside any practice here."
   },
 
   spiders: {
