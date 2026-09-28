@@ -5,7 +5,8 @@
 // It serves the repo itself on a free port (no dev server needed), then:
 //   1. first run: consent → Step inside → creator → straight to trial 1's gate
 //   2. trial 1: walk to the dog, stay until the alarm settles, rate, complete
-//   3. the hardest trial mounts and runs
+//   3. the hardest dog trial mounts and runs; a spider and a snake trial run
+//      the same coach and complete
 //   4. launch scope: a closed realm shows "coming soon"; ?all=1 opens it
 //   5. Persian: the realm page renders RTL with translated trial names
 //   6. phone viewport: landing + creator render with no sideways scroll
@@ -122,20 +123,29 @@ async function firstRunAndTrial(browser, base) {
   }
   await page.keyboard.up("KeyW");
   check("trial 1: player can walk to the dog", dist < 2.6, `${dist.toFixed(2)} m`);
-  // Stay; answer read-the-dog prompts; wait for the hold policy to be met.
+  // Stay like a player: keep within the zone if the dog wanders off, answer
+  // the read-the-dog prompts (correctly), wait for the hold policy.
+  let diag = "";
   const met = await (async () => {
-    const tEnd = Date.now() + 60000;
+    const tEnd = Date.now() + 75000;
     while (Date.now() < tEnd) {
-      await page.evaluate(() => {
-        const C = window.__dogCoach; if (!C || !C.readId) return;
-        const b = document.querySelector('.dc-read .dc-opt[data-c="calm"]'); b && b.click();
+      diag = await page.evaluate(() => {
+        const C = window.__coach;
+        if (C && C.readId) { const K = CREATURE_KITS.dogs; const b = document.querySelector(`.dc-read .dc-opt[data-c="${K.signals[C.readId].cls}"]`); b && b.click(); }
+        const A = window.__active; let dog = null;
+        A.scene.traverse((o) => { if (!dog && o.userData && o.userData.parts && o.userData.parts.mixer && o.userData.parts.model) dog = o; });
+        const c = A.controls, dx = dog.position.x - c.position.x, dz = dog.position.z - c.position.z, d = Math.hypot(dx, dz);
+        c.yaw = c._yawT = Math.atan2(-dx, -dz);
+        return JSON.stringify({ d: +d.toFixed(2), eng: C && C.engaged, alarm: C && Math.round(C.alarm), hold: (document.getElementById("holdLabel") || {}).textContent });
       });
+      const d = JSON.parse(diag).d;
+      if (d > 2.3) { await page.keyboard.down("KeyW"); await sleep(Math.min(900, (d - 1.9) * 700)); await page.keyboard.up("KeyW"); }
       if (await page.evaluate(() => /ready|continue/i.test((document.getElementById("continueBtn") || {}).textContent || ""))) return true;
       await sleep(1000);
     }
     return false;
   })();
-  check("trial 1: staying completes it (alarm settles)", met);
+  check("trial 1: staying completes it (alarm settles)", met, met ? "" : diag);
   await shot(page, "03-trial-met");
   await click(page, "#continueBtn");
   check("rate page renders", await waitFor(page, () => /#\/dogs\/rate\/0/.test(location.hash) && !!document.getElementById("sudsPeak"), 6000), await hash(page));
@@ -180,11 +190,11 @@ async function hardestTrial(browser, base) {
   check("trial 5: renders frames", fps > 10, `${fps.toFixed(0)} fps (headless)`);
   await shot(page, "05-trial5");
   // Launch scope
-  await page.goto(base + "/#/spiders", { waitUntil: "load" }); await sleep(900);
+  await page.goto(base + "/#/heights", { waitUntil: "load" }); await sleep(900);
   check("closed realm shows 'coming soon'", await page.evaluate(() => !!document.querySelector(".soon-panel")));
   await page.goto(base + "/#/fears", { waitUntil: "load" }); await sleep(1500);
-  check("map: one open realm + coming-soon strip", await page.evaluate(() => document.querySelectorAll(".realm-node").length === 1 && !!document.querySelector(".jw-soon")));
-  await page.goto(base + "/?all=1#/spiders", { waitUntil: "load" }); await sleep(900);
+  check("map: three open realms + coming-soon strip", await page.evaluate(() => document.querySelectorAll(".realm-node").length === 3 && !!document.querySelector(".jw-soon")));
+  await page.goto(base + "/?all=1#/heights", { waitUntil: "load" }); await sleep(900);
   check("?all=1 opens closed realms for QA", await page.evaluate(() => !document.querySelector(".soon-panel") && !!document.querySelector(".realm-view, .trial")));
   // Persian
   await page.evaluate(() => localStorage.setItem("fobia.lang", "fa"));
@@ -193,6 +203,63 @@ async function hardestTrial(browser, base) {
   check("Persian: RTL with translated trial names", fa.dir === "rtl" && fa.en === 0, JSON.stringify(fa));
   await shot(page, "06-fa");
   check("trial 5 + scope + fa: no page errors", page.errors.length === 0, page.errors.slice(0, 5).join(" | "));
+  await ctx.close();
+}
+
+// A spider and a snake trial: same coach, walk in, stay, it completes.
+async function creatures(browser, base) {
+  const { ctx, page } = await newPage(browser);
+  await page.evaluateOnNewDocument(() => {
+    if (localStorage.getItem("fobia.consent.v1")) return;
+    const c = { id: "c-smoke2", name: "Smoke", bodyType: "woman", skinTone: "fair", hairColor: "brown", hairStyle: "long", topColor: "teal", topStyle: "tee", eyeColor: "hazel", glasses: "none", facialHair: "none", headwear: "none", primaryPhobia: "spiders", additionalPhobias: ["snakes"], createdAt: Date.now() };
+    localStorage.setItem("fobia.characters.v2", JSON.stringify([c]));
+    localStorage.setItem("fobia.activeCharacter.v1", c.id);
+    localStorage.setItem("fobia.consent.v1", "1");
+    localStorage.setItem("fobia.tutorialSeen", "1");
+  });
+  for (const [realm, rung, stop] of [["spiders", 1, 1.2], ["snakes", 1, 3.0]]) {
+    await page.goto(`${base}/?r=${Date.now()}#/${realm}/predict/${rung}`, { waitUntil: "load" }); await sleep(800);
+    check(`${realm}: predict asks what the ${realm === "spiders" ? "spider" : "snake"} will do`, await page.evaluate(() => document.querySelectorAll(".expect-chip").length >= 6));
+    await page.evaluate(() => { const c = document.querySelector(".expect-chip"); c && c.click(); document.querySelector('[data-action="confirm-predict"]').click(); });
+    check(`${realm}: scene + coach mount`, await waitFor(page, () => !!(window.__active && window.__active.scene && window.__coach && document.querySelector(".dog-coach")), 15000));
+    await sleep(2500);
+    await page.keyboard.down("KeyW");
+    const t0 = Date.now(); let dist = 99;
+    while (Date.now() - t0 < 14000) {
+      dist = await page.evaluate(() => {
+        const A = window.__active; let cr = null;
+        A.scene.traverse((o) => { if (!cr && o.userData && o.userData.parts && o.userData.parts.mixer && o.userData.parts.model && o.position.y > -10) cr = o; });
+        if (!cr) return 99;
+        const c = A.controls, dx = cr.position.x - c.position.x, dz = cr.position.z - c.position.z;
+        c.yaw = c._yawT = Math.atan2(-dx, -dz);
+        return Math.hypot(dx, dz);
+      });
+      if (dist < stop) break;
+      await sleep(100);
+    }
+    await page.keyboard.up("KeyW");
+    const met = await waitFor(page, (stop) => {
+      const C = window.__coach;
+      if (C && C.readId) { const K = CREATURE_KITS[location.hash.split("/")[1]]; const b = document.querySelector(`.dc-read .dc-opt[data-c="${K.signals[C.readId].cls}"]`); b && b.click(); }
+      // Keep within reach if it wanders (a small step, like a player would).
+      const A = window.__active; let cr = null;
+      A.scene.traverse((o) => { if (!cr && o.userData && o.userData.parts && o.userData.parts.mixer && o.userData.parts.model && o.position.y > -10) cr = o; });
+      if (cr) {
+        const c = A.controls, dx = cr.position.x - c.position.x, dz = cr.position.z - c.position.z, d = Math.hypot(dx, dz);
+        c.yaw = c._yawT = Math.atan2(-dx, -dz);
+        if (d > stop + 0.4) { const k = Math.min(0.25, d - stop) / d; c.position.x += dx * k; c.position.z += dz * k; }
+      }
+      return /ready|continue/i.test((document.getElementById("continueBtn") || {}).textContent || "");
+    }, 75000, stop);
+    check(`${realm}: staying completes the trial`, met, `${dist.toFixed(2)} m`);
+    await shot(page, `08-${realm}`);
+    await page.evaluate(() => document.getElementById("continueBtn").click());
+    await sleep(1200);
+    await page.evaluate(() => { document.querySelectorAll('input[type="range"]').forEach((r) => { r.value = "3"; r.dispatchEvent(new Event("input", { bubbles: true })); r.dispatchEvent(new Event("change", { bubbles: true })); }); const b = document.getElementById("rateSubmit"); b && b.click(); });
+    await sleep(1500);
+    check(`${realm}: reality check on the complete page`, await page.evaluate(() => /\/done\//.test(location.hash) && !!document.querySelector(".reality-card")), await hash(page));
+  }
+  check("spider + snake trials: no page errors", page.errors.length === 0, page.errors.slice(0, 5).join(" | "));
   await ctx.close();
 }
 
@@ -217,7 +284,7 @@ async function phone(browser, base) {
   });
   const t0 = Date.now();
   try {
-    for (const flow of [firstRunAndTrial, hardestTrial, phone]) {
+    for (const flow of [firstRunAndTrial, hardestTrial, creatures, phone]) {
       try { await flow(browser, base); } catch (e) { check(flow.name + " crashed", false, String(e).slice(0, 300)); }
     }
   } finally {

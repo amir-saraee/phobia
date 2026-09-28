@@ -10,21 +10,21 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg" />
 <link rel="apple-touch-icon" href="icon.svg" />
 <title>Mira — The Courage Journey · face your fears in a tiny 3D game</title>
-<meta name="description" content="A tiny free game about a fear of dogs. Five gentle 3D trials with a dog that reads how you move, built on real CBT exposure principles — then the real-world steps that matter. More fears coming. بازی کوچکی برای رو‌به‌رو شدن با ترس‌ها — با پشتیبانی فارسی." />
+<meta name="description" content="A tiny free game about big fears — dogs, spiders and snakes. Gentle 3D trials with animals that read how you move, built on real CBT exposure principles — then the real-world steps that matter. بازی کوچکی برای رو‌به‌رو شدن با ترس‌ها — با پشتیبانی فارسی." />
 <meta name="author" content="Amir Saraee" />
 <link rel="canonical" href="https://phobia-kappa.vercel.app/" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="Mira" />
 <meta property="og:url" content="https://phobia-kappa.vercel.app/" />
 <meta property="og:title" content="Mira — The Courage Journey" />
-<meta property="og:description" content="A tiny game about big fears — starting with dogs, one small, safe step at a time. Free, in your browser, English + فارسی." />
+<meta property="og:description" content="A tiny game about big fears — dogs, spiders and snakes, one small, safe step at a time. Free, in your browser, English + فارسی." />
 <meta property="og:image" content="https://phobia-kappa.vercel.app/dog-desktop.png" />
 <meta property="og:image:alt" content="A third-person 3D scene from Mira: your character standing in a warm room, facing a small dog." />
 <meta property="og:locale" content="en_US" />
 <meta property="og:locale:alternate" content="fa_IR" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Mira — The Courage Journey" />
-<meta name="twitter:description" content="A tiny game about big fears — starting with dogs, one small, safe step at a time." />
+<meta name="twitter:description" content="A tiny game about big fears — dogs, spiders and snakes, one small, safe step at a time." />
 <meta name="twitter:image" content="https://phobia-kappa.vercel.app/dog-desktop.png" />
 <meta name="format-detection" content="telephone=no" />
 <script type="application/ld+json">
@@ -37,7 +37,7 @@
   "operatingSystem": "Web browser",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "inLanguage": ["en", "fa"],
-  "description": "A free browser game about facing fears, starting with a fear of dogs: gentle 3D exposure trials built on CBT principles, with real-world bridge steps, self-tracked outcomes and a printable progress report. A practice game, not therapy."
+  "description": "A free browser game about facing fears of dogs, spiders and snakes: gentle 3D exposure trials built on CBT principles, with real-world bridge steps, self-tracked outcomes and a printable progress report. A practice game, not therapy."
 }
 </script>
 <script>
@@ -4822,7 +4822,7 @@ if ("serviceWorker" in navigator) {
 <noscript>
   <div style="max-width:640px;margin:60px auto;padding:24px;font-family:system-ui,sans-serif;line-height:1.6">
     <h1>Mira — The Courage Journey</h1>
-    <p>A tiny free browser game about big fears, starting with dogs: five gentle 3D trials built on CBT graded-exposure principles, then take matching real-world steps and watch your fear scores fall.</p>
+    <p>A tiny free browser game about big fears — dogs, spiders and snakes: gentle 3D trials built on CBT graded-exposure principles, then take matching real-world steps and watch your fear scores fall.</p>
     <p>Mira needs JavaScript (and WebGL) to run — please enable JavaScript and reload. A practice game, not therapy.</p>
     <p lang="fa" dir="rtl">میرا یک بازی رایگان مرورگری برای رو‌به‌رو شدن تدریجی با ترس‌هاست. برای اجرا به جاوااسکریپت نیاز دارد.</p>
   </div>
@@ -8762,15 +8762,15 @@ const PHOBIAS = {
     // the on-wall apex) instead of differing by `size` alone.
     levels: [
       { title: "A tiny dot, far",     desc: "A dim cellar. Something small in the far corner.", size: 0.15, intensity: "calm", minHold: 12,
-        behavior: { skitter: false, approach: false, pounce: false, inZoneDist: 2.2, fearMul: 0.35, firstSkitterAt: Infinity, still: true } },
+        behavior: { skitter: false, approach: false, pounce: false, homeRadius: 0.25, inZoneDist: 2.4, fearMul: 0.35, firstSkitterAt: Infinity, still: true } },
       { title: "Small spider, near",  desc: "A small spider on the concrete. It shifts, then stills.", size: 0.35, intensity: "calm", minHold: 15,
-        behavior: { skitter: true, approach: false, pounce: false, homeRadius: 0.9, inZoneDist: 2.6, fearMul: 0.55, firstSkitterAt: 8, skitterEvery: [3.5, 6.0], skitterSpeed: 0.9, jagAmt: 0.6, approachBias: 0.0 } },
+        behavior: { skitter: true, approach: false, pounce: false, homeRadius: 0.35, inZoneDist: 1.7, fearMul: 0.55, firstSkitterAt: 6, skitterEvery: [3.0, 5.5], skitterSpeed: 0.34, jagAmt: 0.6, approachBias: 0.0, guardDist: 0.35 } },
       { title: "Medium spider, darts",desc: "Closer now — and it darts when it moves.", size: 0.55, intensity: "alert", minHold: 18,
-        behavior: { skitter: true, approach: true, pounce: false, homeRadius: 2.2, inZoneDist: 3.0, fearMul: 0.72, firstSkitterAt: 6, skitterEvery: [2.5, 4.5], skitterSpeed: 1.5, jagAmt: 1.0, approachBias: 0.5, guardDist: 1.2, escalate: true, settleAfter: 40 } },
+        behavior: { skitter: true, approach: true, pounce: false, homeRadius: 0.7, inZoneDist: 1.5, fearMul: 0.72, firstSkitterAt: 5, skitterEvery: [2.5, 4.5], skitterSpeed: 0.5, jagAmt: 1.0, approachBias: 0.5, guardDist: 0.4, escalate: true, settleAfter: 40 } },
       { title: "Large spider, close", desc: "A big one, near your feet. You can see the legs work.", size: 0.80, intensity: "alert", minHold: 22,
-        behavior: { skitter: true, approach: true, pounce: true, homeRadius: 3.0, inZoneDist: 3.4, fearMul: 0.88, firstSkitterAt: 4, skitterEvery: [1.8, 3.5], skitterSpeed: 2.0, jagAmt: 1.2, approachBias: 0.8, guardDist: 0.7, firstPounceAt: 12, pounceEvery: [10, 16], coilDur: [0.7, 1.1], escalate: true, settleAfter: 50 } },
+        behavior: { skitter: true, approach: true, pounce: true, homeRadius: 0.9, inZoneDist: 1.3, fearMul: 0.88, firstSkitterAt: 4, skitterEvery: [1.8, 3.5], skitterSpeed: 0.62, jagAmt: 1.2, approachBias: 0.8, guardDist: 0.34, firstPounceAt: 12, pounceEvery: [10, 16], coilDur: [0.7, 1.1], escalate: true, settleAfter: 50 } },
       { title: "On the wall by you",  desc: "On the wall, right at eye level. Legs twitching.", size: 1.00, intensity: "apex", minHold: 26,
-        behavior: { skitter: true, approach: false, pounce: true, onWall: true, wallZ: -2.6, wallEyeY: 0.5, homeRadius: 0.5, inZoneDist: 3.8, fearMul: 1.0, firstSkitterAt: 2, skitterEvery: [1.4, 2.8], skitterSpeed: 1.4, jagAmt: 0.5, twitch: true, guardDist: 0.9, firstPounceAt: 9, pounceEvery: [8, 13], coilDur: [0.6, 0.9], escalate: true } }
+        behavior: { skitter: true, approach: false, pounce: true, onWall: true, wallZ: -2.6, wallEyeY: 0.5, homeRadius: 0.2, inZoneDist: 1.4, fearMul: 1.0, firstSkitterAt: 2, skitterEvery: [1.4, 2.8], skitterSpeed: 0.42, jagAmt: 0.5, twitch: true, guardDist: 0.5, firstPounceAt: 9, pounceEvery: [8, 13], coilDur: [0.6, 0.9], escalate: true } }
     ],
     sceneClass: "scene-approach",
     render: renderSpider
@@ -8917,14 +8917,13 @@ const PHOBIAS = {
 // the journey map and pickers only surface these six (+ user-forged ladders).
 const FEATURED = ["dogs", "spiders", "snakes", "heights", "dark", "enclosed"];
 
-// Launch scope. Only the dog realm has the full learning loop (an alarm that
-// falls while you stay, reading the animal, trials that end on learning, not a
-// timer) and the art pass to match. The other realms still run a bare hold
-// timer — in some, the fear meter CLIMBS while you stay, the opposite of the
-// lesson — so they're shown as "coming soon" and reopen one at a time as each
-// is brought up to the dog bar: add its key here.
+// Launch scope. A realm opens once it has the full learning loop (an alarm
+// that falls while you stay, reading the animal, trials that end on learning,
+// not a timer) and the art pass to match: dogs, then spiders and snakes. The
+// others still run a bare hold timer, so they show as "coming soon" and reopen
+// one at a time as each is brought up to that bar: add its key here.
 // QA / dev: `?all=1` in the URL, or localStorage fobia.allRealms = "1".
-const LAUNCH_OPEN = ["dogs"];
+const LAUNCH_OPEN = ["dogs", "spiders", "snakes"];
 function allRealmsUnlocked() {
   try { return /[?&]all=1\b/.test(location.search) || localStorage.getItem("fobia.allRealms") === "1"; } catch { return false; }
 }
@@ -11250,9 +11249,8 @@ function handleAction(d, params) {
       const C = window.Character;
       if (!C) break;
       const draft = Object.assign({}, C.defaultCharacter(), _travelerDraft || {});
-      // The dog realm is the one this flow commits to, so record it as the
-      // traveler's primary fear rather than leaving them unassigned.
-      if (!draft.primaryPhobia) draft.primaryPhobia = "dogs";
+      // The realm they picked in the creator (an open one), else the dogs.
+      if (!draft.primaryPhobia || !PHOBIAS[draft.primaryPhobia] || !realmOpen(draft.primaryPhobia)) draft.primaryPhobia = "dogs";
       if (!draft.name) draft.name = "Traveler";
       try { C.saveCharacter(draft); } catch {}
       _travelerDraft = null;
@@ -11260,10 +11258,11 @@ function handleAction(d, params) {
       // primer and Mirror are all still there — after the first dog, when
       // they have something to refer to. (It used to be eight screens from
       // "Step inside" to the first step on the floor.)
-      const firstRun = (getProgress("dogs").highestCompleted ?? -1) < 0 &&
-        !(state.log || []).some((l) => l.phobia === "dogs");
-      if (firstRun) go("predict", { phobia: "dogs", level: 0 });
-      else go("ladder", { phobia: "dogs" });
+      const fk = draft.primaryPhobia;
+      const firstRun = (getProgress(fk).highestCompleted ?? -1) < 0 &&
+        !(state.log || []).some((l) => l.phobia === fk);
+      if (firstRun) go("predict", { phobia: fk, level: 0 });
+      else go("ladder", { phobia: fk });
       break;
     }
     case "go-dogs": go("ladder", { phobia: "dogs" }); break;
@@ -11955,6 +11954,16 @@ function viewTraveler() {
     ${row(t("tw.top", "Top"),     swatches("topColor",  C.TOP_COLORS,  c.topColor))}
     ${row(t("tw.eyes", "Eyes"),   swatches("eyeColor",  C.EYE_COLORS,  c.eyeColor))}
     ${row(t("tw.glasses", "Glasses"), chips("glasses", C.GLASSES, c.glasses))}
+    ${(() => {
+      // Which fear brings them — the realm "Walk in" opens on. Only realms
+      // that are open; the choice can be changed any time from the camp.
+      const open = FEATURED.filter((k) => PHOBIAS[k] && realmOpen(k));
+      if (open.length < 2) return "";
+      const cur = open.includes(c.primaryPhobia) ? c.primaryPhobia : open[0];
+      const icon = { dogs: "🐕", spiders: "🕷", snakes: "🐍", heights: "🏔", dark: "🌙", enclosed: "🚪" };
+      return row(t("tw.fear", "What brings you here?"), open.map((k) => `
+        <button class="mob-chip" data-tw="primaryPhobia" data-val="${k}" aria-pressed="${k === cur}">${icon[k] || ""} ${escapeHtml(t(`phobia.${k}.label`, PHOBIAS[k].label))}</button>`).join(""));
+    })()}
     <div class="mob-thumb">
       <button class="mob-btn mob-btn-primary" data-action="traveler-save">${t("tw.save", "Walk in →")}</button>
     </div>
@@ -12270,7 +12279,7 @@ function viewSelect() {
       return `
       <section class="jw-soon" aria-labelledby="jwSoonH">
         <h3 id="jwSoonH">${t("soon.mapH", "Further down the valley")}</h3>
-        <p>${t("soon.mapP", "More realms are being built to the same standard as the Meadow Yard. Each opens here when it's ready.")}</p>
+        <p>${t("soon.mapP2", "More realms are being built to the same standard. Each opens here when it's ready.")}</p>
         <ul class="jw-soon-row">
           ${soon.map((k) => `<li class="jw-soon-chip"><strong>${escapeHtml(realmOf(k).realmName)}</strong><span>${escapeHtml(t(`phobia.${k}.label`, PHOBIAS[k].label))}</span><em>${t("soon.chip", "coming soon")}</em></li>`).join("")}
         </ul>
@@ -12510,7 +12519,7 @@ function viewAbout() {
     <div class="panel about-view">
       <span class="badge">${t("about.badge", "About")}</span>
       <h2 style="margin-top:10px">${t("about.title", "Mira — a tiny game about big fears")}</h2>
-      <p>${t("about.intro2", "Mira is a free practice game about how fear works. You make a traveler and face a fear of dogs in small, safe, always-optional steps — first in 3D scenes, then through tiny real-world quests. More fears are being built to the same standard.")}</p>
+      <p>${t("about.intro3", "Mira is a free practice game about how fear works. You make a traveler and face a fear of dogs, spiders or snakes in small, safe, always-optional steps — first in 3D scenes, then through tiny real-world quests. More fears are being built to the same standard.")}</p>
 
       <h3>${t("about.scienceH", "The science it leans on")}</h3>
       <p>${t("about.science1", "The whole game is built around graded exposure — the best-studied approach for specific fears. Anxiety rises, peaks, and falls on its own when you stay; avoidance is what keeps a fear alive. Each 'trial' asks you to predict how bad it will be, stay a little, and then compare — that prediction gap is where the brain updates.")}</p>
@@ -12724,8 +12733,8 @@ function viewRealmSoon(phobiaKey) {
       <span class="badge">${t("soon.badge", "Coming soon")} · ${escapeHtml(t(`phobia.${phobiaKey}.label`, p.label))}</span>
       <h2 style="margin-top:10px">${escapeHtml(realm.realmName)}</h2>
       <p class="realm-epithet">${escapeHtml(realm.epithet)}</p>
-      <p>${t("soon.p1", "This realm is closed while it's rebuilt to the standard of the Meadow Yard: a creature that reads how you move, an alarm that rises and then falls while you stay, and trials that end when you've learned something — not when a timer runs out.")}</p>
-      <p>${t("soon.p2", "It opens here when it's ready. Until then, the Meadow Yard is where the whole method lives — and what you learn there about staying with an alarm works on every fear.")}</p>
+      <p>${t("soon.p1b", "This realm is closed while it's rebuilt to the standard of the open ones: a scene that reads how you move, an alarm that rises and then falls while you stay, and trials that end when you've learned something — not when a timer runs out.")}</p>
+      <p>${t("soon.p2b", "It opens here when it's ready. Until then, the Meadow Yard, the Old Cellar and the Sunlit Clearing hold the whole method — and what you learn there about staying with an alarm works on every fear.")}</p>
       <div class="actions">
         <button class="btn-primary" data-action="go-dogs">${t("soon.toDogs", "To the Meadow Yard →")}</button>
         <button class="btn-ghost" data-action="open-quiz">${t("soon.mirror", "🪞 Take the 60-second self-check")}</button>
@@ -13473,9 +13482,11 @@ function viewPredict(phobiaKey, levelIdx) {
   return `
     <div class="panel">
       <span class="badge">${tf("predict.badge", "Trial {n} of {m} — {realm}", { n: levelIdx + 1, m: p.levels.length, realm: escapeHtml(realmOf(phobiaKey).realmName) })}</span>
-      ${phobiaKey === "dogs" && levelIdx === 0 && !(state.log || []).some((l) => l.phobia === "dogs")
+      ${hasCreatureKit(phobiaKey) && levelIdx === 0 && !(state.log || []).some((l) => l.phobia === phobiaKey)
         ? `<h2 style="margin-top:10px">${t("predict.h2first", "One guess before you walk in")}</h2>
-      <p>${t("predict.pfirst", "Fear makes predictions. Name the one yours is most sure of, and how loud you expect it to get — then walk in and watch what the dog actually does.")}</p>`
+      <p>${phobiaKey === "dogs"
+        ? t("predict.pfirst", "Fear makes predictions. Name the one yours is most sure of, and how loud you expect it to get — then walk in and watch what the dog actually does.")
+        : tf("predict.pfirst2", "Fear makes predictions. Name the one yours is most sure of, and how loud you expect it to get — then walk in and watch what the {noun} actually does.", { noun: kitNoun(phobiaKey) })}</p>`
         : `<h2 style="margin-top:10px">${t("predict.h2", "At the gate: name your fear's number")}</h2>
       <p>${t("predict.p", "A traveler's ritual that makes the trial count double: <em>predict</em> how loud the fear will be, then see how it actually goes. Most people over-predict — and catching your own shadow exaggerating is exactly the lesson the brain needs.")}</p>`}
       <p class="hint" style="margin-top:14px">${t("predict.youllBe", "You'll be:")} <strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>${lv.desc ? ` — ${escapeHtml(lvDesc(phobiaKey, levelIdx))}` : ""}</p>
@@ -13576,10 +13587,10 @@ function viewExposure(phobiaKey, levelIdx) {
     // release it outside. Click on the spider to drop the jar.
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="spiders">
-        <button class="cmd-btn" data-cmd="closer" title="Walk a little closer"><span class="cmd-icon">→</span><span>Step closer</span></button>
-        <button class="cmd-btn" data-cmd="back" title="Step back if you need to"><span class="cmd-icon">←</span><span>Step back</span></button>
-        <button class="cmd-btn" data-cmd="focus" title="Look directly at the spider"><span class="cmd-icon">🔍</span><span>Look at it</span></button>
-        <button class="cmd-btn" data-cmd="jar" title="Click the spider to lower the jar"><span class="cmd-icon">🫙</span><span>Glass jar</span></button>
+        <button class="cmd-btn" data-cmd="closer" title="Walk a little closer"><span class="cmd-icon">→</span><span>${t("cmd.sp.closer", "Step closer")}</span></button>
+        <button class="cmd-btn" data-cmd="back" title="Step back if you need to"><span class="cmd-icon">←</span><span>${t("cmd.sp.back", "Step back")}</span></button>
+        <button class="cmd-btn" data-cmd="focus" title="Tap to face it · hold to look closer (Z)"><span class="cmd-icon">🔍</span><span>${t("cmd.sp.look", "Look closer (hold)")}</span></button>
+        <button class="cmd-btn" data-cmd="jar" title="Click the spider to lower the glass"><span class="cmd-icon">🫙</span><span>${t("cmd.sp.jar", "Glass")}</span></button>
       </div>
     `;
   } else if (phobiaKey === "flying") {
@@ -13620,10 +13631,10 @@ function viewExposure(phobiaKey, levelIdx) {
   } else if (phobiaKey === "snakes") {
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="snakes">
-        <button class="cmd-btn" data-cmd="still" data-press="true" title="Hold to stay calm — snake retreats"><span class="cmd-icon">🧘</span><span>Hold still</span></button>
-        <button class="cmd-btn" data-cmd="extend" data-press="true" title="Press and hold to slowly extend your hand"><span class="cmd-icon">✋</span><span>Extend hand</span></button>
-        <button class="cmd-btn" data-cmd="back-step"><span class="cmd-icon">↩</span><span>Step back</span></button>
-        <button class="cmd-btn" data-cmd="leaf"><span class="cmd-icon">🍃</span><span>Drop a leaf</span></button>
+        <button class="cmd-btn" data-cmd="still" data-press="true" title="Hold to stay calm — snake retreats"><span class="cmd-icon">🧘</span><span>${t("cmd.sn.still", "Hold still")}</span></button>
+        <button class="cmd-btn" data-cmd="extend" data-press="true" title="Press and hold to slowly extend your hand"><span class="cmd-icon">✋</span><span>${t("cmd.sn.extend", "Extend hand")}</span></button>
+        <button class="cmd-btn" data-cmd="back-step"><span class="cmd-icon">↩</span><span>${t("cmd.sn.back", "Step back")}</span></button>
+        <button class="cmd-btn" data-cmd="leaf"><span class="cmd-icon">🍃</span><span>${t("cmd.sn.leaf", "Drop a leaf")}</span></button>
       </div>
     `;
   } else if (phobiaKey === "driving") {
@@ -14205,16 +14216,16 @@ const PhobiaExperiments = (() => {
     spiders: [
       { id: "sight", minRung: 0, title: "Keep it in sight for 15 seconds", how: "Any distance. Watching IS the work.",
         predictions: ["It'll dart at me", "It'll mostly hold still", "I'll look away first"],
-        out: "Fifteen seconds of looking. It kept being a small thing on a wall.", make: () => gaze(6, 15) },
-      { id: "close", minRung: 1, title: "Stand within arm's reach", how: "Close the distance slowly. Ten seconds there.",
+        out: "Fifteen seconds of looking. It kept being a small thing, busy with its own life.", make: () => gaze(6, 15) },
+      { id: "close", minRung: 1, title: "Stand a step away", how: "Close the distance slowly. Ten seconds there.",
         predictions: ["It'll run up at me", "It'll freeze or retreat", "I'll step back first"],
-        out: "Arm's reach, ten seconds. It wanted nothing to do with you.", make: () => near(1.3, 10) },
+        out: "A step away, ten seconds. It wanted nothing to do with you.", make: () => near(1.0, 10) },
       { id: "stillMove", minRung: 2, title: "Hold still while it moves", how: "When it stirs, don't step back. Six seconds.",
         predictions: ["Movement means it's coming for me", "It's just relocating", "I'll flinch away"],
-        out: "It moved. You didn't. Its errand had nothing to do with you.", make: () => endureThreat(6, 5) },
+        out: "It moved. You didn't. Its errand had nothing to do with you.", make: () => endureThreat(4, 2.5) },
       { id: "reach", minRung: 3, title: "Half a metre, six seconds", how: "The closest you've ever chosen to stand.",
         predictions: ["It'll jump the gap", "Nothing will change", "My nerve will break"],
-        out: "Half a metre. The gap stayed a gap.", make: () => near(0.9, 6) },
+        out: "Half a metre. The gap stayed a gap.", make: () => near(0.6, 6) },
     ],
     snakes: [
       { id: "tongue", minRung: 0, title: "Watch the tongue work", how: "Fifteen seconds. The flicker is smell, not threat.",
@@ -33850,6 +33861,8 @@ function makeCreatureCoach(opts) {
     stage: null, levelIdx: 0, intensity: "calm", dogName: "the dog", title: null,
     inZoneDist: 3.0, sizeMul: 0.6, tau: 16, hFloor: 0.35, minHold: 12,
     coarse: false, goals: [], fears: null, kit: null,
+    nearD: 0.8, farSpan: 5.5,          // closeness ramps from full at nearD to none at nearD+farSpan
+
   }, opts || {});
   const K = o.kit || creatureKit("dogs");
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -34154,13 +34167,14 @@ function makeCreatureCoach(opts) {
     // Tonic trigger: closeness scaled by how big/intense this rung's dog is,
     // plus a little for facing it (looking straight at the fear is harder).
     const dist = s.dist != null ? s.dist : 99;
-    const close = Math.max(0, Math.min(1, 1 - (dist - 0.8) / 5.5));
+    const close = Math.max(0, Math.min(1, 1 - (dist - o.nearD) / o.farSpan));
     const closeK = Math.pow(close, 1.15);
     const base = o.sizeMul * closeK * (0.86 + 0.14 * (s.gaze || 0));
     // A dog closing on you is its own trigger (bigger when it's quick). It
     // rides on top and does not count as "new ground".
     const toward = Math.max(0, s.dogToward || 0);
-    const rush = (toward > 0.35 && dist < 5) ? Math.min(0.22, toward * 0.09) * (1 - dist / 6) : 0;
+    const rushR = o.nearD + o.farSpan * 0.8;
+    const rush = (toward > 0.35 * (o.farSpan / 5.5) && dist < rushR) ? Math.min(0.22, toward * 0.09 * (5.5 / o.farSpan)) * (1 - dist / (rushR * 1.2)) : 0;
     tonic = base + rush;
     // New ground → a fresh wave, sized by how much further in it is.
     if (base > maxTonic + 0.035) {
@@ -34246,7 +34260,8 @@ function makeCreatureCoach(opts) {
       if (dist < 2.5 && clock - (ev._lastRunT || -99) > 3) { ev.ranAtYou++; ev._lastRunT = clock; ev._running = false; mark("run"); }
       else if (toward < 0.2 || dist > ev._runFrom + 0.5) ev._running = false;
     }
-    if (dist < 1.2) { if (!ev._close) { ev.cameClose++; ev._close = true; } } else if (dist > 1.8) ev._close = false;
+    const cc = o.nearD + o.farSpan * 0.07;
+    if (dist < cc + 0.4) { if (!ev._close) { ev.cameClose++; ev._close = true; } } else if (dist > cc + 1.0) ev._close = false;
 
     // waves
     liveAcc += d;
@@ -39033,7 +39048,9 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     new THREE.PlaneGeometry(8.4, 15.5),
     new THREE.MeshStandardMaterial({ map: cMaps.albedo, normalMap: cMaps.normal, roughnessMap: cMaps.roughness, color: 0x6a6e74, envMapIntensity: 0.3 })
   );
-  if (floor.material.normalMap) floor.material.normalScale.set(0.9, 0.9);
+  // Softer relief: looking closer at a real-size spider puts the concrete
+  // right in the lens, and at 0.9 its pits read as bubble wrap.
+  if (floor.material.normalMap) floor.material.normalScale.set(0.45, 0.45);
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, -1, (ROOM.z0 + ROOM.z1) / 2);
   floor.receiveShadow = true; floor.userData.noCollide = true;
   scene.add(floor); shellPieces.push(floor);
@@ -39133,10 +39150,17 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     if (A && A.startCellarAmbient) liveAudio.push(A.startCellarAmbient({ intensity: 0.35 + size * 0.25 }));
   }
 
-  // Build spider — real rigged GLTF (Quaternius, CC0). `size` drives how close
-  // it reads; on the apex rung it sits VERTICAL on a wall at eye level.
-  const distance = 8.2 - size * 7.2;
-  const spiderSpan = 0.75 + size * 0.95;     // leg span, m (buildCreature axis "max")
+  // Build spider — real rigged GLTF (Quaternius, CC0), at a REAL spider's
+  // size. It used to be 0.9–1.7 m across (knee-high to the traveller): a
+  // horror prop, not the thing people are afraid of in their bathroom, and
+  // exposure to a monster doesn't carry over to the real animal. Now the
+  // ladder climbs house spider → large house spider → wolf spider → a
+  // tarantula-sized huntsman on the wall at eye level (8–26 cm leg span).
+  // Hold Z (or hold 🔍) to look closer — you have to look to see one.
+  const SP_SPAN = [0.08, 0.12, 0.16, 0.21, 0.26][rung];
+  const SP_Z = [-2.2, -1.2, -0.6, -0.1, 0][rung];            // floor rungs: where it sits (you start at z 4)
+  const distance = -SP_Z;
+  const spiderSpan = SP_SPAN;                                // leg span, m (buildCreature axis "max")
   const spider = buildCreature(CREATURE_MODELS.spider, {
     targetSize: spiderSpan,
     axis: "max",
@@ -39178,7 +39202,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     // Somewhere else on the floor each visit. Radial distance still belongs to
     // the rung; only the lateral placement and a small depth jitter move. The
     // wall rung is exempt — it has to stay on its pillar.
-    spider.position.set(V.range(-1.4, 1.4), -1, -distance + V.range(-0.4, 0.4));
+    spider.position.set(V.range(-1.0, 1.0), -1, SP_Z + V.range(-0.3, 0.3));
   }
   // The mood this visit rolled is named in the coach card's footer (below).
   let moodChipOff = null;
@@ -39208,8 +39232,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach(m => {
           if (!m || !m.color) return;
-          m.color.multiplyScalar(0.32);
-          m.color.lerp(new THREE.Color(0x1a1614), 0.4);
+          m.color.multiplyScalar(0.42);
+          m.color.lerp(new THREE.Color(0x4a3a2b), 0.55);
           m.metalness = 0;
           m.roughness = 0.42;
           m.envMapIntensity = 0.35;
@@ -39233,8 +39257,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   camera.updateProjectionMatrix();
   const spiderPitch = onWall
     ? 0
-    : Math.atan2(-(1.62 - 0.5), distance);
-  const minZ = onWall ? -6.0 : -distance + 0.6;
+    : Math.atan2(-1.3, 4.0 - SP_Z);
+  const minZ = onWall ? -6.0 : SP_Z - 0.2;
 
   // ---- Skitter state (the arachnophobic apex) ----
   // Instead of a timid 0.5 m crawl-and-retreat, the spider darts TOWARD you in
@@ -39292,17 +39316,20 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     if (skitterState === "pausing")  return t("sp.pausing", "Paused mid-run. It re-reads the room between bursts.");
     return t("sp.still", "Still. Spiders spend most of their lives exactly like this.");
   }
-  const GUARD = B.guardDist ?? 0.7;
-  const LENS_FLOOR = 0.85;      // spider XZ never closer than this to the camera
+  const GUARD = B.guardDist ?? 0.35;
+  // How close a jump may land (XZ from your eye on the floor rungs, 3D on the
+  // wall): short of your shoes, and short of your face.
+  const LENS_FLOOR = onWall ? 0.5 : 0.42;
   // Clearances sized to the animal (half its leg span is 0.45–0.85 m here):
   // the player collider, how close a dart may end, and how near a wall the
   // body may go, so the legs don't pass through feet, walls or the jar.
   const spHalfSpan = spiderSpan / 2;
-  const spObstR = Math.max(0.3, spiderSpan * 0.3);
-  const spWallGap = Math.max(0.3, spHalfSpan * 0.85);
+  const spObstR = Math.max(0.26, spiderSpan * 0.3);   // your feet never land on it
+  const spWallGap = Math.max(0.12, spHalfSpan * 0.85);
   // Jar big enough to hold what it catches: the 0.40 m rim was narrower than
   // every rung's half-span, so legs poked through the glass while "contained".
-  const jarScale = Math.max(1, (spHalfSpan + 0.08) / 0.42);
+  // (A drinking glass, now the spider is spider-sized.)
+  const jarScale = Math.max(0.16, (spHalfSpan + 0.035) / 0.42);
 
   // ----- Glass jar (humane catch) -----
   // The user can lower a real glass jar over the spider. The spider stays
@@ -39459,6 +39486,14 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
 
   function wireSpiderCmds() {
     const bar = document.querySelector('.scene-cmd-bar[data-scene="spiders"]');
+    const fb = bar && bar.querySelector('[data-cmd="focus"]');
+    if (fb && !fb.dataset.holdWired) {
+      fb.dataset.holdWired = "1";
+      let holdT = 0;
+      fb.addEventListener("pointerdown", () => { holdT = setTimeout(() => { spZoomHeld = true; }, 220); sceneTimers.push(holdT); });
+      const up = () => { clearTimeout(holdT); setTimeout(() => { spZoomHeld = false; }, 0); };
+      fb.addEventListener("pointerup", up); fb.addEventListener("pointerleave", up); fb.addEventListener("pointercancel", up);
+    }
     if (!bar || bar.dataset.wired === "1") return;
     bar.dataset.wired = "1";
     bar.querySelectorAll("[data-cmd]").forEach(btn => {
@@ -39475,6 +39510,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             if (window.PhobiaVoice) window.PhobiaVoice.speak("Stepped back. Notice the relief. Then notice it pass.");
             break;
           case "focus": {
+            spZoomHeld = false;
             const dx = spider.position.x - c.position.x;
             const dz = spider.position.z - c.position.z;
             const dy = spider.position.y - c.position.y;
@@ -39555,6 +39591,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     stage: document.getElementById("stage"),
     levelIdx, intensity, dogName: spName, title: window.t("creature.spider", "House spider"),
     inZoneDist: spZone, sizeMul: SP_COACH.sizeMul, tau: SP_COACH.tau, hFloor: SP_COACH.hFloor,
+    nearD: 0.3, farSpan: 2.7,
     minHold: level.minHold || 12,
     coarse: IS_COARSE_POINTER,
     expect: (() => { const e = window.__pendingExpect; return (e && e.phobia === "spiders" && e.level === levelIdx) ? e : null; })(),
@@ -39565,6 +39602,19 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     ],
   });
   spCoach.setFoot(window.t("mood." + temper.id, "seems " + temper.id + " today"));
+  spCoach.teach("zoom", IS_COARSE_POINTER
+    ? window.t("dc.sp.tZoomM", "It's a real spider — small. <b>Hold 🔍</b> to lean in and look closer.")
+    : window.t("dc.sp.tZoom", "It's a real spider — small. <b>Hold Z</b> (or hold 🔍) to lean in and look closer."), 7000);
+  // Look closer: a held lean-in — the field of view narrows onto it. Tap 🔍
+  // still turns you to face it.
+  let spZoomHeld = false, spBaseFov = null, spFovMode = null;
+  const spZoomKey = (e) => {
+    if (e.code !== "KeyZ" || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    spZoomHeld = e.type === "keydown";
+  };
+  window.addEventListener("keydown", spZoomKey);
+  window.addEventListener("keyup", spZoomKey);
   window.__coach = spCoach;
   let spLastDist = 99;
   if (window.PhobiaFear && window.PhobiaFear.setDirect) {
@@ -39605,7 +39655,9 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       bounds: { minX: -3.6, maxX: 3.6, minZ: minZ, maxZ: 5.2 },
       speed: 1.4,
       lookSpeed: 0.0035,
-      preferredCameraMode: rung <= 2 ? "tp" : "fp",
+      // First person on every rung now the spider is its real size: from
+      // behind your own back it would be a speck.
+      preferredCameraMode: "fp",
       cameraModeLocked: rung === 4 ? "fp" : undefined,
       tpShoulder: 0.6, tpDistance: 3.6, tpHeight: 0.5,
       // Embodiment opt-ins (mirror dogs): captured-mouse look, smoothing, and
@@ -39821,7 +39873,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         // than a turn-and-run.
         startleCd = Math.max(0, startleCd - d);
         if (B.skitter && loose && controls && pounceState === "idle" && startleCd <= 0
-            && elapsed > (B.firstSkitterAt ?? 0) && spApproachSpeed > 0.8 && distP < 3.5) {
+            && elapsed > (B.firstSkitterAt ?? 0) && spApproachSpeed > 0.7 && distP < 1.8) {
           startleCd = 2.2 + Math.random() * 1.5;
           skitterState = "skittering"; skitterT = 0;
           skitterDur = 0.30 + Math.random() * 0.12; skitterSpeedMul = 1.7;
@@ -39977,7 +40029,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         }
 
         // ---- Alert posture from proximity ----
-        spiderCtrl.setAlert(clamp01((3.0 - distP) / 2.2) * (pounceState === "idle" ? 1 : 0));
+        spiderCtrl.setAlert(clamp01((1.35 - distP) / 0.9) * (pounceState === "idle" ? 1 : 0));
 
         // ---- Pounce machine (coil → pounce → recoil), pounce rungs only ----
         if (B.pounce && loose && controls && spider.userData.ready) {
@@ -40093,6 +40145,39 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           }
         }
 
+        // ---- Threat beacon (FP gaze fixation, "hold still while it moves") ----
+        // Live while it moves or winds up — the moments the experiments and
+        // the narrator's startle/settle beats are about.
+        if (loose && !spiderReleased && (skitterState === "skittering" || pounceState === "coiling" || pounceState === "pouncing")) {
+          _threatPos.x = spider.position.x; _threatPos.y = spider.position.y + (spiderCtrl.height || 0.05) * 0.5; _threatPos.z = spider.position.z;
+          window.PhobiaThreat = _threatPos;
+        } else if (window.PhobiaThreat === _threatPos) {
+          window.PhobiaThreat = null;
+        }
+
+        // ---- Look closer (held) ----
+        if (controls) {
+          if (spBaseFov == null || controls.cameraMode !== spFovMode) { spBaseFov = camera.fov; spFovMode = controls.cameraMode; }
+          const wantFov = spZoomHeld ? Math.min(spBaseFov, 26) : spBaseFov;
+          if (Math.abs(camera.fov - wantFov) > 0.05) { camera.fov += (wantFov - camera.fov) * Math.min(1, d * 7); camera.updateProjectionMatrix(); }
+          // (No crouch: the body doesn't crouch with the eye here, so a lowered
+          // camera ended up inside your own chest when looking down.)
+          // Looking closer means looking AT it: if it's already near the
+          // middle of the view, ease the gaze onto it (through a narrow lens a
+          // 10 cm spider otherwise slides straight out of frame).
+          if (spZoomHeld && !spiderReleased && controls._lookTo) {
+            camera.getWorldPosition(_spV);
+            const ex = spider.position.x - _spV.x, ez = spider.position.z - _spV.z;
+            const ey = spider.position.y + (spiderCtrl.height || 0.05) * 0.4 - _spV.y;
+            const wantYaw = Math.atan2(-ex, -ez), wantPitch = Math.atan2(ey, Math.hypot(ex, ez));
+            const dyaw = Math.atan2(Math.sin(wantYaw - controls.yaw), Math.cos(wantYaw - controls.yaw)), dp = wantPitch - controls.pitch;
+            if (Math.abs(dyaw) < 0.4 && Math.abs(dp) < 0.4) {
+              const k = Math.min(1, d * 3.2);
+              controls._lookTo(controls.yaw + dyaw * k, controls.pitch + dp * k);
+            }
+          }
+        }
+
         // ---- The coach, every frame ----
         {
           spLastDist = spiderReleased ? 99 : distP;
@@ -40145,7 +40230,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             const fl = spiderCtrl._flickT || 0;
             if (fl > 0 && spFlickPrev <= 0 && Math.random() < 0.35) spSignal("flick");
             spFlickPrev = fl;
-            const alertV = clamp01((3.0 - distP) / 2.2);
+            const alertV = clamp01((1.35 - distP) / 0.9);
             if (alertV > 0.7 && spAlertPrev <= 0.7) spSignal("stilt");
             spAlertPrev = alertV;
           }
@@ -40241,6 +40326,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       // compare it with the player's own prediction.
       try { window.__lastTrialEvidence = Object.assign(spCoach.evidence(), { phobia: "spiders", level: levelIdx, ts: Date.now() }); } catch {}
       try { spCoach.dispose(); } catch {}
+      try { if (window.PhobiaThreat === _threatPos) window.PhobiaThreat = null; } catch {}
+      try { window.removeEventListener("keydown", spZoomKey); window.removeEventListener("keyup", spZoomKey); } catch {}
       try { if (spiderControls && spiderControls.tpSubject === spSubj) spiderControls.tpSubject = null; } catch {}
       try { if (window.PhobiaFear && window.PhobiaFear.setDirect) window.PhobiaFear.setDirect(null); } catch {}
       try { if (window.__holdPolicy === spPolicy) window.__holdPolicy = null; } catch {}
@@ -42632,70 +42719,96 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   scene.add(groundGlow); shellPieces.push(groundGlow);
   const lightBase = { sunI: sun.intensity, sunC: sun.color.getHex(), hemiI: hemi.intensity, glowI: groundGlow.intensity };
 
-  // Earth/grass floor (PBR) + a slightly-bowed dirt path.
+  // ---- The meadow ----
+  // An open, rocky grassland at golden hour: the photographic sky the dog
+  // room already ships for its window (Poly Haven "meadow", CC0) wraps the
+  // clearing as a dome, and the ground fogs into its horizon. It replaces a
+  // painted backdrop of semicircle "trees" whose cream sky band blew out to
+  // white, translucent flat-colour grass cards, and an 11-sided puck of a
+  // rock — and it is the kind of place a grass snake really basks.
+  const FLOOR_W = 76;
   const grassMaps = makeGrassMaps();
-  [grassMaps.albedo, grassMaps.normal, grassMaps.roughness].forEach(tx => { if (tx) tx.repeat.set(10, 10); });
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(44, 44),
-    new THREE.MeshStandardMaterial({ map: grassMaps.albedo, normalMap: grassMaps.normal, roughnessMap: grassMaps.roughness, color: 0xffffff, envMapIntensity: 0.35 })
-  );
+  [grassMaps.albedo, grassMaps.normal, grassMaps.roughness].forEach(tx => { if (tx) tx.repeat.set(FLOOR_W / 4.4, FLOOR_W / 4.4); });
+  const floorGeo = new THREE.PlaneGeometry(FLOOR_W, FLOOR_W, 48, 48);
+  {
+    // Macro colour: drier and lusher patches over the tiled detail map, so
+    // the ground stops reading as one repeated swatch.
+    const pos = floorGeo.attributes.position, col = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i);
+      const n = Math.sin(x * 0.21 + 1.3) * Math.cos(y * 0.17 - 0.4) * 0.5 + Math.sin(x * 0.07 - y * 0.09 + 2.1) * 0.5;
+      const dry = Math.max(0, Math.min(1, 0.5 + n * 0.65));
+      col[i * 3] = 0.90 + dry * 0.22; col[i * 3 + 1] = 0.98 + dry * 0.04; col[i * 3 + 2] = 0.84 - dry * 0.10;
+    }
+    floorGeo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  }
+  const floor = new THREE.Mesh(floorGeo,
+    new THREE.MeshStandardMaterial({ map: grassMaps.albedo, normalMap: grassMaps.normal, roughnessMap: grassMaps.roughness, color: 0xffffff, vertexColors: true, envMapIntensity: 0.35 }));
   if (floor.material.normalMap) floor.material.normalScale.set(0.9, 0.9);
   floor.rotation.x = -Math.PI / 2; floor.position.y = -1; floor.receiveShadow = true;
   scene.add(floor); shellPieces.push(floor);
   const earthMaps = makeEarthMaps();
-  [earthMaps.albedo, earthMaps.normal, earthMaps.roughness].forEach(tx => { if (tx) tx.repeat.set(1.6, 10); });
-  const pathGeo = new THREE.PlaneGeometry(2.6, 44, 1, 24);
+  [earthMaps.albedo, earthMaps.normal, earthMaps.roughness].forEach(tx => { if (tx) tx.repeat.set(1.6, FLOOR_W / 4.4); });
+  const pathGeo = new THREE.PlaneGeometry(2.6, FLOOR_W, 1, 48);
   { const pos = pathGeo.attributes.position; for (let i = 0; i < pos.count; i++) pos.setX(i, pos.getX(i) + 0.7 * Math.sin(pos.getY(i) * 0.28)); pos.needsUpdate = true; pathGeo.computeVertexNormals(); }
   const path = new THREE.Mesh(pathGeo, new THREE.MeshStandardMaterial({ map: earthMaps.albedo, normalMap: earthMaps.normal, roughnessMap: earthMaps.roughness, color: 0xffffff, envMapIntensity: 0.3 }));
   path.rotation.x = -Math.PI / 2; path.position.set(0, -0.985, 0); path.receiveShadow = true;
   scene.add(path); shellPieces.push(path);
+  // World x of the path's centre line at depth z (the plane's y is world −z).
+  const pathX = (z) => 0.7 * Math.sin(-z * 0.28);
 
-  // Parallax tree-line / sky backdrop.
-  const bdC = document.createElement("canvas"); bdC.width = 1024; bdC.height = 512;
-  const bd = bdC.getContext("2d");
-  const sky = bd.createLinearGradient(0, 0, 0, 512 * 0.6);
-  sky.addColorStop(0, mood.skyTop); sky.addColorStop(1, mood.skyHz);
-  bd.fillStyle = sky; bd.fillRect(0, 0, 1024, 512 * 0.62);
-  bd.fillStyle = "rgba(120,150,120,0.55)";
-  for (let i = 0; i < 10; i++) { bd.beginPath(); bd.arc(i * 105 + (Math.random() - 0.5) * 60, 512 * 0.5, 40 + Math.random() * 50, Math.PI, 0); bd.fill(); }
-  bd.fillStyle = mood.treeC;
-  for (let i = 0; i < 9; i++) { const tx = i * 118 + (Math.random() - 0.5) * 50; bd.beginPath(); bd.arc(tx, 512 * 0.55, 55 + Math.random() * 55, Math.PI, 0); bd.fill(); bd.fillRect(tx - 6, 512 * 0.55, 10 + Math.random() * 6, 512 * 0.11); }
-  bd.fillStyle = "rgba(70,92,50,0.9)"; bd.fillRect(0, 512 * 0.64, 1024, 512 * 0.10);
-  const lawn = bd.createLinearGradient(0, 512 * 0.72, 0, 512); lawn.addColorStop(0, "#8a9a58"); lawn.addColorStop(1, "#6a7c44");
-  bd.fillStyle = lawn; bd.fillRect(0, 512 * 0.72, 1024, 512 * 0.28);
-  const bdTex = new THREE.CanvasTexture(bdC); bdTex.colorSpace = THREE.SRGBColorSpace;
-  const backdropMat = new THREE.MeshStandardMaterial({ map: bdTex, emissiveMap: bdTex, emissive: 0xffffff, emissiveIntensity: 0.5, roughness: 1.0, fog: false });
-  const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(60, 20), backdropMat);
-  backdrop.position.set(0, 3.5, -22); backdrop.userData.noCollide = true;
-  scene.add(backdrop); shellPieces.push(backdrop);
+  // Sky dome + horizon haze. Until the HDR lands, the flat background colour
+  // and a neutral haze stand in (and remain the low-tier look if it fails).
+  const backdropMat = null;
+  const fogBase = new THREE.Color(0xb9bdb2);
+  scene.fog = new THREE.Fog(fogBase.clone(), 13, 33);
+  let skyDome = null, skyEnv = null;
+  const SKY_GAIN = 0.62, SKY_YAW = -1.34;   // HDR sun turned to sit behind-right, with the scene's key light
+  loadMeadowHDR().then((hdr) => {
+    if (!hdr || snake.userData.disposed) return;
+    try {
+      const mat = new THREE.MeshBasicMaterial({ map: hdr, side: THREE.BackSide, fog: false, depthWrite: false });
+      mat.color.setScalar(SKY_GAIN);
+      skyDome = new THREE.Mesh(new THREE.SphereGeometry(36, 48, 24), mat);
+      skyDome.rotation.y = SKY_YAW;
+      skyDome.renderOrder = -10; skyDome.frustumCulled = false;
+      skyDome.userData.noCollide = true; skyDome.userData.noPick = true;
+      scene.add(skyDome);
+      // The fog must BE the horizon, or the ground's far edge draws a seam:
+      // average the HDR's distant land right at and just below its horizon
+      // (the band above is sky, and fogging the turf toward it drew a white
+      // strip along the edge of the world).
+      const img = hdr.image, W = img.width, H = img.height, data = img.data;
+      const half = hdr.type === THREE.HalfFloatType;
+      const rd = (v) => half ? THREE.DataUtils.fromHalfFloat(v) : v;
+      const ch = data.length / (W * H);
+      let r = 0, g = 0, b2 = 0, n = 0;
+      for (let row = Math.floor(H * 0.506); row < Math.floor(H * 0.522); row++) {
+        for (let x = 0; x < W; x += 4) { const i = (row * W + x) * ch; r += rd(data[i]); g += rd(data[i + 1]); b2 += rd(data[i + 2]); n++; }
+      }
+      if (n) { fogBase.setRGB(r / n * SKY_GAIN, g / n * SKY_GAIN, b2 / n * SKY_GAIN); scene.fog.color.copy(fogBase); }
+      // Image-based light from the same sky (not on the low tier).
+      const rr = scene.userData && scene.userData.renderer;
+      if (rr && sceneQuality() !== "low") {
+        const gl = rr.getContext();
+        if (gl && !gl.isContextLost()) {
+          const gen = new THREE.PMREMGenerator(rr);
+          skyEnv = gen.fromEquirectangular(hdr).texture;
+          scene.environment = skyEnv;
+          gen.dispose();
+        }
+      }
+    } catch (e) { console.warn("[snakes] sky:", e); }
+  });
 
-  // God-ray shaft + dappled canopy gobo + drifting dust (tier-gated).
+  // No canopy over an open meadow: the god-ray shaft and the dappled "leaf"
+  // gobo are gone. Pollen still drifts in the low sun over the rock.
   const _rayTop = new THREE.Vector3(2.0, 8.0, -4.0);
   const _sdir = new THREE.Vector3(0, -1, -6).sub(new THREE.Vector3(...mood.sunPos)).normalize();
   const _rayLen = (_rayTop.y - (-1)) / Math.max(0.05, -_sdir.y);
   const _rayFloor = _rayTop.clone().addScaledVector(_sdir, _rayLen);
   groundGlow.position.copy(_rayFloor).add(new THREE.Vector3(0, 0.8, 0));
   let gobo = null, dustPoints = null, dustPos = null, dustAttr = null; const dustData = [];
-  if (sceneQuality() !== "low") {
-    const godray = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.7, 1.4, _rayLen, 16, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0xffe8bc, transparent: true, opacity: mood.beamO, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false })
-    );
-    godray.position.copy(_rayTop).addScaledVector(_sdir, _rayLen / 2);
-    godray.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), _sdir.clone().negate());
-    godray.userData.noCollide = true; scene.add(godray); shellPieces.push(godray);
-    // Canopy gobo: a shadow-casting plane with alpha holes → dappled light.
-    const goboC = document.createElement("canvas"); goboC.width = goboC.height = 256;
-    const gc = goboC.getContext("2d"); gc.fillStyle = "#000"; gc.fillRect(0, 0, 256, 256);
-    for (let i = 0; i < 60; i++) { const x = Math.random() * 256, y = Math.random() * 256, rr = 8 + Math.random() * 18; const g = gc.createRadialGradient(x, y, 0, x, y, rr); g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(1, "rgba(255,255,255,0)"); gc.fillStyle = g; gc.beginPath(); gc.arc(x, y, rr, 0, Math.PI * 2); gc.fill(); }
-    const goboTex = new THREE.CanvasTexture(goboC);
-    if (!IS_LOW_POWER) {
-      gobo = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.MeshStandardMaterial({ transparent: true, alphaMap: goboTex, opacity: 1, alphaTest: 0.35, side: THREE.DoubleSide, depthWrite: false, colorWrite: false }));
-      gobo.rotation.x = -Math.PI / 2; gobo.position.set(0, 5.0, -4); gobo.castShadow = true; gobo.receiveShadow = false; gobo.userData.noCollide = true;
-      scene.add(gobo); shellPieces.push(gobo);
-    }
-  }
-  // Dust motes in the shaft (single Points; count scales with tier).
   const dustCount = sceneQuality() === "high" ? 90 : sceneQuality() === "medium" ? 50 : 24;
   dustPos = new Float32Array(dustCount * 3);
   const spawnMote = (i) => { const s = Math.random() * _rayLen; const p = _rayTop.clone().addScaledVector(_sdir, s); dustPos[i * 3] = p.x + (Math.random() - 0.5) * 1.6; dustPos[i * 3 + 1] = p.y + (Math.random() - 0.5) * 0.6; dustPos[i * 3 + 2] = p.z + (Math.random() - 0.5) * 1.6; };
@@ -42705,16 +42818,88 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   dustPoints = new THREE.Points(dustGeo, new THREE.PointsMaterial({ size: 0.02, map: new THREE.CanvasTexture(dC), transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true }));
   dustPoints.userData.noCollide = true; scene.add(dustPoints); shellPieces.push(dustPoints);
 
-  // Basking rock (the snake's home) — a LOW flat warm slab at the snake's
-  // spawn spot, top ≈ ground-belly height so the snake reads as coiled on it
-  // and wandering onto the grass stays seamless.
+  // Stone: one weathered grey-tan material for the basking slab and the
+  // scattered rocks, so they read as the same bedrock the sky dome shows.
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x7d7466, roughness: 0.9, envMapIntensity: 0.35, vertexColors: true,
+    normalMap: earthMaps.normal ? earthMaps.normal.clone() : null });
+  if (stoneMat.normalMap) { stoneMat.normalMap.repeat.set(2.2, 2.2); stoneMat.normalMap.needsUpdate = true; stoneMat.normalScale.set(1.2, 1.2); }
+  // Low-frequency value noise for rock shapes and lichen colour.
+  const rnoise = (x, y, z) => Math.sin(x * 2.1 + y * 1.3) * Math.cos(z * 1.9 - x * 0.7) * 0.5
+    + Math.sin(x * 4.3 - z * 3.1 + y * 2.2) * 0.25 + Math.cos(y * 5.7 + z * 4.9) * 0.125;
+  const stoneColors = (geo, seed) => {
+    const pos = geo.attributes.position, col = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i) + seed, y = pos.getY(i), z = pos.getZ(i) - seed;
+      const lich = Math.max(0, rnoise(x * 1.7, y * 1.7, z * 1.7) - 0.25) * 0.9;   // pale lichen blooms
+      const dark = Math.max(0, -rnoise(x * 0.9 + 3, y, z * 0.9)) * 0.35;            // weathered streaks
+      col[i * 3] = 1 - dark + lich * 0.18; col[i * 3 + 1] = 1 - dark + lich * 0.22; col[i * 3 + 2] = 1 - dark * 1.1 + lich * 0.06;
+    }
+    geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  };
+
+  // Basking rock (the snake's home) — a LOW, flat-topped slab at the snake's
+  // spawn spot. The top stays ≈0.095 m above the ground inside r≈1.2 (the
+  // snake's belly grounding assumes it); the rim is broken and irregular.
   const _snakeZ = -(9 - size * 8);
-  const rock = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.6, 0.18, 11), new THREE.MeshStandardMaterial({ color: 0x8f8574, roughness: 0.9, envMapIntensity: 0.3, normalMap: earthMaps.normal ? earthMaps.normal.clone() : null }));
-  if (rock.material.normalMap) { rock.material.normalMap.repeat.set(2, 2); rock.material.normalMap.needsUpdate = true; }
-  rock.position.set(0, -0.99, _snakeZ); rock.receiveShadow = true; rock.castShadow = true; rock.userData.noCollide = true;
+  // Listed rim → centre: LatheGeometry faces outward along the profile's
+  // direction of travel, so centre → rim built an upside-down (culled) slab.
+  const rockProf = [[1.62, -0.02], [1.57, 0.006], [1.48, 0.034], [1.36, 0.066], [1.2, 0.088], [0.95, 0.096], [0.55, 0.099], [0, 0.098]]
+    .map(([r, y]) => new THREE.Vector2(r, y));
+  const rockGeo = new THREE.LatheGeometry(rockProf, 56);
+  {
+    const pos = rockGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      const r = Math.hypot(x, z);
+      if (r < 1e-4) continue;
+      const a = Math.atan2(z, x);
+      // Irregular outline (the slab is a broken plate, not a lathe).
+      const edge = Math.min(1, Math.max(0, (r - 0.9) / 0.7));
+      const k = 1 + edge * (0.10 * Math.sin(a * 3 + 0.7) + 0.06 * Math.sin(a * 7 + 2.1) + 0.035 * Math.sin(a * 13));
+      // A few centimetres of relief on the top; more on the rounded shoulder.
+      const dy = (0.004 + edge * 0.02) * rnoise(x * 2.4, 0, z * 2.4);
+      pos.setXYZ(i, x * k, y + dy, z * k);
+    }
+    rockGeo.computeVertexNormals();
+    stoneColors(rockGeo, 0.37);
+  }
+  const rock = new THREE.Mesh(rockGeo, stoneMat);
+  rock.position.set(0, -1.0, _snakeZ); rock.rotation.y = Math.random() * Math.PI * 2;
+  rock.receiveShadow = true; rock.castShadow = true; rock.userData.noCollide = true;
   scene.add(rock); shellPieces.push(rock);
-  const logMat = new THREE.MeshStandardMaterial({ color: 0x5a4630, roughness: 0.92, envMapIntensity: 0.25, normalMap: earthMaps.normal ? earthMaps.normal.clone() : null });
-  const log = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 4.5, 12), logMat);
+
+  // Fallen log: bark along its length, sawn rings on the ends, a slightly
+  // uneven girth.
+  const makeBarkTex = () => {
+    const c = document.createElement("canvas"); c.width = 128; c.height = 256;
+    const g = c.getContext("2d");
+    g.fillStyle = "#4b3a29"; g.fillRect(0, 0, 128, 256);
+    for (let i = 0; i < 46; i++) {
+      const x0 = Math.random() * 128, w = 1.5 + Math.random() * 4;
+      g.strokeStyle = Math.random() < 0.6 ? "rgba(28,20,13,0.85)" : "rgba(112,92,66,0.55)";
+      g.lineWidth = w; g.beginPath(); g.moveTo(x0, 0);
+      for (let y = 0; y <= 256; y += 16) g.lineTo(x0 + Math.sin(y * 0.05 + i) * 3 + (Math.random() - 0.5) * 2, y);
+      g.stroke();
+    }
+    for (let i = 0; i < 380; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? "20,14,9" : "130,116,88"},${0.15 + Math.random() * 0.25})`; g.fillRect(Math.random() * 128, Math.random() * 256, 1 + Math.random() * 2, 1 + Math.random() * 3); }
+    const t2 = new THREE.CanvasTexture(c); t2.colorSpace = THREE.SRGBColorSpace; t2.wrapS = t2.wrapT = THREE.RepeatWrapping; t2.repeat.set(3, 2);
+    return t2;
+  };
+  const makeRingsTex = () => {
+    const c = document.createElement("canvas"); c.width = c.height = 128;
+    const g = c.getContext("2d");
+    g.fillStyle = "#7d6443"; g.fillRect(0, 0, 128, 128);
+    for (let r = 4; r < 64; r += 3 + Math.random() * 3) { g.strokeStyle = `rgba(60,42,24,${0.35 + Math.random() * 0.3})`; g.lineWidth = 1 + Math.random(); g.beginPath(); g.arc(64 + (Math.random() - 0.5) * 2, 64 + (Math.random() - 0.5) * 2, r, 0, Math.PI * 2); g.stroke(); }
+    g.strokeStyle = "#3a2b1c"; g.lineWidth = 6; g.beginPath(); g.arc(64, 64, 61, 0, Math.PI * 2); g.stroke();
+    const t2 = new THREE.CanvasTexture(c); t2.colorSpace = THREE.SRGBColorSpace;
+    return t2;
+  };
+  const logGeo = new THREE.CylinderGeometry(0.35, 0.4, 4.5, 20, 8);
+  { const pos = logGeo.attributes.position; for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i); const r = Math.hypot(x, z); if (r < 0.05 || Math.abs(Math.abs(y) - 2.25) < 1e-3 && r < 0.34) continue; const k = 1 + 0.05 * Math.sin(y * 2.3 + Math.atan2(z, x) * 2) + 0.03 * Math.sin(y * 5.1); pos.setX(i, x * k); pos.setZ(i, z * k); } logGeo.computeVertexNormals(); }
+  const logMat = new THREE.MeshStandardMaterial({ map: makeBarkTex(), color: 0xffffff, roughness: 0.95, envMapIntensity: 0.25,
+    normalMap: earthMaps.normal ? earthMaps.normal.clone() : null });
+  const logEndMat = new THREE.MeshStandardMaterial({ map: makeRingsTex(), color: 0xffffff, roughness: 0.9, envMapIntensity: 0.2 });
+  const log = new THREE.Mesh(logGeo, [logMat, logEndMat, logEndMat]);
   log.rotation.z = Math.PI / 2; log.rotation.y = 0.4; log.position.set(-3.2, -0.7, -3.5); log.castShadow = true; log.receiveShadow = true; log.userData.noCollide = true;
   // Its axis runs (−0.921, 0, 0.389) after the two rotations; 4.5 m long.
   // The rock moves with the rung (_snakeZ) and the log did not: on rung 3 the
@@ -42732,24 +42917,148 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   };
   { const need = 1.6 + LOG_R + 0.25, have = segDist(0, _snakeZ, logSeg()); if (have < need) log.position.x -= (need - have) / 0.92; }
   scene.add(log); shellPieces.push(log);
-  const bushMat = new THREE.MeshStandardMaterial({ color: 0x4c6a2e, roughness: 0.95, flatShading: true });
-  const BUSHES = [[4.5, -0.7, -5], [-4.5, -0.6, -7], [3.0, -0.65, -1]];
-  for (const [bx, by, bz] of BUSHES) {
-    const bush = new THREE.Group();
-    for (let j = 0; j < 4; j++) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.4 + Math.random() * 0.3, 6, 5), bushMat); b.position.set((Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.6); b.castShadow = !IS_LOW_POWER; bush.add(b); }
-    bush.position.set(bx, by, bz); bush.userData.noCollide = true; scene.add(bush); shellPieces.push(bush);
+
+  // Where set dressing may NOT go: the path, the basking rock, the log, the
+  // spawn point.
+  const freeSpot = (x, z, pad = 0) => Math.abs(x - pathX(z)) > 1.55 + pad
+    && Math.hypot(x, z - _snakeZ) > 2.0 + pad
+    && segDist(x, z, logSeg()) > 0.7 + pad
+    && Math.hypot(x, z - 4) > 1.2 + pad;
+
+  // Scattered stones, half sunk in the turf (the dome's own ground is rock).
+  {
+    const nR = sceneQuality() === "low" ? 5 : 9;
+    for (let i = 0, tries = 0; i < nR && tries < 200; tries++) {
+      const ang = Math.random() * Math.PI * 2, rad = 4 + Math.random() * 13;
+      const x = Math.cos(ang) * rad, z = _snakeZ + 2 + Math.sin(ang) * rad;
+      if (!freeSpot(x, z, 0.8)) continue;
+      const g2 = new THREE.IcosahedronGeometry(1, 3);
+      const pos = g2.attributes.position, sd = Math.random() * 10;
+      for (let j = 0; j < pos.count; j++) { const vx = pos.getX(j), vy = pos.getY(j), vz = pos.getZ(j); const k = 1 + 0.22 * rnoise(vx * 1.3 + sd, vy * 1.3, vz * 1.3 - sd); pos.setXYZ(j, vx * k, vy * k, vz * k); }
+      g2.computeVertexNormals(); stoneColors(g2, sd);
+      const m = new THREE.Mesh(g2, stoneMat);
+      const w = 0.25 + Math.random() * 0.7;
+      m.scale.set(w * (0.8 + Math.random() * 0.5), w * (0.35 + Math.random() * 0.3), w * (0.8 + Math.random() * 0.5));
+      m.position.set(x, -1 + m.scale.y * 0.25, z); m.rotation.y = Math.random() * Math.PI;
+      m.castShadow = !IS_LOW_POWER; m.receiveShadow = true; m.userData.noCollide = true;
+      scene.add(m); shellPieces.push(m);
+      i++;
+    }
   }
-  const grassTufts = [];
-  const grassN = sceneQuality() === "high" ? 120 : sceneQuality() === "medium" ? 80 : 40;
-  const bladeMat = new THREE.MeshStandardMaterial({ color: 0x6d7a3a, roughness: 1.0, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
-  for (let i = 0; i < grassN; i++) {
-    const g = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.5), bladeMat);
-    const sx = (i % 2 === 0 ? -1 : 1) * (1.4 + Math.random() * 6);
-    g.position.set(sx, -0.75, (Math.random() - 0.5) * 18);
-    g.rotation.y = Math.random() * Math.PI;
-    g.userData.windPhase = Math.random() * Math.PI * 2;
-    g.userData.windAmp = 0.05 + Math.random() * 0.05;
-    grassTufts.push(g); scene.add(g); shellPieces.push(g);
+
+  // Bushes: clusters of alpha-cut leaf cards round a dark core (one draw call
+  // for every leaf), replacing four flat-shaded low-poly balls each.
+  const BUSHES = [[4.5, -0.7, -5], [-4.5, -0.6, -7], [3.0, -0.65, -1]];
+  {
+    const leafTex = makeLeafTexture();
+    const leafMat = new THREE.MeshStandardMaterial({ map: leafTex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8, envMapIntensity: 0.3 });
+    const leafGeo = new THREE.PlaneGeometry(0.10, 0.19); leafGeo.translate(0, 0.09, 0);
+    const PER = sceneQuality() === "low" ? 90 : sceneQuality() === "medium" ? 180 : 260;
+    const leaves = new THREE.InstancedMesh(leafGeo, leafMat, BUSHES.length * PER);
+    const coreMat = new THREE.MeshStandardMaterial({ color: 0x2f4420, roughness: 1.0 });
+    const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _n = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), _c = new THREE.Color();
+    let li = 0;
+    for (const [bx, by, bz] of BUSHES) {
+      const rx = 0.75 + Math.random() * 0.3, ry = 0.55 + Math.random() * 0.2, rz = 0.7 + Math.random() * 0.3;
+      const core = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), coreMat);
+      core.scale.set(rx * 0.78, ry * 0.8, rz * 0.78); core.position.set(bx, by + 0.05, bz);
+      core.castShadow = !IS_LOW_POWER; core.receiveShadow = true; core.userData.noCollide = true;
+      scene.add(core); shellPieces.push(core);
+      for (let k = 0; k < PER; k++) {
+        const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2;
+        const up = Math.abs(u) * (Math.random() < 0.8 ? 1 : -0.3);       // mostly the upper shell
+        _n.set(Math.sqrt(1 - up * up) * Math.cos(th), up, Math.sqrt(1 - up * up) * Math.sin(th)).normalize();
+        const d = 0.84 + Math.random() * 0.22;
+        _p.set(bx + _n.x * rx * d, by + 0.05 + _n.y * ry * d, bz + _n.z * rz * d);
+        _q.setFromUnitVectors(_up, _n);
+        _q.multiply(new THREE.Quaternion().setFromAxisAngle(_up, Math.random() * Math.PI * 2));
+        const sc = 0.8 + Math.random() * 0.6;
+        _s.set(sc, sc, sc);
+        leaves.setMatrixAt(li, _m.compose(_p, _q, _s));
+        leaves.setColorAt(li, _c.setHSL(0.24 + Math.random() * 0.06, 0.35 + Math.random() * 0.2, 0.34 + Math.random() * 0.18));
+        li++;
+      }
+    }
+    leaves.instanceMatrix.needsUpdate = true; if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
+    leaves.computeBoundingSphere();
+    leaves.castShadow = !IS_LOW_POWER; leaves.receiveShadow = true; leaves.userData.noCollide = true;
+    scene.add(leaves); shellPieces.push(leaves);
+  }
+
+  // Grass: instanced tufts of alpha-cut blades (two crossed cards each), in
+  // one draw call, swaying in a vertex-shader breeze. Normals point up, so a
+  // tuft is lit like the turf it grows from instead of like a flat sign.
+  const grassWind = { value: 0 };
+  {
+    const c = document.createElement("canvas"); c.width = 128; c.height = 256;
+    const g = c.getContext("2d");
+    for (let i = 0; i < 34; i++) {
+      const x0 = 14 + Math.random() * 100, tipY = 20 + Math.random() * 150, lean = (Math.random() - 0.5) * 60, w = 3 + Math.random() * 5;
+      const dry = Math.random() < 0.22;
+      const grad = g.createLinearGradient(0, 256, 0, tipY);
+      grad.addColorStop(0, dry ? "#5a5230" : "#34471d");
+      grad.addColorStop(0.55, dry ? "#8f8248" : "#5d7a2f");
+      grad.addColorStop(1, dry ? "#c2b27a" : "#9fb55a");
+      g.fillStyle = grad;
+      g.beginPath(); g.moveTo(x0 - w / 2, 256);
+      g.quadraticCurveTo(x0 + lean * 0.3, (256 + tipY) / 2, x0 + lean, tipY);
+      g.quadraticCurveTo(x0 + lean * 0.3 + w * 0.2, (256 + tipY) / 2, x0 + w / 2, 256);
+      g.closePath(); g.fill();
+    }
+    const tuftTex = new THREE.CanvasTexture(c); tuftTex.colorSpace = THREE.SRGBColorSpace;
+    // Two crossed 0.5 m cards, base on the ground.
+    const P = [], N = [], U = [], I = [];
+    for (let q = 0; q < 2; q++) {
+      const ca = Math.cos(q * Math.PI / 2), sa = Math.sin(q * Math.PI / 2), b0 = P.length / 3;
+      for (const [u, v] of [[0, 0], [1, 0], [1, 1], [0, 1]]) {
+        const lx = (u - 0.5) * 0.5; P.push(lx * ca, v * 0.5, lx * sa); N.push(0, 1, 0); U.push(u, v);
+      }
+      I.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
+    }
+    const tuftGeo = new THREE.BufferGeometry();
+    tuftGeo.setAttribute("position", new THREE.Float32BufferAttribute(P, 3));
+    tuftGeo.setAttribute("normal", new THREE.Float32BufferAttribute(N, 3));
+    tuftGeo.setAttribute("uv", new THREE.Float32BufferAttribute(U, 2));
+    tuftGeo.setIndex(I);
+    const tuftMat = new THREE.MeshStandardMaterial({ map: tuftTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.95, envMapIntensity: 0.3 });
+    tuftMat.onBeforeCompile = (sh) => {
+      // DoubleSide flips the normal on back faces — with up-pointing normals
+      // that lit half of every tuft from underneath, i.e. black.
+      sh.fragmentShader = sh.fragmentShader.replace("#include <normal_fragment_begin>",
+        THREE.ShaderChunk.normal_fragment_begin.replace("normal *= faceDirection;", ""));
+      sh.uniforms.uWind = grassWind;
+      sh.vertexShader = "uniform float uWind;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+        #ifdef USE_INSTANCING
+          float wph = instanceMatrix[3].x * 0.9 + instanceMatrix[3].z * 0.6;
+        #else
+          float wph = 0.0;
+        #endif
+        float wb = (sin(uWind * 1.7 + wph) * 0.6 + sin(uWind * 2.9 + wph * 1.7) * 0.25) * (1.0 + 0.5 * sin(uWind * 0.43));
+        transformed.x += wb * 0.07 * uv.y * uv.y;
+        transformed.z += wb * 0.04 * uv.y * uv.y;`);
+    };
+    const NT = sceneQuality() === "high" ? 1400 : sceneQuality() === "medium" ? 800 : 320;
+    const tufts = new THREE.InstancedMesh(tuftGeo, tuftMat, NT);
+    const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), _c = new THREE.Color();
+    let placed = 0;
+    for (let tries = 0; placed < NT && tries < NT * 6; tries++) {
+      // Denser near the action, thinning out toward the haze.
+      const rad = 1.0 + Math.pow(Math.random(), 1.6) * 20, ang = Math.random() * Math.PI * 2;
+      const x = Math.cos(ang) * rad, z = _snakeZ + 3 + Math.sin(ang) * rad;
+      if (!freeSpot(x, z, -0.15)) continue;
+      _p.set(x, -1.0, z);
+      _q.setFromAxisAngle(_up, Math.random() * Math.PI);
+      const hgt = 0.55 + Math.random() * 0.75, wid = 0.7 + Math.random() * 0.6;
+      _s.set(wid, hgt, wid);
+      tufts.setMatrixAt(placed, _m.compose(_p, _q, _s));
+      tufts.setColorAt(placed, _c.setRGB(0.85 + Math.random() * 0.25, 0.88 + Math.random() * 0.2, 0.8 + Math.random() * 0.15));
+      placed++;
+    }
+    tufts.count = placed;
+    tufts.instanceMatrix.needsUpdate = true; if (tufts.instanceColor) tufts.instanceColor.needsUpdate = true;
+    tufts.computeBoundingSphere();
+    tufts.receiveShadow = true; tufts.castShadow = false; tufts.userData.noCollide = true; tufts.userData.noPick = true;
+    scene.add(tufts); shellPieces.push(tufts);
   }
 
   // Warm outdoor ambient bed (breeze + distant birds + cicadas). No reverb.
@@ -42809,6 +43118,81 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           });
         });
       } catch (e) { console.warn("[snakes] scale material:", e); }
+      // Grass-snake markings, painted from the rig itself: olive back, dark
+      // bars down the flanks, the pale-yellow collar with its black band
+      // behind the head, a cream belly — what makes a grass snake readable at
+      // ten metres. The pack's skin is ONE mesh ("DarkGreen"); "Yellow" is the
+      // big cartoon eyes and "Purple" the tongue, so those get their own
+      // treatment. "How far along the body" is the skin weights over the bone
+      // chain; the belly is whichever side of the bind-pose skin faces the
+      // way the resting tail's underside does.
+      try {
+        const ORDER = { Mouth: 0, LowerMouth: 0, Tongue1: 0, Tongue2: 0, Tongue3: 0, Head: 0.5, Neck: 1.5, Chest: 2.6, Body: 3.8, Tail: 5.0, Tail1: 6.0, Tail2: 7.0, Tail3: 8.0 };
+        const coat = coatFor("snake", SNAKE_COATS);
+        const back = new THREE.Color().setHSL(0.17 + ((coat ? coat.h : 0.2) - 0.17) * 0.35, 0.30, 0.30);
+        const barC = new THREE.Color(0x1e1c12), collarC = new THREE.Color(0xe0c65e), neckBand = new THREE.Color(0x15130d), bellyC = new THREE.Color(0xcfc6a0);
+        const _n = new THREE.Vector3(), _c2 = new THREE.Color(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
+        let skin = null;
+        pp.model.traverse(o => { if (o.isSkinnedMesh && o.material && o.material.name === "DarkGreen") skin = o; });
+        pp.model.traverse(o => {
+          if (!o.isMesh || !o.material) return;
+          const nm = o.material.name;
+          if (nm === "Yellow") { o.material.color.setHex(0x17110a); o.material.roughness = 0.14; o.material.envMapIntensity = 1.0; o.material.needsUpdate = true; }
+          if (nm === "Purple") { o.material.color.setHex(0x2b1d22); o.material.roughness = 0.35; o.material.needsUpdate = true; }
+          if (nm === "LightGreen") { o.material.color.copy(bellyC); o.material.needsUpdate = true; }
+        });
+        if (skin) {
+          smoothCreaseNormals(skin.geometry, Math.cos(Math.PI * 0.44));
+          const g = skin.geometry, pos = g.attributes.position, nor = g.attributes.normal, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+          const bones = skin.skeleton.bones, ord = bones.map(b => ORDER[b.name] ?? 4);
+          // Belly direction in bind-mesh space, from a tail bone lying on the ground.
+          let bellyDir = null;
+          try {
+            if (pp.play) pp.play("Idle", 0); if (pp.mixer) pp.mixer.update(0.016); pp.model.updateMatrixWorld(true);
+            const tb = bones.find(b => b.name === "Tail2") || bones.find(b => b.name === "Tail1");
+            const ti = bones.indexOf(tb);
+            if (tb && ti >= 0) {
+              tb.getWorldQuaternion(_q);
+              let best = null, bestY = 1;
+              for (const ax of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]) { _v.set(...ax).applyQuaternion(_q); if (_v.y < bestY) { bestY = _v.y; best = ax; } }
+              const bindM = skin.skeleton.boneInverses[ti].clone().invert();
+              bindM.decompose(_v, _q, _s);
+              const bindQ = new THREE.Quaternion(); new THREE.Matrix4().copy(skin.bindMatrix).decompose(_v, bindQ, _s);
+              bellyDir = new THREE.Vector3(...best).applyQuaternion(_q).applyQuaternion(bindQ.invert()).normalize();   // into geometry space
+            }
+          } catch {}
+          const col = new Float32Array(pos.count * 3);
+          let bellyN = 0;
+          const bellyOf = new Float32Array(pos.count);
+          for (let i = 0; i < pos.count; i++) {
+            _n.fromBufferAttribute(nor, i);
+            bellyOf[i] = bellyDir ? Math.max(0, Math.min(1, (_n.dot(bellyDir) - 0.25) / 0.45)) : 0;
+            if (bellyOf[i] > 0.5) bellyN++;
+          }
+          // A belly that covers most of the skin (or none of it) means the
+          // bind pose isn't lying straight — drop it rather than paint nonsense.
+          const useBelly = bellyN > pos.count * 0.06 && bellyN < pos.count * 0.42;
+          for (let i = 0; i < pos.count; i++) {
+            let along = 0, wsum = 0;
+            for (let k = 0; k < 4; k++) { const w = sw.getComponent(i, k); along += w * ord[si.getComponent(i, k)]; wsum += w; }
+            along /= wsum || 1;
+            const bel = useBelly ? bellyOf[i] : 0;
+            _c2.copy(back);
+            if (along > 0.9 && along < 1.45) _c2.lerp(collarC, 0.85);
+            else if (along >= 1.45 && along < 1.85) _c2.lerp(neckBand, 0.9);
+            else if (along >= 1.85) {
+              _n.fromBufferAttribute(nor, i);
+              const f = ((along * 1.7 + (_n.x >= 0 ? 0 : 0.37)) % 1 + 1) % 1;
+              if (f < 0.3) _c2.lerp(barC, 0.55);
+            }
+            if (along < 0.7) _c2.multiplyScalar(0.85);
+            _c2.lerp(bellyC, bel * 0.9);
+            col[i * 3] = _c2.r; col[i * 3 + 1] = _c2.g; col[i * 3 + 2] = _c2.b;
+          }
+          g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+          skin.material.color.setRGB(1, 1, 1); skin.material.vertexColors = true; skin.material.roughness = 0.46; skin.material.needsUpdate = true;
+        }
+      } catch (e) { console.warn("[snakes] markings:", e); }
       pp.play("Idle");
       headAnchor.position.set(0, pp.height * 0.78, pp.span * 0.18);
       // "Head" for every look-at, hand-sniff anchor, strike clamp and threat
@@ -43135,7 +43519,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       // clip is reserved for the actual lunge (fired in the 'lunge' phase); this
       // is the window the player can still back away from.
       snakeCtl.target = null;
-      snakeCtl.strikePhase = "telegraph"; snakeCtl.strikeT = 0; snakeCtl.striking = true; snakeCtl.jawTarget = 0.5;
+      snakeCtl.strikePhase = "telegraph"; snakeCtl.strikeT = 0; snakeCtl.striking = true; snakeCtl.jawTarget = 0.3;
       if (hasRig) sp.play("Idle", 0.15);
       const hp = new THREE.Vector3();
       headAnchor.getWorldPosition(hp);
@@ -43241,7 +43625,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       const TELE_DUR = 0.55, LUNGE_DUR = 0.30;
       snakeCtl.strikeT += dtN;
       if (snakeCtl.strikePhase === "telegraph") {
-        snakeCtl.striking = true; snakeCtl.jawTarget = 0.5;
+        snakeCtl.striking = true; snakeCtl.jawTarget = 0.3;
         // Draw round to face you — fast (a snake can whip its forebody round),
         // but through the warning, not in a frame.
         if (controls) {
@@ -43322,7 +43706,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       snakeCtl.lastWarnHiss = t;
       headAnchor.getWorldPosition(_snkV1);
       if (window.PhobiaAudio) { if (window.PhobiaAudio.snakeHiss) window.PhobiaAudio.snakeHiss(_snkV1, { intensity: 0.55 }); else if (window.PhobiaAudio.hissOnce) window.PhobiaAudio.hissOnce(_snkV1, 0.55); }
-      snakeCtl.jawTarget = Math.max(snakeCtl.jawTarget, 0.4);
+      snakeCtl.jawTarget = Math.max(snakeCtl.jawTarget, 0.14);   // a grass snake hisses nearly closed-mouthed
       snPulse(0.22, "hiss");
     }
 
@@ -43471,7 +43855,8 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     // --- Threat beacon (avatar gaze fixation) ---
     // Live only through the telegraph + lunge; recoil is the stand-down. ONE
     // module-scope object mutated in place — no per-frame allocation.
-    if (snakeCtl.state === "defensive" && snakeCtl.strikePhase !== "recoil") {
+    const reared = snakeCtl.state === "watch" && B.rear && playerDist < (B.rearDist ?? 2.6);
+    if ((snakeCtl.state === "defensive" && snakeCtl.strikePhase !== "recoil") || reared) {
       headAnchor.getWorldPosition(_snkV1);
       _snakeThreatPos.x = _snkV1.x; _snakeThreatPos.y = _snkV1.y; _snakeThreatPos.z = _snkV1.z;
       window.PhobiaThreat = _snakeThreatPos;
@@ -43513,44 +43898,24 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   const sHandSkin = (window.Character && window.Character.loadCharacter())
               ? window.Character.hexToInt(window.Character.skinHex(window.Character.loadCharacter()))
               : 0xe8b794;
-  const sHandMat = new THREE.MeshStandardMaterial({ color: sHandSkin, roughness: 0.78 });
-  // Forearm cuff (sleeve)
-  const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x4a3a25, roughness: 0.95 });
-  const sleeve = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.058, 0.062, 0.18, 14),
-    sleeveMat
-  );
-  sleeve.rotation.x = Math.PI / 2;
-  sleeve.position.set(0, 0.0, 0.04);
-  handGroup.add(sleeve);
-  // Forearm
-  const sForearm = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.05, 0.045, 0.20, 14),
-    sHandMat
-  );
-  sForearm.rotation.x = Math.PI / 2;
-  sForearm.position.set(0, 0.0, -0.10);
-  handGroup.add(sForearm);
-  // Palm (slightly flattened sphere) — facing forward, palm-up so the snake
-  // can sniff the back of the hand (real-world advice).
-  const sPalm = new THREE.Mesh(new THREE.SphereGeometry(0.058, 16, 14), sHandMat);
-  sPalm.scale.set(1.0, 0.55, 0.85);
-  sPalm.position.set(0, -0.005, -0.22);
-  handGroup.add(sPalm);
-  // Four fingers, gently open
-  for (let i = 0; i < 4; i++) {
-    const fingerX = (-0.04 + i * 0.026);
-    const finger = new THREE.Mesh(new THREE.CapsuleGeometry(0.011, 0.06, 6, 10), sHandMat);
-    finger.position.set(fingerX, -0.005, -0.28);
-    finger.rotation.x = -0.15;
-    handGroup.add(finger);
-  }
-  // Thumb to the side
-  const sThumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.013, 0.04, 6, 10), sHandMat);
-  sThumb.position.set(-0.06, 0.0, -0.24);
-  sThumb.rotation.z = Math.PI / 2;
-  sThumb.rotation.y = -0.4;
-  handGroup.add(sThumb);
+  const sHandMat = new THREE.MeshStandardMaterial({ color: sHandSkin, roughness: 0.62, envMapIntensity: 0.5 });
+  const sShirt = (() => { try { const ch = window.Character.loadCharacter(); return window.Character.hexToInt(window.Character.topHex(ch)); } catch { return 0x2c9d96; } })();
+  const sleeveMat = new THREE.MeshStandardMaterial({ color: sShirt, roughness: 0.9 });
+  // The SAME hand the Hands rig and the third-person body use (buildHand):
+  // this scene used to draw a white mitten of spheres and capsules on a brown
+  // cuff — nobody's hand. Back of the hand up, fingers forward, as you'd
+  // offer it to be smelled.
+  const sHandObj = buildHand(1, sHandMat, sleeveMat, { scale: 0.8, forearm: true, forearmMat: sHandMat });
+  const sHolder = new THREE.Group();
+  sHolder.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 1).normalize(), Math.PI);
+  sHolder.add(sHandObj);
+  sHolder.rotation.z += -0.18;
+  handGroup.add(sHolder);
+  try { if (sHandObj.userData.setCurl) sHandObj.userData.setCurl(0.0, 0.12); } catch {}
+  // Palm marker for the sniff distance check (palm centre, hand-local).
+  const sPalm = new THREE.Object3D();
+  sPalm.position.set(0, -0.03, 0);
+  sHandObj.add(sPalm);
 
   function wireSnakesCmds() {
     const bar = document.querySelector('.scene-cmd-bar[data-scene="snakes"]');
@@ -43775,7 +44140,8 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
         sun.color.setHex(lightBase.sunC).lerp(_coolSun, g * 0.30);
         hemi.intensity = lightBase.hemiI * (1 - g * 0.35);
         groundGlow.intensity = lightBase.glowI * (1 - g * 0.30);
-        if (backdropMat) backdropMat.emissiveIntensity = 0.5 * (1 - g * 0.30);
+        if (skyDome) skyDome.material.color.setScalar(SKY_GAIN * (1 - g * 0.22));
+        if (scene.fog) scene.fog.color.copy(fogBase).lerp(_chargeBg, g * 0.25);
         scene.background.setHex(mood.bg).lerp(_chargeBg, g * 0.35);
       }
       // Falling leaf — physics + spin until it lands; snake briefly tracks it
@@ -43860,11 +44226,9 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       snakeUpdate(t, dtN, controls, sniffing);
       // Meadow life: grass blades sway on individual wind phases, a little
       // harder in the gusts (cheap — rotation only, no shader work).
-      const gust = 1 + Math.sin(t * 0.43) * 0.5;
-      for (let gi = 0; gi < grassTufts.length; gi++) {
-        const g = grassTufts[gi];
-        g.rotation.z = Math.sin(t * 1.7 + g.userData.windPhase) * g.userData.windAmp * gust;
-      }
+      grassWind.value = t;
+      // The sky is at infinity: the dome travels with your eye.
+      if (skyDome && controls) skyDome.position.set(controls.position.x, controls.position.y, controls.position.z);
       // Canopy shimmer + drifting dust motes (tier-gated pieces).
       if (gobo) { gobo.position.x = Math.sin(t * 0.13) * 0.6; gobo.position.z = -4 + Math.cos(t * 0.09) * 0.5; }
       if (dustPoints && dustAttr) {
@@ -43887,6 +44251,10 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       try { const bar = document.querySelector('.scene-cmd-bar[data-scene="snakes"]'); if (bar) bar.dataset.wired = ""; } catch {}
       try { snake.userData.disposed = true; if (snake.userData.parts && snake.userData.parts.mixer) snake.userData.parts.mixer.stopAllAction(); } catch {}
       try { if (snHudEl) { snHudEl.remove(); snHudEl = null; } } catch {}
+      // The sky dome shares the cached HDR (never dispose that); its PMREM is
+      // this renderer's own.
+      try { if (skyDome) { scene.remove(skyDome); skyDome.geometry.dispose(); skyDome.material.dispose(); skyDome = null; } } catch {}
+      try { if (skyEnv) { if (scene.environment === skyEnv) scene.environment = null; skyEnv.dispose(); skyEnv = null; } } catch {}
       try { window.__lastTrialEvidence = Object.assign(snCoach.evidence(), { phobia: "snakes", level: levelIdx, ts: Date.now() }); } catch {}
       try { snCoach.dispose(); } catch {}
       try { if (window.PhobiaFear && window.PhobiaFear.setDirect) window.PhobiaFear.setDirect(null); } catch {}

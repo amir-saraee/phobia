@@ -11,9 +11,9 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v18-launch";
+const VERSION = "mira-v19-three-realms";
 // Installed on the first visit, in the background — so it holds only what the
-// launch realm (dogs) needs to boot and play offline. Everything else (other
+// open realms (dogs, spiders, snakes) need to boot and play offline. Everything else (other
 // creature models, anim clips, voice) is cached at runtime the first time it
 // is actually fetched. Keep this list lean: every byte here is paid by every
 // first-time visitor, on phone data too.
@@ -36,7 +36,11 @@ const SHELL = [
   "./assets/models/textures/husky_photo_albedo.jpg",
   "./assets/models/textures/husky_photo_normal.jpg",
   "./assets/models/textures/husky_photo_roughness.jpg",
-  // Meadow window backdrop + outdoor HDRI for the dog room.
+  // The cellar spider and the meadow snake (Quaternius, CC0; ~0.65 MB both).
+  "./assets/models/Spider.glb",
+  "./assets/models/Snake.glb",
+  // Meadow window backdrop + outdoor HDRI (the dog room's window light, and
+  // the snake meadow's whole sky).
   "./assets/models/textures/meadow_window.jpg",
   "./assets/env/meadow_1k.hdr",
   // Recorded ambient beds + the dog vocal bank manifest (samples cache at

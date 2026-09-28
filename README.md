@@ -6,17 +6,23 @@
 
 ## What's in it now
 
-The launch realm is **🐕 The Meadow Yard — a fear of dogs (cynophobia)**: five 3D trials, from a small dog busy across the room to a big, loud, excited one, with a dog that reads how you move. Your custom character walks every scene, first-person or third-person.
+Three realms, five 3D trials each, with animals that read how you move:
 
-More realms — spiders, snakes, heights, the dark, tight spaces — are on the map as *coming soon*. Their scenes exist, but each reopens only once it has the same learning loop and art as the dog realm (see `LAUNCH_OPEN` in `index.html`). To play them anyway for QA, add `?all=1` to the URL.
+| Realm | Fear | The ladder |
+|---|---|---|
+| 🐕 The Meadow Yard | Dogs (cynophobia) | a small dog busy across the room → a big, loud, excited one that bounds over |
+| 🕷 The Old Cellar | Spiders (arachnophobia) | a house spider far off → a huntsman on the wall at eye level (real sizes, 8–26 cm; hold **Z** to look closer) |
+| 🐍 The Sunlit Clearing | Snakes (ophidiophobia) | a grass snake basking far off → close, coiled and alert on the path |
+
+Your custom character walks every scene. Heights, the dark and tight spaces are on the map as *coming soon*: their scenes exist, but each reopens only once it has the same learning loop and art as the open realms (`LAUNCH_OPEN` in `index.html`). Add `?all=1` to the URL to play them for QA.
 
 ## Built on real psychology
 
 Mira is a game shell around genuine CBT graded-exposure mechanics:
 
 - **An alarm that falls while you stay** — the live wave rises as you close in and comes down on its own if you don't leave; a trial ends when it has settled, not on a timer
-- **Predict → face → compare** — name what your fear expects the dog to do, then check it against what happened (expectancy violation)
-- **Reading the dog** — relaxed, alert, or asking for space, from real canine body language
+- **Predict → face → compare** — name what your fear expects the animal to do ("it'll run at me", "it'll strike"), then check it against what the scene saw happen (expectancy violation)
+- **Reading the animal** — a dog relaxed / alert / asking for space; a spider resting / going somewhere / startled; a snake at ease / curious / defensive — from real body language, collected in a field guide per realm
 - **🌍 The Real Path** — every in-game trial unlocks a matching tiny *real-world* step (worth more than any game trial)
 - **🪞 The Mirror** — a 5-item fear-severity self-check (rated about real life) that shows your baseline → now change in numbers
 - **📄 Progress report** — a printable, clinician-readable record you can hand a therapist
@@ -39,7 +45,7 @@ Then open http://localhost:3000.
 
 ```bash
 cd scripts && npm install      # once
-npm run smoke                  # ~50 s: plays the first run + trial 1 in headless Chrome
+npm run smoke                  # ~100 s: first run + dog trials + a spider and a snake trial, headless
 ```
 
 The same smoke test runs as a git `pre-push` hook (`git config core.hooksPath .githooks`, already set in this clone). Skip it once with `SKIP_SMOKE=1 git push`. `SMOKE_SHOTS=1` keeps screenshots in `.smoke-shots/`.
