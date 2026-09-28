@@ -969,6 +969,7 @@ if ("serviceWorker" in navigator) {
   .dog-coach .dc-dog { font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
   .dog-coach .dc-trust { color: #f4a3b4; letter-spacing: 1px; }
   .dog-coach .dc-trust:empty { display: none; }
+  .dog-coach .dc-trust.dc-note { color: var(--muted); letter-spacing: normal; font-style: italic; font-size: 11px; }
   .dog-coach.dc-settled { border-color: rgba(52,211,153,.65); }
   .dog-coach.dc-ping { animation: dcPing .9s ease; }
   @keyframes dcPing { 0% { box-shadow: 0 0 0 0 rgba(52,211,153,.55); } 100% { box-shadow: 0 0 0 14px rgba(52,211,153,0); } }
@@ -8760,16 +8761,16 @@ const PHOBIAS = {
     // distinct encounter (skitter cadence, whether it approaches/pounces,
     // the on-wall apex) instead of differing by `size` alone.
     levels: [
-      { title: "A tiny dot, far",     desc: "A dim cellar. Something small in the far corner.", size: 0.15, intensity: "calm",
+      { title: "A tiny dot, far",     desc: "A dim cellar. Something small in the far corner.", size: 0.15, intensity: "calm", minHold: 12,
         behavior: { skitter: false, approach: false, pounce: false, inZoneDist: 2.2, fearMul: 0.35, firstSkitterAt: Infinity, still: true } },
-      { title: "Small spider, near",  desc: "A small spider on the concrete. It shifts, then stills.", size: 0.35, intensity: "calm",
+      { title: "Small spider, near",  desc: "A small spider on the concrete. It shifts, then stills.", size: 0.35, intensity: "calm", minHold: 15,
         behavior: { skitter: true, approach: false, pounce: false, homeRadius: 0.9, inZoneDist: 2.6, fearMul: 0.55, firstSkitterAt: 8, skitterEvery: [3.5, 6.0], skitterSpeed: 0.9, jagAmt: 0.6, approachBias: 0.0 } },
-      { title: "Medium spider, darts",desc: "Closer now — and it darts when it moves.", size: 0.55, intensity: "alert",
+      { title: "Medium spider, darts",desc: "Closer now — and it darts when it moves.", size: 0.55, intensity: "alert", minHold: 18,
         behavior: { skitter: true, approach: true, pounce: false, homeRadius: 2.2, inZoneDist: 3.0, fearMul: 0.72, firstSkitterAt: 6, skitterEvery: [2.5, 4.5], skitterSpeed: 1.5, jagAmt: 1.0, approachBias: 0.5, guardDist: 1.2, escalate: true, settleAfter: 40 } },
-      { title: "Large spider, close", desc: "A big one, near your feet. You can see the legs work.", size: 0.80, intensity: "alert",
-        behavior: { skitter: true, approach: true, pounce: true, homeRadius: 3.0, inZoneDist: 3.4, fearMul: 0.88, firstSkitterAt: 4, skitterEvery: [1.8, 3.5], skitterSpeed: 2.0, jagAmt: 1.2, approachBias: 0.8, guardDist: 0.7, firstPounceAt: 35, pounceEvery: [10, 16], coilDur: [0.7, 1.1], escalate: true, settleAfter: 50 } },
-      { title: "On the wall by you",  desc: "On the wall, right at eye level. Legs twitching.", size: 1.00, intensity: "apex",
-        behavior: { skitter: true, approach: false, pounce: true, onWall: true, wallZ: -2.6, wallEyeY: 0.5, homeRadius: 0.5, inZoneDist: 3.8, fearMul: 1.0, firstSkitterAt: 2, skitterEvery: [1.4, 2.8], skitterSpeed: 1.4, jagAmt: 0.5, twitch: true, guardDist: 0.9, firstPounceAt: 20, pounceEvery: [8, 13], coilDur: [0.6, 0.9], escalate: true } }
+      { title: "Large spider, close", desc: "A big one, near your feet. You can see the legs work.", size: 0.80, intensity: "alert", minHold: 22,
+        behavior: { skitter: true, approach: true, pounce: true, homeRadius: 3.0, inZoneDist: 3.4, fearMul: 0.88, firstSkitterAt: 4, skitterEvery: [1.8, 3.5], skitterSpeed: 2.0, jagAmt: 1.2, approachBias: 0.8, guardDist: 0.7, firstPounceAt: 12, pounceEvery: [10, 16], coilDur: [0.7, 1.1], escalate: true, settleAfter: 50 } },
+      { title: "On the wall by you",  desc: "On the wall, right at eye level. Legs twitching.", size: 1.00, intensity: "apex", minHold: 26,
+        behavior: { skitter: true, approach: false, pounce: true, onWall: true, wallZ: -2.6, wallEyeY: 0.5, homeRadius: 0.5, inZoneDist: 3.8, fearMul: 1.0, firstSkitterAt: 2, skitterEvery: [1.4, 2.8], skitterSpeed: 1.4, jagAmt: 0.5, twitch: true, guardDist: 0.9, firstPounceAt: 9, pounceEvery: [8, 13], coilDur: [0.6, 0.9], escalate: true } }
     ],
     sceneClass: "scene-approach",
     render: renderSpider
@@ -8830,15 +8831,15 @@ const PHOBIAS = {
     // rungs differ by behavior, not raw size. The therapeutic core is kept: calm/
     // stillness makes the snake LEAVE; rushing the apex snake makes it strike short.
     levels: [
-      { title: "A snake, basking far off", desc: "On a warm rock across the clearing. Coiled, still, sunning itself.", size: 0.20, intensity: "calm",
+      { title: "A snake, basking far off", desc: "On a warm rock across the clearing. Coiled, still, sunning itself.", size: 0.20, intensity: "calm", minHold: 12,
         behavior: { still: true, wander: false, cross: false, rear: false, strike: false, homeRadius: 0.6, baskDur: [5.0, 9.0], watchDist: 2.4, retreatStill: 0.35, inZoneDist: 5.0, fearMul: 0.42, tongueEvery: [4.0, 7.0] } },
-      { title: "It shifts in its patch",   desc: "A little closer. Now and then it slides a short way, then settles again.", size: 0.40, intensity: "calm",
+      { title: "It shifts in its patch",   desc: "A little closer. Now and then it slides a short way, then settles again.", size: 0.40, intensity: "calm", minHold: 15,
         behavior: { still: false, wander: true, cross: false, rear: false, strike: false, homeRadius: 1.4, baskDur: [3.5, 7.0], wanderSpeed: 0.40, watchDist: 2.8, retreatStill: 0.30, inZoneDist: 4.2, fearMul: 0.58, tongueEvery: [3.0, 5.5] } },
-      { title: "It crosses the path ahead",desc: "It slides across the trail in front of you, tongue flicking, then reads the air.", size: 0.60, intensity: "alert",
+      { title: "It crosses the path ahead",desc: "It slides across the trail in front of you, tongue flicking, then reads the air.", size: 0.60, intensity: "alert", minHold: 18,
         behavior: { still: false, wander: true, cross: true, crossChance: 0.55, rear: false, strike: false, homeRadius: 2.2, baskDur: [2.5, 5.5], wanderSpeed: 0.52, watchDist: 3.0, retreatStill: 0.30, inZoneDist: 3.6, fearMul: 0.72, warnHissDist: 1.7, warnHissEvery: 9, tongueEvery: [2.0, 4.0] } },
-      { title: "It rears and watches you", desc: "A few metres away. When you come close it lifts its head, holds your eye, and hisses low.", size: 0.85, intensity: "alert",
+      { title: "It rears and watches you", desc: "A few metres away. When you come close it lifts its head, holds your eye, and hisses low.", size: 0.85, intensity: "alert", minHold: 22,
         behavior: { still: false, wander: true, cross: true, crossChance: 0.40, rear: true, strike: false, homeRadius: 1.6, baskDur: [2.5, 5.0], wanderSpeed: 0.48, watchDist: 3.4, rearDist: 2.6, retreatStill: 0.28, inZoneDist: 3.2, fearMul: 0.86, warnHissDist: 2.0, warnHissEvery: 8, tongueEvery: [1.6, 3.2] } },
-      { title: "Close, coiled, alert",     desc: "Right there on the path. Rush it and it coils to strike; stay slow and it settles.", size: 1.00, intensity: "apex",
+      { title: "Close, coiled, alert",     desc: "Right there on the path. Rush it and it coils to strike; stay slow and it settles.", size: 1.00, intensity: "apex", minHold: 26,
         behavior: { still: false, wander: true, cross: true, crossChance: 0.30, rear: true, strike: true, homeRadius: 1.2, baskDur: [2.0, 4.0], wanderSpeed: 0.42, watchDist: 3.6, rearDist: 3.0, retreatStill: 0.26, inZoneDist: 3.0, fearMul: 1.0, warnHissDist: 2.2, warnHissEvery: 6, strikeDist: 1.45, strikeApproach: 0.55, strikeCooldown: 12, tongueEvery: [1.2, 2.6] } }
     ],
     sceneClass: "scene-approach",
@@ -9174,6 +9175,224 @@ function dogRealityFor(fear, ev, name, early) {
     default:
       return { happened: false, line: "" };
   }
+}
+
+// ---------- Spiders: reading the spider, what the alarm predicts ----------
+// Same shape as the dog catalogue: every signal is something the cellar
+// scene really animates; `look` is the prompt, `means` the reading. The
+// appraisal that matters for spider fear is where it's GOING and why:
+// most spider movement is relocating or fleeing, not approaching.
+const SPIDER_READ_CLASSES = {
+  calm:  { dot: "🟢", key: "1", label: "Resting — busy with itself" },
+  move:  { dot: "🟡", key: "2", label: "Going somewhere", tone: "alert" },
+  space: { dot: "🔴", key: "3", label: "Startled — give it room" },
+};
+const SPIDER_SIGNALS = {
+  still:    { cls: "calm",  icon: "🕷", name: "Perfectly still",      look: "legs folded in, not a twitch",
+              means: "Spiders spend most of their lives exactly like this — waiting, not plotting. Still means still." },
+  feel:     { cls: "calm",  icon: "〰", name: "Tapping the air",       look: "front legs lifting and tapping, body still",
+              means: "Spiders feel their way through the world. The tapping is it reading vibrations — curiosity, not a target lock." },
+  flick:    { cls: "calm",  icon: "🦵", name: "Flicks a leg",          look: "one leg lifts, shakes, settles",
+              means: "Shaking off dust or a thread. A spider tidying itself is busy with itself — you aren't in its plans." },
+  wander:   { cls: "move",  icon: "🧭", name: "Wanders a few steps",   look: "a slow walk, a stop, a few more steps",
+              means: "Exploring the floor. It can barely see you — 'toward you' is just where the floor happens to go." },
+  dart:     { cls: "move",  icon: "💨", name: "A sudden dash",         look: "a fast burst across open floor, then a dead stop",
+              means: "Open floor is dangerous for small things, so they cross it fast. A dash is it getting to cover — not a charge." },
+  turnAway: { cls: "move",  icon: "↪️", name: "Turns off",             look: "it changes course, away from you",
+              means: "Given the choice, a spider moves away from big warm things. You are a big warm thing." },
+  stilt:    { cls: "space", icon: "⬆️", name: "Rises up on its legs",  look: "body lifted high, legs straight, very still",
+              means: "A startled spider rises to run. It's getting ready to leave — give it a moment and it will." },
+  crouch:   { cls: "space", icon: "⤵️", name: "Crouches low",          look: "body pressed down, legs bunched under it",
+              means: "A crouch means you came fast and it's startled. If it jumps, it jumps to get away — and it stops short." },
+};
+const SPIDER_FEARS = [
+  { id: "run",   text: "It'll run at me" },
+  { id: "jump",  text: "It'll jump at me" },
+  { id: "crawl", text: "It'll crawl on me" },
+  { id: "bite",  text: "It'll bite me" },
+  { id: "lose",  text: "It'll dart off and I won't know where it is" },
+  { id: "panic", text: "I'll panic and have to leave" },
+];
+function spiderRealityFor(fear, ev, name, early) {
+  const md = ev && ev.minDist != null ? ev.minDist : null;
+  const closest = md != null ? " " + tf("rc.closestS", "The closest it came was {m} m.", { m: md }) : "";
+  const darts = (ev.kinds && ev.kinds.dart) || 0;
+  switch (fear) {
+    case "run":
+      return ev.ranAtYou > 0
+        ? { happened: true, line: tf("rc.sp.runYes", "It came your way {k} time(s) — and stopped, or turned off, every time.{c}", { k: ev.ranAtYou, c: closest }) }
+        : { happened: false, line: tf("rc.sp.runNo", "It never ran at you. When it moved, it moved somewhere else.{c}", { c: closest }) };
+    case "jump":
+      return ev.jumped > 0
+        ? { happened: true, line: tf("rc.sp.jumpYes", "It jumped {k} time(s) — and landed short of you every time. A startled jump is an escape that points the wrong way, not an attack.", { k: ev.jumped }) }
+        : { happened: false, line: t("rc.sp.jumpNo", "It never jumped. Not once.") };
+    case "crawl":
+      return { happened: false, line: tf("rc.sp.crawlNo", "It never touched you.{c} Spiders avoid big warm bodies — climbing onto one is the last thing it wants.", { c: closest }) };
+    case "bite":
+      return { happened: false, line: tf("rc.sp.biteNo", "No bite.{c} House spiders almost never bite people, and when cornered their first choice is always to run.", { c: closest }) };
+    case "lose":
+      return darts > 0
+        ? { happened: true, line: tf("rc.sp.loseYes", "It dashed {k} time(s) — and every time it stopped again a few steps on, in plain view. Fast is not the same as gone.", { k: darts }) }
+        : { happened: false, line: t("rc.sp.loseNo", "It never vanished. It stayed where you could see it the whole time.") };
+    case "panic":
+      return early
+        ? { happened: true, line: tf("rc.panicYes", "You stepped out — always allowed. Your alarm had reached {p}; next time, see if you can stay one breath past the top.", { p: ev.peak }) }
+        : { happened: false, line: tf("rc.sp.panicNo", "Your alarm peaked at {p} and came down to {e} — and you were still in the cellar when it did.", { p: ev.peak, e: ev.end }) };
+    default:
+      return { happened: false, line: "" };
+  }
+}
+
+// ---------- Snakes ----------
+// The appraisal for snake fear: at ease vs curious vs defensive. Tongue
+// flicks read as menace to a frightened eye; they are smell.
+const SNAKE_READ_CLASSES = {
+  calm:    { dot: "🟢", key: "1", label: "At ease" },
+  curious: { dot: "🟡", key: "2", label: "Curious — tasting the air", tone: "alert" },
+  space:   { dot: "🔴", key: "3", label: "Defensive — give it room" },
+};
+const SNAKE_SIGNALS = {
+  bask:     { cls: "calm",    icon: "☀️", name: "Basking",               look: "loosely coiled in the sun, barely moving",
+              means: "Warming up. A snake in the sun is charging its batteries, not waiting for you." },
+  glide:    { cls: "calm",    icon: "〰", name: "Glides along",           look: "stretched out, a slow side-to-side slide",
+              means: "Stretched out and gliding is a relaxed snake going about its day. You're terrain, not a target." },
+  leave:    { cls: "calm",    icon: "↪️", name: "Slides away",            look: "it turns and glides off, away from you",
+              means: "Given a choice, a snake chooses away. Most real encounters end exactly like this." },
+  flick:    { cls: "curious", icon: "👅", name: "Tongue flicking",        look: "the tongue flicks out, in, out",
+              means: "The tongue is its nose — it collects smells from the air. Curiosity, not a threat." },
+  sniff:    { cls: "curious", icon: "👃", name: "Fast flicks, facing you", look: "quick tongue flicks, head turned your way",
+              means: "It's smelling YOU. Interested and unsure. Staying still lets it decide you're not a problem." },
+  lookUp:   { cls: "curious", icon: "👀", name: "Lifts its head",         look: "the front of the body raised a little, head steady",
+              means: "Having a look around — snakes lift their heads to see further. Not a strike posture." },
+  rear:     { cls: "space",   icon: "⬆️", name: "Rears up",               look: "neck raised high, head facing you",
+              means: "A defensive display: it's trying to look big so you'll leave it alone. Pause and give it room — that's reading it right, not running away." },
+  sCoil:    { cls: "space",   icon: "🌀", name: "Pulls into an S",        look: "neck drawn back into an S, head level and still",
+              means: "An S is a warning: \"too close\". A step back and it relaxes. A strike from here is a warning shot that stops short." },
+};
+const SNAKE_FEARS = [
+  { id: "come",   text: "It'll come at me" },
+  { id: "strike", text: "It'll strike at me" },
+  { id: "bite",   text: "It'll bite me" },
+  { id: "chase",  text: "It'll chase me if I move" },
+  { id: "rear",   text: "It'll rear up at me" },
+  { id: "panic",  text: "I'll panic and have to leave" },
+];
+function snakeRealityFor(fear, ev, name, early) {
+  const md = ev && ev.minDist != null ? ev.minDist : null;
+  const closest = md != null ? " " + tf("rc.closestS", "The closest it came was {m} m.", { m: md }) : "";
+  const K = ev.kinds || {}, N = ev.notes || {};
+  const strikes = N.strike || 0, rears = (N.rear || 0), leaves = N.leave || 0;
+  switch (fear) {
+    case "come":
+      return ev.ranAtYou > 0
+        ? { happened: true, line: tf("rc.sn.comeYes", "It moved your way {k} time(s) — crossing, not hunting — and turned off again.{c}", { k: ev.ranAtYou, c: closest }) }
+        : { happened: false, line: tf("rc.sn.comeNo", "It never came at you.{c}{l}", { c: closest, l: leaves ? " " + t("rc.sn.left", "When it moved, it moved away.") : "" }) };
+    case "strike":
+      return strikes > 0
+        ? { happened: true, line: tf("rc.sn.strikeYes", "It struck {k} time(s) — at the air, stopping well short of you, and then pulled back. A strike like that is a warning shot: \"that's close enough\".", { k: strikes }) }
+        : { happened: false, line: tf("rc.sn.strikeNo", "It never struck.{c}", { c: closest }) };
+    case "bite":
+      return { happened: false, line: tf("rc.sn.biteNo", "No bite.{c} Snakes bite people almost only when they're stepped on or grabbed.", { c: closest }) };
+    case "chase":
+      return { happened: false, line: ev.escapes > 0
+        ? tf("rc.sn.chaseEsc", "You stepped back {k} time(s). It never followed — not once.", { k: ev.escapes })
+        : t("rc.sn.chaseNo", "It never followed you. Snakes don't chase people — they can't see much point in us.") };
+    case "rear":
+      return rears > 0
+        ? { happened: true, line: tf("rc.sn.rearYes", "It reared {k} time(s) — and you were still standing after every one. Looking big is how it asks for room.", { k: rears }) }
+        : { happened: false, line: t("rc.sn.rearNo", "It never reared up at you.") };
+    case "panic":
+      return early
+        ? { happened: true, line: tf("rc.panicYes", "You stepped out — always allowed. Your alarm had reached {p}; next time, see if you can stay one breath past the top.", { p: ev.peak }) }
+        : { happened: false, line: tf("rc.sn.panicNo", "Your alarm peaked at {p} and came down to {e} — and you were still in the clearing when it did.", { p: ev.peak, e: ev.end }) };
+    default:
+      return { happened: false, line: "" };
+  }
+}
+
+// ---------- Creature kits ----------
+// One object per creature realm that the coach, the predict page, the field
+// guide and the reality check all read. Dogs keep their original keys
+// (dogsig.*, dogcls.*, dogfear.*, cs.dogReads) so nothing already earned or
+// translated moves.
+const CREATURE_KITS = {
+  dogs:    { signals: DOG_SIGNALS, classes: DOG_READ_CLASSES, fears: DOG_FEARS, reality: dogRealityFor,
+             sig: "dogsig", cls: "dogcls", fear: "dogfear", guide: "dogReads",
+             noun: "dog", nounPl: "dogs", habKinds: ["bark"], lungeKinds: [] },
+  spiders: { signals: SPIDER_SIGNALS, classes: SPIDER_READ_CLASSES, fears: SPIDER_FEARS, reality: spiderRealityFor,
+             sig: "spsig", cls: "spcls", fear: "spfear", guide: "spiderReads",
+             noun: "spider", nounPl: "spiders", habKinds: ["dart"], lungeKinds: ["pounce"] },
+  snakes:  { signals: SNAKE_SIGNALS, classes: SNAKE_READ_CLASSES, fears: SNAKE_FEARS, reality: snakeRealityFor,
+             sig: "snsig", cls: "sncls", fear: "snfear", guide: "snakeReads",
+             noun: "snake", nounPl: "snakes", habKinds: ["rear", "hiss"], lungeKinds: ["strike"] },
+};
+function hasCreatureKit(key) { return !!CREATURE_KITS[key]; }
+function kitNoun(key, plural) {
+  const K = CREATURE_KITS[key];
+  if (!K) return "";
+  return plural ? t(`noun.${key}.pl`, K.nounPl) : t(`noun.${key}`, K.noun);
+}
+function expectQ(key) {
+  return key === "dogs" ? t("expect.q", "What is your alarm predicting the dog will do?")
+    : tf("expect.q2", "What is your alarm predicting the {noun} will do?", { noun: kitNoun(key) });
+}
+function kitSignalText(key, id, field) {
+  const K = CREATURE_KITS[key], s = K && K.signals[id];
+  return s ? t(`${K.sig}.${id}.${field}`, s[field]) : "";
+}
+function kitClassLabel(key, cls) {
+  const K = CREATURE_KITS[key], c = K && K.classes[cls];
+  return c ? t(`${K.cls}.${cls}`, c.label) : cls;
+}
+function kitFearText(key, id) {
+  const K = CREATURE_KITS[key], f = K && K.fears.find((x) => x.id === id);
+  return f ? t(`${K.fear}.${id}`, f.text) : "";
+}
+function kitFieldGuide(key) {
+  const K = CREATURE_KITS[key];
+  try { const cs = activeCharSlice(); return cs[K.guide] || (cs[K.guide] = {}); } catch { return {}; }
+}
+function kitRecordRead(key, id, right) {
+  try {
+    const g = kitFieldGuide(key);
+    const e = g[id] || (g[id] = { seen: 0, right: 0, first: Date.now() });
+    e.seen++; if (right) e.right++;
+    saveState();
+    return e.seen === 1;
+  } catch { return false; }
+}
+// The coach's view of a kit (the coach lives in the module scope and only
+// ever sees this object).
+function creatureKit(key) {
+  const K = CREATURE_KITS[key] || CREATURE_KITS.dogs;
+  const k = CREATURE_KITS[key] ? key : "dogs";
+  const T = {
+    dogs: {
+      firstRead: () => t("dc.tFirstRead", "Reading the dog is half the cure. Fear treats every dog signal as <b>danger</b>; real dogs are mostly saying <b>relaxed</b> or <b>curious</b>."),
+      escape: () => t("dc.tEscape", "Backing off made the alarm drop — fast. That relief is how avoidance keeps a fear alive: the brain files it as <b>\"escaped just in time\"</b>. It never gets to learn the dog was fine. Step back in when you're ready — the alarm will be where you left it."),
+      hab: () => t("dc.tBarkHab", "Look at the spikes: each bark hits a little softer than the one before. Same bark — your alarm is learning it's just noise."),
+    },
+    spiders: {
+      firstRead: () => t("dc.sp.tFirstRead", "Reading the spider is half the cure. Fear treats every twitch as <b>coming for you</b>; real spiders are mostly <b>resting</b> or <b>going somewhere else</b>."),
+      escape: () => t("dc.sp.tEscape", "Backing off made the alarm drop — fast. That relief is how avoidance keeps a fear alive: the brain files it as <b>\"got away just in time\"</b>. It never gets to learn the spider was busy with its own life. Step back in when you're ready — the alarm will be where you left it."),
+      settled: () => t("dc.sp.tSettled", "<b>Settled.</b> Same spider, same distance — a quieter alarm. You didn't fight it or flee it. You stayed, and your body did the rest."),
+      hab: () => t("dc.sp.tHab", "Look at the spikes: each sudden dash hits a little softer than the one before. Same spider, same dash — your alarm is learning that fast doesn't mean toward you."),
+    },
+    snakes: {
+      firstRead: () => t("dc.sn.tFirstRead", "Reading the snake is half the cure. Fear reads every flick and every movement as <b>a strike coming</b>; real snakes are mostly <b>at ease</b> or <b>curious</b>."),
+      escape: () => t("dc.sn.tEscape", "Backing off made the alarm drop — fast. That relief is how avoidance keeps a fear alive: the brain files it as <b>\"that was close\"</b>. It never gets to learn the snake wanted nothing from you. Step back in when you're ready — the alarm will be where you left it."),
+      settled: () => t("dc.sn.tSettled", "<b>Settled.</b> Same snake, same distance — a quieter alarm. You didn't fight it or flee it. You stayed, and your body did the rest."),
+      hab: () => t("dc.sn.tHab", "Look at the spikes: each rear-up and each hiss hits a little softer. Same display — your alarm is learning it's a request for room, not an attack."),
+    },
+  }[k];
+  return {
+    key: k, signals: K.signals, classes: K.classes, habKinds: K.habKinds, lungeKinds: K.lungeKinds,
+    signalText: (id, field) => kitSignalText(k, id, field),
+    classLabel: (cls) => kitClassLabel(k, cls),
+    fearText: (id) => kitFearText(k, id),
+    recordRead: (id, right) => k === "dogs" ? recordDogRead(id, right) : kitRecordRead(k, id, right),
+    texts: T,
+  };
 }
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
@@ -11078,20 +11297,20 @@ function handleAction(d, params) {
       // One minute on what the fear IS — but after the first dog, not before
       // it: trial 1's complete screen offers it, and if it was skipped there
       // it opens in front of trial 2. Before any dog it was just more reading.
-      if (d.phobia === "dogs" && !primerSeen("dogs") && (getProgress("dogs").highestCompleted ?? -1) >= 0) {
-        openDogPrimer({ then: toPredict, skipGoes: true });
+      if (hasCreatureKit(d.phobia) && !primerSeen(d.phobia) && (getProgress(d.phobia).highestCompleted ?? -1) >= 0) {
+        openPrimer(d.phobia, { then: toPredict, skipGoes: true });
       }
       else toPredict();
       break;
     }
-    case "open-primer": openDogPrimer(); break;
+    case "open-primer": openPrimer(d.phobia || "dogs"); break;
     case "open-feedback": openFeedback(d.context || ""); break;
     case "scroll-to": {
       const el = document.querySelector(d.target || "");
       if (el) { try { el.scrollIntoView({ behavior: "smooth", block: "start" }); } catch { el.scrollIntoView(); } }
       break;
     }
-    case "open-keep": openKeepPlan(); break;
+    case "open-keep": openKeepPlan(d.phobia || "dogs"); break;
     case "pick-fear": {
       document.querySelectorAll(".expect-chip").forEach((c) => {
         const on = c.dataset.fear === d.fear;
@@ -11358,46 +11577,107 @@ function primerSeen(key) { try { return !!((activeCharSlice().primer || {})[key]
 function markPrimerSeen(key) {
   try { const cs = activeCharSlice(); cs.primer = cs.primer || {}; cs.primer[key] = Date.now(); saveState(); } catch {}
 }
-function openDogPrimer(opts = {}) {
+// Per-realm primer content. `ns` is the translation namespace — the dog
+// realm keeps its original "primer.*" keys (and their Persian), the others
+// get their own. Loops are [icon, key suffix, English]; everything else is
+// the same key under ns.
+const PRIMERS = {
+  dogs: {
+    ns: "primer",
+    aria: "How a fear of dogs works",
+    kicker: "🧭 One minute before the yard",
+    title: "How a fear of dogs works — and how it unwinds",
+    lede: "A phobia is an alarm that learned the wrong lesson. It isn't weakness, and it isn't permanent: alarms can learn again.",
+    trap: [["🐕", "t1", "A dog appears"], ["💭", "t2", "“It's going to bite me.”"], ["💓", "t3", "The alarm fires: heart, breath, legs"],
+      ["🏃", "t4", "You cross the street"], ["😮‍💨", "t5", "Relief — the alarm switches off"],
+      ["🔁", "t6", "Your brain files it as “escaped just in time”. The next dog sets it off sooner."]],
+    out: [["🐕", "o1", "A dog appears"], ["🧪", "o2", "“It'll bite me?” — a guess, and you test it"], ["💓", "o3", "The alarm fires — and you stay"],
+      ["📉", "o4", "It peaks, then falls on its own"], ["👁", "o5", "You watch what the dog actually does"],
+      ["🌱", "o6", "New memory: “dogs are mostly fine.” The next dog hits softer."]],
+    simH: "Try it: three dogs in a row. What do you do when the alarm spikes?",
+    unit: ["dog 1", "dog 2", "dog 3"],
+    leaveNote: "Relief every time — and every next dog hits <b>harder</b>. Escape works for a minute and costs you the next encounter.",
+    stayNote: "Up, then down on its own — and every next dog hits <b>softer</b>. Same alarm, learning. That's exposure.",
+    whereH: "Where it comes from",
+    where: "A scary moment with a dog, watching someone else's fear, or being told dogs are dangerous — any of these can start it. Many people don't remember how it began. It unlearns the same way either way.",
+    practH: "What you'll practise here",
+    pract: "👁 Reading dogs — relaxed, alert, or asking for space.<br>〰 Letting the alarm rise and fall without leaving.<br>🧪 Testing what your fear predicts against what the dog does.",
+    foot: "This is practice for curiosity and courage, not therapy — but it's the same method therapists use. If a dog has really hurt you, do this alongside a professional.",
+  },
+  spiders: {
+    ns: "primer.sp",
+    aria: "How a fear of spiders works",
+    kicker: "🧭 One minute before the cellar",
+    title: "How a fear of spiders works — and how it unwinds",
+    lede: "A phobia is an alarm that learned the wrong lesson. Spider fear is one of the most common there is — and one of the most treatable.",
+    trap: [["🕷", "t1", "A spider appears"], ["💭", "t2", "“It's coming for me. It'll get on me.”"], ["💓", "t3", "The alarm fires: skin crawls, heart jumps"],
+      ["🏃", "t4", "You leave the room — or someone else deals with it"], ["😮‍💨", "t5", "Relief — the alarm switches off"],
+      ["🔁", "t6", "Your brain files it as “got away just in time”. The next spider sets it off sooner — even a picture of one."]],
+    out: [["🕷", "o1", "A spider appears"], ["🧪", "o2", "“It'll run at me?” — a guess, and you test it"], ["💓", "o3", "The alarm fires — and you stay"],
+      ["📉", "o4", "It peaks, then falls on its own"], ["👁", "o5", "You watch where it actually goes (mostly: away, or nowhere)"],
+      ["🌱", "o6", "New memory: “spiders keep to themselves.” The next one hits softer."]],
+    simH: "Try it: three spiders in a row. What do you do when the alarm spikes?",
+    unit: ["spider 1", "spider 2", "spider 3"],
+    leaveNote: "Relief every time — and every next spider hits <b>harder</b>. Leaving works for a minute and costs you the next encounter.",
+    stayNote: "Up, then down on its own — and every next spider hits <b>softer</b>. Same alarm, learning. That's exposure.",
+    whereH: "Where it comes from",
+    where: "Often it's learned by watching — a parent who screamed at spiders teaches it without a word. Sometimes it's a single startle. The quick, unpredictable movement does the rest. It unlearns the same way however it began.",
+    practH: "What you'll practise here",
+    pract: "👁 Reading spiders — resting, on its way somewhere, or startled.<br>〰 Letting the alarm rise and fall without leaving.<br>🧪 Testing what your fear predicts against where the spider actually goes.",
+    foot: "This is practice for curiosity and courage, not therapy — but it's the same method therapists use, and for spider fear it works unusually well.",
+  },
+  snakes: {
+    ns: "primer.sn",
+    aria: "How a fear of snakes works",
+    kicker: "🧭 One minute before the clearing",
+    title: "How a fear of snakes works — and how it unwinds",
+    lede: "Humans come primed to notice snakes fast — that part is ancient and useful. A phobia is when the alarm won't stand down, even for a harmless one far away.",
+    trap: [["🐍", "t1", "A snake — or a rope, or a hose — appears"], ["💭", "t2", "“It'll strike. It'll come after me.”"], ["💓", "t3", "The alarm fires: freeze, then run"],
+      ["🏃", "t4", "You avoid the path, the park, the whole trip"], ["😮‍💨", "t5", "Relief — the alarm switches off"],
+      ["🔁", "t6", "Your brain files it as “that was close”. Every long thin shape starts setting it off."]],
+    out: [["🐍", "o1", "A snake appears"], ["🧪", "o2", "“It'll strike at me?” — a guess, and you test it"], ["💓", "o3", "The alarm fires — and you stay, at a distance you choose"],
+      ["📉", "o4", "It peaks, then falls on its own"], ["👁", "o5", "You watch what the snake actually does (mostly: basks, or leaves)"],
+      ["🌱", "o6", "New memory: “snakes want to be left alone.” The next one hits softer."]],
+    simH: "Try it: three snakes in a row. What do you do when the alarm spikes?",
+    unit: ["snake 1", "snake 2", "snake 3"],
+    leaveNote: "Relief every time — and every next snake hits <b>harder</b>. Avoiding works for a minute and costs you the next encounter.",
+    stayNote: "Up, then down on its own — and every next snake hits <b>softer</b>. Same alarm, learning. That's exposure.",
+    whereH: "Where it comes from",
+    where: "We're born ready to spot snakes quickly — but not to panic at them. The panic is learned: a scare on a path, a warning repeated as a child, a film. It unlearns the same way however it began.",
+    practH: "What you'll practise here",
+    pract: "👁 Reading snakes — at ease, curious, or asking for room.<br>〰 Letting the alarm rise and fall without leaving.<br>🧪 Testing what your fear predicts against what the snake actually does.",
+    foot: "This is practice for curiosity and courage, not therapy. In real life, respect wild snakes from a distance — watching, not handling, is the skill.",
+  },
+};
+function openDogPrimer(opts = {}) { return openPrimer("dogs", opts); }
+function openPrimer(key, opts = {}) {
+  const P = PRIMERS[key] || PRIMERS.dogs;
+  const k = (suffix, en) => t(`${P.ns}.${suffix}`, en);
   const overlay = document.createElement("div");
   overlay.className = "goal-modal-overlay";
-  const loop = (items, cls) => `<ol class="pr-loop ${cls}">${items.map((x) => `<li><span class="pr-ic">${x[0]}</span><span>${x[1]}</span></li>`).join("")}</ol>`;
+  const loop = (items, cls) => `<ol class="pr-loop ${cls}">${items.map((x) => `<li><span class="pr-ic">${x[0]}</span><span>${k(x[1], x[2])}</span></li>`).join("")}</ol>`;
   overlay.innerHTML = `
-    <div class="goal-modal primer-modal" role="dialog" aria-label="${escapeHtml(t("primer.aria", "How a fear of dogs works"))}">
-      <span class="bridge-invite-kicker">${t("primer.kicker", "🧭 One minute before the yard")}</span>
-      <h3 style="margin:6px 0 4px">${t("primer.title", "How a fear of dogs works — and how it unwinds")}</h3>
-      <p class="small pr-lede">${t("primer.lede", "A phobia is an alarm that learned the wrong lesson. It isn't weakness, and it isn't permanent: alarms can learn again.")}</p>
+    <div class="goal-modal primer-modal" role="dialog" aria-label="${escapeHtml(k("aria", P.aria))}">
+      <span class="bridge-invite-kicker">${k("kicker", P.kicker)}</span>
+      <h3 style="margin:6px 0 4px">${k("title", P.title)}</h3>
+      <p class="small pr-lede">${k("lede", P.lede)}</p>
       <div class="pr-cols">
         <div class="pr-col pr-trap">
           <h4>${t("primer.trapH", "The trap")}</h4>
-          ${loop([
-            ["🐕", t("primer.t1", "A dog appears")],
-            ["💭", t("primer.t2", "“It's going to bite me.”")],
-            ["💓", t("primer.t3", "The alarm fires: heart, breath, legs")],
-            ["🏃", t("primer.t4", "You cross the street")],
-            ["😮‍💨", t("primer.t5", "Relief — the alarm switches off")],
-            ["🔁", t("primer.t6", "Your brain files it as “escaped just in time”. The next dog sets it off sooner.")],
-          ], "trap")}
+          ${loop(P.trap, "trap")}
         </div>
         <div class="pr-col pr-out">
           <h4>${t("primer.outH", "The way out")}</h4>
-          ${loop([
-            ["🐕", t("primer.o1", "A dog appears")],
-            ["🧪", t("primer.o2", "“It'll bite me?” — a guess, and you test it")],
-            ["💓", t("primer.o3", "The alarm fires — and you stay")],
-            ["📉", t("primer.o4", "It peaks, then falls on its own")],
-            ["👁", t("primer.o5", "You watch what the dog actually does")],
-            ["🌱", t("primer.o6", "New memory: “dogs are mostly fine.” The next dog hits softer.")],
-          ], "out")}
+          ${loop(P.out, "out")}
         </div>
       </div>
       <div class="pr-sim">
-        <div class="pr-sim-head">${t("primer.simH", "Try it: three dogs in a row. What do you do when the alarm spikes?")}</div>
+        <div class="pr-sim-head">${k("simH", P.simH)}</div>
         <svg viewBox="0 0 320 96" class="pr-svg" aria-hidden="true">
           <line x1="6" y1="88" x2="314" y2="88" stroke="rgba(255,255,255,.12)"/>
-          <text x="58" y="94" font-size="8" fill="#94a3b8" text-anchor="middle">${t("primer.dog1", "dog 1")}</text>
-          <text x="160" y="94" font-size="8" fill="#94a3b8" text-anchor="middle">${t("primer.dog2", "dog 2")}</text>
-          <text x="262" y="94" font-size="8" fill="#94a3b8" text-anchor="middle">${t("primer.dog3", "dog 3")}</text>
+          <text x="58" y="94" font-size="8" fill="#94a3b8" text-anchor="middle">${k("dog1", P.unit[0])}</text>
+          <text x="160" y="94" font-size="8" fill="#94a3b8" text-anchor="middle">${k("dog2", P.unit[1])}</text>
+          <text x="262" y="94" font-size="8" fill="#94a3b8" text-anchor="middle">${k("dog3", P.unit[2])}</text>
           <path class="pr-curve" d="" fill="none" stroke="#f5b04b" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
         </svg>
         <div class="pr-sim-btns">
@@ -11407,17 +11687,17 @@ function openDogPrimer(opts = {}) {
         <p class="pr-sim-note small">${t("primer.simHint", "Pick one and watch the alarm.")}</p>
       </div>
       <div class="pr-grid">
-        <div><b>${t("primer.whereH", "Where it comes from")}</b><span>${t("primer.where", "A scary moment with a dog, watching someone else's fear, or being told dogs are dangerous — any of these can start it. Many people don't remember how it began. It unlearns the same way either way.")}</span></div>
-        <div><b>${t("primer.practH", "What you'll practise here")}</b><span>${t("primer.pract", "👁 Reading dogs — relaxed, alert, or asking for space.<br>〰 Letting the alarm rise and fall without leaving.<br>🧪 Testing what your fear predicts against what the dog does.")}</span></div>
+        <div><b>${k("whereH", P.whereH)}</b><span>${k("where", P.where)}</span></div>
+        <div><b>${k("practH", P.practH)}</b><span>${k("pract", P.pract)}</span></div>
       </div>
-      <p class="small pr-foot">${t("primer.foot", "This is practice for curiosity and courage, not therapy — but it's the same method therapists use. If a dog has really hurt you, do this alongside a professional.")}</p>
+      <p class="small pr-foot">${k("foot", P.foot)}</p>
       <div class="actions" style="margin-top:12px">
         <button class="btn-ghost" id="prClose">${opts.then ? t("primer.later", "Skip for now") : t("primer.close", "Close")}</button>
         ${opts.then ? `<button class="btn-primary" id="prGo">${t("primer.go", "Got it — to the first trial")}</button>` : ""}
       </div>
     </div>`;
   document.body.appendChild(overlay);
-  markPrimerSeen("dogs");
+  markPrimerSeen(key);
   // The sim: three encounters. Leave = relief now, a higher spike next time.
   // Stay = rise, peak, fall — and each next wave starts lower.
   const path = overlay.querySelector(".pr-curve"), note = overlay.querySelector(".pr-sim-note");
@@ -11428,11 +11708,11 @@ function openDogPrimer(opts = {}) {
     const peaks = mode === "leave" ? [78, 90, 98] : [78, 56, 36];
     for (let e = 0; e < 3; e++) {
       const x0 = e * 30;
-      for (let k = 0; k <= 30; k++) {
+      for (let kk = 0; kk <= 30; kk++) {
         let v;
-        if (mode === "leave") v = k < 6 ? peaks[e] * (k / 6) : k < 8 ? peaks[e] * (1 - (k - 6) / 2) : 0;
-        else v = k < 6 ? peaks[e] * (k / 6) : peaks[e] * Math.exp(-(k - 6) / 8) + 4;
-        pts.push(`${X(x0 + k).toFixed(1)},${Y(Math.max(0, v)).toFixed(1)}`);
+        if (mode === "leave") v = kk < 6 ? peaks[e] * (kk / 6) : kk < 8 ? peaks[e] * (1 - (kk - 6) / 2) : 0;
+        else v = kk < 6 ? peaks[e] * (kk / 6) : peaks[e] * Math.exp(-(kk - 6) / 8) + 4;
+        pts.push(`${X(x0 + kk).toFixed(1)},${Y(Math.max(0, v)).toFixed(1)}`);
       }
     }
     return "M" + pts.join(" L");
@@ -11446,9 +11726,7 @@ function openDogPrimer(opts = {}) {
     void path.getBoundingClientRect();
     path.style.transition = "stroke-dashoffset 2.6s ease-in-out";
     path.style.strokeDashoffset = "0";
-    note.innerHTML = mode === "leave"
-      ? t("primer.leaveNote", "Relief every time — and every next dog hits <b>harder</b>. Escape works for a minute and costs you the next encounter.")
-      : t("primer.stayNote", "Up, then down on its own — and every next dog hits <b>softer</b>. Same alarm, learning. That's exposure.");
+    note.innerHTML = mode === "leave" ? k("leaveNote", P.leaveNote) : k("stayNote", P.stayNote);
   };
   overlay.querySelector(".pr-leave").onclick = () => run("leave");
   overlay.querySelector(".pr-stay").onclick = () => run("stay");
@@ -11460,17 +11738,32 @@ function openDogPrimer(opts = {}) {
 }
 // Keeping the yard open: what to do once the realm is behind you. Relapse
 // prevention was missing entirely — "this realm is behind you" read as cured.
-function openKeepPlan() {
+const KEEP_PLANS = {
+  dogs: { ns: "keep", kicker: "🌿 Keep the yard open",
+    l1: "<b>Meet a dog every week.</b> Any dog, any size, any distance. New dogs and new places teach the lesson more widely than the same one twice.",
+    l2: "<b>Drop the last safety habits.</b> Keeping a dog in sight at all times, holding someone's arm, checking the street first — try each thing once without it." },
+  spiders: { ns: "keep.sp", kicker: "🌿 Keep the cellar open",
+    l1: "<b>Look for a spider every week, on purpose.</b> A web in a window corner, one on the garden wall, a photo you'd have scrolled past. Different spiders in different places teach the lesson more widely.",
+    l2: "<b>Drop the last safety habits.</b> Checking the bed, shaking out shoes, leaving the room until someone else deals with it — try each thing once without it." },
+  snakes: { ns: "keep.sn", kicker: "🌿 Keep the path open",
+    l1: "<b>Meet snakes on purpose, now and then.</b> A reptile house, a nature film with the sound on, a walk on a trail you used to avoid. New places teach the lesson more widely.",
+    l2: "<b>Drop the last safety habits.</b> Scanning every step, refusing long grass, turning down trips — try each thing once without it. (Real-world respect stays: watch wild snakes, don't handle them.)" },
+};
+function openKeepPlan(key = "dogs") {
+  const K = KEEP_PLANS[key] || KEEP_PLANS.dogs;
+  const k = (suffix, en) => t(`${K.ns}.${suffix}`, en);
   const overlay = document.createElement("div");
   overlay.className = "goal-modal-overlay";
   overlay.innerHTML = `
     <div class="goal-modal primer-modal" role="dialog" aria-label="${escapeHtml(t("keep.aria", "Keeping it"))}">
-      <span class="bridge-invite-kicker">${t("keep.kicker", "🌿 Keep the yard open")}</span>
+      <span class="bridge-invite-kicker">${k("kicker", K.kicker)}</span>
       <h3 style="margin:6px 0 8px">${t("keep.title", "Fear fades with use — so keep using it")}</h3>
       <ul class="keep-list">
-        <li>${t("keep.l1", "<b>Meet a dog every week.</b> Any dog, any size, any distance. New dogs and new places teach the lesson more widely than the same one twice.")}</li>
-        <li>${t("keep.l2", "<b>Drop the last safety habits.</b> Keeping a dog in sight at all times, holding someone's arm, checking the street first — try each thing once without it.")}</li>
-        <li>${t("keep.l3", "<b>A bad day is a lapse, not a relapse.</b> A loud dog or a rough week can bring the alarm back for a while. That's normal. Go back one rung, and climb again — it comes back faster the second time.")}</li>
+        <li>${k("l1", K.l1)}</li>
+        <li>${k("l2", K.l2)}</li>
+        <li>${key === "dogs"
+          ? t("keep.l3", "<b>A bad day is a lapse, not a relapse.</b> A loud dog or a rough week can bring the alarm back for a while. That's normal. Go back one rung, and climb again — it comes back faster the second time.")
+          : t("keep.l3any", "<b>A bad day is a lapse, not a relapse.</b> A startling encounter or a rough week can bring the alarm back for a while. That's normal. Go back one rung, and climb again — it comes back faster the second time.")}</li>
         <li>${t("keep.l4", "<b>Re-check the Mirror in a month.</b> The number out there is the one that matters.")}</li>
       </ul>
       <div class="actions" style="margin-top:12px"><button class="btn-primary" id="kpClose">${t("keep.ok", "Keep it")}</button></div>
@@ -11533,6 +11826,7 @@ function handleRateSubmit(d, params) {
       dog: ev.dog, barks: ev.barks, ranAtYou: ev.ranAtYou, cameClose: ev.cameClose, jumped: ev.jumped, bit: ev.bit,
       minDist: ev.minDist, stareSec: ev.stareSec, escapes: ev.escapes, reads: ev.reads, readsRight: ev.readsRight,
       signals: (ev.signals || []).slice(0, 16), peak: ev.peak, end: ev.end, settledAt: ev.settledAt,
+      kinds: ev.kinds || {}, notes: ev.notes || {},
       engagedSec: ev.engagedSec, dur: Math.round((ev.wave || []).length * 0.5),
       wave: downsampleWave(ev.wave, 60), marks: (ev.marks || []).filter((m) => m.kind !== "read").slice(-40),
     };
@@ -12687,12 +12981,12 @@ function viewLadder(phobiaKey) {
   // that goes to its part, the current one lit.
   let pathStrip = "";
   let fieldGuideBlock = "";
-  if (phobiaKey === "dogs") {
+  if (hasCreatureKit(phobiaKey)) {
     const checksN = getChecks(phobiaKey).length;
     const stepsP = [
       { n: 1, title: t("tp.s1", "Understand it"), done: primerSeen(phobiaKey),
         sub: primerSeen(phobiaKey) ? t("tp.s1done", "the trap & the way out") : t("tp.s1sub", "one-minute primer"),
-        act: `data-action="open-primer"` },
+        act: `data-action="open-primer" data-phobia="${phobiaKey}"` },
       { n: 2, title: t("tp.s2", "Measure it"), done: checksN > 0,
         sub: checksN > 0 ? tf("tp.s2done", "{n} mirror{s}", { n: checksN, s: checksN === 1 ? "" : "s" }) : t("tp.s2sub", "60-second mirror"),
         act: `data-action="fear-check" data-phobia="${phobiaKey}" data-at="${checksN ? "manual" : "baseline"}"` },
@@ -12704,7 +12998,7 @@ function viewLadder(phobiaKey) {
         act: `data-action="scroll-to" data-target=".bridge-block"` },
       { n: 5, title: t("tp.s5", "Keep it"), done: false,
         sub: (rstat.tamed || done >= total) ? t("tp.s5open", "your keep-it plan") : t("tp.s5sub", "once you're through"),
-        act: `data-action="open-keep"` },
+        act: `data-action="open-keep" data-phobia="${phobiaKey}"` },
     ];
     const nowIdx = stepsP.findIndex((x) => !x.done);
     pathStrip = `
@@ -12724,26 +13018,37 @@ function viewLadder(phobiaKey) {
             </li>`).join("")}
         </ol>
       </section>`;
-    // The field guide: the dog body language this traveller has met and named.
-    const fg = dogFieldGuide();
-    const seenIds = DOG_SIGNAL_ORDER.filter((id) => fg[id] && fg[id].seen > 0);
-    const cards = DOG_SIGNAL_ORDER.map((id) => {
-      const S = DOG_SIGNALS[id], e = fg[id];
+    // The field guide: the body language this traveller has met and named.
+    const KIT = CREATURE_KITS[phobiaKey];
+    const order = Object.keys(KIT.signals);
+    const fg = phobiaKey === "dogs" ? dogFieldGuide() : kitFieldGuide(phobiaKey);
+    const seenIds = order.filter((id) => fg[id] && fg[id].seen > 0);
+    const cards = order.map((id) => {
+      const S = KIT.signals[id], e = fg[id];
       if (!e || !e.seen) return `<li class="fg-card unseen"><span class="fg-ic">?</span><b>${t("fg.unseen", "Not met yet")}</b></li>`;
-      const cl = DOG_READ_CLASSES[S.cls];
-      return `<li class="fg-card seen cls-${S.cls}" title="${escapeHtml(dogSignalText(id, "means"))}">
-          <span class="fg-ic">${S.icon}</span><b>${escapeHtml(dogSignalText(id, "name"))}</b>
-          <i>${cl.dot} ${escapeHtml(dogClassLabel(S.cls))}</i>
-          <p>${escapeHtml(dogSignalText(id, "means"))}</p>
+      const cl = KIT.classes[S.cls];
+      return `<li class="fg-card seen cls-${cl.tone || S.cls}" title="${escapeHtml(kitSignalText(phobiaKey, id, "means"))}">
+          <span class="fg-ic">${S.icon}</span><b>${escapeHtml(kitSignalText(phobiaKey, id, "name"))}</b>
+          <i>${cl.dot} ${escapeHtml(kitClassLabel(phobiaKey, S.cls))}</i>
+          <p>${escapeHtml(kitSignalText(phobiaKey, id, "means"))}</p>
         </li>`;
     }).join("");
+    const fgHead = phobiaKey === "dogs" ? t("fg.head", "👁 Reading dogs — your field guide")
+      : tf("fg.head2", "👁 Reading {nouns} — your field guide", { nouns: kitNoun(phobiaKey, true) });
+    const fgSub = seenIds.length
+      ? (phobiaKey === "dogs"
+        ? tf("fg.sub", "{n} of {m} signals read. Fear hears every dog signal as danger; most of them are saying relaxed, curious, or \"give me a moment\".", { n: seenIds.length, m: order.length })
+        : tf(`fg.sub.${phobiaKey}`, phobiaKey === "spiders"
+            ? "{n} of {m} signals read. Fear sees every spider movement as coming for you; most of it is resting, or going somewhere else."
+            : "{n} of {m} signals read. Fear reads every flick and every movement as a strike coming; most of it is at ease, or curious.", { n: seenIds.length, m: order.length }))
+      : (phobiaKey === "dogs"
+        ? t("fg.subEmpty", "In the trials, the dogs show real body language — and you'll be asked what it means. Everything you read lands here.")
+        : tf("fg.subEmpty2", "In the trials, the {noun} shows real body language — and you'll be asked what it means. Everything you read lands here.", { noun: kitNoun(phobiaKey) }));
     fieldGuideBlock = `
       <section class="fieldguide-block">
         <div class="bridge-head">
-          <h3>${t("fg.head", "👁 Reading dogs — your field guide")}</h3>
-          <span class="bridge-sub">${seenIds.length
-            ? tf("fg.sub", "{n} of {m} signals read. Fear hears every dog signal as danger; most of them are saying relaxed, curious, or \"give me a moment\".", { n: seenIds.length, m: DOG_SIGNAL_ORDER.length })
-            : t("fg.subEmpty", "In the trials, the dogs show real body language — and you'll be asked what it means. Everything you read lands here.")}</span>
+          <h3>${fgHead}</h3>
+          <span class="bridge-sub">${fgSub}</span>
         </div>
         <ul class="fg-grid">${cards}</ul>
       </section>`;
@@ -13174,12 +13479,12 @@ function viewPredict(phobiaKey, levelIdx) {
         : `<h2 style="margin-top:10px">${t("predict.h2", "At the gate: name your fear's number")}</h2>
       <p>${t("predict.p", "A traveler's ritual that makes the trial count double: <em>predict</em> how loud the fear will be, then see how it actually goes. Most people over-predict — and catching your own shadow exaggerating is exactly the lesson the brain needs.")}</p>`}
       <p class="hint" style="margin-top:14px">${t("predict.youllBe", "You'll be:")} <strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>${lv.desc ? ` — ${escapeHtml(lvDesc(phobiaKey, levelIdx))}` : ""}</p>
-${phobiaKey === "dogs" ? `
+${hasCreatureKit(phobiaKey) ? `
       <div class="expect-block">
-        <div class="expect-q">${t("expect.q", "What is your alarm predicting the dog will do?")}</div>
+        <div class="expect-q">${expectQ(phobiaKey)}</div>
         <div class="expect-sub">${t("expect.sub", "Pick the one your fear is most sure of. It's a guess, not a fact — this trial is the test.")}</div>
-        <div class="expect-chips" role="radiogroup" aria-label="${escapeHtml(t("expect.q", "What is your alarm predicting the dog will do?"))}">
-          ${DOG_FEARS.map((f) => `<button type="button" class="expect-chip" role="radio" aria-checked="false" data-action="pick-fear" data-fear="${f.id}">${escapeHtml(dogFearText(f.id))}</button>`).join("")}
+        <div class="expect-chips" role="radiogroup" aria-label="${escapeHtml(expectQ(phobiaKey))}">
+          ${CREATURE_KITS[phobiaKey].fears.map((f) => `<button type="button" class="expect-chip" role="radio" aria-checked="false" data-action="pick-fear" data-fear="${f.id}">${escapeHtml(kitFearText(phobiaKey, f.id))}</button>`).join("")}
           <button type="button" class="expect-chip expect-none" role="radio" aria-checked="false" data-action="pick-fear" data-fear="none">${t("expect.none", "Nothing specific — just the feeling")}</button>
         </div>
         <div class="suds expect-belief" id="expectBeliefBox" hidden>
@@ -13190,7 +13495,8 @@ ${phobiaKey === "dogs" ? `
             <span class="small">${t("expect.hi", "100% certain")}</span>
             <div class="value" id="expectBeliefValue">—</div>
           </div>
-          <div class="hint">${t("expect.after", "After the trial we'll check it against what the dog actually did — and ask again.")}</div>
+          <div class="hint">${phobiaKey === "dogs" ? t("expect.after", "After the trial we'll check it against what the dog actually did — and ask again.")
+            : tf("expect.after2", "After the trial we'll check it against what the {noun} actually did — and ask again.", { noun: kitNoun(phobiaKey) })}</div>
         </div>
       </div>` : ""}
 
@@ -13497,21 +13803,28 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
   const ev = lastEntry && lastEntry.ev;
   if (ev && lastEntry.expect && lastEntry.expect.fear) {
     const X = lastEntry.expect;
-    const r = dogRealityFor(X.fear, ev, ev.dog, early);
+    const KIT = CREATURE_KITS[phobiaKey] || CREATURE_KITS.dogs;
+    const r = KIT.reality(X.fear, ev, ev.dog, early);
+    const coped = { dogs: ["bark", "stare", "run"], spiders: ["run", "jump", "lose"], snakes: ["come", "strike", "rear"] }[phobiaKey] || [];
     const verdict = r.happened
-      ? (X.fear === "bark" || X.fear === "stare" || X.fear === "run"
-          ? t("rc.vCoped", "It happened — and nothing your fear attached to it did. Loud, close, looked at: and you were fine.")
+      ? (coped.includes(X.fear)
+          ? (phobiaKey === "dogs" ? t("rc.vCoped", "It happened — and nothing your fear attached to it did. Loud, close, looked at: and you were fine.")
+            : t(`rc.vCoped.${phobiaKey}`, phobiaKey === "spiders"
+              ? "It happened — and nothing your fear attached to it did. Fast, close, sudden: and you were fine."
+              : "It happened — and nothing your fear attached to it did. Close, big, a warning: and you were fine."))
           : t("rc.vHappened", "That one happened. It's worth trying this trial again — each repeat is new evidence."))
       : t("rc.vNo", "Your fear's prediction didn't come true.");
     realityBlock = `
       <div class="reality-card ${r.happened ? "rc-happened" : "rc-no"}">
         <span class="bridge-invite-kicker">${t("rc.kicker", "🧪 Reality check")}</span>
         <div class="rc-row"><span class="rc-lab">${t("rc.predicted", "Your alarm predicted")}</span>
-          <span><strong>“${escapeHtml(dogFearText(X.fear))}”</strong>${X.belief != null ? ` <span class="rc-bel">${tf("rc.sure", "{n}% sure", { n: X.belief })}</span>` : ""}</span></div>
+          <span><strong>“${escapeHtml(kitFearText(phobiaKey, X.fear))}”</strong>${X.belief != null ? ` <span class="rc-bel">${tf("rc.sure", "{n}% sure", { n: X.belief })}</span>` : ""}</span></div>
         <div class="rc-row"><span class="rc-lab">${t("rc.happened", "What happened")}</span><span>${r.line}</span></div>
         <p class="rc-verdict">${verdict}</p>
         <div class="suds rc-after">
-          <label for="beliefAfter">${tf("rc.again", "Now: if you walked into that room again, how sure would you be that “{f}”?", { f: escapeHtml(dogFearText(X.fear)) })}</label>
+          <label for="beliefAfter">${phobiaKey === "dogs"
+            ? tf("rc.again", "Now: if you walked into that room again, how sure would you be that “{f}”?", { f: escapeHtml(kitFearText(phobiaKey, X.fear)) })
+            : tf("rc.again2", "Now: if you faced that again, how sure would you be that “{f}”?", { f: escapeHtml(kitFearText(phobiaKey, X.fear)) })}</label>
           <div class="scale-row">
             <span class="small">0%</span>
             <input type="range" id="beliefAfter" min="0" max="100" step="5" value="${X.beliefAfter != null ? X.beliefAfter : (X.belief != null ? X.belief : 50)}"/>
@@ -13535,7 +13848,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     const pk = Math.max(...ev.wave), pi = ev.wave.indexOf(pk);
     const mk = (ev.marks || []).map((m) => {
       const mx = P + Math.min(1, m.t / dur) * (W - P * 2);
-      const g = m.kind === "bark" ? "•" : m.kind === "escape" ? "↩" : m.kind === "run" ? "»" : m.kind === "settle" ? "✓" : "";
+      const g = (m.kind === "bark" || m.kind === "spike") ? "•" : m.kind === "escape" ? "↩" : (m.kind === "run" || m.kind === "lunge") ? "»" : m.kind === "settle" ? "✓" : "";
       const c = m.kind === "escape" ? "#ef6b5b" : m.kind === "settle" ? "#34d399" : "#cbd5e1";
       return g ? `<text x="${mx.toFixed(1)}" y="11" text-anchor="middle" font-size="10" fill="${c}">${g}</text>` : "";
     }).join("");
@@ -13543,9 +13856,12 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       ? tf("wave.settled", "It peaked at <b>{p}</b> and settled by about <b>{s}s</b> — while you stayed.", { p: ev.peak, s: ev.settledAt })
       : tf("wave.notSettled", "It peaked at <b>{p}</b> and ended at <b>{e}</b>. It hadn't fully settled yet — a longer stay next time lets it.", { p: ev.peak, e: ev.end });
     const extras = [];
-    if (ev.barks >= 3) extras.push(t("wave.barks", "Each • is a bark — watch the spikes shrink as they repeat."));
+    const habN = phobiaKey === "dogs" ? ev.barks : ((CREATURE_KITS[phobiaKey] || {}).habKinds || []).reduce((a, k) => a + ((ev.kinds || {})[k] || 0), 0);
+    if (habN >= 3) extras.push(phobiaKey === "dogs" ? t("wave.barks", "Each • is a bark — watch the spikes shrink as they repeat.")
+      : t(`wave.hab.${phobiaKey}`, phobiaKey === "spiders" ? "Each • is a sudden dash your way — watch the spikes shrink as they repeat." : "Each • is a rear-up or a hiss — watch the spikes shrink as they repeat."));
     if (ev.escapes > 0) extras.push(tf("wave.escapes", "↩ marks where you backed off ({n}×): the alarm dropped fast, and came straight back when you returned. That's avoidance, drawn.", { n: ev.escapes }));
-    if (ev.reads > 0) extras.push(tf("wave.reads", "You read the dog {r} of {n} times right.", { r: ev.readsRight, n: ev.reads }));
+    if (ev.reads > 0) extras.push(phobiaKey === "dogs" ? tf("wave.reads", "You read the dog {r} of {n} times right.", { r: ev.readsRight, n: ev.reads })
+      : tf("wave.reads2", "You read the {noun} {r} of {n} times right.", { noun: kitNoun(phobiaKey), r: ev.readsRight, n: ev.reads }));
     waveBlock = `
       <div class="wave-card">
         <span class="bridge-invite-kicker">${t("wave.kicker", "〰 Your alarm, this trial")}</span>
@@ -13718,8 +14034,8 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
         // After the FIRST dog: the two things that used to stand in front of
         // it — the primer and the Mirror baseline — offered now, when the
         // player has an alarm of their own to refer to. Both optional.
-        if (early || phobiaKey !== "dogs" || levelIdx !== 0) return "";
-        const needPrimer = !primerSeen("dogs"), needMirror = !getChecks("dogs").length;
+        if (early || !hasCreatureKit(phobiaKey) || levelIdx !== 0) return "";
+        const needPrimer = !primerSeen(phobiaKey), needMirror = !getChecks(phobiaKey).length;
         if (!needPrimer && !needMirror) return "";
         return `
           <div class="mirror-invite first-next">
@@ -13727,8 +14043,8 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
             <strong>${t("first.title", "Why staying works — and where you're starting from")}</strong>
             <p>${t("first.p", "You just watched an alarm climb and then fall without leaving. The primer shows why that matters and what escaping does instead. The Mirror takes five questions about the fear in <em>real life</em>, so later you can see it get quieter in numbers.")}</p>
             <div class="actions" style="margin-top:8px">
-              ${needPrimer ? `<button class="btn-ghost" data-action="open-primer">${t("first.primer", "🧭 The one-minute primer")}</button>` : ""}
-              ${needMirror ? `<button class="btn-ghost" data-action="fear-check" data-phobia="dogs" data-at="baseline">${t("first.mirror", "🪞 Hold up the Mirror")}</button>` : ""}
+              ${needPrimer ? `<button class="btn-ghost" data-action="open-primer" data-phobia="${phobiaKey}">${t("first.primer", "🧭 The one-minute primer")}</button>` : ""}
+              ${needMirror ? `<button class="btn-ghost" data-action="fear-check" data-phobia="${phobiaKey}" data-at="baseline">${t("first.mirror", "🪞 Hold up the Mirror")}</button>` : ""}
             </div>
           </div>`;
       })()}
@@ -16401,7 +16717,8 @@ function runTutorialTour(stage, phobiaKey) {
   // nothing locks), then the coach panel (the alarm line + this trial's
   // goals). It was four; the other two repeated the consent screen and the
   // on-screen captions, and stood between the player and the first dog.
-  if (phobiaKey === "dogs" && stage.querySelector(".dog-coach")) {
+  if (hasCreatureKit(phobiaKey) && stage.querySelector(".dog-coach")) {
+    const isDog = phobiaKey === "dogs", noun = kitNoun(phobiaKey);
     steps.length = 0;
     steps.push(
       {
@@ -16415,9 +16732,13 @@ function runTutorialTour(stage, phobiaKey) {
       {
         target: () => stage.querySelector(".dog-coach .dc-wave") || stage.querySelector(".dog-coach"),
         title: t("tour.d2t2", "Your alarm, and this trial"),
-        text: isTouch
-          ? t("tour.d2m2", "This line is your alarm: it climbs as you get close, then falls on its own if you stay. Get close enough, tap what you think the dog is feeling when asked, and stay until it settles.")
-          : t("tour.d2d2", "This line is your alarm: it climbs as you get close, then falls on its own if you stay. Get close enough, press 1, 2 or 3 for what you think the dog is feeling when asked, and stay until it settles."),
+        text: isDog
+          ? (isTouch
+            ? t("tour.d2m2", "This line is your alarm: it climbs as you get close, then falls on its own if you stay. Get close enough, tap what you think the dog is feeling when asked, and stay until it settles.")
+            : t("tour.d2d2", "This line is your alarm: it climbs as you get close, then falls on its own if you stay. Get close enough, press 1, 2 or 3 for what you think the dog is feeling when asked, and stay until it settles."))
+          : (isTouch
+            ? tf("tour.d2m3", "This line is your alarm: it climbs as you get close, then falls on its own if you stay. Get close enough, tap what you think the {noun} is doing when asked, and stay until it settles.", { noun })
+            : tf("tour.d2d3", "This line is your alarm: it climbs as you get close, then falls on its own if you stay. Get close enough, press 1, 2 or 3 for what you think the {noun} is doing when asked, and stay until it settles.", { noun })),
         arrow: "up",
       },
     );
@@ -33518,12 +33839,19 @@ const DOG_TEMPERAMENTS = [
 //     the dog into attention ON the dog instead of waiting it out;
 //   • the evidence — what the dog actually did, for the reality check against
 //     the player's own prediction once the trial is over.
-function makeDogCoach(opts) {
+// The same coach runs every creature realm; what differs is the KIT (see
+// creatureKit in the classic script): the body-language catalogue and read
+// classes, the feared outcomes, and the teaching lines that name the animal.
+// `dogName` is the name used in sentences ("the spider" for creatures with
+// no name); `title` (optional) is what the card's footer shows.
+function makeDogCoach(opts) { return makeCreatureCoach(Object.assign({ kit: creatureKit("dogs") }, opts)); }
+function makeCreatureCoach(opts) {
   const o = Object.assign({
-    stage: null, levelIdx: 0, intensity: "calm", dogName: "the dog",
+    stage: null, levelIdx: 0, intensity: "calm", dogName: "the dog", title: null,
     inZoneDist: 3.0, sizeMul: 0.6, tau: 16, hFloor: 0.35, minHold: 12,
-    coarse: false, goals: [], fears: null,
+    coarse: false, goals: [], fears: null, kit: null,
   }, opts || {});
+  const K = o.kit || creatureKit("dogs");
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const nameH = esc(o.dogName);
 
@@ -33547,7 +33875,7 @@ function makeDogCoach(opts) {
     level: o.levelIdx, dog: o.dogName, barks: 0, ranAtYou: 0, cameClose: 0, minDist: Infinity,
     jumped: 0, bit: 0, stareSec: 0, escapes: 0, reads: 0, readsRight: 0,
     signals: [], peak: 0, end: 0, settledAt: null, engagedSec: 0, newGround: 0,
-    wave: [], marks: [],
+    wave: [], marks: [], kinds: {}, notes: {},
   };
   let waveAcc = 0;
 
@@ -33560,7 +33888,7 @@ function makeDogCoach(opts) {
     <canvas class="dc-wave" aria-hidden="true"></canvas>
     <div class="dc-legend"><span class="dc-l-line">${t("dc.settleLine", "settle line")}</span></div>
     <ul class="dc-goals" aria-label="${esc(t("dc.goalsAria", "This trial"))}"></ul>
-    <div class="dc-foot"><span class="dc-dog">${nameH}</span><span class="dc-trust" title="${esc(t("dc.trustTip", "How well you two know each other"))}"></span></div>`;
+    <div class="dc-foot"><span class="dc-dog">${esc(o.title || o.dogName)}</span><span class="dc-trust" title="${esc(t("dc.trustTip", "How well you two know each other"))}"></span></div>`;
   const canvas = root.querySelector(".dc-wave");
   const wordEl = root.querySelector(".dc-word");
   const goalsEl = root.querySelector(".dc-goals");
@@ -33647,7 +33975,7 @@ function makeDogCoach(opts) {
     try {
       teach("prediction", tf("dc.tPredict",
         "Your alarm's prediction: <b>“{f}”</b>{b}. This trial is the test — keep an eye on what {dog} actually does.",
-        { f: esc(dogFearText(o.expect.fear)), b: o.expect.belief != null ? tf("dc.tPredictSure", " — {n}% sure", { n: o.expect.belief }) : "", dog: nameH }), 9000);
+        { f: esc(K.fearText(o.expect.fear)), b: o.expect.belief != null ? tf("dc.tPredictSure", " — {n}% sure", { n: o.expect.belief }) : "", dog: nameH }), 9000);
     } catch {}
   }
 
@@ -33658,7 +33986,7 @@ function makeDogCoach(opts) {
   const readPos = { x: null, y: null };
   const seenThisTrial = new Set();
   function signal(id, s = {}) {
-    const S = DOG_SIGNALS[id];
+    const S = K.signals[id];
     if (!S) return false;
     if (readOpen || readResultT > 0 || readCooldown > 0) return false;
     if (s.onScreen === false) return false;
@@ -33670,9 +33998,9 @@ function makeDogCoach(opts) {
     callout.classList.remove("show"); calloutT = 0;
     readPos.x = null;
     readBox.innerHTML = `
-      <div class="dc-read-q"><span class="dc-read-eye">👁</span> ${tf("dc.readQ", "<b>{dog}</b>: {look}. How is it feeling?", { dog: nameH, look: esc(dogSignalText(id, "look")) })}</div>
-      <div class="dc-read-opts">${Object.keys(DOG_READ_CLASSES).map((c) =>
-        `<button type="button" class="dc-opt dc-${c}" data-c="${c}"><span>${DOG_READ_CLASSES[c].dot}</span> ${esc(dogClassLabel(c))}${o.coarse ? "" : ` <kbd>${DOG_READ_CLASSES[c].key}</kbd>`}</button>`).join("")}</div>
+      <div class="dc-read-q"><span class="dc-read-eye">👁</span> ${tf(K.readQKey || "dc.readQ", K.readQ || "<b>{dog}</b>: {look}. How is it feeling?", { dog: esc(o.title || o.dogName), look: esc(K.signalText(id, "look")) })}</div>
+      <div class="dc-read-opts">${Object.keys(K.classes).map((c) =>
+        `<button type="button" class="dc-opt dc-${K.classes[c].tone || c}" data-c="${c}"><span>${K.classes[c].dot}</span> ${esc(K.classLabel(c))}${o.coarse ? "" : ` <kbd>${K.classes[c].key}</kbd>`}</button>`).join("")}</div>
       <div class="dc-read-timer"><i></i></div>`;
     readBox.querySelectorAll(".dc-opt").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); answer(b.dataset.c); }));
     readBox.classList.remove("result");
@@ -33682,12 +34010,12 @@ function makeDogCoach(opts) {
   }
   function answer(cls) {
     if (!readOpen) return;
-    const id = readOpen.id, S = DOG_SIGNALS[id];
+    const id = readOpen.id, S = K.signals[id];
     readOpen = null;
     const right = cls === S.cls;
     ev.reads++; if (right) ev.readsRight++;
     if (!ev.signals.includes(id)) ev.signals.push(id);
-    const isNew = recordDogRead(id, right);
+    const isNew = K.recordRead(id, right);
     mark("read");
     // Reading it right takes the edge off: an accurate appraisal is exactly
     // how the alarm recalibrates. A "give space" signal read right relieves
@@ -33697,26 +34025,22 @@ function makeDogCoach(opts) {
       phasic *= 0.6;
       goalCount("read", ev.readsRight);
     }
-    const cl = DOG_READ_CLASSES[S.cls];
+    const cl = K.classes[S.cls];
     readBox.innerHTML = `
       <div class="dc-read-res ${right ? "ok" : "no"}">
-        <div class="dc-res-top">${right ? "✓" : "↺"} <b>${esc(dogSignalText(id, "name"))}</b> · ${cl.dot} ${esc(dogClassLabel(S.cls))}${isNew ? ` <span class="dc-new">${t("dc.newSignal", "new in your field guide")}</span>` : ""}</div>
-        <div class="dc-res-means">${esc(dogSignalText(id, "means"))}</div>
+        <div class="dc-res-top">${right ? "✓" : "↺"} <b>${esc(K.signalText(id, "name"))}</b> · ${cl.dot} ${esc(K.classLabel(S.cls))}${isNew ? ` <span class="dc-new">${t("dc.newSignal", "new in your field guide")}</span>` : ""}</div>
+        <div class="dc-res-means">${esc(K.signalText(id, "means"))}</div>
       </div>`;
     readBox.classList.add("result");
     readResultT = 5.5;
     readCooldown = 7 + Math.random() * 4;
-    if (right && ev.readsRight === 1) {
-      teach("firstRead", tf("dc.tFirstRead",
-        "Reading the dog is half the cure. Fear treats every dog signal as <b>danger</b>; real dogs are mostly saying <b>relaxed</b> or <b>curious</b>.",
-        {}), 7500);
-    }
+    if (right && ev.readsRight === 1) teach("firstRead", K.texts.firstRead(), 7500);
   }
   function onKey(e) {
     if (!readOpen || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
     const k = e.key;
-    const cls = Object.keys(DOG_READ_CLASSES).find((c) => DOG_READ_CLASSES[c].key === k);
+    const cls = Object.keys(K.classes).find((c) => K.classes[c].key === k);
     if (cls) { e.preventDefault(); answer(cls); }
   }
   window.addEventListener("keydown", onKey);
@@ -33784,7 +34108,7 @@ function makeDogCoach(opts) {
     for (const m of liveMarks) {
       const i = m.i - first; if (i < 0) continue;
       const mx = x0 + (i / N) * W;
-      const glyph = m.kind === "bark" ? "•" : m.kind === "escape" ? "↩" : m.kind === "read" ? "◆" : m.kind === "run" ? "»" : m.kind === "settle" ? "✓" : "·";
+      const glyph = m.kind === "escape" ? "↩" : m.kind === "read" ? "◆" : (m.kind === "run" || m.kind === "lunge") ? "»" : m.kind === "settle" ? "✓" : m.kind === "spike" ? "•" : "·";
       g.fillStyle = m.kind === "escape" ? "rgba(239,107,91,.95)" : m.kind === "read" ? "rgba(165,180,252,.95)" : m.kind === "settle" ? "rgba(52,211,153,.95)" : "rgba(255,255,255,.75)";
       g.fillText(glyph, mx, 10);
     }
@@ -33878,7 +34202,7 @@ function makeDogCoach(opts) {
       if (window.__rungHoldComplete) goalDone("settle");   // settled after a long-stay finish
       mark("settle");
       root.classList.add("dc-settled");
-      teach("settled", tf("dc.tSettled",
+      teach("settled", K.texts.settled ? K.texts.settled() : tf("dc.tSettled",
         "<b>Settled.</b> Same {dog}, same distance — a quieter alarm. You didn't fight it or flee it. You stayed, and your body did the rest.",
         { dog: nameH }), 8000, true);
     }
@@ -33911,8 +34235,7 @@ function makeDogCoach(opts) {
       ev.escapes++;
       h = Math.min(1, h + 0.14);          // relief without learning: it'll be back
       mark("escape");
-      teach("escape", t("dc.tEscape",
-        "Backing off made the alarm drop — fast. That relief is how avoidance keeps a fear alive: the brain files it as <b>\"escaped just in time\"</b>. It never gets to learn the dog was fine. Step back in when you're ready — the alarm will be where you left it."), 10000, true);
+      teach("escape", K.texts.escape(), 10000, true);
     }
 
     // evidence: the dog running at you — a fast approach that started a
@@ -33979,13 +34302,20 @@ function makeDogCoach(opts) {
     const near = dist == null ? 1 : Math.max(0.35, Math.min(1, 1 - (dist - 1) / 7));
     phasic = Math.min(0.85, phasic + strength * 0.95 * hab * near);
     lastPulseT = clock;
-    if (kind === "bark") {
-      ev.barks++;
-      mark("bark");
-      if (n === 3) teach("barkHab", t("dc.tBarkHab",
-        "Look at the spikes: each bark hits a little softer than the one before. Same bark — your alarm is learning it's just noise."), 8000);
+    ev.kinds[kind] = (ev.kinds[kind] || 0) + 1;
+    if (kind === "bark") ev.barks++;
+    // The kit's repeating trigger (a bark, a dart, a hiss) is marked on the
+    // wave, and the third one names habituation out loud.
+    if (K.habKinds && K.habKinds.includes(kind)) {
+      mark(K.lungeKinds && K.lungeKinds.includes(kind) ? "lunge" : "spike");
+      const all = K.habKinds.reduce((a, k2) => a + (evN[k2] || 0), 0);
+      if (all === 3) teach("barkHab", K.texts.hab(), 8000);
+    } else if (K.lungeKinds && K.lungeKinds.includes(kind)) {
+      mark("lunge");
     }
   }
+  // A creature with no bond to track (spider, snake) shows its mood instead.
+  function setFoot(txt) { trustEl.textContent = txt || ""; trustEl.classList.add("dc-note"); lastTrustN = -2; }
   let lastTrustN = -1;
   function setTrust(v) {
     const n = Math.round(Math.max(0, Math.min(1, v)) * 5);
@@ -33996,6 +34326,7 @@ function makeDogCoach(opts) {
   // Discrete facts the scene knows better than any heuristic. A reported run
   // also switches the velocity guess off, so it is never double-counted.
   function note(kind) {
+    ev.notes[kind] = (ev.notes[kind] || 0) + 1;
     if (kind === "jump") ev.jumped++;
     if (kind === "run") { ev.ranAtYou++; ev._explicitRuns = true; ev._running = false; mark("run"); }
   }
@@ -34011,7 +34342,7 @@ function makeDogCoach(opts) {
     try { root.remove(); callout.remove(); readBox.remove(); } catch {}
   }
   return {
-    update, pulse, signal, answer, note, teach, goalDone, goalCount, setTrust,
+    update, pulse, signal, answer, note, teach, goalDone, goalCount, setTrust, setFoot,
     target: () => alarm, holdPolicy, evidence, dispose,
     get engaged() { return engaged; }, get alarm() { return alarm; },
     get readOpen() { return !!readOpen; }, get settled() { return settledLatched; },
@@ -35791,6 +36122,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     ],
   });
   window.__dogCoach = coach;   // verification handle (scene-scoped, cleared on dispose)
+  window.__coach = coach;
   // The alarm is the coach's now: PhobiaFear keeps the smoothing, peak,
   // grounding and listeners (vignette, grade, haptics); stray pulses from
   // anywhere in the scene land on the coach so they habituate too.
@@ -38271,6 +38603,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       try { if (window.PhobiaFear && window.PhobiaFear.setDirect) window.PhobiaFear.setDirect(null); } catch {}
       try { if (window.__holdPolicy === coach.holdPolicy) window.__holdPolicy = null; } catch {}
       try { if (window.__dogCoach === coach) window.__dogCoach = null; } catch {}
+      try { if (window.__coach === coach) window.__coach = null; } catch {}
       const stage = document.getElementById("stage");
       if (stage) {
         const hud = stage.querySelector(".trust-hud");
@@ -38847,11 +39180,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     // wall rung is exempt — it has to stay on its pillar.
     spider.position.set(V.range(-1.4, 1.4), -1, -distance + V.range(-0.4, 0.4));
   }
-  // Say which mood you got, the way the dog scene does.
+  // The mood this visit rolled is named in the coach card's footer (below).
   let moodChipOff = null;
-  sceneTimers.push(setTimeout(() => {
-    moodChipOff = mountMoodChip("It seems " + (temper.label || temper.id) + " today");
-  }, 900));
   const spiderCtrl = new SpiderController(spider, scene, camera);
   spider.userData.ctrl = spiderCtrl;   // observability for scene-verification hooks
   let spiderClaws = null;              // claw vertices (spiderClawVerts), set on ready
@@ -38947,21 +39277,9 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   // had no way to know a dart was relocation, a crouch was their own approach
   // speed, or a hop was already over. Reading the animal is the transferable
   // skill — the readout teaches it in plain language.
+  // The old one-line readout card is retired: the coach (below) asks the
+  // player to read the spider instead of telling them, which is the skill.
   let spHudEl = null, spHudPhrase = "", spHudDwell = 0;
-  setTimeout(() => {
-    const stage = document.getElementById("stage");
-    if (!stage || spider.userData.disposed) return;
-    let hud = stage.querySelector(".trust-hud");
-    if (!hud) {
-      hud = document.createElement("div");
-      hud.className = "trust-hud";
-      hud.innerHTML = `
-        <div class="trust-row"><div class="trust-name">${t("creature.spider", "House spider")}</div></div>
-        <div class="trust-mood"></div>`;
-      stage.appendChild(hud);
-    }
-    spHudEl = hud;
-  }, 90);
   function spiderPhrase() {
     // The readout used to keep describing a spider that had been carried out
     // ("Still. Spiders spend most of their lives…") for the rest of the rung.
@@ -39209,6 +39527,71 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   window.__holdCelebrationGate = () =>
     !B.pounce || pounceState === "idle" || pounceState === "recoiling";
 
+  // ---- The coach: the alarm, this trial's card, reading the spider ----
+  // Same learning loop as the dog realm (makeCreatureCoach): the alarm rises
+  // as you close in and falls while you stay; repeated dashes habituate; the
+  // trial ends when you've been close long enough AND the alarm came down.
+  // Replaces the fear-weighted credit, whose "duration" input made the fear
+  // CLIMB the longer you stayed.
+  const SP_COACH = [
+    { sizeMul: 0.50, tau: 11, hFloor: 0.30 },
+    { sizeMul: 0.58, tau: 12, hFloor: 0.32 },
+    { sizeMul: 0.70, tau: 14, hFloor: 0.34 },
+    { sizeMul: 0.80, tau: 16, hFloor: 0.36 },
+    { sizeMul: 0.90, tau: 18, hFloor: 0.38 },
+  ][rung];
+  const spZone = B.inZoneDist ?? 3.0;
+  const spZoneTxt = spZone.toFixed(1).replace(/\.0$/, "");
+  const spName = window.t("coach.sp.name", "the spider");
+  const spSkill = [
+    { id: "near",       icon: "→", text: window.tf("dc.sp.gNear", "Get within {m} m of the spider", { m: spZoneTxt }) },
+    { id: "stillMove",  icon: "🧍", text: window.t("dc.sp.gStill", "Stay put while it moves") },
+    { id: "dashHeld",   icon: "💨", text: window.t("dc.sp.gDash", "Stay close through a dash your way") },
+    { id: "pounceHeld", icon: "»", text: window.t("dc.sp.gJump", "Stay put through a jump") },
+    { id: "pounceHeld", icon: "»", text: window.t("dc.sp.gWall", "Stay put when it jumps off the wall") },
+  ][rung];
+  const spCoach = makeCreatureCoach({
+    kit: creatureKit("spiders"),
+    stage: document.getElementById("stage"),
+    levelIdx, intensity, dogName: spName, title: window.t("creature.spider", "House spider"),
+    inZoneDist: spZone, sizeMul: SP_COACH.sizeMul, tau: SP_COACH.tau, hFloor: SP_COACH.hFloor,
+    minHold: level.minHold || 12,
+    coarse: IS_COARSE_POINTER,
+    expect: (() => { const e = window.__pendingExpect; return (e && e.phobia === "spiders" && e.level === levelIdx) ? e : null; })(),
+    goals: [
+      spSkill,
+      { id: "read", icon: "👁", need: rung < 2 ? 2 : 3, text: window.t("dc.sp.gRead", "Read the spider's body language") },
+      { id: "settle", icon: "〰", required: true, text: window.t("dc.gSettle", "Stay until your alarm settles") },
+    ],
+  });
+  spCoach.setFoot(window.t("mood." + temper.id, "seems " + temper.id + " today"));
+  window.__coach = spCoach;
+  let spLastDist = 99;
+  if (window.PhobiaFear && window.PhobiaFear.setDirect) {
+    window.PhobiaFear.setDirect(() => spCoach.target(), (s) => spCoach.pulse(s, "event", spLastDist));
+  }
+  // Carried outside under the jar: the spider is gone, and so is the thing to
+  // stay near — the trial finishes on time in the cellar, not on the wave.
+  const spPolicy = {
+    engaged: () => spiderReleased || spCoach.holdPolicy.engaged(),
+    ready: (sec, mh) => spiderReleased || spCoach.holdPolicy.ready(sec, mh),
+    label: (sec, mh, eng, ready) => spiderReleased
+      ? (sec < mh ? { label: window.tf("dc.sp.hGone", "{s} / {n}s — it's outside now. Stay a moment in the cellar.", { s: sec, n: mh }), pill: `${sec}/${mh}s` } : null)
+      : spCoach.holdPolicy.label(sec, mh, eng, ready),
+    progress: (sec, mh) => spiderReleased ? Math.min(1, sec / mh) : spCoach.holdPolicy.progress(sec, mh),
+  };
+  window.__holdPolicy = spPolicy;
+  // Body language the player can read (never over the tour or countdown).
+  function spSignal(id) {
+    if (document.querySelector(".tour-overlay:not(.dismiss), .countdown")) return false;
+    return spCoach.signal(id, { onScreen: spOnScreen, dist: spLastDist });
+  }
+  function spPulse(strength, kind, dist) { spCoach.pulse(strength, kind, dist); }
+  let spOnScreen = false, spStillT = 0, spAlertPrev = 0, spFlickPrev = 0, spDartToward = 0;
+  let spToward = 0, spPrevSX = null, spPrevSZ = 0, spMovedT = 0, spPlayerSpeed = 0, spPrevPX = null, spPrevPZ = 0;
+  const spSubj = { x: 0, z: 0 };
+  const _spV = new THREE.Vector3();
+
   return {
     controls: {
       mode: "walkable",
@@ -39448,7 +39831,9 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           skitterTargetYaw = Math.atan2(dxp, dzp);   // face the player; retreat backward
           if (p.play) p.play("Walk", 0.05);
           if (A && A.skitterTicks) try { A.skitterTicks({ x: spider.position.x, y: spider.position.y + 0.1, z: spider.position.z }, { duration: skitterDur, intensity: 0.7, legRate: 55 }); } catch {}
-          if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.4);
+          spPulse(0.3, "startle", distP);
+          spDartToward = -1;
+          spSignal("dart");
         }
 
         // ---- Ambient skitter machine (data-driven, suppressed during a pounce) ----
@@ -39470,6 +39855,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               skitterDir = { x: Math.sin(ang), z: Math.cos(ang) };
               skitterTargetYaw = ang;
               microShuffleAt = 1.5 + Math.random() * 2.5;
+              spDartToward = 0;
+              if (Math.random() < 0.3) spSignal("wander");
               if (p.play) p.play("Walk", 0.06);
               if (A && A.skitterTicks) try { A.skitterTicks({ x: spider.position.x, y: spider.position.y + 0.1, z: spider.position.z }, { duration: 0.10, intensity: 0.22, legRate: 26 }); } catch {}
             } else if (dartClock > nextSkitter) {
@@ -39498,6 +39885,14 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               const m = Math.hypot(vx, vz) || 1;
               skitterDir = { x: vx / m, z: vz / m };
               skitterTargetYaw = Math.atan2(skitterDir.x, skitterDir.z);
+              // A dash your way is the trigger that habituates (each one hits
+              // softer); a dash away is the evidence it's going somewhere else.
+              spDartToward = (skitterDir.x * dxp + skitterDir.z * dzp) / distP;
+              if (spDartToward > 0.35 && distP < 6) {
+                spPulse(0.16 + 0.3 * clamp01(1 - distP / 3.2), "dart", distP);
+                spSignal("dart");
+              } else if (spDartToward < -0.3) spSignal("turnAway");
+              else if (Math.random() < 0.5) spSignal("dart");
               if (p.play) p.play("Walk", 0.06);
               if (A && A.bristleRustle) try { A.bristleRustle({ x: spider.position.x, y: spider.position.y + 0.1, z: spider.position.z }, { intensity: 0.5 + size * 0.4 }); } catch {}
               if (A && A.skitterTicks) try { A.skitterTicks({ x: spider.position.x, y: spider.position.y + 0.1, z: spider.position.z }, { duration: skitterDur, intensity: 0.5 + size * 0.5, legRate: 34 + Math.min(26, baseSpd * 12) }); } catch {}
@@ -39530,7 +39925,12 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               // 60 Hz, shorter at 120 Hz) instead of uniform 0.3–1.0 s.
               pauseDur = 0.3 + Math.random() * 0.7;
               if (p.play) p.play("Idle", 0.12);
-              if (skitterSpeedMul >= 1 && distP < 1.5 && window.PhobiaFear) window.PhobiaFear.pulseEvent(0.35 + 0.4 * (1 - distP / 1.5));
+              // Evidence, not a second spike: a dash that came your way and
+              // ended close is "it ran at me" — and it stopped.
+              if (skitterSpeedMul >= 1 && spDartToward > 0.35 && distP < 2.2) {
+                spCoach.note("run");
+                if (rung === 2 && spCoach.engaged) spCoach.goalDone("dashHeld");
+              }
             }
           } else {   // pausing
             if (skitterT > pauseDur) {
@@ -39592,7 +39992,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               if (skitterState === "skittering") { skitterState = "lurking"; skitterT = 0; if (p.play) p.play("Idle", 0.1); }
               const cd = B.coilDur ?? [0.7, 1.1];
               thisCoil = cd[0] + Math.random() * (cd[1] - cd[0]);
-              if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.3);
+              spPulse(0.26, "coil", distP);
+              spSignal("crouch");
               if (A && A.webPluck) try { A.webPluck({ x: spider.position.x, y: spider.position.y, z: spider.position.z }, { intensity: 0.4 }); } catch {}
             }
           } else if (pounceState === "coiling") {
@@ -39634,7 +40035,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               const closeness = clamp01((2.0 - distP) / 2.0);
               if (p.play) p.play("Attack", 0.04, { once: true });
               spiderCtrl.pounceRear(1);
-              if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.8 + 0.2 * closeness);
+              spPulse(0.62 + 0.2 * closeness, "pounce", distP);
+              spCoach.note("jump");
               if (controls.kickShake) controls.kickShake(0.05 + 0.04 * closeness);
               // Whole-body flinch + caught breath — the TP twin of kickShake.
               try {
@@ -39675,6 +40077,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             if (p.play && pounceT < 0.1) p.play("Walk", 0.06);
             if (pounceT > 0.9) {
               if (Math.hypot(spider.position.x - controls.position.x, spider.position.z - controls.position.z) < 1.8) heldCycles++;
+              // Still in the zone after it jumped and went back: you held it.
+              if (spCoach.engaged) spCoach.goalDone("pounceHeld");
               // Back ON the face, not hovering the last few percent of an ease.
               if (onWall) spider.position.set(recoilTgt.x, recoilTgt.y, recoilTgt.z);
               recoilTgt = null;
@@ -39689,8 +40093,67 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           }
         }
 
+        // ---- The coach, every frame ----
+        {
+          spLastDist = spiderReleased ? 99 : distP;
+          // The spider's own speed toward you (m/s), and yours.
+          if (spPrevSX != null && d > 0) {
+            const vx = (spider.position.x - spPrevSX) / d, vz = (spider.position.z - spPrevSZ) / d;
+            const tw = (vx * dxp + vz * dzp) / distP;
+            spToward += ((isFinite(tw) && Math.abs(tw) < 12 ? tw : 0) - spToward) * Math.min(1, d * 6);
+            const moved = Math.hypot(vx, vz) > 0.08;
+            spMovedT = moved ? 0.6 : Math.max(0, spMovedT - d);
+          }
+          spPrevSX = spider.position.x; spPrevSZ = spider.position.z;
+          if (controls && d > 0) {
+            if (spPrevPX != null) {
+              const pv = Math.hypot(controls.position.x - spPrevPX, controls.position.z - spPrevPZ) / d;
+              spPlayerSpeed += ((isFinite(pv) && pv < 12 ? pv : 0) - spPlayerSpeed) * Math.min(1, d * 6);
+            }
+            spPrevPX = controls.position.x; spPrevPZ = controls.position.z;
+          }
+          // On screen + where its body sits on screen (for the read prompt).
+          const sh = spiderCtrl.height || 0.3;
+          camera.updateMatrixWorld();
+          _spV.set(spider.position.x, spider.position.y + sh * 0.5, spider.position.z).project(camera);
+          spOnScreen = !spiderReleased && _spV.z < 1 && Math.abs(_spV.x) < 0.92 && Math.abs(_spV.y) < 0.92;
+          _spV.set(spider.position.x, spider.position.y + sh * 1.3, spider.position.z).project(camera);
+          const cvs = (typeof active !== "undefined" && active && active.renderer) ? active.renderer.domElement : null;
+          const sw = (cvs && cvs.clientWidth) || 0, shh = (cvs && cvs.clientHeight) || 0;
+          const ax = _spV.z < 1 ? (_spV.x + 1) / 2 * sw : null;
+          const ay = _spV.z < 1 ? (1 - _spV.y) / 2 * shh : null;
+          // Your gaze on it (yaw toward, pitch toward, like the fear block).
+          const dirTo = Math.atan2(-dxp, -dzp);
+          const yawGap = Math.abs(Math.atan2(Math.sin(controls.yaw - dirTo), Math.cos(controls.yaw - dirTo)));
+          const gazeK = clamp01(1 - yawGap / 1.0);
+          const facing = !onWall && (Math.sin(spider.rotation.y) * dxp + Math.cos(spider.rotation.y) * dzp) / distP > 0.8;
+          if (!onWall) { spSubj.x = spider.position.x; spSubj.z = spider.position.z; controls.tpSubject = spiderReleased ? null : spSubj; }
+          spCoach.update(d, {
+            dist: spLastDist, gaze: gazeK, dogToward: spToward,
+            px: controls.position.x, pz: controls.position.z, dogX: spider.position.x, dogZ: spider.position.z,
+            onScreen: spOnScreen, dogGazing: facing, trust: null,
+            anchorX: ax, anchorY: ay, stageW: sw, stageH: shh,
+          });
+          // Rung goals about where you stand.
+          if (rung === 0 && distP < spZone) spCoach.goalDone("near");
+          if (rung === 1 && spMovedT > 0 && distP < spZone && spPlayerSpeed < 0.3 && skitterState === "skittering") spCoach.goalDone("stillMove");
+          // Readable moments that aren't events: stillness, feelers, a leg
+          // flick, the stilt-stand as you come close.
+          if (loose && !spiderReleased && pounceState === "idle") {
+            if (skitterState === "lurking") spStillT += d; else spStillT = 0;
+            if (spStillT > 4 && Math.random() < d * 0.25) { if (spSignal(Math.random() < 0.55 ? "still" : "feel")) spStillT = 0; }
+            const fl = spiderCtrl._flickT || 0;
+            if (fl > 0 && spFlickPrev <= 0 && Math.random() < 0.35) spSignal("flick");
+            spFlickPrev = fl;
+            const alertV = clamp01((3.0 - distP) / 2.2);
+            if (alertV > 0.7 && spAlertPrev <= 0.7) spSignal("stilt");
+            spAlertPrev = alertV;
+          }
+        }
+
         // ---- Diegetic completion beat ----
         if (window.__rungHoldComplete && !completionBeatDone) {
+          if (spCoach.everSettled) spCoach.goalDone("settle");
           if (!B.pounce) { completionBeatDone = true; }
           else if (pounceState === "idle" || pounceState === "recoiling") {
             completionBeatDone = true;
@@ -39774,6 +40237,14 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       try { if (spCanvasDom) { spCanvasDom.removeEventListener("pointerdown", onSpDown); spCanvasDom.removeEventListener("pointerup", onSpUp); } } catch {}
       try { spider.userData.disposed = true; if (spider.userData.parts && spider.userData.parts.mixer) spider.userData.parts.mixer.stopAllAction(); } catch {}
       try { if (spHudEl) { spHudEl.remove(); spHudEl = null; } } catch {}
+      // The trial's evidence outlives the scene: the rate and complete screens
+      // compare it with the player's own prediction.
+      try { window.__lastTrialEvidence = Object.assign(spCoach.evidence(), { phobia: "spiders", level: levelIdx, ts: Date.now() }); } catch {}
+      try { spCoach.dispose(); } catch {}
+      try { if (spiderControls && spiderControls.tpSubject === spSubj) spiderControls.tpSubject = null; } catch {}
+      try { if (window.PhobiaFear && window.PhobiaFear.setDirect) window.PhobiaFear.setDirect(null); } catch {}
+      try { if (window.__holdPolicy === spPolicy) window.__holdPolicy = null; } catch {}
+      try { if (window.__coach === spCoach) window.__coach = null; } catch {}
       try { window.__holdCelebrationGate = null; window.__rungHoldComplete = false; } catch {}
       try { liveAudio.forEach(h => h && h.stop && h.stop()); } catch {}
       try {
@@ -42301,10 +42772,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   // Lying somewhere else on the path each visit. Radial distance is the rung's.
   snake.position.set(V.range(-1.1, 1.1), -1, -distance + V.range(-0.35, 0.35));
   if (segDist(snake.position.x, snake.position.z, logSeg()) < LOG_R + 0.5) snake.position.x = Math.abs(snake.position.x);
-  let moodChipOff = null;
-  sceneTimers.push(setTimeout(() => {
-    moodChipOff = mountMoodChip("It seems " + (temper.label || temper.id) + " today");
-  }, 900));
+  let moodChipOff = null;   // the mood is named in the coach card's footer
   // Head anchor near the raised head, for the hand-extend proximity check.
   const headAnchor = new THREE.Group();
   snake.add(headAnchor);
@@ -42423,21 +42891,8 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   // The five states + the strike phases were all machine and no window: a
   // rear-up read as "attack incoming" when it is a WARNING that passes, and
   // the approach-speed gate — the scene's whole lesson — was invisible.
+  // Retired: the coach (below) asks the player to read the snake instead.
   let snHudEl = null, snHudPhrase = "", snHudDwell = 0;
-  setTimeout(() => {
-    const stage = document.getElementById("stage");
-    if (!stage || snake.userData.disposed) return;
-    let hud = stage.querySelector(".trust-hud");
-    if (!hud) {
-      hud = document.createElement("div");
-      hud.className = "trust-hud";
-      hud.innerHTML = `
-        <div class="trust-row"><div class="trust-name">${t("creature.snake", "Grass snake")}</div></div>
-        <div class="trust-mood"></div>`;
-      stage.appendChild(hud);
-    }
-    snHudEl = hud;
-  }, 90);
   function snakePhrase() {
     const sp = snakeCtl.strikePhase;
     if (sp === "telegraph") return t("sn.telegraph", "Drawn back — the warning is loud now. Step back slowly.");
@@ -42516,6 +42971,56 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   window.__holdCelebrationGate = () =>
     intensity !== "apex" || (snakeCtl.strikePhase === "none" && snakeCtl.state !== "defensive");
 
+  // ---- The coach: the alarm, this trial's card, reading the snake ----
+  // Same learning loop as the dog and spider realms (makeCreatureCoach).
+  const snRung = Math.max(0, Math.min(4, levelIdx || 0));
+  const SN_COACH = [
+    { sizeMul: 0.46, tau: 11, hFloor: 0.30 },
+    { sizeMul: 0.56, tau: 12, hFloor: 0.32 },
+    { sizeMul: 0.68, tau: 14, hFloor: 0.34 },
+    { sizeMul: 0.80, tau: 16, hFloor: 0.36 },
+    { sizeMul: 0.90, tau: 18, hFloor: 0.38 },
+  ][snRung];
+  const snZone = B.inZoneDist ?? 3.2;
+  const snZoneTxt = snZone.toFixed(1).replace(/\.0$/, "");
+  const snSkill = [
+    { id: "near",      icon: "→", text: window.tf("dc.sn.gNear", "Get within {m} m of the snake", { m: snZoneTxt }) },
+    { id: "stillMove", icon: "🧍", text: window.t("dc.sn.gStill", "Stay put while it slides") },
+    { id: "crossHeld", icon: "〰", text: window.t("dc.sn.gCross", "Stay on the path while it crosses") },
+    { id: "rearHeld",  icon: "⬆️", text: window.t("dc.sn.gRear", "Stay close while it rears and watches") },
+    { id: "slowHeld",  icon: "🐢", text: window.t("dc.sn.gSlow", "Stay close — slowly, so it settles") },
+  ][snRung];
+  const snCoach = makeCreatureCoach({
+    kit: creatureKit("snakes"),
+    stage: document.getElementById("stage"),
+    levelIdx, intensity, dogName: window.t("coach.sn.name", "the snake"), title: window.t("creature.snake", "Grass snake"),
+    inZoneDist: snZone, sizeMul: SN_COACH.sizeMul, tau: SN_COACH.tau, hFloor: SN_COACH.hFloor,
+    minHold: level.minHold || 12,
+    coarse: IS_COARSE_POINTER,
+    expect: (() => { const e = window.__pendingExpect; return (e && e.phobia === "snakes" && e.level === levelIdx) ? e : null; })(),
+    goals: [
+      snSkill,
+      { id: "read", icon: "👁", need: snRung < 2 ? 2 : 3, text: window.t("dc.sn.gRead", "Read the snake's body language") },
+      { id: "settle", icon: "〰", required: true, text: window.t("dc.gSettle", "Stay until your alarm settles") },
+    ],
+  });
+  snCoach.setFoot(window.t("mood." + (temper.label || temper.id), "seems " + (temper.label || temper.id) + " today"));
+  window.__coach = snCoach;
+  let snLastDist = 99;
+  if (window.PhobiaFear && window.PhobiaFear.setDirect) {
+    window.PhobiaFear.setDirect(() => snCoach.target(), (s) => snCoach.pulse(s, "event", snLastDist));
+  }
+  window.__holdPolicy = snCoach.holdPolicy;
+  let snOnScreen = false;
+  function snSignal(id) {
+    if (document.querySelector(".tour-overlay:not(.dismiss), .countdown")) return false;
+    return snCoach.signal(id, { onScreen: snOnScreen, dist: snLastDist });
+  }
+  function snPulse(strength, kind) { snCoach.pulse(strength, kind, snLastDist); }
+  let snToward = 0, snPrevSX = null, snPrevSZ = 0, snPlayerSpeed = 0, snPrevPX = null, snPrevPZ = 0;
+  let snStillMoveT = 0, snCrossT = 0, snRearT = 0, snSlowT = 0, snCrossNear = false, snTonguePrev = -1, snBaskT = 0, snGlideT = 0;
+  const _snV = new THREE.Vector3();
+
   function snakeClampToBounds(p) {
     p.x = Math.max(SNAKE_BOUNDS.minX, Math.min(SNAKE_BOUNDS.maxX, p.x));
     p.z = Math.max(SNAKE_BOUNDS.minZ, Math.min(SNAKE_BOUNDS.maxZ, p.z));
@@ -42544,7 +43049,8 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   function snakePickWanderTarget1(controls) {
     // Higher rungs sometimes cross the open path 2–4 m ahead of the player —
     // the classic "it moved!" beat — otherwise roam near home turf.
-    if (B.cross && controls && Math.random() < (B.crossChance ?? 0.45)) {
+    const forced = !!snakeCtl._forceCross; snakeCtl._forceCross = false;
+    if (B.cross && controls && (forced || Math.random() < (B.crossChance ?? 0.45))) {
       const aheadZ = Math.max(SNAKE_BOUNDS.minZ + 0.4,
         Math.min(1.0, controls.position.z - (2.2 + Math.random() * 2.0)));
       const side = snake.position.x >= 0 ? -1 : 1;
@@ -42578,18 +43084,28 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       { const bd = B.baskDur || (size >= 0.6 ? [2.0, 6.0] : [3.5, 9.5]); snakeCtl.baskDur = bd[0] + Math.random() * (bd[1] - bd[0]); }
       snakeCtl.target = null;
       snakeCtl.scanTarget = 0; snakeCtl.scanNext = 3 + Math.random() * 5;   // idle head-scan cadence (stateT-relative)
+      snBaskT = 0;
       if (hasRig) sp.play("Idle", 0.5);
     } else if (state === "wander") {
       snakeCtl.target = snakePickWanderTarget(controls);
       if (hasRig) sp.play("Walk", 0.4);
       // The sudden onset of motion is itself a (small) startle when close.
-      if (snakeCtl.crossing && controls && window.PhobiaFear) {
+      snCrossNear = false; snCrossT = 0;
+      if (snakeCtl.crossing && controls) {
         const d = Math.hypot(snake.position.x - controls.position.x, snake.position.z - controls.position.z);
-        if (d < 6) window.PhobiaFear.pulseEvent(0.3);
+        if (d < 6) snPulse(0.24, "cross");
+        snSignal("glide");
       }
     } else if (state === "watch") {
       snakeCtl.target = null;
       if (hasRig) sp.play("Idle", 0.35);
+      // Noticing you: a real rear-up (rungs 4–5, within rearDist) is the
+      // defensive display that habituates; further out it's a look; on the
+      // gentle rungs it's the fast, facing tongue flicks — curiosity.
+      const pd = controls ? Math.hypot(snake.position.x - controls.position.x, snake.position.z - controls.position.z) : 99;
+      if (B.rear && pd < (B.rearDist ?? 2.6)) { snPulse(0.3, "rear"); snCoach.note("rear"); snSignal("rear"); }
+      else if (B.rear) snSignal("lookUp");
+      else snSignal("sniff");
     } else if (state === "retreat") {
       let tgt;
       if (controls) {
@@ -42612,6 +43128,8 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       }
       snakeCtl.target = tgt;
       if (hasRig) sp.play("Walk", 0.3);
+      snCoach.note("leave");
+      snSignal("leave");
     } else if (state === "defensive") {
       // Strike TELEGRAPH onset — reared, jaw parting, a warning hiss. The Attack
       // clip is reserved for the actual lunge (fired in the 'lunge' phase); this
@@ -42623,7 +43141,8 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       headAnchor.getWorldPosition(hp);
       if (window.PhobiaAudio) { if (window.PhobiaAudio.snakeHiss) window.PhobiaAudio.snakeHiss(hp, { intensity: 1.0 }); else if (window.PhobiaAudio.hissOnce) window.PhobiaAudio.hissOnce(hp, 1.0); }
       if (snakeCtl.ctrl) snakeCtl.ctrl.requestTongueFlick(true);
-      if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.55);
+      snPulse(0.42, "telegraph");
+      snSignal("sCoil");
       if (!snakeCtl.defensiveSpoken && window.PhobiaVoice) {
         snakeCtl.defensiveSpoken = true;
         window.PhobiaVoice.speak("It's warning you. Ease back, slow down — slow movement reads as safety.");
@@ -42686,12 +43205,14 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
 
     // --- State transitions (per-rung distances) ---
     if (snakeCtl._retreatCooldown > 0) snakeCtl._retreatCooldown -= dtN;   // post-corner settle window
+    if (snakeCtl._ignoreT > 0) snakeCtl._ignoreT -= dtN;                   // lost interest: only a close pass re-alerts it
+    const watchAt = snakeCtl._ignoreT > 0 ? 1.6 : (B.watchDist ?? 3.2);
     if (snakeCtl.state === "bask") {
-      if (controls && playerDist < (B.watchDist ?? 3.2)) snakeEnter("watch", controls);
+      if (controls && playerDist < watchAt) snakeEnter("watch", controls);
       else if (stillness > (B.retreatStill ?? 0.3) && controls && playerDist < 5 && !(snakeCtl._retreatCooldown > 0)) snakeEnter("retreat", controls);
       else if (!B.still && snakeCtl.stateT > snakeCtl.baskDur) snakeEnter("wander", controls);
     } else if (snakeCtl.state === "wander") {
-      if (controls && playerDist < (snakeCtl.crossing ? 1.6 : (B.watchDist ?? 2.6))) snakeEnter("watch", controls);
+      if (controls && playerDist < (snakeCtl.crossing ? 1.6 : Math.min(watchAt, B.watchDist ?? 2.6))) snakeEnter("watch", controls);
       else if (snakeCtl.target) {
         const d = Math.hypot(snakeCtl.target.x - snake.position.x, snakeCtl.target.z - snake.position.z);
         if (d < 0.35 || snakeCtl.stateT > 18) snakeEnter("bask", controls);
@@ -42701,6 +43222,15 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
         // Engaged with the offered hand — hold position, stay reared.
       } else if (stillness > (B.retreatStill ?? 0.3) && !(snakeCtl._retreatCooldown > 0)) snakeEnter("retreat", controls);
       else if (!controls || playerDist > (B.watchDist != null ? B.watchDist + 1 : 4.2)) snakeEnter("bask", controls);
+      else if (snakeCtl.strikePhase === "none" && snakeCtl.stateT > (snakeCtl._watchFor || (snakeCtl._watchFor = 7 + Math.random() * 5))) {
+        // It doesn't watch you forever. Having decided you're not a problem,
+        // it goes about its day — across the path on the crossing rungs —
+        // and only a close pass catches its attention again for a while.
+        snakeCtl._watchFor = 0;
+        snakeCtl._ignoreT = 6 + Math.random() * 4;
+        if (B.wander) { snakeCtl._forceCross = !!B.cross; snakeEnter("wander", controls); }
+        else snakeEnter("bask", controls);
+      }
     } else if (snakeCtl.state === "retreat") {
       const d = snakeCtl.target
         ? Math.hypot(snakeCtl.target.x - snake.position.x, snakeCtl.target.z - snake.position.z)
@@ -42732,7 +43262,8 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           const sp2 = snake.userData.parts; if (sp2 && sp2.play) sp2.play("Attack", 0.05, { once: true, timeScale: 1.3 });
           headAnchor.getWorldPosition(_snkV1);
           if (window.PhobiaAudio) { if (window.PhobiaAudio.snakeStrike) window.PhobiaAudio.snakeStrike(_snkV1); else if (window.PhobiaAudio.hissOnce) window.PhobiaAudio.hissOnce(_snkV1, 1.0); }
-          if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.9);
+          snPulse(0.7, "strike");
+          snCoach.note("strike");
           // The strike hits the BODY too: whole-body flinch + the caught
           // breath. kickShake below is FP-only; this reaches third person.
           try {
@@ -42792,7 +43323,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       headAnchor.getWorldPosition(_snkV1);
       if (window.PhobiaAudio) { if (window.PhobiaAudio.snakeHiss) window.PhobiaAudio.snakeHiss(_snkV1, { intensity: 0.55 }); else if (window.PhobiaAudio.hissOnce) window.PhobiaAudio.hissOnce(_snkV1, 0.55); }
       snakeCtl.jawTarget = Math.max(snakeCtl.jawTarget, 0.4);
-      if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.3);
+      snPulse(0.22, "hiss");
     }
 
     // --- Steering + root motion ---
@@ -43168,9 +43699,62 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
             threat: intensity === "apex" && (snakeCtl.state === "defensive" || snakeCtl.strikePhase === "telegraph" || snakeCtl.strikePhase === "lunge"),
           });
         }
+        // ---- The coach, every frame ----
+        {
+          snLastDist = distS;
+          const dxp = -dxs, dzp = -dzs;   // snake → player is dxs/dzs; keep the dog sign convention below
+          if (snPrevSX != null && dtN > 0) {
+            const vx = (SP.x - snPrevSX) / dtN, vz = (SP.z - snPrevSZ) / dtN;
+            const tw = (vx * dxs + vz * dzs) / (distS || 1);        // + = the snake closing on you
+            snToward += ((isFinite(tw) && Math.abs(tw) < 12 ? tw : 0) - snToward) * Math.min(1, dtN * 6);
+          }
+          snPrevSX = SP.x; snPrevSZ = SP.z;
+          if (snPrevPX != null && dtN > 0) {
+            const pv = Math.hypot(CP.x - snPrevPX, CP.z - snPrevPZ) / dtN;
+            snPlayerSpeed += ((isFinite(pv) && pv < 12 ? pv : 0) - snPlayerSpeed) * Math.min(1, dtN * 6);
+          }
+          snPrevPX = CP.x; snPrevPZ = CP.z;
+          headAnchor.getWorldPosition(_snV);
+          camera.updateMatrixWorld();
+          _snV.project(camera);
+          snOnScreen = _snV.z < 1 && Math.abs(_snV.x) < 0.92 && Math.abs(_snV.y) < 0.92;
+          const cvs = (typeof active !== "undefined" && active && active.renderer) ? active.renderer.domElement : null;
+          const sw = (cvs && cvs.clientWidth) || 0, shh = (cvs && cvs.clientHeight) || 0;
+          const ax = _snV.z < 1 ? (_snV.x + 1) / 2 * sw : null;
+          const ay = _snV.z < 1 ? (1 - _snV.y) / 2 * shh - 30 : null;
+          const facing = (Math.sin(snakeCtl.heading) * dxs + Math.cos(snakeCtl.heading) * dzs) / (distS || 1) > 0.8;
+          snCoach.update(dtN, {
+            dist: distS, gaze: gazeAlign, dogToward: snToward,
+            px: CP.x, pz: CP.z, dogX: SP.x, dogZ: SP.z,
+            onScreen: snOnScreen, dogGazing: facing && snakeCtl.state === "watch", trust: null,
+            anchorX: ax, anchorY: ay, stageW: sw, stageH: shh,
+          });
+          void dxp; void dzp;
+          const inZone = snCoach.engaged;
+          const st = snakeCtl.state;
+          // A crossing that passes close is "it came at me" — and it went on by.
+          if (snakeCtl.crossing && st === "wander" && distS < 2.2 && !snCrossNear) { snCrossNear = true; snCoach.note("run"); }
+          // Readable moments that aren't state changes.
+          if (st === "bask") {
+            snBaskT += dtN;
+            if (snBaskT > 5 && Math.random() < dtN * 0.2 && snSignal("bask")) snBaskT = 0;
+            const tt = snakeCtl.ctrl ? snakeCtl.ctrl._tongueT : -1;
+            if (tt != null && tt >= 0 && snTonguePrev < 0 && Math.random() < 0.3) snSignal("flick");
+            snTonguePrev = tt == null ? -1 : tt;
+          } else snTonguePrev = -1;
+          if (st === "wander" && !snakeCtl.crossing) { snGlideT += dtN; if (snGlideT > 2.5 && Math.random() < dtN * 0.3 && snSignal("glide")) snGlideT = 0; }
+          // Rung goals.
+          if (snRung === 0 && distS < snZone) snCoach.goalDone("near");
+          if (snRung === 1) { snStillMoveT = (st === "wander" && inZone && snPlayerSpeed < 0.3) ? snStillMoveT + dtN : snStillMoveT; if (snStillMoveT > 2) snCoach.goalDone("stillMove"); }
+          if (snRung === 2) { if (snakeCtl.crossing && st === "wander" && inZone) snCrossT += dtN; if (snCrossT > 3) snCoach.goalDone("crossHeld"); }
+          if (snRung === 3) { if (st === "watch" && distS < (B.rearDist ?? 2.6) + 0.3) snRearT += dtN; if (snRearT > 4) snCoach.goalDone("rearHeld"); }
+          if (snRung === 4) { if (distS < (B.strikeDist ?? 1.45) + 0.8) snSlowT += dtN; if (snSlowT > 8) snCoach.goalDone("slowHeld"); }
+        }
+
         // Diegetic completion beat: once the hold is earned, the snake settles
         // for good (no more strikes) — the disconfirming evidence, staged.
         if (window.__rungHoldComplete && !completionBeatDone) {
+          if (snCoach.everSettled) snCoach.goalDone("settle");
           completionBeatDone = true;
           snakeCtl.defenseCooldown = Infinity;
           // If the hold completes mid-strike, the strike branch that clears these
@@ -43303,6 +43887,11 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       try { const bar = document.querySelector('.scene-cmd-bar[data-scene="snakes"]'); if (bar) bar.dataset.wired = ""; } catch {}
       try { snake.userData.disposed = true; if (snake.userData.parts && snake.userData.parts.mixer) snake.userData.parts.mixer.stopAllAction(); } catch {}
       try { if (snHudEl) { snHudEl.remove(); snHudEl = null; } } catch {}
+      try { window.__lastTrialEvidence = Object.assign(snCoach.evidence(), { phobia: "snakes", level: levelIdx, ts: Date.now() }); } catch {}
+      try { snCoach.dispose(); } catch {}
+      try { if (window.PhobiaFear && window.PhobiaFear.setDirect) window.PhobiaFear.setDirect(null); } catch {}
+      try { if (window.__holdPolicy === snCoach.holdPolicy) window.__holdPolicy = null; } catch {}
+      try { if (window.__coach === snCoach) window.__coach = null; } catch {}
       // Stop the moving slither rustle (it's a looping source, not a one-shot).
       try { if (slitherSound) { slitherSound.stop(); slitherSound = null; } } catch {}
       // Free the set-dressing this overhaul added (generated textures + materials).
