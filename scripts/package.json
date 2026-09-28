@@ -4,14 +4,16 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node smoke.cjs",
     "bake-dog-coats": "node bake-dog-coats.cjs",
     "bake-dog-photo-coats": "node bake-dog-photo-coats.cjs",
     "bake-character-skin": "node bake-character-skin.cjs",
-    "bake-all": "node bake-character-skin.cjs && node bake-dog-coats.cjs && node bake-dog-photo-coats.cjs",
+    "bake-all": "node bake-character-skin.cjs && node bake-dog-coats.cjs && node bake-dog-photo-coats.cjs && node compress-textures.cjs",
     "measure-ref": "node measure-ref.cjs",
     "shoot": "node shoot-scenes.cjs",
-    "face-diagnostic": "node face-diagnostic.cjs"
+    "face-diagnostic": "node face-diagnostic.cjs",
+    "compress-textures": "node compress-textures.cjs",
+    "smoke": "node smoke.cjs"
   },
   "keywords": [],
   "author": "",

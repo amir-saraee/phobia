@@ -1,8 +1,8 @@
 {
   "name": "Mira — The Courage Journey",
   "short_name": "Mira",
-  "description": "A tiny game about big fears. Walk the Valley of Fears and face six famous phobias one small, safe step at a time.",
-  "start_url": "./index.html",
+  "description": "A tiny game about big fears — starting with a fear of dogs, one small, safe step at a time.",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",

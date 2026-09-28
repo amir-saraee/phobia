@@ -11,43 +11,39 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v17-photo-realism";
+const VERSION = "mira-v18-launch";
+// Installed on the first visit, in the background — so it holds only what the
+// launch realm (dogs) needs to boot and play offline. Everything else (other
+// creature models, anim clips, voice) is cached at runtime the first time it
+// is actually fetched. Keep this list lean: every byte here is paid by every
+// first-time visitor, on phone data too.
 const SHELL = [
-  "./",
-  "./index.html",
+  "./",                 // the page (manifest start_url is "./" — one copy, not two)
   "./manifest.json",
   "./icon.svg",
   "./src/character.js",
   "./src/phobia-info.js",
   "./src/i18n.js",
-  // Real rigged creature models (Quaternius, CC0) used by the dog / spider /
-  // snake scenes. Precached so those scenes work fully offline once installed.
+  // Self-hosted three.js (0.160.0). The addons it pulls are runtime-cached.
+  "./assets/vendor/three/three.module.min.js",
+  // Rigged dogs (Quaternius, CC0) + their photo-projected coats (JPEG ship
+  // copies — scripts/compress-textures.cjs).
   "./assets/models/ShibaInu.gltf",
   "./assets/models/Husky.gltf",
-  "./assets/models/Spider.glb",
-  "./assets/models/Snake.glb",
-  // Photo-projected breed coats (baked from assets/refs/dog-*-reference.png).
-  "./assets/models/textures/shiba_photo_albedo.png",
-  "./assets/models/textures/shiba_photo_normal.png",
-  "./assets/models/textures/shiba_photo_roughness.png",
-  "./assets/models/textures/husky_photo_albedo.png",
-  "./assets/models/textures/husky_photo_normal.png",
-  "./assets/models/textures/husky_photo_roughness.png",
-  // Protagonist facial PBR maps (baked from protagonist-face-closeup.png).
-  "./assets/models/textures/character_face_albedo.png",
-  "./assets/models/textures/character_face_normal.png",
-  "./assets/models/textures/character_face_roughness.png",
+  "./assets/models/textures/shiba_photo_albedo.jpg",
+  "./assets/models/textures/shiba_photo_normal.jpg",
+  "./assets/models/textures/shiba_photo_roughness.jpg",
+  "./assets/models/textures/husky_photo_albedo.jpg",
+  "./assets/models/textures/husky_photo_normal.jpg",
+  "./assets/models/textures/husky_photo_roughness.jpg",
   // Meadow window backdrop + outdoor HDRI for the dog room.
   "./assets/models/textures/meadow_window.jpg",
   "./assets/env/meadow_1k.hdr",
-  // Recorded ambient beds (room / birds / forest / wind).
+  // Recorded ambient beds + the dog vocal bank manifest (samples cache at
+  // runtime; a missing sample falls back to synthesis per-kind).
   "./assets/audio/ambient/manifest.json",
   "./assets/audio/ambient/room_soft.mp3",
   "./assets/audio/ambient/birds.mp3",
-  "./assets/audio/ambient/forest.mp3",
-  "./assets/audio/ambient/wind_soft.mp3",
-  // Dog vocal sample bank manifest (samples cache at runtime like voice
-  // clips; a missing/uncached sample falls back to synthesis per-kind).
   "./assets/audio/dog/manifest.json",
 ];
 
@@ -85,6 +81,9 @@ self.addEventListener("fetch", (event) => {
         caches.open(VERSION).then((cache) => cache.put(req, copy)).catch(() => {});
       }
       return res;
-    }).catch(() => caches.match(req))
+    }).catch(() => caches.match(req).then((hit) =>
+      // Offline page loads by any path (/, /index.html, an old installed
+      // start_url) fall back to the one cached copy of the page.
+      hit || (req.mode === "navigate" ? caches.match("./") : undefined)))
   );
 });

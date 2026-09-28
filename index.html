@@ -10,21 +10,21 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg" />
 <link rel="apple-touch-icon" href="icon.svg" />
 <title>Mira — The Courage Journey · face your fears in a tiny 3D game</title>
-<meta name="description" content="A tiny free game about big fears. Walk the Valley of Fears, face six famous phobias — dogs, spiders, snakes, heights, the dark, tight spaces — in gentle 3D trials built on real CBT exposure principles, then take the real-world steps that matter. بازی کوچکی برای رو‌به‌رو شدن با ترس‌ها — با پشتیبانی فارسی." />
+<meta name="description" content="A tiny free game about a fear of dogs. Five gentle 3D trials with a dog that reads how you move, built on real CBT exposure principles — then the real-world steps that matter. More fears coming. بازی کوچکی برای رو‌به‌رو شدن با ترس‌ها — با پشتیبانی فارسی." />
 <meta name="author" content="Amir Saraee" />
 <link rel="canonical" href="https://phobia-kappa.vercel.app/" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="Mira" />
 <meta property="og:url" content="https://phobia-kappa.vercel.app/" />
 <meta property="og:title" content="Mira — The Courage Journey" />
-<meta property="og:description" content="A tiny game about big fears — face six famous phobias one small, safe step at a time. Free, in your browser, English + فارسی." />
+<meta property="og:description" content="A tiny game about big fears — starting with dogs, one small, safe step at a time. Free, in your browser, English + فارسی." />
 <meta property="og:image" content="https://phobia-kappa.vercel.app/dog-desktop.png" />
 <meta property="og:image:alt" content="A third-person 3D scene from Mira: your character standing in a warm room, facing a small dog." />
 <meta property="og:locale" content="en_US" />
 <meta property="og:locale:alternate" content="fa_IR" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Mira — The Courage Journey" />
-<meta name="twitter:description" content="A tiny game about big fears — face six famous phobias one small, safe step at a time." />
+<meta name="twitter:description" content="A tiny game about big fears — starting with dogs, one small, safe step at a time." />
 <meta name="twitter:image" content="https://phobia-kappa.vercel.app/dog-desktop.png" />
 <meta name="format-detection" content="telephone=no" />
 <script type="application/ld+json">
@@ -37,7 +37,7 @@
   "operatingSystem": "Web browser",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "inLanguage": ["en", "fa"],
-  "description": "A free browser game about facing fears: six famous phobias as gentle 3D exposure trials built on CBT principles, with real-world bridge steps, self-tracked outcomes and a printable progress report. A practice game, not therapy."
+  "description": "A free browser game about facing fears, starting with a fear of dogs: gentle 3D exposure trials built on CBT principles, with real-world bridge steps, self-tracked outcomes and a printable progress report. A practice game, not therapy."
 }
 </script>
 <script>
@@ -54,8 +54,8 @@ if ("serviceWorker" in navigator) {
 <script type="importmap">
 {
   "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    "three": "./assets/vendor/three/three.module.min.js",
+    "three/addons/": "./assets/vendor/three/addons/"
   }
 }
 </script>
@@ -3936,6 +3936,32 @@ if ("serviceWorker" in navigator) {
   .jw-dawn.lit { opacity: 1; transform: none; }
   .jw-dawn h3 { color: #ffd9b0; }
   .jw-dawn p { color: #d8b8a8; }
+  /* Realms outside the launch scope: named, visibly not yet walkable. */
+  .jw-soon { text-align: center; margin: 34px auto 0; max-width: 720px; padding: 0 16px; }
+  .jw-soon h3 { color: var(--text); margin: 0 0 6px; font-size: 17px; }
+  .jw-soon p { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
+  .jw-soon-row { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .jw-soon-chip { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; text-align: left;
+    border: 1px dashed var(--border-2); border-radius: 14px; background: rgba(20, 26, 46, .45); opacity: .82; }
+  .jw-soon-chip strong { font-size: 14px; color: var(--text); }
+  .jw-soon-chip span { font-size: 12px; color: var(--muted); }
+  .jw-soon-chip em { font-style: normal; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-top: 4px; }
+  .soon-panel { max-width: 640px; margin: 24px auto; }
+  /* Feedback box */
+  .fb-modal textarea { width: 100%; box-sizing: border-box; margin-top: 10px; padding: 10px 12px; resize: vertical;
+    font: inherit; font-size: 14px; color: var(--text); background: rgba(10, 14, 26, .55);
+    border: 1px solid var(--border-2); border-radius: 12px; }
+  .fb-modal textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .fb-diag { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; font-size: 12px; color: var(--muted); cursor: pointer;
+    text-transform: none; letter-spacing: normal; font-weight: 400; }
+  .fb-diag input { margin-top: 2px; }
+  .fb-where { color: var(--muted); margin: 8px 0 0; }
+  .fb-after { text-align: center; margin: 14px 0 0; }
+  .linklike { background: none; border: 0; padding: 4px 6px; font: inherit; font-size: 13px; color: var(--muted);
+    text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .linklike:hover, .linklike:focus-visible { color: var(--text); }
+  .soon-panel .realm-epithet { font-style: italic; color: var(--muted); margin-top: -4px; }
   @media (max-width: 640px) {
     .realm-node { grid-template-columns: 1fr; }
     .realm-node.side-r, .realm-node.side-l { margin-left: 0; margin-right: 0; }
@@ -4273,6 +4299,17 @@ if ("serviceWorker" in navigator) {
   /* Hotbar open: the message stack rides up above it (bar ≈ 64px + height). */
   .stage.cmds-open .captions   { bottom: 132px; }
   .stage.cmds-open .ctx-prompt { bottom: 224px; }
+  /* Fullscreen: the hold/continue row floats INSIDE the stage (bottom 22px,
+     ~72px tall), right where slots 1–2 sit — captions and the reach hint
+     rendered underneath the buttons. Lift the stack clear of it (and of the
+     command bar above it when that is open). Always, not just while the
+     chrome shows, so the text doesn't bob as the controls fade. */
+  .stage:fullscreen .reach-hint, .stage:-webkit-full-screen .reach-hint { bottom: 104px; }
+  .stage:fullscreen .captions,   .stage:-webkit-full-screen .captions   { bottom: 140px; }
+  .stage:fullscreen .ctx-prompt, .stage:-webkit-full-screen .ctx-prompt { bottom: 226px; }
+  .stage.cmds-open:fullscreen .reach-hint, .stage.cmds-open:-webkit-full-screen .reach-hint { bottom: 162px; }
+  .stage.cmds-open:fullscreen .captions,   .stage.cmds-open:-webkit-full-screen .captions   { bottom: 198px; }
+  .stage.cmds-open:fullscreen .ctx-prompt, .stage.cmds-open:-webkit-full-screen .ctx-prompt { bottom: 284px; }
   @media (max-width: 600px) {
     .stage .captions {
       bottom: 52px; font-size: 12px; padding: 6px 11px; max-width: 90%;
@@ -4784,7 +4821,7 @@ if ("serviceWorker" in navigator) {
 <noscript>
   <div style="max-width:640px;margin:60px auto;padding:24px;font-family:system-ui,sans-serif;line-height:1.6">
     <h1>Mira — The Courage Journey</h1>
-    <p>A tiny free browser game about big fears: walk the Valley of Fears and face six famous phobias — dogs, spiders, snakes, heights, the dark, tight spaces — in gentle 3D trials built on CBT graded-exposure principles, then take matching real-world steps and watch your fear scores fall.</p>
+    <p>A tiny free browser game about big fears, starting with dogs: five gentle 3D trials built on CBT graded-exposure principles, then take matching real-world steps and watch your fear scores fall.</p>
     <p>Mira needs JavaScript (and WebGL) to run — please enable JavaScript and reload. A practice game, not therapy.</p>
     <p lang="fa" dir="rtl">میرا یک بازی رایگان مرورگری برای رو‌به‌رو شدن تدریجی با ترس‌هاست. برای اجرا به جاوااسکریپت نیاز دارد.</p>
   </div>
@@ -8879,6 +8916,25 @@ const PHOBIAS = {
 // the journey map and pickers only surface these six (+ user-forged ladders).
 const FEATURED = ["dogs", "spiders", "snakes", "heights", "dark", "enclosed"];
 
+// Launch scope. Only the dog realm has the full learning loop (an alarm that
+// falls while you stay, reading the animal, trials that end on learning, not a
+// timer) and the art pass to match. The other realms still run a bare hold
+// timer — in some, the fear meter CLIMBS while you stay, the opposite of the
+// lesson — so they're shown as "coming soon" and reopen one at a time as each
+// is brought up to the dog bar: add its key here.
+// QA / dev: `?all=1` in the URL, or localStorage fobia.allRealms = "1".
+const LAUNCH_OPEN = ["dogs"];
+function allRealmsUnlocked() {
+  try { return /[?&]all=1\b/.test(location.search) || localStorage.getItem("fobia.allRealms") === "1"; } catch { return false; }
+}
+function realmOpen(k) {
+  if (LAUNCH_OPEN.includes(k) || allRealmsUnlocked()) return true;
+  if (PHOBIAS[k] && PHOBIAS[k].isCustom) return true;   // the traveler's own forged ladder
+  // A traveler who already walked a realm keeps it — nothing they own vanishes.
+  try { const pr = state.progress && state.progress[k]; if (pr && (pr.highestCompleted ?? -1) >= 0) return true; } catch {}
+  return false;
+}
+
 // Per-realm flavour. `whispers` is the per-trial psychology drip: one short
 // principle per rung, phrased for THIS fear, revealed as the traveler reaches
 // that trial (future trials stay misty — curiosity is part of the pull).
@@ -8964,6 +9020,11 @@ const REALMS = {
 };
 // Fallback realm flavour for custom / legacy phobias so every ladder still
 // renders as a realm even if it isn't one of the six featured fears.
+// Trial names/descriptions through the content layer (level.<key>.<i>.title /
+// .desc in the fa pack). English falls straight through to the data.
+function lvTitle(key, i) { const lv = PHOBIAS[key] && PHOBIAS[key].levels[i]; return lv ? t(`level.${key}.${i}.title`, lv.title) : ""; }
+function lvDesc(key, i)  { const lv = PHOBIAS[key] && PHOBIAS[key].levels[i]; return lv && lv.desc ? t(`level.${key}.${i}.desc`, lv.desc) : ""; }
+
 function realmOf(key) {
   const p = PHOBIAS[key];
   const base = REALMS[key] || {
@@ -9358,11 +9419,11 @@ function fearCheckDue(phobiaKey, levelIdx) {
 // the traveler already carries (legacy progress, a non-featured primary fear,
 // or a forged/custom ladder) so nothing they own ever disappears.
 function journeyKeys() {
-  const keys = FEATURED.filter(k => PHOBIAS[k]);
+  const keys = FEATURED.filter(k => PHOBIAS[k] && realmOpen(k));
   const extra = [];
   const ch = window.Character && window.Character.loadCharacter();
   if (ch) [ch.primaryPhobia, ...(ch.additionalPhobias || [])].forEach(k => {
-    if (k && PHOBIAS[k] && !keys.includes(k) && !extra.includes(k)) extra.push(k);
+    if (k && PHOBIAS[k] && realmOpen(k) && !keys.includes(k) && !extra.includes(k)) extra.push(k);
   });
   Object.keys(state.progress || {}).forEach(k => {
     if (PHOBIAS[k] && (state.progress[k].highestCompleted ?? -1) >= 0 && !keys.includes(k) && !extra.includes(k)) extra.push(k);
@@ -9873,7 +9934,9 @@ function openFearCheckModal(phobiaKey, at, mOpts = {}) {
           <ol class="quiz-steps">${steps}</ol>
           ${clinLine}
           <div class="actions" style="margin-top:10px">
-            <button class="btn-primary" id="quizEnter">${tf("quiz.enter", "Step into {realm}", { realm: escapeHtml(realm.realmName) })}</button>
+            <button class="btn-primary" id="quizEnter">${realmOpen(phobiaKey)
+              ? tf("quiz.enter", "Step into {realm}", { realm: escapeHtml(realm.realmName) })
+              : tf("quiz.enterSoon", "{realm} — opening soon", { realm: escapeHtml(realm.realmName) })}</button>
             <button class="btn-ghost" id="quizValley">${t("quiz.valley", "🗺 See the whole valley")}</button>
           </div>
         </div>`;
@@ -10135,6 +10198,12 @@ function render(view, params) {
     try { window._landingAudio.stop(); } catch {}
     window._landingAudio = null;
   }
+  // A closed realm (see LAUNCH_OPEN) answers every one of its routes — map
+  // link, deep link, old bookmark — with its "coming soon" page.
+  if (params && params.phobia && PHOBIAS[params.phobia] && !realmOpen(params.phobia) &&
+      ["ladder", "phobia-progress", "predict", "exposure", "rate", "breathe", "complete"].includes(view)) {
+    view = "soon";
+  }
   const isLanding = view === "welcome" || view === "threshold";
   document.body.classList.toggle("landing-mode", isLanding);
   const appEl = document.getElementById("app");
@@ -10200,6 +10269,7 @@ function render(view, params) {
   if (view === "character")   v.innerHTML = viewCharacterPage(params.editing);
   if (view === "select")      v.innerHTML = viewSelect();
   if (view === "ladder")      v.innerHTML = viewLadder(params.phobia);
+  if (view === "soon")        v.innerHTML = viewRealmSoon(params.phobia);
   if (view === "predict")     v.innerHTML = viewPredict(params.phobia, params.level);
   if (view === "exposure")    v.innerHTML = viewExposure(params.phobia, params.level);
   // The instant demo IS the dogs first rung — same view, same mount — with a
@@ -10395,7 +10465,7 @@ function attachHandlers(view, params) {
   if (charBadge) charBadge.onclick = () => {
     const all = window.Character ? window.Character.loadCharacters() : [];
     if (all.length > 1) go("profiles");
-    else go("character", { editing: true });
+    else { _travelerDraft = null; go("traveler"); }
   };
   // Share progress card (on the insights view)
   const shareBtn = document.getElementById("shareCardBtn");
@@ -10483,17 +10553,18 @@ function openMenu() {
     <ul class="menu-list">
       <li><button data-go="welcome">${t("menu.title", "🌌 Title screen — the story")}</button></li>
       <li><button data-go="select">${t("menu.valley", "🗺 The Valley of Fears")}</button></li>
-      ${ch ? `<li><button data-go="ladder" data-phobia="${ch.primaryPhobia || ""}">${t("menu.trials", "Continue your trials")}</button></li>` : ""}
+      ${ch ? `<li><button data-go="ladder" data-phobia="${(() => { try { return currentRealmKey(); } catch { return ch.primaryPhobia || ""; } })()}">${t("menu.trials", "Continue your trials")}</button></li>` : ""}
       <li><button data-go="journal">${t("menu.sparks", "✦ Book of Sparks")}</button></li>
       <li><button data-go="insights">${t("menu.story", "📜 Your story so far")}</button></li>
       <li><button data-go="report">${t("menu.report", "📄 Progress report — print / share")}</button></li>
-      <li><button data-go="custom">${t("menu.forge", "🛠 Forge a custom fear")}</button></li>
+      ${allRealmsUnlocked() ? `<li><button data-go="custom">${t("menu.forge", "🛠 Forge a custom fear")}</button></li>` : ""}
     </ul>
     <div class="menu-divider"></div>
     <ul class="menu-list">
-      <li><button data-go="character" data-edit="1">${t("menu.editCharacter", "✎ Edit your traveler")}</button></li>
+      <li><button data-go="traveler">${t("menu.editCharacter", "✎ Edit your traveler")}</button></li>
       ${allChars.length > 1 ? `<li><button data-go="profiles">${t("menu.switchCharacter", "⇄ Switch traveler")}</button></li>` : ""}
       <li><button data-go="about">${t("menu.about", "ℹ️ About Mira")}</button></li>
+      <li><button id="menuFeedback">${t("fb.menu", "💬 Send feedback")}</button></li>
       <li><button id="menuOpenSettings">${t("menu.settings", "⚙ Settings")}</button></li>
     </ul>
     <div class="menu-divider"></div>
@@ -10508,6 +10579,7 @@ function openMenu() {
   drawer.querySelector("#closeMenu").onclick = closeMenu;
   backdrop.onclick = closeMenu;
   drawer.querySelector("#menuOpenSettings").onclick = () => { closeMenu(); openSettings(); };
+  drawer.querySelector("#menuFeedback").onclick = () => { closeMenu(); openFeedback(location.hash); };
   drawer.querySelectorAll("[data-go]").forEach(btn => {
     btn.onclick = () => {
       closeMenu();
@@ -10685,17 +10757,17 @@ function openSettings() {
       </div>
       <button class="btn-ghost" id="importBtn" style="padding:6px 12px;font-size:12px;">Import</button>
     </div>
-    <div class="row">
+    ${allRealmsUnlocked() ? `<div class="row">
       <div>
         <label>Custom ladder</label>
         <div class="small">Build your own phobia and rungs.</div>
       </div>
       <button class="btn-ghost" id="customBtn" style="padding:6px 12px;font-size:12px;">Build</button>
-    </div>
+    </div>` : ""}
     <div class="row">
       <div>
-        <label>Replay onboarding tour</label>
-        <div class="small">See the 4-step intro the next time you start a rung.</div>
+        <label>${t("settings.tour", "Replay onboarding tour")}</label>
+        <div class="small">${t("settings.tourSub", "See the short intro again the next time you start a trial.")}</div>
       </div>
       <button class="btn-ghost" id="replayTourBtn" style="padding:6px 12px;font-size:12px;">Replay</button>
     </div>
@@ -10717,6 +10789,13 @@ function openSettings() {
         <button class="btn-ghost" id="diagCopyBtn" style="padding:6px 12px;font-size:12px;" ${readErrLog().length ? "" : "disabled"}>${t("settings.diagCopy", "Copy")}</button>
         <button class="btn-ghost" id="diagClearBtn" style="padding:6px 12px;font-size:12px;" ${readErrLog().length ? "" : "disabled"}>${t("settings.diagClear", "Clear")}</button>
       </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>${t("fb.settings", "Feedback")}</label>
+        <div class="small">${t("fb.settingsSub", "A bug, a stuck moment, something that helped — tell us.")}</div>
+      </div>
+      <button class="btn-ghost" id="fbBtn" style="padding:6px 12px;font-size:12px;">${t("fb.write", "Write")}</button>
     </div>
     <div class="row">
       <div>
@@ -10884,7 +10963,9 @@ function openSettings() {
     drawer.querySelector("#diagClearBtn").disabled = true;
   };
   drawer.querySelector("#importBtn").onclick = () => importData();
-  drawer.querySelector("#customBtn").onclick = () => { close(); go("custom"); };
+  const customBtn = drawer.querySelector("#customBtn");
+  if (customBtn) customBtn.onclick = () => { close(); go("custom"); };
+  drawer.querySelector("#fbBtn").onclick = () => { close(); openFeedback("settings"); };
   drawer.querySelector("#replayTourBtn").onclick = (e) => {
     try { localStorage.removeItem("fobia.tutorialSeen"); } catch {}
     const note = document.createElement("div");
@@ -10956,7 +11037,14 @@ function handleAction(d, params) {
       if (!draft.name) draft.name = "Traveler";
       try { C.saveCharacter(draft); } catch {}
       _travelerDraft = null;
-      go("ladder", { phobia: "dogs" });
+      // A first-timer walks straight to the gate of trial 1. The realm page,
+      // primer and Mirror are all still there — after the first dog, when
+      // they have something to refer to. (It used to be eight screens from
+      // "Step inside" to the first step on the floor.)
+      const firstRun = (getProgress("dogs").highestCompleted ?? -1) < 0 &&
+        !(state.log || []).some((l) => l.phobia === "dogs");
+      if (firstRun) go("predict", { phobia: "dogs", level: 0 });
+      else go("ladder", { phobia: "dogs" });
       break;
     }
     case "go-dogs": go("ladder", { phobia: "dogs" }); break;
@@ -10987,12 +11075,17 @@ function handleAction(d, params) {
       try { PhobiaAudio.ui("whoosh"); } catch {}
       const lvl = parseInt(d.level, 10);
       const toPredict = () => go("predict", { phobia: d.phobia, level: lvl });
-      // The first time into the yard, one minute on what the fear IS first.
-      if (d.phobia === "dogs" && !primerSeen("dogs")) openDogPrimer({ then: toPredict, skipGoes: true });
+      // One minute on what the fear IS — but after the first dog, not before
+      // it: trial 1's complete screen offers it, and if it was skipped there
+      // it opens in front of trial 2. Before any dog it was just more reading.
+      if (d.phobia === "dogs" && !primerSeen("dogs") && (getProgress("dogs").highestCompleted ?? -1) >= 0) {
+        openDogPrimer({ then: toPredict, skipGoes: true });
+      }
       else toPredict();
       break;
     }
     case "open-primer": openDogPrimer(); break;
+    case "open-feedback": openFeedback(d.context || ""); break;
     case "scroll-to": {
       const el = document.querySelector(d.target || "");
       if (el) { try { el.scrollIntoView({ behavior: "smooth", block: "start" }); } catch { el.scrollIntoView(); } }
@@ -11196,6 +11289,71 @@ function openStageBreath(stage) {
 // longer reaches. This is that lesson, made playable: the avoidance trap and
 // the way out, as two loops, plus a tiny sim where the player chooses Leave
 // or Stay across three encounters and watches what each does to the alarm.
+// ---------- Feedback ----------
+// The one channel back from players. Nothing is sent automatically: the note
+// is composed here and the player copies it (or, once FEEDBACK_URL is set,
+// it's copied and the form opens in a new tab to paste it into).
+// FEEDBACK_URL: paste a Google Form / Tally link here. Empty = Copy only —
+// for the playtest phase, testers send the note to whoever shared Mira.
+const FEEDBACK_URL = "";
+const APP_BUILD = "2026-09-27 · launch-dogs";
+function feedbackDiag() {
+  const lines = [
+    `build: ${APP_BUILD}`,
+    `route: ${location.hash || "#/"}`,
+    `lang: ${(window.I18n && window.I18n.currentLanguage()) || "en"} · quality: ${(() => { try { return resolveQuality(); } catch { return "?"; } })()}`,
+    `screen: ${window.innerWidth}×${window.innerHeight} @${window.devicePixelRatio || 1}x · touch: ${(navigator.maxTouchPoints || 0) > 0 ? "yes" : "no"}`,
+    `ua: ${navigator.userAgent}`,
+  ];
+  const errs = readErrLog().slice(-5);
+  if (errs.length) {
+    lines.push(`recent errors (${errs.length}):`);
+    errs.forEach((e) => lines.push(`  - ${new Date(e.ts).toISOString().slice(0, 16)} ${e.route || ""} ${e.msg}${e.src ? " @" + e.src : ""}`));
+  }
+  return lines.join("\n");
+}
+function openFeedback(context = "") {
+  const overlay = document.createElement("div");
+  overlay.className = "goal-modal-overlay";
+  overlay.innerHTML = `
+    <div class="goal-modal fb-modal" role="dialog" aria-label="${escapeHtml(t("fb.title", "What worked, what didn't?"))}">
+      <span class="bridge-invite-kicker">${t("fb.kicker", "💬 Your feedback")}</span>
+      <h3 style="margin:6px 0 4px">${t("fb.title", "What worked, what didn't?")}</h3>
+      <p class="small">${t("fb.p", "Mira is new, and what you tell us shapes it. Anything helps — a bug, a moment you got stuck, a moment it helped. Nothing is sent automatically: you copy the note, or send it yourself.")}</p>
+      <textarea id="fbText" rows="6" maxlength="4000" placeholder="${escapeHtml(t("fb.ph", "What happened? Where were you?"))}"></textarea>
+      <label class="fb-diag"><input type="checkbox" id="fbDiag" checked> <span>${t("fb.diag", "Include technical details (browser, device, recent errors — nothing personal)")}</span></label>
+      ${FEEDBACK_URL ? "" : `<p class="small fb-where">${t("fb.where", "Copy it and send it to the person who shared Mira with you.")}</p>`}
+      <div class="actions" style="margin-top:12px">
+        <button class="btn-ghost" id="fbClose">${t("fb.close", "Close")}</button>
+        <button class="${FEEDBACK_URL ? "btn-ghost" : "btn-primary"}" id="fbCopy">${t("fb.copy", "📋 Copy note")}</button>
+        ${FEEDBACK_URL ? `<button class="btn-primary" id="fbSend">${t("fb.send", "Open the form ↗")}</button>` : ""}
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const ta = overlay.querySelector("#fbText");
+  const compose = () => {
+    const parts = [ta.value.trim() || "(no note)"];
+    if (context) parts.push(`context: ${context}`);
+    if (overlay.querySelector("#fbDiag").checked) parts.push("---", feedbackDiag());
+    return parts.join("\n");
+  };
+  const copy = async (btn) => {
+    const text = compose();
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; } catch {}
+    if (!ok) { try { prompt(t("fb.copy", "📋 Copy note"), text); } catch {} }
+    if (btn && ok) { const was = btn.textContent; btn.textContent = t("fb.copied", "Copied ✓"); setTimeout(() => { btn.textContent = was; }, 1800); }
+    return ok;
+  };
+  const close = () => overlay.remove();
+  overlay.querySelector("#fbClose").onclick = close;
+  overlay.querySelector("#fbCopy").onclick = (e) => copy(e.currentTarget);
+  const send = overlay.querySelector("#fbSend");
+  if (send) send.onclick = async () => { await copy(null); try { window.open(FEEDBACK_URL, "_blank", "noopener"); } catch {} };
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
+  setTimeout(() => { try { ta.focus(); } catch {} }, 60);
+}
+
 function primerSeen(key) { try { return !!((activeCharSlice().primer || {})[key]); } catch { return false; } }
 function markPrimerSeen(key) {
   try { const cs = activeCharSlice(); cs.primer = cs.primer || {}; cs.primer[key] = Date.now(); saveState(); } catch {}
@@ -11791,7 +11949,7 @@ function viewSelect() {
           ${doneToday ? `<span class="quest-chip done-chip">${t("quest.earned", "🔥 ember earned")}</span>` : `<span class="quest-chip">${t("quest.bonus", "+15 ember for the first trial today")}</span>`}
         </div>
         <div class="quest-body">
-          <strong>${escapeHtml(questRealm.realmName)} · ${tf("quest.trial", "trial {n}", { n: questDone + 1 })}: ${escapeHtml(PHOBIAS[questKey].levels[questDone].title)}</strong>
+          <strong>${escapeHtml(questRealm.realmName)} · ${tf("quest.trial", "trial {n}", { n: questDone + 1 })}: ${escapeHtml(lvTitle(questKey, questDone))}</strong>
           <p>${doneToday ? t("quest.doneP", "You showed up today — the flame is lit. Another step is always welcome.") : t("quest.todoP", "One small step a day keeps the flame lit. You can step out at any moment.")}</p>
         </div>
         <button class="${doneToday ? "btn-ghost" : "btn-primary"}" data-action="start-level" data-phobia="${questKey}" data-level="${questDone}">
@@ -11807,10 +11965,24 @@ function viewSelect() {
         </span>
       </div>` : ""}
       ${nudgeBlock()}
-      <p class="camp-hint">${t("camp.hint", "the path descends through the valley — choose a realm ▾")}</p>
+      <p class="camp-hint">${keys.length === 1
+        ? tf("camp.hintOne", "the path descends to {realm} ▾", { realm: realmOf(keys[0]).realmName })
+        : t("camp.hint", "the path descends through the valley — choose a realm ▾")}</p>
     </section>
     <ol class="realm-list">${nodes}</ol>
-    <section class="jw-dawn">
+    ${(() => {
+      const soon = FEATURED.filter((k) => PHOBIAS[k] && !keys.includes(k));
+      if (!soon.length) return "";
+      return `
+      <section class="jw-soon" aria-labelledby="jwSoonH">
+        <h3 id="jwSoonH">${t("soon.mapH", "Further down the valley")}</h3>
+        <p>${t("soon.mapP", "More realms are being built to the same standard as the Meadow Yard. Each opens here when it's ready.")}</p>
+        <ul class="jw-soon-row">
+          ${soon.map((k) => `<li class="jw-soon-chip"><strong>${escapeHtml(realmOf(k).realmName)}</strong><span>${escapeHtml(t(`phobia.${k}.label`, PHOBIAS[k].label))}</span><em>${t("soon.chip", "coming soon")}</em></li>`).join("")}
+        </ul>
+      </section>`;
+    })()}
+    ${(allRealmsUnlocked() || tamedCount > 0 || state.log.length) ? `<section class="jw-dawn">
       <h3>${t("dawn.h", "Beyond the valley")}</h3>
       ${tamedCount > 0 ? `<p class="jw-dawn-count">${tf("dawn.tamed", "🕊 {a} of {b} shadows tamed — the dawn is closer.", { a: tamedCount, b: keys.length })}</p>` : ""}
       ${(() => {
@@ -11819,8 +11991,8 @@ function viewSelect() {
         // discoverable, honestly framed as less-traveled (lighter scenes, no
         // experiment decks). journeyKeys() already promotes any of them the
         // traveler actually works on.
-        const faint = ["water", "flying", "needles", "speaking", "driving", "storms"]
-          .filter((k) => PHOBIAS[k] && !keys.includes(k));
+        const faint = allRealmsUnlocked() ? ["water", "flying", "needles", "speaking", "driving", "storms"]
+          .filter((k) => PHOBIAS[k] && !keys.includes(k)) : [];
         if (!faint.length) return "";
         return `
           <p class="jw-faint-head">${t("dawn.faintP", "Six fainter paths also cross these hills — less traveled, still real:")}</p>
@@ -11828,12 +12000,12 @@ function viewSelect() {
             ${faint.map((k) => `<button class="jw-faint" data-action="select-phobia" data-phobia="${k}">${escapeHtml(t(`phobia.${k}.label`, PHOBIAS[k].label))}</button>`).join("")}
           </div>`;
       })()}
-      <p>${t("dawn.p", "Fears the map doesn't know yet — forge your own path for them.")}</p>
+      ${allRealmsUnlocked() ? `<p>${t("dawn.p", "Fears the map doesn't know yet — forge your own path for them.")}</p>` : ""}
       <div class="actions" style="justify-content:center">
-        <button class="btn-ghost" data-action="open-custom">${t("dawn.forge", "🛠 Forge a custom fear")}</button>
+        ${allRealmsUnlocked() ? `<button class="btn-ghost" data-action="open-custom">${t("dawn.forge", "🛠 Forge a custom fear")}</button>` : ""}
         ${state.log.length ? `<button class="btn-ghost" data-action="open-insights">${t("dawn.story", "📜 Your story so far")}</button>` : ""}
       </div>
-    </section>
+    </section>` : ""}
   </div>`;
 }
 
@@ -12044,7 +12216,7 @@ function viewAbout() {
     <div class="panel about-view">
       <span class="badge">${t("about.badge", "About")}</span>
       <h2 style="margin-top:10px">${t("about.title", "Mira — a tiny game about big fears")}</h2>
-      <p>${t("about.intro", "Mira is a free practice game about how fear works. You make a traveler, walk into a valley where six famous fears live, and face each one in small, safe, always-optional steps — first in 3D scenes, then through tiny real-world quests.")}</p>
+      <p>${t("about.intro2", "Mira is a free practice game about how fear works. You make a traveler and face a fear of dogs in small, safe, always-optional steps — first in 3D scenes, then through tiny real-world quests. More fears are being built to the same standard.")}</p>
 
       <h3>${t("about.scienceH", "The science it leans on")}</h3>
       <p>${t("about.science1", "The whole game is built around graded exposure — the best-studied approach for specific fears. Anxiety rises, peaks, and falls on its own when you stay; avoidance is what keeps a fear alive. Each 'trial' asks you to predict how bad it will be, stay a little, and then compare — that prediction gap is where the brain updates.")}</p>
@@ -12058,10 +12230,11 @@ function viewAbout() {
       <p>${t("about.privacy", "Everything stays in your browser: characters, sessions, check-ins — all of it lives in this device's local storage. No account, no analytics, no server. Your data leaves only when you export it yourself (Settings → Export).")}</p>
 
       <h3>${t("about.creditsH", "Credits")}</h3>
-      <p class="about-credits">${t("about.credits", "Built for fun with")} <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> · ${t("about.creditsModels", "creature models by")} <a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a> (CC0) · ${t("about.creditsAmbient", "ambient recordings from")} <a href="https://mixkit.co" target="_blank" rel="noopener">Mixkit</a> · ${t("about.creditsHdri", "sky lighting from")} <a href="https://polyhaven.com/a/meadow" target="_blank" rel="noopener">Poly Haven</a> (CC0) · ${t("about.creditsMade", "made with care by Amir.")}</p>
+      <p class="about-credits">${t("about.credits", "Built for fun with")} <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> · ${t("about.creditsPhysics", "physics by")} <a href="https://rapier.rs" target="_blank" rel="noopener">Rapier</a> · ${t("about.creditsModels", "creature models by")} <a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a> (CC0) · ${t("about.creditsAmbient", "ambient recordings from")} <a href="https://mixkit.co" target="_blank" rel="noopener">Mixkit</a> · ${t("about.creditsHdri", "sky lighting from")} <a href="https://polyhaven.com/a/meadow" target="_blank" rel="noopener">Poly Haven</a> (CC0) · ${t("about.creditsMade", "made with care by Amir.")}</p>
 
       <div class="actions" style="margin-top:14px">
         <button class="btn-ghost" data-action="show-consent">${t("about.reread", "Re-read the welcome notice")}</button>
+        <button class="btn-ghost" data-action="open-feedback" data-context="about">${t("fb.menu", "💬 Send feedback")}</button>
         <button class="btn-primary" data-action="open-select">${t("about.back", "🗺 To the valley")}</button>
       </div>
     </div>`;
@@ -12247,6 +12420,25 @@ function viewJournal() {
 // realm's shadow guardian, which visibly shrinks as trials are faced. The
 // deep psychoeducation is kept, tucked behind "The Guide's notes"; the
 // per-trial psychology drips out as one whisper per reached trial instead.
+// A realm outside the launch scope (LAUNCH_OPEN). Honest about why it's
+// closed, and points at the realm that IS ready rather than a dead end.
+function viewRealmSoon(phobiaKey) {
+  const p = PHOBIAS[phobiaKey];
+  const realm = realmOf(phobiaKey);
+  return `
+    <div class="panel soon-panel">
+      <span class="badge">${t("soon.badge", "Coming soon")} · ${escapeHtml(t(`phobia.${phobiaKey}.label`, p.label))}</span>
+      <h2 style="margin-top:10px">${escapeHtml(realm.realmName)}</h2>
+      <p class="realm-epithet">${escapeHtml(realm.epithet)}</p>
+      <p>${t("soon.p1", "This realm is closed while it's rebuilt to the standard of the Meadow Yard: a creature that reads how you move, an alarm that rises and then falls while you stay, and trials that end when you've learned something — not when a timer runs out.")}</p>
+      <p>${t("soon.p2", "It opens here when it's ready. Until then, the Meadow Yard is where the whole method lives — and what you learn there about staying with an alarm works on every fear.")}</p>
+      <div class="actions">
+        <button class="btn-primary" data-action="go-dogs">${t("soon.toDogs", "To the Meadow Yard →")}</button>
+        <button class="btn-ghost" data-action="open-quiz">${t("soon.mirror", "🪞 Take the 60-second self-check")}</button>
+      </div>
+    </div>`;
+}
+
 function viewLadder(phobiaKey) {
   const p = PHOBIAS[phobiaKey];
   const realm = realmOf(phobiaKey);
@@ -12368,10 +12560,10 @@ function viewLadder(phobiaKey) {
         <div class="trial-marker">${doneT ? "🔥" : `<span>${i + 1}</span>`}</div>
         <div class="trial-card">
           <div class="trial-head">
-            <strong>${escapeHtml(lv.title)}</strong>
+            <strong>${escapeHtml(lvTitle(phobiaKey, i))}</strong>
             <span class="trial-flames" title="intensity ${i + 1} of 5">${flames}</span>
           </div>
-          <p class="trial-desc">${escapeHtml(lv.desc)}</p>
+          <p class="trial-desc">${escapeHtml(lvDesc(phobiaKey, i))}</p>
           ${whisper}
           <div class="trial-foot">
             <span class="trial-stats">${stats.join(" · ")}</span>
@@ -12382,7 +12574,7 @@ function viewLadder(phobiaKey) {
   }).join(`<li class="trial-link" aria-hidden="true"></li>`);
 
   // Quick-switch tabs across the traveler's own fears.
-  const allMine = ch ? [ch.primaryPhobia, ...(ch.additionalPhobias || [])].filter(Boolean) : [];
+  const allMine = ch ? [ch.primaryPhobia, ...(ch.additionalPhobias || [])].filter((k) => k && PHOBIAS[k] && realmOpen(k)) : [];
   const tabs = allMine.length > 1 ? `
     <div class="phobia-tabs">
       ${allMine.map(k => `
@@ -12434,10 +12626,10 @@ function viewLadder(phobiaKey) {
   // One obvious primary action above the fold: continue (or start) the trials.
   const nextIdx = Math.min(total - 1, prog.highestCompleted + 1);
   const ctaLabel = prog.highestCompleted < 0
-    ? tf("ladder.begin", "Begin — trial 1: {t}", { t: p.levels[0].title })
+    ? tf("ladder.begin", "Begin — trial 1: {t}", { t: lvTitle(phobiaKey, 0) })
     : cleared
-      ? tf("ladder.again", "Walk it again — trial {n}: {t}", { n: total, t: p.levels[total - 1].title })
-      : tf("ladder.continue", "Continue — trial {n}: {t}", { n: nextIdx + 1, t: p.levels[nextIdx].title });
+      ? tf("ladder.again", "Walk it again — trial {n}: {t}", { n: total, t: lvTitle(phobiaKey, total - 1) })
+      : tf("ladder.continue", "Continue — trial {n}: {t}", { n: nextIdx + 1, t: lvTitle(phobiaKey, nextIdx) });
   const heroCta = `
     <div class="ladder-cta">
       <button class="btn-primary" data-action="start-level" data-phobia="${phobiaKey}" data-level="${nextIdx}">
@@ -12567,7 +12759,9 @@ function viewLadder(phobiaKey) {
   if (!checks.length) {
     mirrorBlock = `
       <div class="mirror-invite">
-        <span class="bridge-invite-kicker">${t("mirror.before", "🪞 Before your first trial")}</span>
+        <span class="bridge-invite-kicker">${(getProgress(phobiaKey).highestCompleted ?? -1) < 0
+          ? t("mirror.before", "🪞 Before your first trial")
+          : t("mirror.measure", "🪞 Measure it — about real life")}</span>
         <strong>${t("mirror.title", "Hold up the Mirror — 60 seconds")}</strong>
         <p>${t("mirror.p", "Five quick questions about how this fear is in <em>real life</em> right now. Do it once now, and later mirrors will show you — in numbers — how much quieter it gets.")}</p>
         <button class="btn-primary" data-action="fear-check" data-phobia="${phobiaKey}" data-at="baseline">${t("mirror.btn", "Look in the mirror")}</button>
@@ -12974,9 +13168,12 @@ function viewPredict(phobiaKey, levelIdx) {
   return `
     <div class="panel">
       <span class="badge">${tf("predict.badge", "Trial {n} of {m} — {realm}", { n: levelIdx + 1, m: p.levels.length, realm: escapeHtml(realmOf(phobiaKey).realmName) })}</span>
-      <h2 style="margin-top:10px">${t("predict.h2", "At the gate: name your fear's number")}</h2>
-      <p>${t("predict.p", "A traveler's ritual that makes the trial count double: <em>predict</em> how loud the fear will be, then see how it actually goes. Most people over-predict — and catching your own shadow exaggerating is exactly the lesson the brain needs.")}</p>
-      <p class="hint" style="margin-top:14px">You'll be: <strong>${escapeHtml(lv.title)}</strong>${lv.desc ? ` — ${escapeHtml(lv.desc)}` : ""}</p>
+      ${phobiaKey === "dogs" && levelIdx === 0 && !(state.log || []).some((l) => l.phobia === "dogs")
+        ? `<h2 style="margin-top:10px">${t("predict.h2first", "One guess before you walk in")}</h2>
+      <p>${t("predict.pfirst", "Fear makes predictions. Name the one yours is most sure of, and how loud you expect it to get — then walk in and watch what the dog actually does.")}</p>`
+        : `<h2 style="margin-top:10px">${t("predict.h2", "At the gate: name your fear's number")}</h2>
+      <p>${t("predict.p", "A traveler's ritual that makes the trial count double: <em>predict</em> how loud the fear will be, then see how it actually goes. Most people over-predict — and catching your own shadow exaggerating is exactly the lesson the brain needs.")}</p>`}
+      <p class="hint" style="margin-top:14px">${t("predict.youllBe", "You'll be:")} <strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>${lv.desc ? ` — ${escapeHtml(lvDesc(phobiaKey, levelIdx))}` : ""}</p>
 ${phobiaKey === "dogs" ? `
       <div class="expect-block">
         <div class="expect-q">${t("expect.q", "What is your alarm predicting the dog will do?")}</div>
@@ -12998,14 +13195,14 @@ ${phobiaKey === "dogs" ? `
       </div>` : ""}
 
       <div class="suds" style="margin-top:18px">
-        <label for="predictedSuds">${tf("predict.label", "How anxious do you expect to feel during {t}?", { t: `<strong>${escapeHtml(lv.title)}</strong>` })}</label>
+        <label for="predictedSuds">${tf("predict.label", "How anxious do you expect to feel during {t}?", { t: `<strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>` })}</label>
         <div class="scale-row">
           <span class="small">${t("scale.calm", "0 calm")}</span>
           <input type="range" id="predictedSuds" min="0" max="10" value="${suggested}"/>
           <span class="small">${t("scale.panic", "10 panic")}</span>
           <div class="value" id="predictedValue">${suggested}</div>
         </div>
-        <div class="hint">After the rung, you'll rate how it actually felt — and we'll compare. The gap is where the learning happens.</div>
+        <div class="hint">${t("predict.hint", "After the trial, you'll rate how it actually felt — and we'll compare. The gap is where the learning happens.")}</div>
       </div>
 
       <div class="actions">
@@ -13032,10 +13229,10 @@ function viewExposure(phobiaKey, levelIdx) {
     // "Tips" toggle for accessibility / touch users who prefer it.
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="dogs">
-        <button class="cmd-btn" data-cmd="sit" title="Keyboard: E"><span class="cmd-icon">🐾</span><span>Settle (E)</span></button>
-        <button class="cmd-btn" data-cmd="ball" title="Keyboard: B"><span class="cmd-icon">⚪</span><span>Throw ball (B)</span></button>
-        <button class="cmd-btn" data-cmd="treat" title="Keyboard: T"><span class="cmd-icon">🦴</span><span>Give treat (T)</span></button>
-        <button class="cmd-btn" data-cmd="call" title="Keyboard: C"><span class="cmd-icon">👋</span><span>Call (C)</span></button>
+        <button class="cmd-btn" data-cmd="sit" title="Keyboard: E"><span class="cmd-icon">🐾</span><span>${t("cmd.settle", "Settle (E)")}</span></button>
+        <button class="cmd-btn" data-cmd="ball" title="Keyboard: B"><span class="cmd-icon">⚪</span><span>${t("cmd.ball", "Throw ball (B)")}</span></button>
+        <button class="cmd-btn" data-cmd="treat" title="Keyboard: T"><span class="cmd-icon">🦴</span><span>${t("cmd.treat", "Give treat (T)")}</span></button>
+        <button class="cmd-btn" data-cmd="call" title="Keyboard: C"><span class="cmd-icon">👋</span><span>${t("cmd.call", "Call (C)")}</span></button>
       </div>
     `;
   } else if (phobiaKey === "dogs" && intensity === "barking") {
@@ -13163,9 +13360,9 @@ function viewExposure(phobiaKey, levelIdx) {
   return `
     <div class="panel exposure-panel">
       <div class="exposure-header">
-        <div class="badge">Step ${levelIdx+1} of ${p.levels.length} · ${escapeHtml(p.label)}</div>
-        <h2>${escapeHtml(lv.title)}</h2>
-        <p>${escapeHtml(lv.desc)}</p>
+        <div class="badge">${tf("exp.stepBadge", "Step {n} of {m}", { n: levelIdx + 1, m: p.levels.length })} · ${escapeHtml(t(`phobia.${phobiaKey}.label`, p.label))}</div>
+        <h2>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</h2>
+        <p>${escapeHtml(lvDesc(phobiaKey, levelIdx))}</p>
       </div>
       <div class="stage-wrap">
         <div class="stage ${p.sceneClass}" id="stage" data-min-hold="${minHold}" data-level="${levelIdx}"></div>
@@ -13518,6 +13715,24 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       ${realityBlock}
       ${waveBlock}
       ${(() => {
+        // After the FIRST dog: the two things that used to stand in front of
+        // it — the primer and the Mirror baseline — offered now, when the
+        // player has an alarm of their own to refer to. Both optional.
+        if (early || phobiaKey !== "dogs" || levelIdx !== 0) return "";
+        const needPrimer = !primerSeen("dogs"), needMirror = !getChecks("dogs").length;
+        if (!needPrimer && !needMirror) return "";
+        return `
+          <div class="mirror-invite first-next">
+            <span class="bridge-invite-kicker">${t("first.kicker", "🧭 Two minutes, whenever you like")}</span>
+            <strong>${t("first.title", "Why staying works — and where you're starting from")}</strong>
+            <p>${t("first.p", "You just watched an alarm climb and then fall without leaving. The primer shows why that matters and what escaping does instead. The Mirror takes five questions about the fear in <em>real life</em>, so later you can see it get quieter in numbers.")}</p>
+            <div class="actions" style="margin-top:8px">
+              ${needPrimer ? `<button class="btn-ghost" data-action="open-primer">${t("first.primer", "🧭 The one-minute primer")}</button>` : ""}
+              ${needMirror ? `<button class="btn-ghost" data-action="fear-check" data-phobia="dogs" data-at="baseline">${t("first.mirror", "🪞 Hold up the Mirror")}</button>` : ""}
+            </div>
+          </div>`;
+      })()}
+      ${(() => {
         // Experiments run this session — the prediction vs what happened, at
         // the moment the comparison lands hardest.
         const ses = window.PhobiaExperiments && PhobiaExperiments.lastSessionFor(phobiaKey, levelIdx);
@@ -13537,8 +13752,8 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       ${bridgeInvite}
       ${mirrorPrompt}
       <p>${early
-        ? `You stood with <strong>${escapeHtml(p.levels[levelIdx].title)}</strong> and rated your fear at <strong>${suds}/10</strong>.`
-        : `You faced <strong>${escapeHtml(p.levels[levelIdx].title)}</strong> and rated your fear at <strong>${suds}/10</strong>.`}</p>
+        ? tf("complete.stood", "You stood with {t} and rated your fear at {n}.", { t: `<strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>`, n: `<strong>${suds}/10</strong>` })
+        : tf("complete.facedLine", "You faced {t} and rated your fear at {n}.", { t: `<strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>`, n: `<strong>${suds}/10</strong>` })}</p>
       ${habituationBlock}
       ${acrossBlock}
       ${predictionBlock}
@@ -13555,12 +13770,13 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
 
       <div class="actions">
         ${!isLast
-          ? `<button class="btn-primary" data-action="next-level" data-phobia="${phobiaKey}" data-level="${next}">${tf("complete.next", "Next trial: {t}", { t: escapeHtml(p.levels[next].title) })}</button>`
+          ? `<button class="btn-primary" data-action="next-level" data-phobia="${phobiaKey}" data-level="${next}">${tf("complete.next", "Next trial: {t}", { t: escapeHtml(lvTitle(phobiaKey, next)) })}</button>`
           : `<button class="btn-primary" data-action="back-ladder" data-phobia="${phobiaKey}">${realmStatus(phobiaKey).tamed
               ? t("complete.tamed", "🕊 The realm is behind you — see it")
               : t("complete.walked", "🌍 The valley is walked — see the Real Path")}</button>`}
         <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">${t("complete.back", "Back to the realm")}</button>
       </div>
+      <p class="fb-after"><button type="button" class="linklike" data-action="open-feedback" data-context="${escapeHtml(`${phobiaKey} trial ${levelIdx + 1}${early ? " (stepped out)" : ""}`)}">${t("fb.after", "Got a minute? Tell us how this trial went →")}</button></p>
     </div>
   `;
 }
@@ -14610,15 +14826,15 @@ function mountExposure(phobiaKey, levelIdx) {
         if (polLabel) {
           holdLabel.textContent = polLabel;
         } else if (isLookOnlyScene || !hasFearInputs) {
-          holdLabel.textContent = `${facingSec} / ${minHold}s · stay with it`;
+          holdLabel.textContent = tf("hold.stay", "{a} / {b}s · stay with it", { a: facingSec, b: minHold });
         } else if (inZone) {
-          holdLabel.textContent = `${facingSec} / ${minHold}s · holding · full credit`;
+          holdLabel.textContent = tf("hold.full", "{a} / {b}s · holding · full credit", { a: facingSec, b: minHold });
         } else if (fear > 5 && creditFactor > 0) {
-          holdLabel.textContent = `${facingSec} / ${minHold}s · walk closer for full credit`;
+          holdLabel.textContent = tf("hold.closerFull", "{a} / {b}s · walk closer for full credit", { a: facingSec, b: minHold });
         } else if (isApproachScene) {
-          holdLabel.textContent = `${facingSec} / ${minHold}s · walk closer to begin`;
+          holdLabel.textContent = tf("hold.closerBegin", "{a} / {b}s · walk closer to begin", { a: facingSec, b: minHold });
         } else {
-          holdLabel.textContent = `${facingSec} / ${minHold}s · take your time`;
+          holdLabel.textContent = tf("hold.takeTime", "{a} / {b}s · take your time", { a: facingSec, b: minHold });
         }
       } else if (continueBtn.classList.contains("holding")) {
         // The BUTTON flips immediately — the user's exit is never gated.
@@ -14626,8 +14842,8 @@ function mountExposure(phobiaKey, levelIdx) {
         continueBtn.classList.add("ready-pulse");
         continueBtn.textContent = window.__demoMode
           ? t("demo.stepOut", "Step out — I've had a taste")
-          : "I'm ready — continue";
-        holdLabel.textContent = `held ${facingSec}s — well done`;
+          : t("hold.ready", "I'm ready — continue");
+        holdLabel.textContent = tf("hold.held", "held {n}s — well done", { n: facingSec });
         window.__rungHoldComplete = true;   // scenes read this for a diegetic beat
         // The held-it moment, made physical: a tiny double pulse in the palm.
         try { if (window.PhobiaFX && window.PhobiaFX.haptic) window.PhobiaFX.haptic([16, 90, 16]); } catch {}
@@ -14655,12 +14871,15 @@ function mountExposure(phobiaKey, levelIdx) {
           // The avatar's face relaxes with the praise (brows past neutral,
           // soft lower-lid raise) — Body listens for this event.
           try { window.dispatchEvent(new CustomEvent("mira-relief")); } catch {}
-          if (window.PhobiaFX && window.PhobiaFX.achievement) {
+          // Not in a policy scene (dogs): its coach panel already ticks the
+          // goal and the caption says it aloud — the toast was a fourth card
+          // stacked on the same second.
+          if (window.PhobiaFX && window.PhobiaFX.achievement && !window.__holdPolicy) {
             window.PhobiaFX.achievement(
               `${phobiaKey}.rungHeld.${levelIdx}`,
               "✨",
-              "Rung held",
-              `You faced rung ${levelIdx + 1} for ${Math.floor(facingTimeMs / 1000)}s. Real exposure.`
+              t("hold.toastH", "Rung held"),
+              tf("hold.toastP", "You faced rung {n} for {s}s. Real exposure.", { n: levelIdx + 1, s: Math.floor(facingTimeMs / 1000) })
             );
           }
           // A policy scene's coach has just said what happened, in its own
@@ -16178,8 +16397,10 @@ function runTutorialTour(stage, phobiaKey) {
       arrow: "down",
     },
   ];
-  // The dog realm teaches its own loop: the alarm wave, the trial card,
-  // reading the dog. Four steps, each pointing at the thing it names.
+  // The dog realm teaches its own loop in two cards: the room (and that
+  // nothing locks), then the coach panel (the alarm line + this trial's
+  // goals). It was four; the other two repeated the consent screen and the
+  // on-screen captions, and stood between the player and the first dog.
   if (phobiaKey === "dogs" && stage.querySelector(".dog-coach")) {
     steps.length = 0;
     steps.push(
@@ -16187,31 +16408,16 @@ function runTutorialTour(stage, phobiaKey) {
         target: () => stage.querySelector("canvas") || stage,
         title: t("tour.d1t", "This is the room"),
         text: isTouch
-          ? t("tour.d1m", "Swipe to look around, and use the joystick to walk. Go only as close as you choose.")
-          : t("tour.d1d", "Drag to look around; WASD or the arrow keys walk (hold Shift to creep). Go only as close as you choose."),
+          ? t("tour.d1m2", "Swipe to look around; the joystick walks. Go only as close as you choose — 🛟 grounds you, and leaving is never a failure.")
+          : t("tour.d1d2", "Drag to look around; WASD or the arrow keys walk (Shift to creep). Go only as close as you choose — Esc grounds you, and leaving is never a failure."),
         arrow: "down",
       },
       {
-        target: () => stage.querySelector(".dog-coach .dc-wave"),
-        title: t("tour.d2t", "Your alarm"),
-        text: t("tour.d2", "This line is your alarm. It climbs as you get close — and then, if you stay, it comes back down on its own. Watching that happen is the whole point."),
-        arrow: "up",
-      },
-      {
-        target: () => stage.querySelector(".dog-coach .dc-goals"),
-        title: t("tour.d3t", "This trial"),
+        target: () => stage.querySelector(".dog-coach .dc-wave") || stage.querySelector(".dog-coach"),
+        title: t("tour.d2t2", "Your alarm, and this trial"),
         text: isTouch
-          ? t("tour.d3m", "Get close enough, read the dog, and stay until the alarm settles. When a question pops up over the dog, tap what you think it's feeling.")
-          : t("tour.d3d", "Get close enough, read the dog, and stay until the alarm settles. When a question pops up over the dog, press 1, 2 or 3 for what you think it's feeling."),
-        arrow: "up",
-      },
-      {
-        target: () => [document.querySelector(".hold-pill"), document.querySelector('.btn-warn[data-action="do-breathe"]'), document.getElementById("continueBtn")]
-          .find((el) => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 4 && r.height > 4; }) || null,
-        title: t("tour.d4t", "Nothing locks"),
-        text: isTouch
-          ? t("tour.d4m", "Tap the dog to pet it — only if you want to. 🛟 grounds you, and you can leave at any moment. Leaving early is never a failure.")
-          : t("tour.d4d", "Click the dog to pet it — only if you want to. Esc grounds you, and you can leave at any moment. Leaving early is never a failure."),
+          ? t("tour.d2m2", "This line is your alarm: it climbs as you get close, then falls on its own if you stay. Get close enough, tap what you think the dog is feeling when asked, and stay until it settles.")
+          : t("tour.d2d2", "This line is your alarm: it climbs as you get close, then falls on its own if you stay. Get close enough, press 1, 2 or 3 for what you think the dog is feeling when asked, and stay until it settles."),
         arrow: "up",
       },
     );
@@ -16246,12 +16452,12 @@ function runTutorialTour(stage, phobiaKey) {
     card.className = "tour-card tour-arrow-" + step.arrow;
     const remaining = steps.length - stepIdx - 1;
     card.innerHTML = `
-      <div class="tour-step">${stepIdx + 1} of ${steps.length}</div>
+      <div class="tour-step">${tf("tour.of", "{a} of {b}", { a: stepIdx + 1, b: steps.length })}</div>
       <h3>${step.title}</h3>
       <p>${step.text}</p>
       <div class="tour-actions">
-        <button class="btn-ghost" id="tourSkip">Skip</button>
-        <button class="btn-primary" id="tourNext">${stepIdx === steps.length - 1 ? "Got it" : "Next"}</button>
+        <button class="btn-ghost" id="tourSkip">${t("tour.skip", "Skip")}</button>
+        <button class="btn-primary" id="tourNext">${stepIdx === steps.length - 1 ? t("tour.gotIt", "Got it") : t("tour.next", "Next")}</button>
       </div>
     `;
     // Position the card just below or above the target
@@ -16480,15 +16686,15 @@ const DOG_MODELS = {
 // while the armature / clips stay DogController-compatible.
 const DOG_COAT_MAPS = {
   shiba: {
-    albedo: "assets/models/textures/shiba_photo_albedo.png",
-    normal: "assets/models/textures/shiba_photo_normal.png",
-    roughness: "assets/models/textures/shiba_photo_roughness.png",
+    albedo: "assets/models/textures/shiba_photo_albedo.jpg",
+    normal: "assets/models/textures/shiba_photo_normal.jpg",
+    roughness: "assets/models/textures/shiba_photo_roughness.jpg",
     photo: true,
   },
   husky: {
-    albedo: "assets/models/textures/husky_photo_albedo.png",
-    normal: "assets/models/textures/husky_photo_normal.png",
-    roughness: "assets/models/textures/husky_photo_roughness.png",
+    albedo: "assets/models/textures/husky_photo_albedo.jpg",
+    normal: "assets/models/textures/husky_photo_normal.jpg",
+    roughness: "assets/models/textures/husky_photo_roughness.jpg",
     photo: true,
   },
 };
@@ -16537,54 +16743,11 @@ function prefetchDogModels() {
   Object.values(DOG_MODELS).forEach((url) => { try { loadGLTF(url); } catch {} });
   // Warm the coat maps too so the first dog scene doesn't flash plastic.
   Object.keys(DOG_COAT_MAPS).forEach((b) => { try { loadDogCoatTextures(b); } catch {} });
-  // Same for the protagonist's face maps — by now QUALITY is resolved, so the
-  // low-quality gate inside actually applies.
-  try { loadCharacterFaceTextures(); } catch {}
 }
 
-// ---- protagonist facial PBR maps ----------------------------------------
-// Baked offline from assets/refs/protagonist-face-closeup.png via
-// scripts/bake-character-skin.cjs. Applied to the procedural skull so the
-// face stops reading as flat clay while the morph targets keep working.
-const CHARACTER_FACE_MAPS = {
-  albedo: "assets/models/textures/character_face_albedo.png",
-  normal: "assets/models/textures/character_face_normal.png",
-  roughness: "assets/models/textures/character_face_roughness.png",
-};
-let _charFaceTexPromise = null;
-function loadCharacterFaceTextures() {
-  const loader = getDogTexLoader();
-  if (!loader) return Promise.resolve(null);
-  // Gate on quality HERE, not at the point of use. buildHead's applyFaceMaps
-  // also refuses on low quality, but that check runs after the bytes are
-  // already on the wire — the weakest devices were still paying to download
-  // three 1K maps they would never bind.
-  if (typeof sceneQuality === "function" && sceneQuality() === "low") return Promise.resolve(null);
-  if (_charFaceTexPromise) return _charFaceTexPromise;
-  const loadOne = (url, srgb) => new Promise((resolve) => {
-    loader.load(url, (t) => {
-      // Spherical head UVs: U wraps once around the skull; do not tile.
-      t.wrapS = THREE.RepeatWrapping;
-      t.wrapT = THREE.ClampToEdgeWrapping;
-      t.anisotropy = 8;
-      if (srgb) t.colorSpace = THREE.SRGBColorSpace;
-      t.needsUpdate = true;
-      resolve(t);
-    }, undefined, () => resolve(null));
-  });
-  _charFaceTexPromise = Promise.all([
-    loadOne(CHARACTER_FACE_MAPS.albedo, true),
-    loadOne(CHARACTER_FACE_MAPS.normal, false),
-    loadOne(CHARACTER_FACE_MAPS.roughness, false),
-  ]).then(([albedo, normal, roughness]) => {
-    if (!albedo && !normal && !roughness) return null;
-    return { albedo, normal, roughness };
-  });
-  return _charFaceTexPromise;
-}
-// Warmed from prefetchDogModels() rather than here: at module scope `QUALITY`
-// is still in its temporal dead zone, so the quality gate above would throw
-// and this call would silently do nothing anyway.
+// (The protagonist's photo face bake — character_face_*.png — is retired: the
+// SDF head is shaded by its own geometry + tint fields. Nothing loads those
+// maps any more; they were a 3.2 MB download on every visit for no pixels.)
 
 // ---------- Other creature models (Quaternius "Easy Enemies", CC0) ----------
 // Real rigged + animated spider and snake (clips: <Name>_Idle / _Walk / _Attack
@@ -16814,23 +16977,30 @@ function makeRenderer(container) {
   return renderer;
 }
 
-// One shared PMREM-baked environment map for every scene. Built lazily the
-// first time a scene mounts, then reused — building it costs ~10 ms and gives
-// every metal/roughness surface real-looking reflections for free.
-let _envMap = null;
+// PMREM-baked studio environment, one PER RENDERER. Building it costs ~10 ms
+// and gives every metal/roughness surface real reflections. It used to be one
+// global built for whichever view mounted first — but a PMREM result is a
+// render target living in THAT renderer's GL context, and every view (shell
+// vignettes, each trial) makes its own renderer. Every later view bound an
+// empty texture as its environment: the camp after a language toggle went
+// near-black, and each trial after the first lost its image-based light.
+const _envMaps = new WeakMap();
 function getRoomEnvMap(renderer) {
-  if (_envMap) return _envMap;
+  if (!renderer) return null;
+  if (_envMaps.has(renderer)) return _envMaps.get(renderer);
+  let tex = null;
   try {
     const pmrem = new THREE.PMREMGenerator(renderer);
     pmrem.compileEquirectangularShader();
     const env = new RoomEnvironment(renderer);
-    _envMap = pmrem.fromScene(env, 0.04).texture;
+    tex = pmrem.fromScene(env, 0.04).texture;
     pmrem.dispose();
   } catch (e) {
     console.warn("PMREM env map build failed:", e);
-    _envMap = null;
+    tex = null;
   }
-  return _envMap;
+  _envMaps.set(renderer, tex);
+  return tex;
 }
 
 // Outdoor equirect HDR for scenes that want real sky/ground reflections rather
@@ -18333,13 +18503,22 @@ function _sweep(sg, stations, radial) {
 // ---- body-type proportion table ----------------------------------------
 // Height, shoulder width, hip width, head ratio, gait sway personality, plus
 // the softer/rounder shaping that separates the presets at silhouette range.
+// armOut / carry: how a hanging arm clears the hips. armOut is extra shoulder
+// abduction (rad) on top of the shared rest spread; carry is the elbow's
+// carrying angle (forearm angled away from the body, larger in women — as in
+// life). With hip:shoulder ratios up to 1.4, arms hung straight down through
+// the trousers: the forearm vanished into the pelvis and the hand stuck out
+// beside the thigh. Measured so the forearm clears the widest hip by ~3 cm.
+// WRIST_REST_FOLD tips the hanging hand back in toward the thigh — with the
+// carry and no fold, the hands flared out like a shrug.
+const WRIST_REST_FOLD = 0.30;
 const BODY_TYPES_3D = {
-  man:   { h: 1.00, shoulder: 1.00, hip: 1.00, head: 1.00, sway: 1.0, chestZ: 1.00, waist: 1.00, limb: 1.00, seat: 1.00 },
+  man:   { h: 1.00, shoulder: 1.00, hip: 1.00, head: 1.00, sway: 1.0, chestZ: 1.00, waist: 1.00, limb: 1.00, seat: 1.00, armOut: 0.025, carry: 0.07 },
   // Tuned against assets/refs/protagonist-turnaround.png: narrower shoulders,
   // slightly longer limb read, fuller hips/seat, softer chest depth.
-  woman: { h: 0.96, shoulder: 0.84, hip: 1.16, head: 0.97, sway: 1.40, chestZ: 1.08, waist: 0.84, limb: 0.94, seat: 1.12 },
-  boy:   { h: 0.80, shoulder: 0.80, hip: 0.96, head: 1.16, sway: 0.9,  chestZ: 0.94, waist: 0.96, limb: 0.90, seat: 0.96 },
-  girl:  { h: 0.78, shoulder: 0.76, hip: 1.02, head: 1.18, sway: 1.15, chestZ: 0.96, waist: 0.90, limb: 0.88, seat: 1.02 },
+  woman: { h: 0.96, shoulder: 0.84, hip: 1.16, head: 0.97, sway: 1.40, chestZ: 1.08, waist: 0.84, limb: 0.94, seat: 1.12, armOut: 0.11, carry: 0.10 },
+  boy:   { h: 0.80, shoulder: 0.80, hip: 0.96, head: 1.16, sway: 0.9,  chestZ: 0.94, waist: 0.96, limb: 0.90, seat: 0.96, armOut: 0.07, carry: 0.09 },
+  girl:  { h: 0.78, shoulder: 0.76, hip: 1.02, head: 1.18, sway: 1.15, chestZ: 0.96, waist: 0.90, limb: 0.88, seat: 1.02, armOut: 0.105, carry: 0.10 },
 };
 
 // ---- sculpted head surface ---------------------------------------------
@@ -19069,40 +19248,10 @@ function buildHead(o) {
     sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.58),
     envMapIntensity: 0.52, vertexColors: true,
   });
-  // Attach baked face maps when ready. Low quality keeps colour-only so mobile
-  // GPUs do not pay for three 1K textures on a mesh that is often off-screen in FP.
-  const applyFaceMaps = (maps) => {
-    if (!maps || !maps.albedo) return;
-    if (typeof sceneQuality === "function" && sceneQuality() === "low") return;
-    faceM.map = maps.albedo;
-    if (maps.normal) {
-      faceM.normalMap = maps.normal;
-      if (faceM.normalScale) faceM.normalScale.set(0.82, 0.82);
-    }
-    if (maps.roughness) {
-      faceM.roughnessMap = maps.roughness;
-      faceM.roughness = 0.62;
-    }
-    // Drop the vertex tint. It exists to paint lips, sockets, nostrils and
-    // brows onto a face that has no albedo — and the photo map carries all of
-    // them already. Left on, the two sets MULTIPLY at slightly different
-    // places: a second brow bar above the real one, a second mouth below it.
-    // The colour attribute stays on the geometry, so the no-map fallback path
-    // (low quality, or a texture that fails to load) is unaffected.
-    faceM.vertexColors = false;
-    // The map is normalised to detail only (see bake-character-skin.cjs), so
-    // the tint is simply the skin colour — the head then matches the arms,
-    // which use skinCol flat. The old lerp-toward-white was compensating for a
-    // map that still carried its own base tone, and the two together still
-    // landed the face ~13% darker than the body.
-    faceM.color.copy(skinCol);
-    faceM.needsUpdate = true;
-  };
-  // The photo bake is NOT applied any more: it was registered to the old
-  // gaussian sculpt, and on any other surface its painted nostrils, lip line
-  // and sockets land beside the real ones (the "moustache" and bruised eyes).
-  // The face is shaded by its own geometry plus the tint fields below.
-  void applyFaceMaps;
+  // The photo bake is NOT applied: it was registered to the old gaussian
+  // sculpt, and on any other surface its painted nostrils, lip line and
+  // sockets land beside the real ones. The face is shaded by its own
+  // geometry plus the tint fields below.
   // Lips are a little redder and darker than the skin around them — not a
   // different material. At 0.545/0.515 they went brown enough that, with the
   // seam shading on top, a closed mouth read as an open one.
@@ -20805,9 +20954,11 @@ function buildHumanRig(o = {}) {
     // A relaxed arm hangs in mid-pronation: palm toward the thigh, thumb
     // forward, knuckles out. At -0.30 the palm faced backward with the fingers
     // fanned toward the viewer — the "reaching for you" hang that made the
-    // figure read as a sleepwalker. Verified against the live preview: +1.15
-    // turns the palm in without pressing it flat against the leg.
-    hand.rotation.y = a.side * 1.15;
+    // figure read as a sleepwalker. The sign is −side: +side·1.15 (the value
+    // this once had) turned the palm OUT with the thumb pointing back —
+    // re-verified from both sides in the creator, 2026-09-27. Body's contact
+    // palm-roll reads hand.rotation.y, so it follows this value.
+    hand.rotation.y = -a.side * 1.15;
     a.wr.add(hand);
     arms.push({ root: a.sh, elbow: a.el, wrist: a.wr, hand, side: a.side });
   }
@@ -22727,7 +22878,7 @@ class Body {
         + thighBrace * 0.55;                     // upper arm drops toward thigh
       const spreadZ = side * (0.95 * spreadStrength + (idleArm ? 0.18 * contact.k : 0)
         - thighBrace * 0.35);
-      const naturalZ = side * 0.10 + Math.sin(armPhase * 0.5) * 0.04 * walkAmt + idleSway;
+      const naturalZ = side * (0.10 + (this.bt.armOut || 0)) + Math.sin(armPhase * 0.5) * 0.04 * walkAmt + idleSway;
       // The forearm TRAILS the upper arm by ~0.5 rad of phase (whip-like
       // follow-through) — an elbow that bends in sync reads as one rigid rod.
       // A walking arm carries 20–40° of elbow flexion, most of it on the
@@ -22742,7 +22893,11 @@ class Body {
         + thighBrace * 0.85;                     // elbow folds so hand finds thigh
       arm.root.rotation.set(rotX, 0, spreadZ + naturalZ * (1 - spreadStrength));
       this._elbowFlex(arm, elbX);
-      arm.wrist.rotation.set(thighBrace * 0.35, 0, side * thighBrace * 0.20);
+      // Carrying angle (see BODY_TYPES_3D) — only while the arm hangs or
+      // swings; gestures, reaches and the thigh brace own the whole arm.
+      const restK = swingWeight * (1 - thighBrace);
+      arm.elbow.rotation.z = side * (this.bt.carry || 0) * restK;
+      arm.wrist.rotation.set(thighBrace * 0.35, 0, side * (thighBrace * 0.20 - WRIST_REST_FOLD * restK));
       // …and then PUT the hand there. The brace above is a fixed backward
       // tilt of the upper arm, which only lands on the thigh for an upright
       // torso; crouched and leaning in to a dog (chest pitched ~50°) the same
@@ -22793,9 +22948,12 @@ class Body {
             // normal → the wrist's parent space (direction only)
             _bM1.copy(arm.wrist.parent.matrixWorld).invert();
             nl.transformDirection(_bM1).normalize();
-            // Palm faces −Z in hand space; hand carries a fixed ±0.30 yaw.
+            // Palm faces −Z in hand space, offset from the hand's rest yaw:
+            // this was tuned when the hand rested at side·1.15 with a −0.30
+            // palm yaw, and is kept equivalent now the rest yaw is −side·1.15
+            // (see buildHumanRig) — the palm still lands on the coat.
             const palmLocal = _bV5.set(0, 0, -1).applyAxisAngle(
-              new THREE.Vector3(0, 1, 0), arm.side * -0.30);
+              new THREE.Vector3(0, 1, 0), (arm.hand ? arm.hand.rotation.y : arm.side * 1.15) - arm.side * 1.45);
             _bQ2.setFromUnitVectors(palmLocal.normalize(), nl.multiplyScalar(-1).normalize());
             arm.wrist.quaternion.slerp(_bQ2, k * 0.8);
           }
@@ -24604,8 +24762,8 @@ function applyContextDaylight(scene, ctx, strength) {
 // thrown, or knocked. This module owns a Rapier world per scene mount.
 //
 // Loading: rapier3d-compat is one self-contained 2 MB ESM with the WASM
-// inlined — but a direct import() of the CDN URL fails under the service
-// worker while a plain fetch() succeeds, so it is fetched and imported
+// inlined (self-hosted under assets/vendor/rapier) — but a direct import()
+// failed under the service worker while a plain fetch() succeeds, so it is fetched and imported
 // through a blob URL. Loaded lazily on the first scene that asks; the
 // landing pays nothing.
 //
@@ -24613,7 +24771,7 @@ function applyContextDaylight(scene, ctx, strength) {
 // a dropped world without free() is a genuine memory leak, so unmount()
 // calls end() unconditionally.
 const PhobiaPhysics = (() => {
-  const CDN = "https://unpkg.com/@dimforge/rapier3d-compat@0.12.0/rapier.es.js";
+  const CDN = "assets/vendor/rapier/rapier.es.js"; // self-hosted (rapier3d-compat 0.12.0)
   let R = null, loadP = null;
   let world = null, props = [], groundY = 0;
   let pendingBoxes = null;
@@ -46012,9 +46170,11 @@ function buildAvatarFigure(c, mode = "walk") {
         a.root.rotation.set(
           0.045 + sway * (a.side > 0 ? 1.0 : -0.7),
           0,
-          a.side * 0.082 + br * 0.006
+          a.side * (0.082 + (bt.armOut || 0)) + br * 0.006
         );
         a.elbow.rotation.x = -(0.16 + Math.max(0, sway) * 0.25);
+        a.elbow.rotation.z = a.side * (bt.carry || 0);
+        if (a.wrist) a.wrist.rotation.z = -a.side * WRIST_REST_FOLD;
         if (a.hand.userData.setCurl) a.hand.userData.setCurl(0.12 + br * 0.015, 0);
       });
     } else {
@@ -46055,9 +46215,11 @@ function buildAvatarFigure(c, mode = "walk") {
       a.root.rotation.set(
         swing + 0.05,
         0,
-        a.side * 0.10 + Math.sin(armPhase * 0.5) * 0.04 * walkAmt
+        a.side * (0.10 + (bt.armOut || 0)) + Math.sin(armPhase * 0.5) * 0.04 * walkAmt
       );
       a.elbow.rotation.x = -(0.42 + Math.max(0, Math.sin(armPhase - 0.55)) * 0.48 * walkAmt);
+      a.elbow.rotation.z = a.side * (bt.carry || 0);
+      if (a.wrist) a.wrist.rotation.z = -a.side * WRIST_REST_FOLD;
       if (a.hand.userData.setCurl) a.hand.userData.setCurl(0.05 + Math.max(0, Math.sin(armPhase)) * 0.07, 0.04);
     });
     }
@@ -46958,7 +47120,23 @@ const ShellScenes = (() => {
   function applyVignetteCoat(root, breed) {
     const urls = DOG_COAT_MAPS[breed];
     if (!urls || !urls.photo) return;
-    const box = geometryBox(root);
+    // The projection box must be in the MODEL's own space — the same space the
+    // scene dog measures in (geometryBox on the fresh, unparented clone).
+    // geometryBox(root) here came back in world space: scaled to the
+    // turntable's targetSize and rotated by wherever the spin happened to be,
+    // so the photo landed half off the dog — the grey "sweater" round the
+    // banner dog's middle and the white socks.
+    const model = (root.userData.parts && root.userData.parts.model) || root;
+    model.updateWorldMatrix(true, true);
+    const inv = model.matrixWorld.clone().invert();
+    const box = new THREE.Box3(), b = new THREE.Box3(), rel = new THREE.Matrix4();
+    model.traverse((o) => {
+      if (!o.isMesh || !o.geometry) return;
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      if (!o.geometry.boundingBox) return;
+      rel.multiplyMatrices(inv, o.matrixWorld);
+      box.union(b.copy(o.geometry.boundingBox).applyMatrix4(rel));
+    });
     root.traverse((o) => {
       if (o.isMesh && o.geometry) applySidePhotoUVs(o.geometry, box);
     });
