@@ -4327,9 +4327,21 @@ if ("serviceWorker" in navigator) {
     .stage .captions {
       bottom: 52px; font-size: 12px; padding: 6px 11px; max-width: 90%;
     }
-    .stage .ctx-prompt { bottom: 128px; font-size: 12px; max-width: 90%; }
-    .stage.cmds-open .captions   { bottom: 148px; }
-    .stage.cmds-open .ctx-prompt { bottom: 224px; }
+    /* The message stack, bottom-up: captions low in the middle; the reach
+       hint above the Ground-me pill (it ends ~163 px up — at 126 the hint's
+       first words sat under the pill); the context prompt above that. With
+       the bar open the stack starts above its measured top edge
+       (--cmdbar-top, set by the controls toggle). */
+    .stage .reach-hint { bottom: 172px; }
+    .stage .ctx-prompt { bottom: 236px; font-size: 12px; max-width: 90%; }
+    .stage.cmds-open .reach-hint { bottom: max(172px, calc(var(--cmdbar-top, 176px) + 8px)); }
+    .stage.cmds-open .captions   { bottom: max(228px, calc(var(--cmdbar-top, 176px) + 64px)); }
+    .stage.cmds-open .ctx-prompt { bottom: max(292px, calc(var(--cmdbar-top, 176px) + 128px)); }
+    /* The hold pill shares the top row with the coach card: cap it short of
+       the card, and drop the (full) bar once it becomes "continue". */
+    .stage:has(.dog-coach) .hold-pill { max-width: calc(100% - 200px); }
+    .stage .hold-pill .hp-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .stage .hold-pill.complete .hp-bar { display: none; }
   }
 
   /* ---- The Real Path (real-world bridge quests) ---- */
@@ -4477,6 +4489,23 @@ if ("serviceWorker" in navigator) {
      guard must live on the wrap, not the stage. */
   .stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) { padding-left: 118px; }
   .stage.cmds-open:has(.joystick) .controls-hint { display: none; }
+  /* Same on any touch screen: the open bar's buttons say what the hint says
+     (the MRI's "Slide in" sat on top of "Tap Slide in when you're ready"). */
+  @media (pointer: coarse) { .stage.cmds-open .controls-hint { display: none; } }
+  /* Phones held sideways: the stage is ~300 px tall and the full coach card
+     ran from top to bottom over the pills. Compact card (next goal only),
+     callout centred above the room. Gyro look is portrait-mapped — hidden. */
+  @media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
+    .stage .dog-coach { top: 60px; right: 8px; width: 170px; padding: 7px 9px 6px; border-radius: 12px; }
+    .stage .dog-coach canvas.dc-wave { height: 30px !important; }
+    .dog-coach .dc-legend { display: none; }
+    .dog-coach .dc-goal { display: none; }
+    .dog-coach .dc-goal.next, .dog-coach.dc-open .dc-goal { display: flex; }
+    .dog-coach .dc-goals { font-size: 11px; }
+    .stage .dc-callout { top: 92px; bottom: auto; left: auto; right: 190px; width: min(320px, calc(100% - 420px)); font-size: 12.5px; }
+    .stage .dc-callout::after { display: none; }
+    .stage .gyro-btn { display: none !important; }
+  }
   /* Both live on the bottom edge: a long reach hint ("the dog is sniffing —
      stay still, or click to reach out") slid over the intro hint and left
      half of each unreadable. The live one wins; the intro returns after. */
@@ -15135,8 +15164,12 @@ function mountExposure(phobiaKey, levelIdx) {
   // One attempt only. If the user backs out with Esc, clicking in the scene
   // again must not drag them back in — that is a fight, not a feature.
   let fsAsked = false;
+  // Not on touch screens. Fullscreen there floated the hold / step-out row
+  // over the bottom of the stage — right on the joystick, Ground me and the
+  // controls toggle (Android; iPhones can't fullscreen an element at all, so
+  // they always had the theater layout, and now every phone does).
   const goImmersive = () => {
-    if (fsAsked || !immersiveOn || fsEl()) return;
+    if (fsAsked || !immersiveOn || fsEl() || isCoarsePointer()) return;
     fsAsked = true;
     try {
       const req = stage.requestFullscreen || stage.webkitRequestFullscreen;
@@ -27133,6 +27166,18 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     const cmdLabel = (collapsed) => collapsed ? window.t("stage.showCtl", "Show controls") : window.t("stage.hideCtl", "Hide controls");
     cmdToggle.textContent = cmdLabel(startCollapsed);
     container.classList.toggle("cmds-open", !startCollapsed);
+    // Where the open bar's top edge sits above the stage's bottom, for the
+    // message stack to clear it. The bar is 1–3 rows depending on the scene,
+    // the language and the phone, so a fixed offset can't do it.
+    const syncBarTop = () => {
+      if (!container.isConnected) { try { barRO && barRO.disconnect(); } catch {} return; }
+      if (cmdBarEl.classList.contains("collapsed")) { container.style.removeProperty("--cmdbar-top"); return; }
+      const top = container.getBoundingClientRect().bottom - cmdBarEl.getBoundingClientRect().top;
+      if (top > 0) container.style.setProperty("--cmdbar-top", Math.round(top) + "px");
+    };
+    const barRO = window.ResizeObserver ? new ResizeObserver(syncBarTop) : null;
+    if (barRO) barRO.observe(cmdBarEl);
+    requestAnimationFrame(syncBarTop);
     cmdToggle.addEventListener("click", (e) => {
       e.stopPropagation();
       const collapsed = cmdBarEl.classList.toggle("collapsed");
@@ -27140,6 +27185,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // The bar floats INSIDE the frame — flag the stage so the caption /
       // prompt stack slides up out of its way while it's open.
       container.classList.toggle("cmds-open", !collapsed);
+      requestAnimationFrame(syncBarTop);
     });
     container.appendChild(cmdToggle);
     if (active && active.overlays) active.overlays.push(cmdToggle);
@@ -29792,10 +29838,10 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         // The most informative state — at the rail, peering over. Tell the
         // user what they can DO with this view (drop a pebble) and what
         // input drives it (clicking the air below).
-        return { gesture: "grab", hint: window.t("sc.h.hintDrop", "click below to drop a pebble · click the railing to shake it") };
+        return { gesture: "grab", hint: IS_COARSE_POINTER ? window.t("sc.h.hintDropT", "tap below to drop a pebble · tap the railing to shake it") : window.t("sc.h.hintDrop", "click below to drop a pebble · click the railing to shake it") };
       }
       if (atEdge) {
-        return { gesture: "grab", hint: window.t("sc.h.hintEdge", "you're at the edge · click the railing to shake · push forward to lean over") };
+        return { gesture: "grab", hint: IS_COARSE_POINTER ? window.t("sc.h.hintEdgeT", "you're at the edge · tap the railing to shake · push the joystick forward to lean over") : window.t("sc.h.hintEdge", "you're at the edge · click the railing to shake · push forward to lean over") };
       }
       return { gesture: "rest", hint: "" };
     },
@@ -34982,7 +35028,13 @@ function makeCreatureCoach(opts) {
       const panelW = (root.offsetWidth && s.stageW > 700) ? root.offsetWidth + 16 : 0;
       const lo = bw / 2 + 8, hi = s.stageW - bw / 2 - 8 - panelW;
       const tx = hi > lo ? Math.max(lo, Math.min(hi, s.anchorX)) : s.stageW / 2;
-      const ty = Math.max(bh + 96, Math.min(bh + 104, s.anchorY - 16));
+      let ty = Math.max(bh + 96, Math.min(bh + 104, s.anchorY - 16));
+      // ...and its bottom edge (ty — the card is translated up by its own
+      // height) above an open command bar: on a phone held sideways the bar
+      // clipped the answer row.
+      const stEl = root.parentElement;
+      const barTop = stEl ? parseFloat(stEl.style.getPropertyValue("--cmdbar-top")) : 0;
+      if (barTop > 0 && stEl.clientHeight) ty = Math.max(bh + 8, Math.min(ty, stEl.clientHeight - barTop - 8));
       if (readPos.x == null) { readPos.x = tx; readPos.y = ty; }
       readPos.x += (tx - readPos.x) * Math.min(1, d * 6);
       readPos.y += (ty - readPos.y) * Math.min(1, d * 6);
@@ -40256,7 +40308,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
                 jarMode = false;
                 if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.jarDown", "Jar down. It's contained. Slow breath."));
               } else if (window.PhobiaVoice) {
-                window.PhobiaVoice.speak(window.t("sc.s.clickJar", "Click the spider to lower the jar."));
+                window.PhobiaVoice.speak(IS_COARSE_POINTER ? window.t("sc.s.tapJar", "Tap the spider to lower the jar.") : window.t("sc.s.clickJar", "Click the spider to lower the jar."));
               }
             }
             break;
@@ -40401,7 +40453,9 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         }
         return {
           gesture: "rest",
-          hint: jarMode ? window.t("sc.s.hintJar", "click the spider to lower the jar") : window.t("sc.s.hintCatch", "click the spider to catch it under a jar"),
+          hint: IS_COARSE_POINTER
+            ? (jarMode ? window.t("sc.s.hintJarT", "tap the spider to lower the jar") : window.t("sc.s.hintCatchT", "tap the spider to catch it under a jar"))
+            : (jarMode ? window.t("sc.s.hintJar", "click the spider to lower the jar") : window.t("sc.s.hintCatch", "click the spider to catch it under a jar")),
         };
       }
       return { gesture: "rest" };
@@ -41876,8 +41930,12 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
           else hands.clearReachTarget();
         } else hands.clearReachTarget();
       }
-      if (LIFT && inside && doorTarget > 0.5) return { gesture: "rest", hint: window.t("hint.e.floor", "press a floor on the panel · E rides two floors") };
-      if (dDoor < 1.4 && !LIFT) return { gesture: "rest", hint: doorTarget > 0.5 ? window.t("hint.e.close", "click the door to close it · E") : window.t("hint.e.open", "click the door to open it · E · you can leave any time") };
+      if (LIFT && inside && doorTarget > 0.5) return { gesture: "rest", hint: IS_COARSE_POINTER
+        ? window.tf("hint.e.floorT", "tap {btn} below — or a floor on the panel", { btn: window.t("cmd.e.ride", "Ride two floors") })
+        : window.t("hint.e.floor", "press a floor on the panel · E rides two floors") };
+      if (dDoor < 1.4 && !LIFT) return { gesture: "rest", hint: IS_COARSE_POINTER
+        ? (doorTarget > 0.5 ? window.t("hint.e.closeT", "tap the door, or the 🚪 button, to close it") : window.t("hint.e.openT", "tap the door, or the 🚪 button, to open it · you can leave any time"))
+        : (doorTarget > 0.5 ? window.t("hint.e.close", "click the door to close it · E") : window.t("hint.e.open", "click the door to open it · E · you can leave any time")) };
       return { gesture: "rest" };
     },
     update(t, controls, dt) {

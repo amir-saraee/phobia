@@ -13,7 +13,8 @@
 //   5. Persian: the realm page renders RTL with translated trial names, and a
 //      scene opens with a translated, right-to-left countdown + intro hint
 //   6. phone viewport: landing + creator render with no sideways scroll, in
-//      English and in Persian (right-to-left)
+//      English and in Persian (right-to-left); a real tap works the MRI's
+//      controls and never sends the scene fullscreen
 // Needs Google Chrome (override with CHROME=/path/to/chrome) and
 // `npm install` in scripts/ (puppeteer-core).
 "use strict";
@@ -343,6 +344,40 @@ async function phone(browser, base) {
   await ctx.close();
 }
 
+// Touch on a phone: the MRI's controls answer a real tap where they sit (not
+// covered by anything), and touching the scene never goes fullscreen (that
+// floated the hold row over the joystick and the Ground-me pill).
+async function phoneTouch(browser, base) {
+  const { ctx, page } = await newPage(browser, { mobile: true });
+  await page.evaluateOnNewDocument(() => {
+    if (localStorage.getItem("fobia.consent.v1")) return;
+    const c = { id: "c-smoke4", name: "Smoke", bodyType: "woman", skinTone: "fair", hairColor: "brown", hairStyle: "long", topColor: "teal", topStyle: "tee", eyeColor: "hazel", glasses: "none", facialHair: "none", headwear: "none", primaryPhobia: "enclosed", additionalPhobias: [], createdAt: Date.now() };
+    localStorage.setItem("fobia.characters.v2", JSON.stringify([c]));
+    localStorage.setItem("fobia.activeCharacter.v1", c.id);
+    localStorage.setItem("fobia.consent.v1", "1");
+    localStorage.setItem("fobia.tutorialSeen", "1");
+    localStorage.setItem("fobia.skipCountdown", "1");
+  });
+  await page.goto(base + "/#/enclosed/predict/4", { waitUntil: "load" }); await sleep(900);
+  await page.evaluate(() => { document.querySelector(".expect-chip").click(); document.querySelector('[data-action="confirm-predict"]').click(); });
+  check("phone MRI: scene + coach mount", await waitFor(page, () => !!(window.__active && window.__active.scene && window.__coach), 15000));
+  await sleep(2000);
+  const at = await page.evaluate(() => {
+    const b = document.querySelector('.cmd-btn[data-cmd="slide"]'); if (!b) return null;
+    const r = b.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, top = document.elementFromPoint(x, y);
+    return { x, y, clear: !!top && (top === b || b.contains(top)) };
+  });
+  check("phone MRI: 'Slide in' is on screen and uncovered", !!at && at.clear, JSON.stringify(at));
+  if (at) await page.touchscreen.tap(at.x, at.y);
+  check("phone MRI: a tap slides you in", await waitFor(page, () => /squeeze|توپ/i.test((document.querySelector('.cmd-btn[data-cmd="slide"]') || {}).textContent || ""), 6000));
+  const cv = await page.evaluate(() => { const r = document.querySelector("#stage canvas").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 3 }; });
+  await page.touchscreen.tap(cv.x, cv.y); await sleep(600);
+  check("phone: touching the scene doesn't go fullscreen", await page.evaluate(() => !document.fullscreenElement && !document.webkitFullscreenElement));
+  await shot(page, "07b-phone-mri");
+  check("phone touch: no page errors", page.errors.length === 0, page.errors.slice(0, 5).join(" | "));
+  await ctx.close();
+}
+
 (async () => {
   const server = await serve();
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -352,7 +387,7 @@ async function phone(browser, base) {
   });
   const t0 = Date.now();
   try {
-    for (const flow of [firstRunAndTrial, hardestTrial, creatures, places, phone]) {
+    for (const flow of [firstRunAndTrial, hardestTrial, creatures, places, phone, phoneTouch]) {
       try { await flow(browser, base); } catch (e) { check(flow.name + " crashed", false, String(e).slice(0, 300)); }
     }
   } finally {
