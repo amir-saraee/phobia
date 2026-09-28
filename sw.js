@@ -11,7 +11,7 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v20-six-realms";
+const VERSION = "mira-v21-fa-scene-entry";
 // Installed on the first visit, in the background — so it holds only what the
 // creature realms (dogs, spiders, snakes) need to boot and play offline. The
 // place realms (heights, the dark, tight spaces) are procedural and need nothing

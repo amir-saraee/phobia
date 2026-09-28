@@ -4309,6 +4309,13 @@ if ("serviceWorker" in navigator) {
   .stage:fullscreen .captions,   .stage:-webkit-full-screen .captions   { bottom: 140px; }
   .stage:fullscreen .ctx-prompt, .stage:-webkit-full-screen .ctx-prompt { bottom: 226px; }
   .stage.cmds-open:fullscreen .reach-hint, .stage.cmds-open:-webkit-full-screen .reach-hint { bottom: 162px; }
+  /* The intro hint sat under that row too (first click/key goes fullscreen,
+     and the hint stays until the player moves). The joystick lane has its
+     own placement. */
+  .stage:fullscreen:not(:has(.joystick)) .controls-hint,
+  .stage:-webkit-full-screen:not(:has(.joystick)) .controls-hint { bottom: 104px; }
+  .stage.cmds-open:fullscreen:not(:has(.joystick)) .controls-hint,
+  .stage.cmds-open:-webkit-full-screen:not(:has(.joystick)) .controls-hint { bottom: 162px; }
   .stage.cmds-open:fullscreen .captions,   .stage.cmds-open:-webkit-full-screen .captions   { bottom: 198px; }
   .stage.cmds-open:fullscreen .ctx-prompt, .stage.cmds-open:-webkit-full-screen .ctx-prompt { bottom: 284px; }
   @media (max-width: 600px) {
@@ -4453,6 +4460,11 @@ if ("serviceWorker" in navigator) {
   .stage:has(.joystick) .controls-hint {
     left: 112px; bottom: 14px; max-width: min(420px, 58%);
   }
+  /* ...and above the "Show controls" pill, which shares the bottom edge on
+     phones and covered the hint's last line — the 🛟 "ground yourself" one.
+     (The phone rule's bottom: 62px lost to the :has() rule above.) Left of
+     128px clears the Ground me pill (≈ 123px wide in English). */
+  .stage:has(.joystick):has(.cmd-toggle) .controls-hint { left: 128px; bottom: 62px; }
   /* Open command bar on touch: reserve the left lane for the joystick and
      the Ground-me pill (they collided with the first buttons), and hide the
      intro hint while the bar is open — it re-shows when controls collapse.
@@ -4460,6 +4472,10 @@ if ("serviceWorker" in navigator) {
      guard must live on the wrap, not the stage. */
   .stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) { padding-left: 118px; }
   .stage.cmds-open:has(.joystick) .controls-hint { display: none; }
+  /* Both live on the bottom edge: a long reach hint ("the dog is sniffing —
+     stay still, or click to reach out") slid over the intro hint and left
+     half of each unreadable. The live one wins; the intro returns after. */
+  .stage:has(.reach-hint[style*="opacity: 1"]) .controls-hint { opacity: 0 !important; }
   @media (max-width: 600px) {
     .stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) .cmd-btn {
       font-size: 12px; padding: 8px 10px; min-height: 40px;
@@ -4548,6 +4564,15 @@ if ("serviceWorker" in navigator) {
   html[dir="rtl"] .report-note { border-left: none; border-right: 3px solid var(--border-2); padding-left: 0; padding-right: 10px; }
   /* Keep the 3D stage + its HUD in LTR geometry regardless of UI language */
   html[dir="rtl"] .stage, html[dir="rtl"] .stage-wrap { direction: ltr; }
+  /* ...but the TEXT on it reads right-to-left. Under the LTR stage a Persian
+     sentence rendered with its full stop first and a Latin name (the dog's)
+     stranded at the wrong end. Positions are set by left/right, so flipping
+     direction on these overlays only reorders what's inside them. */
+  html[dir="rtl"] .stage-wrap :is(.controls-hint, .reach-hint, .captions, .ctx-prompt,
+    .countdown, .grounding-text, .grounding-exit-hint, .pl-release, .achievement-toast,
+    .dog-coach, .dc-callout, .dc-read, .exp-panel, .hold-pill, .hold-label, .stage-breath,
+    .cmd-btn, .cmd-toggle, .ground-btn, .ml-toggle, .camera-toggle, .demo-chip,
+    .trust-hud, .step-controls button) { direction: rtl; }
   /* The report stays English/LTR until it's translated */
   html[dir="rtl"] .report-view { direction: ltr; text-align: left; }
   html[dir="rtl"] .lang-btn, .lang-btn { font-weight: 800; font-size: 13px; }
@@ -10806,7 +10831,7 @@ function render(view, params) {
   const sparksBtn = sparkCount > 0
     ? `<button class="audio-btn spark-hud" id="sparksBtn" title="Book of Sparks — the wisdom you've earned" aria-label="Open your Book of Sparks">✦<span class="spark-hud-n">${sparkCount}</span></button>` : "";
   const html = `
-    <a class="skip-link" href="#view">Skip to main content</a>
+    <a class="skip-link" href="#view">${t("a11y.skip", "Skip to main content")}</a>
     <header class="brand" role="banner">
       <div class="brand-left">
         ${menuBtn}
@@ -14125,7 +14150,7 @@ function viewExposure(phobiaKey, levelIdx) {
         ${cmdBar}
       </div>
       <div class="step-controls">
-        <button class="btn-warn" data-action="do-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">Pause &amp; breathe</button>
+        <button class="btn-warn" data-action="do-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("stage.breathe", "Pause &amp; breathe")}</button>
         <button class="btn-primary holding" id="continueBtn" data-action="to-rate" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("hold.stepOut", "Step out early")}</button>
         <div class="hold-bar"><div id="holdBarFill"></div></div>
         <span class="hold-label" id="holdLabel">0 / ${minHold}s</span>
@@ -15316,11 +15341,11 @@ function mountExposure(phobiaKey, levelIdx) {
   if (!countdownOff) {
     countdown.className = "countdown";
     countdown.innerHTML = `
-      <div class="label">Get ready — there's no rush</div>
+      <div class="label">${t("cd.ready", "Get ready — there's no rush")}</div>
       <div class="num" id="cdNum">3</div>
-      <div class="hint">Notice your breath. Soften your shoulders.<br>Take a moment.</div>
-      <button class="btn-ghost" id="cdStartNow" style="margin-top:14px;font-size:13px;padding:6px 14px;">Start when you're ready</button>
-      <div class="hint" style="margin-top:8px;font-size:11px;opacity:.55">Starting early skips this countdown from now on</div>
+      <div class="hint">${t("cd.breath", "Notice your breath. Soften your shoulders.<br>Take a moment.")}</div>
+      <button class="btn-ghost" id="cdStartNow" style="margin-top:14px;font-size:13px;padding:6px 14px;">${t("cd.startNow", "Start when you're ready")}</button>
+      <div class="hint" style="margin-top:8px;font-size:11px;opacity:.55">${t("cd.skipNote", "Starting early skips this countdown from now on")}</div>
     `;
     stage.appendChild(countdown);
   }
@@ -17130,33 +17155,33 @@ function runTutorialTour(stage, phobiaKey) {
   // are walk-up-and-interact; the button bar is a secondary affordance on
   // desktop and the PRIMARY one on touch, so the copy differs per input.
   const interactCopy = isTouch ? {
-    dogs: "Walk up with the joystick, then tap the dog to pet it. The buttons below the scene throw a ball, share a treat, or call it over.",
-    heights: "Walk to the edge with the joystick and look down when you're ready. Tap things in the world to interact.",
-    spiders: "Walk a little closer at your own pace. Tap the spider to lower a glass jar over it.",
-    snakes: "Walk toward the snake slowly. The buttons below help you hold still or extend a hand.",
-    water: "Wade in step by step. Look down and splash when you feel ready.",
-    dark: "Walk into the dark with the joystick. The buttons below hold a flashlight or strike a match — the coach will count what they do.",
-    enclosed: "Walk in with the joystick, then use the buttons below to close the door, ride the lift, or slide into the scanner. The door always opens.",
+    dogs: t("tour.i.dogs.m", "Walk up with the joystick, then tap the dog to pet it. The buttons below the scene throw a ball, share a treat, or call it over."),
+    heights: t("tour.i.heights.m", "Walk to the edge with the joystick and look down when you're ready. Tap things in the world to interact."),
+    spiders: t("tour.i.spiders.m", "Walk a little closer at your own pace. Tap the spider to lower a glass jar over it."),
+    snakes: t("tour.i.snakes.m", "Walk toward the snake slowly. The buttons below help you hold still or extend a hand."),
+    water: t("tour.i.water", "Wade in step by step. Look down and splash when you feel ready."),
+    dark: t("tour.i.dark.m", "Walk into the dark with the joystick. The buttons below hold a flashlight or strike a match — the coach will count what they do."),
+    enclosed: t("tour.i.enclosed.m", "Walk in with the joystick, then use the buttons below to close the door, ride the lift, or slide into the scanner. The door always opens."),
   } : {
-    dogs: "Walk up to the dog, then click it to pet. Click the floor to throw a ball (shift-click for a treat) — the “Show controls” pill reveals buttons too.",
-    heights: "Walk to the edge and look down when you're ready. Click things in the world to interact.",
-    spiders: "Walk a little closer at your own pace. Click the spider to lower a glass jar over it.",
-    snakes: "Walk toward the snake slowly. Hold still and it stays calm.",
-    water: "Wade in step by step. Look down and splash when you feel ready.",
-    dark: "Walk into the dark at your pace. Hold F for a flashlight — the coach will count what it does.",
-    enclosed: "Walk in, then click the door (or press E) to close it. In the lift, E rides; in the scanner, E slides you in or out. The door always opens.",
+    dogs: t("tour.i.dogs.d", "Walk up to the dog, then click it to pet. Click the floor to throw a ball (shift-click for a treat) — the “Show controls” pill reveals buttons too."),
+    heights: t("tour.i.heights.d", "Walk to the edge and look down when you're ready. Click things in the world to interact."),
+    spiders: t("tour.i.spiders.d", "Walk a little closer at your own pace. Click the spider to lower a glass jar over it."),
+    snakes: t("tour.i.snakes.d", "Walk toward the snake slowly. Hold still and it stays calm."),
+    water: t("tour.i.water", "Wade in step by step. Look down and splash when you feel ready."),
+    dark: t("tour.i.dark.d", "Walk into the dark at your pace. Hold F for a flashlight — the coach will count what it does."),
+    enclosed: t("tour.i.enclosed.d", "Walk in, then click the door (or press E) to close it. In the lift, E rides; in the scanner, E slides you in or out. The door always opens."),
   };
   const sceneAction = interactCopy[phobiaKey]
     || (isTouch
-      ? "Use the buttons under the scene to interact, and stay as long as you can."
-      : "Use the action buttons under the scene to interact, and stay as long as you can.");
+      ? t("tour.i.any.m", "Use the buttons under the scene to interact, and stay as long as you can.")
+      : t("tour.i.any.d", "Use the action buttons under the scene to interact, and stay as long as you can."));
   const steps = [
     {
       target: () => stage.querySelector("canvas") || stage,
-      title: "This is the scene",
+      title: t("tour.g1t", "This is the scene"),
       text: isTouch
-        ? "Swipe to look around. Use the joystick to walk."
-        : "Drag with your mouse to look around. WASD or arrows to walk.",
+        ? t("tour.g1m", "Swipe to look around. Use the joystick to walk.")
+        : t("tour.g1d", "Drag with your mouse to look around. WASD or arrows to walk."),
       arrow: "down",
     },
     {
@@ -17169,20 +17194,20 @@ function runTutorialTour(stage, phobiaKey) {
         if (bar && !bar.classList.contains("collapsed") && bar.getBoundingClientRect().height > 24) return bar;
         return stage.querySelector("canvas") || stage;
       },
-      title: "How to interact",
+      title: t("tour.g2t", "How to interact"),
       text: sceneAction,
       arrow: "down",
     },
     {
       target: () => document.querySelector(".hold-bar") || document.getElementById("continueBtn"),
-      title: "Stay with it",
-      text: "The hold timer asks you to remain in the scene long enough for the anxiety to fall. You can continue any time.",
+      title: t("tour.g3t", "Stay with it"),
+      text: t("tour.g3", "The hold timer asks you to remain in the scene long enough for the anxiety to fall. You can continue any time."),
       arrow: "down",
     },
     {
       target: () => document.querySelector('.btn-warn[data-action="do-breathe"]'),
-      title: "Pause any time",
-      text: "Nothing locks. If anything is too much, take a guided breath instead.",
+      title: t("tour.g4t", "Pause any time"),
+      text: t("tour.g4", "Nothing locks. If anything is too much, take a guided breath instead."),
       arrow: "down",
     },
   ];
@@ -26140,8 +26165,8 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
           // effect. Default look is drag (cursor stays free).
           const mlToggle = document.createElement("button");
           mlToggle.className = "ml-toggle";
-          mlToggle.innerHTML = `🖱 Mouse look`;
-          mlToggle.title = "Capture the mouse for smooth FPS look — press Esc to release";
+          mlToggle.textContent = window.t("stage.mouseLook", "🖱 Mouse look");
+          mlToggle.title = window.t("stage.mouseLookTip", "Capture the mouse for smooth FPS look — press Esc to release");
           mlToggle.addEventListener("click", (e) => {
             e.stopPropagation();
             if (controls.requestLockNow) controls.requestLockNow();
@@ -26151,7 +26176,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
           // captured, so the way out is never hidden.
           const plRelease = document.createElement("div");
           plRelease.className = "pl-release";
-          plRelease.innerHTML = `Mouse captured · press <b>Esc</b> to free it`;
+          plRelease.innerHTML = window.t("stage.mouseRelease", "Mouse captured · press <b>Esc</b> to free it");
           container.appendChild(plRelease);
           if (active && active.overlays) active.overlays.push(plDot, mlToggle, plRelease);
           renderer.domElement.addEventListener("fp-pointerlock", (ev) => {
@@ -26250,40 +26275,50 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // Always include a panic-stop reminder. Esc → grounding mode (5-4-3-2-1)
       // is the user's ethical exit at any moment. We bake it into every
       // approach scene's intro so users know it's there before they need it.
-      const escNote = (IS_TOUCH || IS_COARSE_POINTER)
-    ? " &nbsp;·&nbsp; <span style=\"opacity:.75\">Tap <b>🛟</b> any time to ground yourself.</span>"
-    : " &nbsp;·&nbsp; <span style=\"opacity:.75\">Press <b>Esc</b> any time to ground yourself.</span>";
+      const T = window.t, TF = window.tf;
+      const escNote = " &nbsp;·&nbsp; <span style=\"opacity:.75\">" + ((IS_TOUCH || IS_COARSE_POINTER)
+        ? T("intro.esc.m", "Tap <b>🛟</b> any time to ground yourself.")
+        : T("intro.esc.d", "Press <b>Esc</b> any time to ground yourself.")) + "</span>";
       // Movement wording follows IS_COARSE_POINTER (where the on-screen joystick
       // actually appears), NOT IS_TOUCH — a touch-capable laptop has WASD, not a
       // joystick, so it should be told to use the keys.
       // Intros are ONE calm line: how to move + "at your own pace". Extra
       // controls (Shift-creep, etc.) live in "Show controls" so the hint never
       // becomes a wall of text a frightened user has to parse.
-      const moveVerb = IS_COARSE_POINTER ? "<b>Use the joystick</b>" : "<b>W or ↑</b>";
+      const move = IS_COARSE_POINTER ? T("intro.move.m", "<b>the joystick</b>") : T("intro.move.d", "<b>W or ↑</b>");
+      const rung = typeof levelIdx === "number" ? levelIdx : 0;
       const sceneIntros = {
-        heights: `Walk toward the railing with ${moveVerb} when you're ready — at your own pace.` + escNote,
+        heights: TF("intro.heights", "Walk toward the railing with {move} when you're ready — at your own pace.", { move }) + escNote,
         dogs: (() => {
           // Rung-aware: never claim "the dog is calm" on the barking climax.
           const lv = (typeof levelIdx === "number" && PHOBIAS.dogs && PHOBIAS.dogs.levels[levelIdx])
             || null;
           const inten = (lv && lv.intensity) || "";
           if (inten === "barking") {
-            return `The dog is barking across the room. Soften your gaze, and step back any time — you control the distance.` + escNote;
+            return T("intro.dogs.bark", "The dog is barking across the room. Soften your gaze, and step back any time — you control the distance.") + escNote;
           }
           if (inten === "alert") {
-            return `An alert dog is watching. Walk closer with ${moveVerb} when you're ready — at your own pace.` + escNote;
+            return TF("intro.dogs.alert", "An alert dog is watching. Walk closer with {move} when you're ready — at your own pace.", { move }) + escNote;
           }
-          return `Walk closer with ${moveVerb} whenever you're ready.` + escNote;
+          return TF("intro.dogs", "Walk closer with {move} whenever you're ready.", { move }) + escNote;
         })(),
-        spiders: `Walk forward with ${moveVerb} when you're ready to face it — no rush.` + escNote,
-        snakes:  `Walk toward the snake with ${moveVerb} at your own pace.` + escNote,
-        water:   `Wade in with ${moveVerb} when you're ready — at your own pace.` + escNote,
-        dark:    `Walk into the dark with ${moveVerb} when you're ready — at your own pace.` + escNote,
-        enclosed: ((typeof levelIdx === "number" ? levelIdx : 0) === 4
-          ? `You're lying on the scanner table. ${IS_COARSE_POINTER ? "Tap <b>Slide in</b>" : "Press <b>E</b>"} when you're ready — at your own pace.`
-          : (typeof levelIdx === "number" ? levelIdx : 0) === 2
-            ? `Step into the lift with ${moveVerb}, then ${IS_COARSE_POINTER ? "tap <b>Ride two floors</b>" : "press <b>E</b>"} — at your own pace.`
-            : `Step inside with ${moveVerb}, then close the door behind you (${IS_COARSE_POINTER ? "the 🚪 button" : "<b>E</b>"}) — at your own pace.`) + escNote,
+        spiders: TF("intro.spiders", "Walk forward with {move} when you're ready to face it — no rush.", { move }) + escNote,
+        snakes:  TF("intro.snakes", "Walk toward the snake with {move} at your own pace.", { move }) + escNote,
+        water:   TF("intro.water", "Wade in with {move} when you're ready — at your own pace.", { move }) + escNote,
+        dark:    TF("intro.dark", "Walk into the dark with {move} when you're ready — at your own pace.", { move }) + escNote,
+        // Touch copy names the on-screen button by its (translated) label so
+        // the hint and the button always read the same.
+        enclosed: (rung === 4
+          ? (IS_COARSE_POINTER
+            ? TF("intro.e.mri.m", "You're lying on the scanner table. Tap <b>{btn}</b> when you're ready — at your own pace.", { btn: T("cmd.e.slideIn", "Slide in") })
+            : T("intro.e.mri.d", "You're lying on the scanner table. Press <b>E</b> when you're ready — at your own pace."))
+          : rung === 2
+            ? (IS_COARSE_POINTER
+              ? TF("intro.e.lift.m", "Step into the lift with {move}, then tap <b>{btn}</b> — at your own pace.", { move, btn: T("cmd.e.ride", "Ride two floors") })
+              : TF("intro.e.lift.d", "Step into the lift with {move}, then press <b>E</b> — at your own pace.", { move }))
+            : (IS_COARSE_POINTER
+              ? TF("intro.e.door.m", "Step inside with {move}, then close the door behind you (the 🚪 button) — at your own pace.", { move })
+              : TF("intro.e.door.d", "Step inside with {move}, then close the door behind you (<b>E</b>) — at your own pace.", { move }))) + escNote,
       };
       // Replays of a rung the user already completed get a one-line reminder
       // instead of the full orientation — they know the room by now, and the
@@ -26292,11 +26327,11 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       const intro = sceneIntros[phobiaKey];
       hint.innerHTML = intro || (IS_COARSE_POINTER
         ? (walkable
-            ? "Swipe to look · use the joystick to walk · tap things to interact"
-            : "Swipe in any direction to look around · tap things to interact")
+            ? T("intro.any.mw", "Swipe to look · use the joystick to walk · tap things to interact")
+            : T("intro.any.m", "Swipe in any direction to look around · tap things to interact"))
         : (walkable
-            ? "Drag with the mouse to look · <b>W A S D</b> or arrow keys to walk · click to interact"
-            : "Drag with the mouse to look · <b>W A S D</b> / arrows to lean · click to interact"));
+            ? T("intro.any.dw", "Drag with the mouse to look · <b>W A S D</b> or arrow keys to walk · click to interact")
+            : T("intro.any.d", "Drag with the mouse to look · <b>W A S D</b> / arrows to lean · click to interact")));
       // Approach-style hints get a longer reveal — 16 s — because the user
       // is doing something deliberate (walking) and might not have started
       // yet. Other scenes auto-hide after 11 s as before.
@@ -26347,8 +26382,8 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       if (IS_COARSE_POINTER && controls && window.DeviceOrientationEvent) {
         const gyroBtn = document.createElement("button");
         gyroBtn.className = "ml-toggle gyro-btn";
-        gyroBtn.innerHTML = "📱 Gyro look";
-        gyroBtn.title = "Look around by physically moving the phone";
+        gyroBtn.textContent = window.t("stage.gyro", "📱 Gyro look");
+        gyroBtn.title = window.t("stage.gyroTip", "Look around by physically moving the phone");
         // The stage's top-left is already a column (camera toggle, hold pill,
         // experiments chip) — park this one top-right, under the quick bar.
         gyroBtn.style.left = "auto";
@@ -26376,7 +26411,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         };
         const setGyro = (on) => {
           gyroOn = on; gyroLast = null;
-          gyroBtn.innerHTML = on ? "📱 Gyro on" : "📱 Gyro look";
+          gyroBtn.textContent = on ? window.t("stage.gyroOn", "📱 Gyro on") : window.t("stage.gyro", "📱 Gyro look");
           gyroBtn.classList.toggle("gyro-on", on);
           if (on) window.addEventListener("deviceorientation", onGyro);
           else window.removeEventListener("deviceorientation", onGyro);
@@ -27032,12 +27067,13 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     const startCollapsed = cmdBarEl.classList.contains("collapsed");
     cmdToggle = document.createElement("button");
     cmdToggle.className = "cmd-toggle";
-    cmdToggle.textContent = startCollapsed ? "Show controls" : "Hide controls";
+    const cmdLabel = (collapsed) => collapsed ? window.t("stage.showCtl", "Show controls") : window.t("stage.hideCtl", "Hide controls");
+    cmdToggle.textContent = cmdLabel(startCollapsed);
     container.classList.toggle("cmds-open", !startCollapsed);
     cmdToggle.addEventListener("click", (e) => {
       e.stopPropagation();
       const collapsed = cmdBarEl.classList.toggle("collapsed");
-      cmdToggle.textContent = collapsed ? "Show controls" : "Hide controls";
+      cmdToggle.textContent = cmdLabel(collapsed);
       // The bar floats INSIDE the frame — flag the stage so the caption /
       // prompt stack slides up out of its way while it's open.
       container.classList.toggle("cmds-open", !collapsed);
@@ -27213,18 +27249,18 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // button, but desktop's only way out was an undocumented second Esc.
   const groundingExitHint = document.createElement("div");
   groundingExitHint.className = "grounding-exit-hint";
-  groundingExitHint.textContent = "Press Esc when you're ready to continue";
+  groundingExitHint.textContent = window.t("grnd.exitHint", "Press Esc when you're ready to continue");
   container.appendChild(groundingExitHint);
   let groundingActive = false;
   let groundingStep = 0;
   let groundingTimer = null;
   const groundingScript = [
-    { text: "Five things you can see. Look around. Name them silently.", duration: 9000 },
-    { text: "Four things you can hear. Listen carefully.", duration: 8000 },
-    { text: "Three things you can touch. Notice the texture.", duration: 8000 },
-    { text: "Two things you can smell.", duration: 6000 },
-    { text: "One thing you can taste.", duration: 5000 },
-    { text: "You're here. You're safe. Take a slow breath.", duration: 4000 },
+    { text: window.t("grnd.s5", "Five things you can see. Look around. Name them silently."), duration: 9000 },
+    { text: window.t("grnd.s4", "Four things you can hear. Listen carefully."), duration: 8000 },
+    { text: window.t("grnd.s3", "Three things you can touch. Notice the texture."), duration: 8000 },
+    { text: window.t("grnd.s2", "Two things you can smell."), duration: 6000 },
+    { text: window.t("grnd.s1", "One thing you can taste."), duration: 5000 },
+    { text: window.t("grnd.s0", "You're here. You're safe. Take a slow breath."), duration: 4000 },
   ];
   function startGrounding() {
     if (groundingActive) return;
@@ -27283,14 +27319,14 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   if (IS_COARSE_POINTER) {
     groundBtn = document.createElement("button");
     groundBtn.className = "ground-btn";
-    groundBtn.textContent = "🛟 Ground me";
+    groundBtn.textContent = window.t("grnd.btn", "🛟 Ground me");
     groundBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (groundingActive) {
         endGrounding();
       } else {
         startGrounding();
-        groundBtn.textContent = "I'm okay — continue";
+        groundBtn.textContent = window.t("grnd.okBtn", "I'm okay — continue");
       }
     });
     container.appendChild(groundBtn);
@@ -27300,7 +27336,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   const _endGroundingInner = endGrounding;
   endGrounding = function () {
     _endGroundingInner();
-    if (groundBtn) groundBtn.textContent = "🛟 Ground me";
+    if (groundBtn) groundBtn.textContent = window.t("grnd.btn", "🛟 Ground me");
   };
 
   // ----- Achievement toast queue -----
@@ -27408,7 +27444,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // V on the keyboard for the same toggle. Persists in localStorage.
   const cameraToggle = document.createElement("button");
   cameraToggle.className = "camera-toggle";
-  cameraToggle.title = "Toggle first-person / third-person (V)";
+  cameraToggle.title = window.t("stage.camTip", "Toggle first-person / third-person (V)");
   function refreshCameraLabel() {
     if (!controls) return;
     // Show CURRENT mode + a hint that it's tappable. The previous label
@@ -27416,7 +27452,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // contact. New format is "View: 3rd ⇄" so the user instantly sees
     // both their current mode and that the chip is interactive.
     const inTP = controls.cameraMode === "tp";
-    cameraToggle.innerHTML = `View: ${inTP ? "3rd" : "1st"} <span style="opacity:.7">⇄</span>`;
+    cameraToggle.innerHTML = `${window.tf("stage.cam", "View: {m}", { m: inTP ? window.t("stage.camTP", "3rd") : window.t("stage.camFP", "1st") })} <span style="opacity:.7">⇄</span>`;
     // First-person gets a soft CSS vignette on the stage (.fp-view::after) —
     // the through-the-eyes cue. Class-driven so it tracks every toggle path
     // (chip, V key, scene default).

@@ -10,7 +10,8 @@
 //      trial (walk in — and close the door behind you)
 //   4. launch scope: six realms on the map; a legacy realm shows "coming
 //      soon"; ?all=1 opens it
-//   5. Persian: the realm page renders RTL with translated trial names
+//   5. Persian: the realm page renders RTL with translated trial names, and a
+//      scene opens with a translated, right-to-left countdown + intro hint
 //   6. phone viewport: landing + creator render with no sideways scroll
 // Needs Google Chrome (override with CHROME=/path/to/chrome) and
 // `npm install` in scripts/ (puppeteer-core).
@@ -206,6 +207,17 @@ async function hardestTrial(browser, base) {
   const fa = await page.evaluate(() => ({ dir: document.documentElement.dir, en: [...document.querySelectorAll(".trial-head strong")].filter((e) => /[a-z]{3}/i.test(e.textContent)).length }));
   check("Persian: RTL with translated trial names", fa.dir === "rtl" && fa.en === 0, JSON.stringify(fa));
   await shot(page, "06-fa");
+  // Scene entry in Persian: the countdown and the intro hint are translated
+  // and read right-to-left (key names like Esc / W stay Latin).
+  await page.goto(base + "/#/heights/predict/0", { waitUntil: "load" }); await sleep(900);
+  await page.evaluate(() => { const c = document.querySelector(".expect-chip"); c && c.click(); document.querySelector('[data-action="confirm-predict"]').click(); });
+  await waitFor(page, () => !!document.querySelector(".countdown .label"), 8000);
+  const cd = await page.evaluate(() => (document.querySelector(".countdown .label") || {}).textContent || "");
+  await waitFor(page, () => ((document.querySelector(".controls-hint") || {}).textContent || "").length > 10, 8000);
+  const fh = await page.evaluate(() => { const h = document.querySelector(".controls-hint"); return { text: h.textContent, dir: getComputedStyle(h).direction }; });
+  const latin = (s) => /[A-Za-z]{3,}/.test(s.replace(/\b(Esc|WASD|Shift)\b/g, ""));
+  check("Persian: countdown + intro hint translated, RTL", /[؀-ۿ]/.test(cd) && !latin(cd) && /[؀-ۿ]/.test(fh.text) && !latin(fh.text) && fh.dir === "rtl", JSON.stringify({ cd, ...fh }));
+  await shot(page, "06b-fa-scene");
   check("trial 5 + scope + fa: no page errors", page.errors.length === 0, page.errors.slice(0, 5).join(" | "));
   await ctx.close();
 }
