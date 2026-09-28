@@ -6,8 +6,10 @@
 //   1. first run: consent → Step inside → creator → straight to trial 1's gate
 //   2. trial 1: walk to the dog, stay until the alarm settles, rate, complete
 //   3. the hardest dog trial mounts and runs; a spider and a snake trial run
-//      the same coach and complete
-//   4. launch scope: a closed realm shows "coming soon"; ?all=1 opens it
+//      the same coach and complete; so do a heights, a dark and a tight-space
+//      trial (walk in — and close the door behind you)
+//   4. launch scope: six realms on the map; a legacy realm shows "coming
+//      soon"; ?all=1 opens it
 //   5. Persian: the realm page renders RTL with translated trial names
 //   6. phone viewport: landing + creator render with no sideways scroll
 // Needs Google Chrome (override with CHROME=/path/to/chrome) and
@@ -190,11 +192,13 @@ async function hardestTrial(browser, base) {
   check("trial 5: renders frames", fps > 10, `${fps.toFixed(0)} fps (headless)`);
   await shot(page, "05-trial5");
   // Launch scope
+  await page.goto(base + "/#/water", { waitUntil: "load" }); await sleep(900);
+  check("legacy realm shows 'coming soon'", await page.evaluate(() => !!document.querySelector(".soon-panel")));
   await page.goto(base + "/#/heights", { waitUntil: "load" }); await sleep(900);
-  check("closed realm shows 'coming soon'", await page.evaluate(() => !!document.querySelector(".soon-panel")));
+  check("heights is open", await page.evaluate(() => !document.querySelector(".soon-panel")));
   await page.goto(base + "/#/fears", { waitUntil: "load" }); await sleep(1500);
-  check("map: three open realms + coming-soon strip", await page.evaluate(() => document.querySelectorAll(".realm-node").length === 3 && !!document.querySelector(".jw-soon")));
-  await page.goto(base + "/?all=1#/heights", { waitUntil: "load" }); await sleep(900);
+  check("map: six open realms, no coming-soon strip", await page.evaluate(() => document.querySelectorAll(".realm-node").length === 6 && !document.querySelector(".jw-soon")));
+  await page.goto(base + "/?all=1#/water", { waitUntil: "load" }); await sleep(900);
   check("?all=1 opens closed realms for QA", await page.evaluate(() => !document.querySelector(".soon-panel") && !!document.querySelector(".realm-view, .trial")));
   // Persian
   await page.evaluate(() => localStorage.setItem("fobia.lang", "fa"));
@@ -263,6 +267,50 @@ async function creatures(browser, base) {
   await ctx.close();
 }
 
+// Heights, the dark, tight spaces: no animal — walk in (and in tight spaces,
+// close the door behind you), name what you feel, stay until it settles.
+async function places(browser, base) {
+  const { ctx, page } = await newPage(browser);
+  await page.evaluateOnNewDocument(() => {
+    if (localStorage.getItem("fobia.consent.v1")) return;
+    const c = { id: "c-smoke3", name: "Smoke", bodyType: "man", skinTone: "tan", hairColor: "black", hairStyle: "short", topColor: "navy", topStyle: "tee", eyeColor: "brown", glasses: "none", facialHair: "none", headwear: "none", primaryPhobia: "heights", additionalPhobias: ["dark", "enclosed"], createdAt: Date.now() };
+    localStorage.setItem("fobia.characters.v2", JSON.stringify([c]));
+    localStorage.setItem("fobia.activeCharacter.v1", c.id);
+    localStorage.setItem("fobia.consent.v1", "1");
+    localStorage.setItem("fobia.tutorialSeen", "1");
+  });
+  for (const [realm, rung, walk] of [["heights", 1, 3000], ["dark", 0, 2200], ["enclosed", 0, 3000]]) {
+    await page.goto(`${base}/?r=${Date.now()}#/${realm}/predict/${rung}`, { waitUntil: "load" }); await sleep(800);
+    check(`${realm}: predict asks what the alarm predicts`, await page.evaluate(() => document.querySelectorAll(".expect-chip").length >= 6 && /alarm predicting/i.test((document.querySelector(".expect-q") || {}).textContent || "")));
+    await page.evaluate(() => { const c = document.querySelector(".expect-chip"); c && c.click(); document.querySelector('[data-action="confirm-predict"]').click(); });
+    check(`${realm}: scene + coach mount`, await waitFor(page, () => !!(window.__active && window.__active.scene && window.__coach && document.querySelector(".dog-coach")), 15000));
+    await sleep(2500);
+    await page.keyboard.down("KeyW"); await sleep(walk); await page.keyboard.up("KeyW");
+    let lastE = 0;
+    const t0 = Date.now(); let met = false, diag = "";
+    while (Date.now() - t0 < 60000) {
+      diag = await page.evaluate((realm) => {
+        const C = window.__coach;
+        if (C && C.readId) { const K = CREATURE_KITS[realm]; const b = document.querySelector(`.dc-read .dc-opt[data-c="${K.signals[C.readId].cls}"]`); b && b.click(); }
+        return JSON.stringify({ eng: C && C.engaged, alarm: C && Math.round(C.alarm), hold: (document.getElementById("holdLabel") || {}).textContent });
+      }, realm);
+      if (await page.evaluate(() => /ready|continue/i.test((document.getElementById("continueBtn") || {}).textContent || ""))) { met = true; break; }
+      // In a tight space the trial starts when YOU close the door (E).
+      if (realm === "enclosed" && !JSON.parse(diag).eng && Date.now() - lastE > 3000) { lastE = Date.now(); await page.keyboard.press("KeyE"); }
+      await sleep(1000);
+    }
+    check(`${realm}: staying completes the trial`, met, met ? "" : diag);
+    await shot(page, `09-${realm}`);
+    await page.evaluate(() => document.getElementById("continueBtn").click());
+    await sleep(1200);
+    await page.evaluate(() => { document.querySelectorAll('input[type="range"]').forEach((r) => { r.value = "3"; r.dispatchEvent(new Event("input", { bubbles: true })); r.dispatchEvent(new Event("change", { bubbles: true })); }); const b = document.getElementById("rateSubmit"); b && b.click(); });
+    await sleep(1500);
+    check(`${realm}: reality check on the complete page`, await page.evaluate(() => /\/done\//.test(location.hash) && !!document.querySelector(".reality-card")), await hash(page));
+  }
+  check("place trials: no page errors", page.errors.length === 0, page.errors.slice(0, 5).join(" | "));
+  await ctx.close();
+}
+
 async function phone(browser, base) {
   const { ctx, page } = await newPage(browser, { mobile: true });
   await page.goto(base + "/", { waitUntil: "load" }); await sleep(1500);
@@ -284,7 +332,7 @@ async function phone(browser, base) {
   });
   const t0 = Date.now();
   try {
-    for (const flow of [firstRunAndTrial, hardestTrial, creatures, phone]) {
+    for (const flow of [firstRunAndTrial, hardestTrial, creatures, places, phone]) {
       try { await flow(browser, base); } catch (e) { check(flow.name + " crashed", false, String(e).slice(0, 300)); }
     }
   } finally {
