@@ -559,6 +559,12 @@ function shadeColor(hex, pct) {
   return "#" + [f(r), f(g), f(b)].map(v => v.toString(16).padStart(2, "0")).join("");
 }
 
+// Option labels read through opt.<family>.<id> — the family is the
+// data-family the creators already use, which keeps ids that repeat across
+// families ("brown" skin / hair / eyes) apart.
+const charT = (key, fallback) => (window.t ? window.t(key, fallback) : fallback);
+function optLabel(family, item) { return item ? charT(`opt.${family}.${item.id}`, item.label) : ""; }
+
 // Build the character creator view HTML. The host page wires up event handlers
 // after this is inserted. The form posts on submit by calling window.Character.handleCreatorSubmit.
 function viewCharacterCreator(existing, allPhobias) {
@@ -567,7 +573,7 @@ function viewCharacterCreator(existing, allPhobias) {
     <button type="button" class="swatch ${item.id === currentId ? "selected" : ""}"
       data-family="${family}" data-id="${item.id}"
       style="${item.hex ? `background:${item.hex};` : ""}"
-      title="${item.label}">${item.hex ? "" : `<span>${item.label}</span>`}</button>
+      title="${optLabel(family, item)}">${item.hex ? "" : `<span>${optLabel(family, item)}</span>`}</button>
   `).join("");
 
   // Multi-select for phobias. The first chosen acts as primary.
@@ -581,9 +587,9 @@ function viewCharacterCreator(existing, allPhobias) {
       <span class="pick-card">
         <span class="pick-icon">${p.icon}</span>
         <span class="pick-text">
-          <strong>${p.label}</strong>
-          <em>${p.name}</em>
-          ${c.primaryPhobia === key ? `<span class="pick-primary">primary</span>` : ""}
+          <strong>${charT(`phobia.${key}.label`, p.label)}</strong>
+          <em>${charT(`phobia.${key}.name`, p.name)}</em>
+          ${c.primaryPhobia === key ? `<span class="pick-primary">${charT("creator.primary", "primary")}</span>` : ""}
         </span>
         <span class="pick-check"></span>
       </span>
@@ -601,16 +607,16 @@ function viewCharacterCreator(existing, allPhobias) {
         <div class="creator-preview">
           <div class="avatar-stage">
             <div class="avatar-large" id="avatarPreview" data-fallback-svg='${avatarSVG(c, 240).replace(/'/g, "&apos;")}'>${avatarSVG(c, 240)}</div>
-            <button type="button" class="preview-randomise" id="creatorRandomTop" title="Shuffle appearance"><span aria-hidden="true">🎲</span></button>
+            <button type="button" class="preview-randomise" id="creatorRandomTop" title="${charT("creator.shuffle", "Shuffle appearance")}"><span aria-hidden="true">🎲</span></button>
           </div>
-          <div class="avatar-hint">↔ drag to rotate · 🎲 shuffle</div>
+          <div class="avatar-hint">${charT("creator.hint", "↔ drag to rotate · 🎲 shuffle")}</div>
           <input class="char-name-input" id="charName" type="text" maxlength="24"
-                 placeholder="Your name (optional)" value="${(c.name || "").replace(/"/g, "&quot;")}"/>
-          <div class="creator-section-label">Coach voice</div>
+                 placeholder="${charT("creator.namePh", "Your name (optional)")}" value="${(c.name || "").replace(/"/g, "&quot;")}"/>
+          <div class="creator-section-label">${charT("creator.voice", "Coach voice")}</div>
           <div class="char-preset-row">
-            <button type="button" class="preset-btn ${(c.voicePreset || "calm") === "calm" ? "selected" : ""}" data-preset="calm" title="Slower pace, more grounding">Calm</button>
-            <button type="button" class="preset-btn ${c.voicePreset === "encouraging" ? "selected" : ""}" data-preset="encouraging" title="Warmer, affirming">Encouraging</button>
-            <button type="button" class="preset-btn ${c.voicePreset === "brief" ? "selected" : ""}" data-preset="brief" title="Quicker, fewer words">Brief</button>
+            <button type="button" class="preset-btn ${(c.voicePreset || "calm") === "calm" ? "selected" : ""}" data-preset="calm" title="${charT("creator.calmTip", "Slower pace, more grounding")}">${charT("creator.calm", "Calm")}</button>
+            <button type="button" class="preset-btn ${c.voicePreset === "encouraging" ? "selected" : ""}" data-preset="encouraging" title="${charT("creator.encTip", "Warmer, affirming")}">${charT("creator.enc", "Encouraging")}</button>
+            <button type="button" class="preset-btn ${c.voicePreset === "brief" ? "selected" : ""}" data-preset="brief" title="${charT("creator.briefTip", "Quicker, fewer words")}">${charT("creator.brief", "Brief")}</button>
           </div>
         </div>
 
@@ -618,14 +624,14 @@ function viewCharacterCreator(existing, allPhobias) {
           <div class="creator-section creator-starters">
             <div class="creator-section-head">
               <span class="creator-section-num">✦</span>
-              <h3>Quick start</h3>
+              <h3>${charT("creator.quick", "Quick start")}</h3>
             </div>
-            <p class="small" style="margin:-2px 0 12px">Tap a look to start from — then tweak anything below.</p>
+            <p class="small" style="margin:-2px 0 12px">${charT("creator.quickP", "Tap a look to start from — then tweak anything below.")}</p>
             <div class="starter-row">
               ${STARTER_PRESETS.map(pr => `
-                <button type="button" class="starter-preset" data-starter="${pr.id}" title="${pr.label}">
+                <button type="button" class="starter-preset" data-starter="${pr.id}" title="${optLabel("starter", pr)}">
                   <span class="starter-av">${avatarSVG(Object.assign({}, defaultCharacter(), pr), 46)}</span>
-                  <span class="starter-lbl">${pr.label}</span>
+                  <span class="starter-lbl">${optLabel("starter", pr)}</span>
                 </button>`).join("")}
             </div>
           </div>
@@ -633,14 +639,14 @@ function viewCharacterCreator(existing, allPhobias) {
           <div class="creator-section">
             <div class="creator-section-head">
               <span class="creator-section-num">1</span>
-              <h3>Skin &amp; complexion</h3>
+              <h3>${charT("creator.secSkin", "Skin &amp; complexion")}</h3>
             </div>
             <div class="creator-row">
-              <label>Body</label>
+              <label>${charT("creator.body", "Body")}</label>
               <div class="swatches text" data-group="bodyType">${swatch(BODY_TYPES, c.bodyType || "woman", "bodyType")}</div>
             </div>
             <div class="creator-row">
-              <label>Skin tone</label>
+              <label>${charT("creator.skin", "Skin tone")}</label>
               <div class="swatches" data-group="skinTone">${swatch(SKIN_TONES, c.skinTone, "skinTone")}</div>
             </div>
           </div>
@@ -648,14 +654,14 @@ function viewCharacterCreator(existing, allPhobias) {
           <div class="creator-section">
             <div class="creator-section-head">
               <span class="creator-section-num">2</span>
-              <h3>Hair</h3>
+              <h3>${charT("creator.secHair", "Hair")}</h3>
             </div>
             <div class="creator-row">
-              <label>Colour</label>
+              <label>${charT("creator.hairC", "Colour")}</label>
               <div class="swatches" data-group="hairColor">${swatch(HAIR_COLORS, c.hairColor, "hairColor")}</div>
             </div>
             <div class="creator-row">
-              <label>Style</label>
+              <label>${charT("creator.style", "Style")}</label>
               <div class="swatches text" data-group="hairStyle">${swatch(HAIR_STYLES, c.hairStyle, "hairStyle")}</div>
             </div>
           </div>
@@ -663,18 +669,18 @@ function viewCharacterCreator(existing, allPhobias) {
           <div class="creator-section">
             <div class="creator-section-head">
               <span class="creator-section-num">3</span>
-              <h3>Face</h3>
+              <h3>${charT("creator.secFace", "Face")}</h3>
             </div>
             <div class="creator-row">
-              <label>Eyes</label>
+              <label>${charT("creator.eyes", "Eyes")}</label>
               <div class="swatches" data-group="eyeColor">${swatch(EYE_COLORS, c.eyeColor, "eyeColor")}</div>
             </div>
             <div class="creator-row">
-              <label>Glasses</label>
+              <label>${charT("creator.glasses", "Glasses")}</label>
               <div class="swatches text" data-group="glasses">${swatch(GLASSES, c.glasses, "glasses")}</div>
             </div>
             <div class="creator-row">
-              <label>Facial hair</label>
+              <label>${charT("creator.facial", "Facial hair")}</label>
               <div class="swatches text" data-group="facialHair">${swatch(FACIAL_HAIR, c.facialHair, "facialHair")}</div>
             </div>
           </div>
@@ -682,18 +688,18 @@ function viewCharacterCreator(existing, allPhobias) {
           <div class="creator-section">
             <div class="creator-section-head">
               <span class="creator-section-num">4</span>
-              <h3>Clothing &amp; accessories</h3>
+              <h3>${charT("creator.secClothes", "Clothing &amp; accessories")}</h3>
             </div>
             <div class="creator-row">
-              <label>Shirt</label>
+              <label>${charT("creator.shirt", "Shirt")}</label>
               <div class="swatches" data-group="topColor">${swatch(TOP_COLORS, c.topColor, "topColor")}</div>
             </div>
             <div class="creator-row">
-              <label>Style</label>
+              <label>${charT("creator.style", "Style")}</label>
               <div class="swatches text" data-group="topStyle">${swatch(TOP_STYLES, c.topStyle || "tee", "topStyle")}</div>
             </div>
             <div class="creator-row">
-              <label>Headwear</label>
+              <label>${charT("creator.headwear", "Headwear")}</label>
               <div class="swatches text" data-group="headwear">${swatch(HEADWEAR, c.headwear || "none", "headwear")}</div>
             </div>
           </div>
@@ -710,9 +716,9 @@ function viewCharacterCreator(existing, allPhobias) {
       </div>
 
       <div class="creator-actions">
-        <button class="btn-ghost" id="creatorRandom">🎲 Surprise me</button>
+        <button class="btn-ghost" id="creatorRandom">${charT("creator.surprise", "🎲 Surprise me")}</button>
         <button class="btn-primary" id="creatorSave">${window.t ? window.t("creator.save", "Save & enter the valley") : "Save & enter the valley"}</button>
-        ${existing ? `<button class="btn-ghost" id="creatorCancel">Cancel</button>` : ""}
+        ${existing ? `<button class="btn-ghost" id="creatorCancel">${charT("creator.cancel", "Cancel")}</button>` : ""}
       </div>
     </div>
   `;
@@ -834,7 +840,7 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
       if (isPrimary) {
         const b = document.createElement("span");
         b.className = "pick-primary";
-        b.textContent = "primary";
+        b.textContent = charT("creator.primary", "primary");
         text.appendChild(b);
       }
     });
@@ -952,5 +958,5 @@ window.Character = {
   loadCharacter, loadCharacters, activeCharacterId,
   saveCharacter, setActiveCharacter, deleteCharacter, clearCharacter,
   skinHex, hairHex, topHex, eyeHex, hexToInt,
-  avatarSVG, viewCharacterCreator, attachCreatorHandlers,
+  avatarSVG, viewCharacterCreator, attachCreatorHandlers, optLabel,
 };

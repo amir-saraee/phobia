@@ -12,7 +12,8 @@
 //      soon"; ?all=1 opens it
 //   5. Persian: the realm page renders RTL with translated trial names, and a
 //      scene opens with a translated, right-to-left countdown + intro hint
-//   6. phone viewport: landing + creator render with no sideways scroll
+//   6. phone viewport: landing + creator render with no sideways scroll, in
+//      English and in Persian (right-to-left)
 // Needs Google Chrome (override with CHROME=/path/to/chrome) and
 // `npm install` in scripts/ (puppeteer-core).
 "use strict";
@@ -331,6 +332,13 @@ async function phone(browser, base) {
   const m = await page.evaluate(() => ({ route: location.hash, sideways: document.documentElement.scrollWidth - window.innerWidth, stage: !!document.querySelector("#travelerStage canvas") }));
   check("phone: creator renders, no sideways scroll", m.route === "#/traveler" && m.stage && m.sideways <= 1, JSON.stringify(m));
   await shot(page, "07-phone-creator");
+  // Persian is right-to-left: anything parked off the LEFT edge becomes
+  // scrollable there (a skip link at -9999px once made every page swipe
+  // sideways into nothing).
+  await page.evaluate(() => localStorage.setItem("fobia.lang", "fa"));
+  await page.goto(base + "/?fa=1#/about", { waitUntil: "load" }); await sleep(1200);   // query forces a real reload
+  const fsw = await page.evaluate(() => ({ dir: document.documentElement.dir, sideways: document.documentElement.scrollWidth - window.innerWidth }));
+  check("phone, Persian: no sideways scroll", fsw.dir === "rtl" && fsw.sideways <= 1, JSON.stringify(fsw));
   check("phone: no page errors", page.errors.length === 0, page.errors.slice(0, 5).join(" | "));
   await ctx.close();
 }

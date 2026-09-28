@@ -2340,13 +2340,18 @@ if ("serviceWorker" in navigator) {
     outline-offset: 2px;
   }
   /* Skip link (visible only on focus) */
+  /* Parked ABOVE the page, not at left: -9999px — in a right-to-left
+     document overflow on the left is scrollable, and every Persian page
+     could be swiped 9999 px sideways into nothing. Overflow above the top
+     never scrolls, in either direction. */
   .skip-link {
-    position: absolute; left: -9999px;
+    position: absolute; top: 16px; inset-inline-start: 16px;
+    transform: translateY(calc(-100% - 40px));
     background: var(--accent); color: var(--bg);
     padding: 8px 14px; border-radius: 6px;
     font-weight: 600; z-index: 1000;
   }
-  .skip-link:focus { left: 16px; top: 16px; }
+  .skip-link:focus { transform: none; }
 
   /* Insights page */
   .stats-row {
@@ -4480,6 +4485,16 @@ if ("serviceWorker" in navigator) {
     .stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) .cmd-btn {
       font-size: 12px; padding: 8px 10px; min-height: 40px;
     }
+    /* Two columns beside the joystick lane, labels allowed to wrap. As a
+       wrapping flex row, one label a few px too long (Persian, or any 360 px
+       phone) dropped every button onto its own line — a tall column over
+       the scene. */
+    .stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) .cmd-btn {
+      white-space: normal; line-height: 1.25; text-align: start;
+    }
   }
   /* Compact creature trust HUD on phones: at full size it covered half the
      room. Name + bar + % stay; the hint shrinks; width is capped. */
@@ -4572,7 +4587,7 @@ if ("serviceWorker" in navigator) {
     .countdown, .grounding-text, .grounding-exit-hint, .pl-release, .achievement-toast,
     .dog-coach, .dc-callout, .dc-read, .exp-panel, .hold-pill, .hold-label, .stage-breath,
     .cmd-btn, .cmd-toggle, .ground-btn, .ml-toggle, .camera-toggle, .demo-chip,
-    .trust-hud, .step-controls button) { direction: rtl; }
+    .trust-hud, .step-controls button, .scene-cmd-bar) { direction: rtl; }
   /* The report stays English/LTR until it's translated */
   html[dir="rtl"] .report-view { direction: ltr; text-align: left; }
   html[dir="rtl"] .lang-btn, .lang-btn { font-weight: 800; font-size: 13px; }
@@ -8352,6 +8367,13 @@ const PhobiaNarrator = (() => {
   }
 
   // The engine's main entrypoint — called per frame from the scene's update.
+  // Bank lines localize as narb.<scene>.<bucket>.<i> (the scene whose bank
+  // was actually used — dark/enclosed borrow the heights bank).
+  function bankText(scenePhobia, sceneLines, bucket, line) {
+    if (typeof t !== "function") return line;
+    const bucketName = Object.keys(sceneLines).find(k => sceneLines[k] === bucket);
+    return t(`narb.${lines[scenePhobia] ? scenePhobia : "heights"}.${bucketName}.${bucket.indexOf(line)}`, line);
+  }
   // Reads PhobiaFear state and decides whether (and what) to say.
   function tick(scenePhobia, opts = {}) {
     if (!window.PhobiaVoice) return;
@@ -8394,7 +8416,7 @@ const PhobiaNarrator = (() => {
       // (arrival/walking/close) stays caption-only.
       const isUrgent = bucket === sceneLines.panic || bucket === sceneLines.threatened;
       const isCoaching = bucket === sceneLines.avoidance;
-      window.PhobiaVoice.speak(line, { urgent: isUrgent, audible: isUrgent || isCoaching });
+      window.PhobiaVoice.speak(bankText(scenePhobia, sceneLines, bucket, line), { urgent: isUrgent, audible: isUrgent || isCoaching });
       PhobiaFear.markNarrated();
     } catch {}
   }
@@ -8409,7 +8431,7 @@ const PhobiaNarrator = (() => {
     if (peakNow < delta.lastPeak - 5) {
       const line = pick(sceneLines.habituation);
       // The one unambiguous good-news beat of a session — spoken, warmly.
-      try { window.PhobiaVoice.speak(line, { audible: true, praise: true }); } catch {}
+      try { window.PhobiaVoice.speak(bankText(scenePhobia, sceneLines, sceneLines.habituation, line), { audible: true, praise: true }); } catch {}
       return true;
     }
     return false;
@@ -9172,6 +9194,10 @@ const REALMS = {
 // .desc in the fa pack). English falls straight through to the data.
 function lvTitle(key, i) { const lv = PHOBIAS[key] && PHOBIAS[key].levels[i]; return lv ? t(`level.${key}.${i}.title`, lv.title) : ""; }
 function lvDesc(key, i)  { const lv = PHOBIAS[key] && PHOBIAS[key].levels[i]; return lv && lv.desc ? t(`level.${key}.${i}.desc`, lv.desc) : ""; }
+// Fear names through the same layer: "Dogs" (phobia.<key>.label) and the
+// clinical "Cynophobia" (phobia.<key>.name).
+function phLabel(key) { const p = PHOBIAS[key]; return p ? t(`phobia.${key}.label`, p.label) : key; }
+function phName(key)  { const p = PHOBIAS[key]; return p ? t(`phobia.${key}.name`, p.name || "") : ""; }
 
 function realmOf(key) {
   const p = PHOBIAS[key];
@@ -9197,6 +9223,7 @@ function realmOf(key) {
       epithet:      t(`realm.${key}.epithet`,  base.epithet),
       line:         t(`realm.${key}.line`,     base.line),
       clearedLine:  t(`realm.${key}.cleared`,  base.clearedLine),
+      whispers:     (base.whispers || []).map((w, i) => t(`realm.${key}.whisper.${i}`, w)),
     });
   }
   return base;
@@ -9877,7 +9904,13 @@ const BRIDGE_FALLBACK = [
   { t: "Close half the distance, briefly", how: "One minute closer than comfortable, then step back proud." },
   { t: "Stay close on purpose", how: "Five minutes at the closest distance you can allow. That's the summit." }
 ];
-function bridgeOf(key) { return BRIDGES[key] || BRIDGE_FALLBACK; }
+// bridgeRaw is the English source (the clinician report reads it);
+// bridgeOf is what the traveller sees, through bridge.<key>.<i>.t|how.
+function bridgeRaw(key) { return BRIDGES[key] || BRIDGE_FALLBACK; }
+function bridgeOf(key) {
+  const ns = BRIDGES[key] ? key : "any";
+  return bridgeRaw(key).map((s, i) => ({ t: t(`bridge.${ns}.${i}.t`, s.t), how: t(`bridge.${ns}.${i}.how`, s.how) }));
+}
 function getWorldsteps(phobiaKey) {
   const cs = activeCharSlice();
   if (!cs.worldsteps) cs.worldsteps = {};
@@ -9919,13 +9952,17 @@ const DOG_COMPANIONS = [
   { breed: "husky", species: "husky", nameKey: "fobia.dogName.husky", fallback: "Koda",  rungs: "trials 3–5" },
 ];
 function dogTrustBand(trust, met) {
-  if (!met)            return { label: "hasn't met you yet",      tone: "none" };
-  if (trust < 0.12)    return { label: "knows your face",         tone: "low" };
-  if (trust < 0.35)    return { label: "comes when you call",     tone: "low" };
-  if (trust < 0.60)    return { label: "lets you stand close",    tone: "mid" };
-  if (trust < 0.85)    return { label: "leans into your hand",    tone: "high" };
-  return { label: "trusts you completely", tone: "high" };
+  if (!met)            return { label: t("dog.band.0", "hasn't met you yet"),    tone: "none" };
+  if (trust < 0.12)    return { label: t("dog.band.1", "knows your face"),       tone: "low" };
+  if (trust < 0.35)    return { label: t("dog.band.2", "comes when you call"),   tone: "low" };
+  if (trust < 0.60)    return { label: t("dog.band.3", "lets you stand close"),  tone: "mid" };
+  if (trust < 0.85)    return { label: t("dog.band.4", "leans into your hand"),  tone: "high" };
+  return { label: t("dog.band.5", "trusts you completely"), tone: "high" };
 }
+// The scene saves the day's temperament by its English label (the module's
+// DOG_TEMPERAMENTS); the realm page reads it back through temper.<id>.
+const TEMPER_IDS = { "sleepy": "sleepy", "curious": "curious", "distracted": "busy", "bright-eyed": "keen" };
+function temperText(label) { return TEMPER_IDS[label] ? t(`temper.${TEMPER_IDS[label]}`, label) : label; }
 function dogCompanions() {
   // loadCharacter() returns null before a traveller is created — the optional
   // chain matters, the && chain does not (it only proves the function exists).
@@ -9953,8 +9990,8 @@ function completeWorldstep(phobiaKey, step, suds) {
   if (list.some(w => w.step === step)) return;
   list.push({ step, suds: Number.isFinite(suds) ? suds : null, ts: Date.now() });
   saveState();
-  awardCourage(30 + 10 * step, "a real-world step");
-  showAchievement("A real-world step", `You faced it out there — that's worth more than any trial in here.`, "🌍");
+  awardCourage(30 + 10 * step, t("courage.real", "a real-world step"));
+  showAchievement(t("ach.real", "A real-world step"), t("ach.realP", "You faced it out there — that's worth more than any trial in here."), "🌍");
   checkMilestones();
 }
 
@@ -10149,7 +10186,7 @@ function awardCourage(points, reason) {
   try {
     const rBefore = courageRank(before), rAfter = courageRank(cs.courage);
     if (rAfter.idx > rBefore.idx) {
-      setTimeout(() => showAchievement(`Rank up — ${rAfter.title}`, `The valley knows your name now. (${cs.courage} courage)`, rAfter.icon), 900);
+      setTimeout(() => showAchievement(tf("ach.rankUp", "Rank up — {title}", { title: rAfter.title }), tf("ach.rankUpP", "The valley knows your name now. ({n} courage)", { n: cs.courage }), rAfter.icon), 900);
     }
   } catch {}
   // Re-render the header courage badge if visible
@@ -10165,7 +10202,7 @@ function awardCourage(points, reason) {
     // Light, non-intrusive notification — only when the courage gain is
     // big enough to celebrate.
     if (points >= 20) {
-      try { window.PhobiaFX.contextPrompt(`+${Math.round(points)} courage · ${reason}`, 2800); } catch {}
+      try { window.PhobiaFX.contextPrompt(tf("courage.gain", "+{n} courage · {why}", { n: Math.round(points), why: reason }), 2800); } catch {}
     }
   }
 }
@@ -10212,8 +10249,8 @@ function markCompleted(phobiaKey, levelIdx, suds, predicted, peak, outcome, extr
   const basePoints = 10 + 5 * levelIdx;
   const isFirstTime = wasNew;
   const points = Math.round((isFirstTime ? basePoints * 2 : basePoints) * (finished ? 1 : 0.5));
-  awardCourage(points, finished ? (isFirstTime ? "first time" : "well done") : "you showed up");
-  if (firstToday) awardCourage(15, "daily ember");
+  awardCourage(points, finished ? (isFirstTime ? t("courage.first", "first time") : t("courage.well", "well done")) : t("courage.showed", "you showed up"));
+  if (firstToday) awardCourage(15, t("courage.ember", "daily ember"));
   // Check for newly-unlocked milestones (after the log push so they see this entry)
   const newMilestones = checkMilestones() || [];
   // Stash the concrete reward so the Complete screen can surface it at the peak
@@ -10236,16 +10273,16 @@ function markCompleted(phobiaKey, levelIdx, suds, predicted, peak, outcome, extr
     const phobia = PHOBIAS[phobiaKey];
     const isLast = levelIdx === phobia.levels.length - 1;
     if (isLast) {
-      showAchievement("Ladder complete", `You walked all 5 rungs of ${phobia.label}.`, "🪜");
+      showAchievement(t("ach.ladder", "Ladder complete"), tf("ach.ladderP", "You walked all 5 rungs of {fear}.", { fear: phLabel(phobiaKey) }), "🪜");
     } else if (levelIdx === 0) {
-      showAchievement("First rung climbed", `You started ${phobia.label}.`, "🌱");
+      showAchievement(t("ach.first", "First rung climbed"), tf("ach.firstP", "You started {fear}.", { fear: phLabel(phobiaKey) }), "🌱");
     } else if (levelIdx === Math.floor(phobia.levels.length / 2)) {
-      showAchievement("Halfway there", `Rung ${levelIdx + 1} on ${phobia.label}.`, "🚩");
+      showAchievement(t("ach.half", "Halfway there"), tf("ach.halfP", "Rung {n} on {fear}.", { n: levelIdx + 1, fear: phLabel(phobiaKey) }), "🚩");
     }
   }
   // Award a brave-face if anxiety was high but you stayed (a full hold —
   // the badge would ring false on an early exit)
-  if (finished && suds >= 7) showAchievement("Held the line", `Anxiety ${suds}/10 and you stayed.`, "🫁");
+  if (finished && suds >= 7) showAchievement(t("ach.held", "Held the line"), tf("ach.heldP", "Anxiety {n}/10 and you stayed.", { n: suds }), "🫁");
 }
 
 // ---------- Progress milestones ----------
@@ -10292,6 +10329,13 @@ const MILESTONES = [
       return avgGap < 1;
     } },
 ];
+// Titles and descriptions read through ms.<id>.title|desc at use time, so
+// every consumer (toast, complete page, insights) follows the language.
+MILESTONES.forEach((m) => {
+  const title = m.title, desc = m.desc;
+  Object.defineProperty(m, "title", { get: () => t(`ms.${m.id}.title`, title) });
+  Object.defineProperty(m, "desc", { get: () => t(`ms.${m.id}.desc`, desc) });
+});
 function unlockedMilestones() {
   const cs = state.byCharacter || {};
   const id = (window.Character && window.Character.activeCharacterId()) || "default";
@@ -10808,28 +10852,28 @@ function render(view, params) {
   // otherwise they linger on body when the view re-renders.
   document.querySelectorAll(".tour-overlay").forEach(el => el.remove());
   const muted = window.PhobiaAudio && window.PhobiaAudio.isMuted();
-  const menuBtn = `<button class="audio-btn" id="menuBtn" title="Menu" aria-label="Open menu">☰</button>`;
-  const audioBtn = `<button class="audio-btn" id="audioBtn" title="Toggle sound" aria-label="Toggle sound">${muted ? "🔇" : "🔊"}</button>`;
+  const menuBtn = `<button class="audio-btn" id="menuBtn" title="${t("nav.menu", "Menu")}" aria-label="${t("a11y.openMenu", "Open menu")}">☰</button>`;
+  const audioBtn = `<button class="audio-btn" id="audioBtn" title="${t("nav.sound", "Toggle sound")}" aria-label="${t("nav.sound", "Toggle sound")}">${muted ? "🔇" : "🔊"}</button>`;
   const insightsBtn = (state.log && state.log.length > 0)
-    ? `<button class="audio-btn" id="insightsBtn" title="Your progress" aria-label="Your progress" data-action="open-insights">📊</button>` : "";
-  const settingsBtn = `<button class="audio-btn" id="settingsBtn" title="Settings" aria-label="Open settings">⚙</button>`;
+    ? `<button class="audio-btn" id="insightsBtn" title="${t("nav.progress", "Your progress")}" aria-label="${t("nav.progress", "Your progress")}" data-action="open-insights">📊</button>` : "";
+  const settingsBtn = `<button class="audio-btn" id="settingsBtn" title="${t("nav.settings", "Settings")}" aria-label="${t("a11y.openSettings", "Open settings")}">⚙</button>`;
   // Character avatar in header (when one exists). The badge opens the profile
   // picker if the user has more than one character, otherwise the editor.
   const character = window.Character && window.Character.loadCharacter();
   const allChars = window.Character ? window.Character.loadCharacters() : [];
   const streak = computeStreak();
   const charBadge = character ? `
-    <button class="char-badge" id="charBadge" title="${allChars.length > 1 ? "Switch character" : "Edit character"}">
+    <button class="char-badge" id="charBadge" title="${allChars.length > 1 ? t("a11y.switchChar", "Switch character") : t("a11y.editChar", "Edit character")}">
       <span class="char-badge-avatar">${window.Character.avatarSVG(character, 28)}</span>
       ${character.name ? `<span class="char-badge-name">${character.name}</span>` : ""}
       ${allChars.length > 1 ? `<span class="char-badge-count">${allChars.length}</span>` : ""}
-      ${streak >= 2 ? `<span class="char-badge-streak" title="${streak}-day streak">🔥 ${streak}</span>` : ""}
+      ${streak >= 2 ? `<span class="char-badge-streak" title="${tf("a11y.streak", "{n}-day streak", { n: streak })}">🔥 ${streak}</span>` : ""}
     </button>` : "";
   const sparkCount = character ? getSparks().length : 0;
   const isFa = window.I18n && window.I18n.currentLanguage() === "fa";
-  const langBtn = `<button class="audio-btn lang-btn" id="langBtn" title="${isFa ? "Switch to English" : "تغییر زبان به فارسی"}" aria-label="Change language" lang="${isFa ? "en" : "fa"}">${isFa ? "EN" : "فا"}</button>`;
+  const langBtn = `<button class="audio-btn lang-btn" id="langBtn" title="${isFa ? "Switch to English" : "تغییر زبان به فارسی"}" aria-label="${t("a11y.lang", "Change language")}" lang="${isFa ? "en" : "fa"}">${isFa ? "EN" : "فا"}</button>`;
   const sparksBtn = sparkCount > 0
-    ? `<button class="audio-btn spark-hud" id="sparksBtn" title="Book of Sparks — the wisdom you've earned" aria-label="Open your Book of Sparks">✦<span class="spark-hud-n">${sparkCount}</span></button>` : "";
+    ? `<button class="audio-btn spark-hud" id="sparksBtn" title="${t("hud.sparks", "Book of Sparks — the wisdom you've earned")}" aria-label="${t("a11y.sparks", "Open your Book of Sparks")}">✦<span class="spark-hud-n">${sparkCount}</span></button>` : "";
   const html = `
     <a class="skip-link" href="#view">${t("a11y.skip", "Skip to main content")}</a>
     <header class="brand" role="banner">
@@ -10837,15 +10881,15 @@ function render(view, params) {
         ${menuBtn}
         <h1><span class="dot"></span> Mira <span class="brand-tag">${t("hud.tag", "the courage journey")}</span></h1>
       </div>
-      <nav class="nav-actions" aria-label="App navigation">
-        ${getCourage() > 0 ? `<span class="courage-badge" id="courageBadge" title="Courage — earned every time you face a trial">⚡ ${getCourage()}</span>` : ""}
+      <nav class="nav-actions" aria-label="${t("a11y.nav", "App navigation")}">
+        ${getCourage() > 0 ? `<span class="courage-badge" id="courageBadge" title="${t("hud.courage", "Courage — earned every time you face a trial")}">⚡ ${getCourage()}</span>` : ""}
         ${charBadge}
         ${sparksBtn}
         ${insightsBtn}
         ${langBtn}
         ${audioBtn}
         ${settingsBtn}
-        ${view !== "welcome" && view !== "character" && view !== "threshold" ? `<button class="home-btn" id="home" aria-label="Back to the journey map">${t("hud.camp", "🏕 Camp")}</button>` : ""}
+        ${view !== "welcome" && view !== "character" && view !== "threshold" ? `<button class="home-btn" id="home" aria-label="${t("a11y.home", "Back to the journey map")}">${t("hud.camp", "🏕 Camp")}</button>` : ""}
       </nav>
     </header>
     <main id="view" role="main"></main>
@@ -10939,7 +10983,7 @@ function render(view, params) {
 }
 
 function viewCharacterPage(editing) {
-  if (!window.Character) return `<div class="panel"><p>Loading…</p></div>`;
+  if (!window.Character) return `<div class="panel"><p>${t("loading", "Loading…")}</p></div>`;
   const existing = editing ? window.Character.loadCharacter() : null;
   const kicker = editing ? "" : `<p class="landing-kicker" style="text-align:center;margin-bottom:10px">${t("story.creatorKicker", "chapter one — become someone")}</p>`;
   return `
@@ -11128,16 +11172,16 @@ function openMenu() {
   const drawer = document.createElement("aside");
   drawer.className = "menu-drawer";
   drawer.setAttribute("role", "navigation");
-  drawer.setAttribute("aria-label", "Main menu");
+  drawer.setAttribute("aria-label", t("a11y.mainMenu", "Main menu"));
   drawer.innerHTML = `
-    <button class="close-btn" id="closeMenu" aria-label="Close menu">✕</button>
+    <button class="close-btn" id="closeMenu" aria-label="${t("a11y.closeMenu", "Close menu")}">✕</button>
     ${ch ? `
       <div class="menu-character">
         <div class="menu-avatar">${window.Character.avatarSVG(ch, 56)}</div>
         <div class="menu-character-text">
-          <strong>${escapeHtml(ch.name || "Anonymous")}</strong>
-          <span class="small">${(ch.primaryPhobia ? 1 : 0) + (ch.additionalPhobias?.length || 0)} fear${((ch.primaryPhobia ? 1 : 0) + (ch.additionalPhobias?.length || 0)) === 1 ? "" : "s"} ·
-            ${state.log.length} session${state.log.length === 1 ? "" : "s"}</span>
+          <strong>${escapeHtml(ch.name || t("card.anon", "Anonymous"))}</strong>
+          <span class="small">${(() => { const f = (ch.primaryPhobia ? 1 : 0) + (ch.additionalPhobias?.length || 0), s = state.log.length;
+            return tf("pr.counts", `{f} fear${f === 1 ? "" : "s"} · {s} session${s === 1 ? "" : "s"}`, { f, s }); })()}</span>
         </div>
       </div>
     ` : ""}
@@ -11216,63 +11260,63 @@ function openSettings() {
   const canNotify = "Notification" in window;
 
   drawer.innerHTML = `
-    <button class="close-btn" id="closeSettings">✕</button>
-    <h3>Settings</h3>
+    <button class="close-btn" id="closeSettings" aria-label="${t("a11y.closeSettings", "Close settings")}">✕</button>
+    <h3>${t("nav.settings", "Settings")}</h3>
 
-    <div class="settings-section">Sound</div>
+    <div class="settings-section">${t("set.secSound", "Sound")}</div>
     <div class="row">
       <div>
-        <label>Ambient sound</label>
-        <div class="small">Wind, water, room tone, MRI clanging.</div>
+        <label>${t("set.ambient", "Ambient sound")}</label>
+        <div class="small">${t("set.ambientSub", "Wind, water, room tone, MRI clanging.")}</div>
       </div>
       <div class="toggle ${audioMuted ? "" : "on"}" id="toggleAudio"></div>
     </div>
     <div class="row">
       <div>
-        <label>Guidance tips</label>
-        <div class="small">Calm written cues on screen during exposure.</div>
+        <label>${t("set.tips", "Guidance tips")}</label>
+        <div class="small">${t("set.tipsSub", "Calm written cues on screen during exposure.")}</div>
       </div>
       <div class="toggle ${captionsOn ? "on" : ""}" id="toggleCaptions"></div>
     </div>
     <div class="row">
       <div>
-        <label>Vibration</label>
-        <div class="small">Feel barks, touches and jolts in your hand (phones).</div>
+        <label>${t("set.vibe", "Vibration")}</label>
+        <div class="small">${t("set.vibeSub", "Feel barks, touches and jolts in your hand (phones).")}</div>
       </div>
       <div class="toggle ${hapticsOn ? "on" : ""}" id="toggleHaptics"></div>
     </div>
     <div class="row">
       <div>
-        <label>Performance overlay</label>
-        <div class="small">FPS and frame time at the top of the scene (debugging).</div>
+        <label>${t("set.perf", "Performance overlay")}</label>
+        <div class="small">${t("set.perfSub", "FPS and frame time at the top of the scene (debugging).")}</div>
       </div>
       <div class="toggle ${perfHudOn ? "on" : ""}" id="togglePerfHud"></div>
     </div>
     <div class="row">
       <div>
-        <label>Calm music</label>
-        <div class="small">A quiet pad on non-exposure pages. Off by default.</div>
+        <label>${t("set.music", "Calm music")}</label>
+        <div class="small">${t("set.musicSub", "A quiet pad on non-exposure pages. Off by default.")}</div>
       </div>
       <div class="toggle ${musicOn ? "on" : ""}" id="toggleMusic"></div>
     </div>
 
-    <div class="settings-section">Performance</div>
+    <div class="settings-section">${t("set.secPerf", "Performance")}</div>
     <div class="row">
       <div>
-        <label>Graphics</label>
-        <div class="small">Lower if the scene stutters. "Auto" picks based on your device.</div>
+        <label>${t("set.gfx", "Graphics")}</label>
+        <div class="small">${t("set.gfxSub", "Lower if the scene stutters. \"Auto\" picks based on your device.")}</div>
       </div>
       <select id="qualitySelect" class="select-pill">
-        <option value="auto" ${graphics === "auto" ? "selected" : ""}>Auto</option>
-        <option value="low" ${graphics === "low" ? "selected" : ""}>Low</option>
-        <option value="medium" ${graphics === "medium" ? "selected" : ""}>Medium</option>
-        <option value="high" ${graphics === "high" ? "selected" : ""}>High</option>
+        <option value="auto" ${graphics === "auto" ? "selected" : ""}>${t("set.gfxAuto", "Auto")}</option>
+        <option value="low" ${graphics === "low" ? "selected" : ""}>${t("set.gfxLow", "Low")}</option>
+        <option value="medium" ${graphics === "medium" ? "selected" : ""}>${t("set.gfxMed", "Medium")}</option>
+        <option value="high" ${graphics === "high" ? "selected" : ""}>${t("set.gfxHigh", "High")}</option>
       </select>
     </div>
     <div class="row">
       <div>
-        <label>Language</label>
-        <div class="small">Translations cover menu + welcome. More keys to come.</div>
+        <label>${t("set.lang", "Language")}</label>
+        <div class="small">${t("set.langSub", "English or فارسی — the whole game, except the clinician report, which stays in English.")}</div>
       </div>
       <select id="langSelect" class="select-pill">
         <option value="en" ${(window.I18n?.currentLanguage() === "en") ? "selected" : ""}>English</option>
@@ -11280,94 +11324,94 @@ function openSettings() {
       </select>
     </div>
 
-    <div class="settings-section">Sensation</div>
+    <div class="settings-section">${t("set.secSense", "Sensation")}</div>
     <div class="row">
       <div>
-        <label>Heart-rate vignette</label>
-        <div class="small">Red pulse around the screen at higher rungs.</div>
+        <label>${t("set.heart", "Heart-rate vignette")}</label>
+        <div class="small">${t("set.heartSub", "Red pulse around the screen at higher rungs.")}</div>
       </div>
       <div class="toggle ${heartOn ? "on" : ""}" id="toggleHeart"></div>
     </div>
     <div class="row">
       <div>
-        <label>Reduce motion</label>
-        <div class="small">Less camera shake, calmer transitions.</div>
+        <label>${t("set.motion", "Reduce motion")}</label>
+        <div class="small">${t("set.motionSub", "Less camera shake, calmer transitions.")}</div>
       </div>
       <div class="toggle ${reducedMotion ? "on" : ""}" id="toggleMotion"></div>
     </div>
     <div class="row">
       <div>
-        <label>Light mode</label>
-        <div class="small">Bright theme. Easier in daylight.</div>
+        <label>${t("set.light", "Light mode")}</label>
+        <div class="small">${t("set.lightSub", "Bright theme. Easier in daylight.")}</div>
       </div>
       <div class="toggle ${lightMode ? "on" : ""}" id="toggleTheme"></div>
     </div>
     <div class="row">
       <div>
-        <label>Pre-scene countdown</label>
-        <div class="small">"Get ready · 3 · 2 · 1" breathing beat before each scene.</div>
+        <label>${t("set.cd", "Pre-scene countdown")}</label>
+        <div class="small">${t("set.cdSub", "\"Get ready · 3 · 2 · 1\" breathing beat before each scene.")}</div>
       </div>
       <div class="toggle ${countdownOn ? "on" : ""}" id="toggleCountdown"></div>
     </div>
 
-    <div class="settings-section">Reminders</div>
+    <div class="settings-section">${t("set.secRemind", "Reminders")}</div>
     <div class="row">
       <div>
-        <label>Daily nudge</label>
-        <div class="small">${canNotify ? "A short notification once a day so you don't lose the streak." : "Notifications aren't supported in this browser."}</div>
+        <label>${t("set.nudge", "Daily nudge")}</label>
+        <div class="small">${canNotify ? t("set.nudgeSub", "A short notification once a day so you don't lose the streak.") : t("set.nudgeNo", "Notifications aren't supported in this browser.")}</div>
       </div>
       <div class="toggle ${remindersOn ? "on" : ""} ${canNotify ? "" : "disabled"}" id="toggleReminders"></div>
     </div>
 
-    <div class="settings-section">Profile</div>
+    <div class="settings-section">${t("set.secProfile", "Profile")}</div>
     <div class="row">
       <div>
-        <label>Edit your character</label>
-        <div class="small">Change name, look, or which fears you're working on.</div>
+        <label>${t("set.editChar", "Edit your character")}</label>
+        <div class="small">${t("set.editCharSub", "Change name, look, or which fears you're working on.")}</div>
       </div>
-      <button class="btn-ghost" id="editCharBtn" style="padding:6px 12px;font-size:12px;">Edit</button>
+      <button class="btn-ghost" id="editCharBtn" style="padding:6px 12px;font-size:12px;">${t("set.edit", "Edit")}</button>
     </div>
     <div class="row">
       <div>
-        <label>Switch / add character</label>
-        <div class="small">${(window.Character?.loadCharacters() || []).length} character${(window.Character?.loadCharacters() || []).length === 1 ? "" : "s"} on this device.</div>
+        <label>${t("set.switch", "Switch / add character")}</label>
+        <div class="small">${(() => { const n = (window.Character?.loadCharacters() || []).length; return tf(n === 1 ? "set.switchSub1" : "set.switchSub", `{n} character${n === 1 ? "" : "s"} on this device.`, { n }); })()}</div>
       </div>
-      <button class="btn-ghost" id="profilesBtn" style="padding:6px 12px;font-size:12px;">Profiles</button>
+      <button class="btn-ghost" id="profilesBtn" style="padding:6px 12px;font-size:12px;">${t("set.profiles", "Profiles")}</button>
     </div>
     <div class="row">
       <div>
-        <label>Export your data</label>
-        <div class="small">Download a JSON of every character, session, and note.</div>
+        <label>${t("set.export", "Export your data")}</label>
+        <div class="small">${t("set.exportSub", "Download a JSON of every character, session, and note.")}</div>
       </div>
-      <button class="btn-ghost" id="exportBtn" style="padding:6px 12px;font-size:12px;">Export</button>
+      <button class="btn-ghost" id="exportBtn" style="padding:6px 12px;font-size:12px;">${t("set.exportBtn", "Export")}</button>
     </div>
     <div class="row">
       <div>
-        <label>Import data</label>
-        <div class="small">Restore from a previous export. Overwrites current data.</div>
+        <label>${t("set.import", "Import data")}</label>
+        <div class="small">${t("set.importSub", "Restore from a previous export. Overwrites current data.")}</div>
       </div>
-      <button class="btn-ghost" id="importBtn" style="padding:6px 12px;font-size:12px;">Import</button>
+      <button class="btn-ghost" id="importBtn" style="padding:6px 12px;font-size:12px;">${t("set.importBtn", "Import")}</button>
     </div>
     ${allRealmsUnlocked() ? `<div class="row">
       <div>
-        <label>Custom ladder</label>
-        <div class="small">Build your own phobia and rungs.</div>
+        <label>${t("set.custom", "Custom ladder")}</label>
+        <div class="small">${t("set.customSub", "Build your own phobia and rungs.")}</div>
       </div>
-      <button class="btn-ghost" id="customBtn" style="padding:6px 12px;font-size:12px;">Build</button>
+      <button class="btn-ghost" id="customBtn" style="padding:6px 12px;font-size:12px;">${t("set.build", "Build")}</button>
     </div>` : ""}
     <div class="row">
       <div>
         <label>${t("settings.tour", "Replay onboarding tour")}</label>
         <div class="small">${t("settings.tourSub", "See the short intro again the next time you start a trial.")}</div>
       </div>
-      <button class="btn-ghost" id="replayTourBtn" style="padding:6px 12px;font-size:12px;">Replay</button>
+      <button class="btn-ghost" id="replayTourBtn" style="padding:6px 12px;font-size:12px;">${t("set.replay", "Replay")}</button>
     </div>
     <div class="row">
       <div>
-        <label>Reset this character's progress</label>
-        <div class="small">Clears this character's ladder, SUDS log, courage and goals. Other characters are untouched.</div>
+        <label>${t("set.reset", "Reset this character's progress")}</label>
+        <div class="small">${t("set.resetSub", "Clears this character's ladder, SUDS log, courage and goals. Other characters are untouched.")}</div>
       </div>
-      <button class="btn-warn" id="resetAllBtn" style="padding:6px 12px;font-size:12px;">Reset</button>
+      <button class="btn-warn" id="resetAllBtn" style="padding:6px 12px;font-size:12px;">${t("set.resetBtn", "Reset")}</button>
     </div>
 
     <div class="settings-section">${t("settings.diag", "Diagnostics")}</div>
@@ -11424,7 +11468,7 @@ function openSettings() {
   // (Voice-guidance controls removed with spoken narration itself — guidance
   // now renders as on-screen tips; the "Guidance tips" toggle below owns it.)
   drawer.querySelector("#resetAllBtn").onclick = () => {
-    if (confirm("Reset this character's progress? Other characters are not affected.")) {
+    if (confirm(t("set.resetConfirm", "Reset this character's progress? Other characters are not affected."))) {
       resetActiveProgress();
       close();
       go("select");
@@ -11478,7 +11522,7 @@ function openSettings() {
     // The setting takes effect on the next scene mount — show a small confirmation
     const note = document.createElement("div");
     note.className = "settings-note";
-    note.textContent = "Saved — applied next time you open a scene.";
+    note.textContent = t("set.gfxSaved", "Saved — applied next time you open a scene.");
     qSel.parentElement.appendChild(note);
     setTimeout(() => note.remove(), 2200);
   };
@@ -11513,8 +11557,8 @@ function openSettings() {
       try { localStorage.setItem("fobia.reminders", "1"); } catch {}
       remindersBtn.classList.add("on");
       try {
-        new Notification("Step Up", {
-          body: "Reminders are on. We'll nudge you once a day.",
+        new Notification("Mira", {
+          body: t("set.nudgeOn", "Reminders are on. We'll nudge you once a day."),
           icon: "icon.svg",
         });
       } catch {}
@@ -11523,7 +11567,7 @@ function openSettings() {
       // Permission denied — show a tiny inline note
       const note = document.createElement("div");
       note.className = "settings-note";
-      note.textContent = "Browser blocked notifications. Enable in your browser settings.";
+      note.textContent = t("set.nudgeBlocked", "Browser blocked notifications. Enable in your browser settings.");
       remindersBtn.parentElement.appendChild(note);
       setTimeout(() => note.remove(), 3000);
     }
@@ -11543,7 +11587,7 @@ function openSettings() {
   drawer.querySelector("#diagCopyBtn").onclick = () => {
     const text = JSON.stringify(readErrLog(), null, 2);
     try { navigator.clipboard.writeText(text); } catch {
-      try { prompt("Copy the error journal:", text); } catch {}
+      try { prompt(t("set.diagPrompt", "Copy the error journal:"), text); } catch {}
     }
   };
   drawer.querySelector("#diagClearBtn").onclick = () => {
@@ -11561,7 +11605,7 @@ function openSettings() {
     try { localStorage.removeItem("fobia.tutorialSeen"); } catch {}
     const note = document.createElement("div");
     note.className = "settings-note";
-    note.textContent = "Saved — you'll see the tour at your next rung.";
+    note.textContent = t("set.tourSaved", "Saved — you'll see the tour at your next rung.");
     e.currentTarget.parentElement.appendChild(note);
     setTimeout(() => note.remove(), 2200);
   };
@@ -11745,7 +11789,7 @@ function handleAction(d, params) {
     }
     case "delete-character": {
       const c = window.Character.loadCharacters().find(x => x.id === d.id);
-      if (c && confirm(`Delete the character "${c.name || "Unnamed"}" and all its progress?`)) {
+      if (c && confirm(tf("pr.delConfirm", "Delete the character “{name}” and all its progress?", { name: c.name || t("pr.unnamed", "Unnamed") }))) {
         // Also remove their state slice
         if (state.byCharacter) delete state.byCharacter[d.id];
         saveState();
@@ -11767,7 +11811,7 @@ function handleAction(d, params) {
     }
     case "custom-edit":     go("custom", { editing: d.key }); break;
     case "custom-delete": {
-      if (confirm("Delete this custom ladder?")) {
+      if (confirm(t("cu.delConfirm", "Delete this custom ladder?"))) {
         const all = loadCustomPhobias();
         delete all[d.key];
         saveCustomPhobias(all);
@@ -12361,17 +12405,17 @@ let _travelerDraft = null;
 
 function viewTraveler() {
   const C = window.Character;
-  if (!C) return `<div class="panel"><p>Character kit unavailable.</p></div>`;
+  if (!C) return `<div class="panel"><p>${t("tw.unavailable", "Character kit unavailable.")}</p></div>`;
   const c = _travelerDraft || (C.loadCharacter() || C.defaultCharacter());
   _travelerDraft = c;
 
   const swatches = (rowKey, list, sel) => list.map(o => `
     <button class="mob-swatch" style="background:${o.hex}"
             data-tw="${rowKey}" data-val="${o.id}"
-            aria-pressed="${o.id === sel}" aria-label="${escapeHtml(o.label)}"></button>`).join("");
+            aria-pressed="${o.id === sel}" aria-label="${escapeHtml(C.optLabel(rowKey, o))}"></button>`).join("");
   const chips = (rowKey, list, sel) => list.map(o => `
     <button class="mob-chip" data-tw="${rowKey}" data-val="${o.id}"
-            aria-pressed="${o.id === sel}">${escapeHtml(o.label)}</button>`).join("");
+            aria-pressed="${o.id === sel}">${escapeHtml(C.optLabel(rowKey, o))}</button>`).join("");
   const row = (label, inner) => `
     <div class="mob-row">
       <div class="mob-row-label">${label}</div>
@@ -12569,7 +12613,7 @@ function viewThreshold() {
         <button class="btn-primary btn-xl" data-action="enter-path">${tf("story.enterPath", "Step into {realm}", { realm: escapeHtml(realm.realmName) })}</button>
         <button class="btn-ghost" data-action="open-select">${t("story.seeValley", "See the whole valley")}</button>
       </div>
-      ${fear ? `<p class="landing-hint">${escapeHtml(fear.label)} · ${escapeHtml(fear.name)}</p>` : ""}
+      ${fear ? `<p class="landing-hint">${escapeHtml(phLabel(ch.primaryPhobia))} · ${escapeHtml(phName(ch.primaryPhobia))}</p>` : ""}
     </div>
   </div>`;
 }
@@ -12621,8 +12665,8 @@ function viewSelect() {
   const curRealm = realmOf(curKey);
   const curProg = (getProgress(curKey).highestCompleted ?? -1) + 1;
   const campLine = !ch ? t("camp.empty", "A campfire, waiting for a traveler.")
-    : facedTrials === 0 ? `“${curRealm.line}”`
-    : curProg >= PHOBIAS[curKey].levels.length ? `“${curRealm.clearedLine}”`
+    : facedTrials === 0 ? tf("camp.sayLine", "“{line}”", { line: curRealm.line })
+    : curProg >= PHOBIAS[curKey].levels.length ? tf("camp.sayLine", "“{line}”", { line: curRealm.clearedLine })
     : tf("camp.trialWaiting", "“Trial {n} of {realm} is waiting for me.”", { n: curProg + 1, realm: curRealm.realmName });
 
   const nodes = keys.map((k, i) => {
@@ -12635,7 +12679,7 @@ function viewSelect() {
     const isCurrent = k === curKey;
     const remaining = 1 - done / total;   // drives the card's mist, not a monster
     const pips = Array.from({ length: total }, (_, j) =>
-      `<i class="pip ${j < done ? "lit" : ""}" title="Trial ${j + 1}${j < done ? " — faced" : ""}"></i>`).join("");
+      `<i class="pip ${j < done ? "lit" : ""}" title="${j < done ? tf("node.pipDone", "Trial {n} — faced", { n: j + 1 }) : tf("node.pip", "Trial {n}", { n: j + 1 })}"></i>`).join("");
     // The card used to report the guardian's health ("the Hound Shadow is
     // weakening"). Nothing in the realm weakens — the traveller advances. Say
     // that instead, in their own terms, so the map and the ladder agree.
@@ -12649,13 +12693,13 @@ function viewSelect() {
     return `
       <li class="realm-node ${i % 2 ? "side-r" : "side-l"} ${cleared ? "cleared" : ""} ${isCurrent ? "current" : ""}"
           data-action="select-phobia" data-phobia="${k}" tabindex="0" role="button"
-          aria-label="${escapeHtml(realm.realmName)} — ${escapeHtml(p.name)}, ${done} of ${total} trials faced">
+          aria-label="${escapeHtml(tf("node.aria", "{realm} — {name}, {n} of {total} trials faced", { realm: realm.realmName, name: phName(k), n: done, total }))}">
         <div class="realm-thumb" aria-hidden="true">${phobiaThumbnail(k)}
           ${rs.tamed ? `<span class="realm-tamed">${t("node.tamed", "🕊 tamed")}</span>` : `<span class="realm-shadow" style="--rem:${remaining.toFixed(2)}"></span>`}
-          ${isCurrent && ch ? `<span class="you-marker" title="You are here">${window.Character.avatarSVG(ch, 40)}<span>${t("node.you", "you")}</span></span>` : ""}
+          ${isCurrent && ch ? `<span class="you-marker" title="${t("node.youHere", "You are here")}">${window.Character.avatarSVG(ch, 40)}<span>${t("node.you", "you")}</span></span>` : ""}
         </div>
         <div class="realm-body">
-          <span class="realm-kicker">${t("realmWord", "Realm")} ${ROMAN[i] || i + 1} · ${escapeHtml(p.name)}</span>
+          <span class="realm-kicker">${t("realmWord", "Realm")} ${ROMAN[i] || i + 1} · ${escapeHtml(phName(k))}</span>
           <h3 class="realm-name">${escapeHtml(realm.realmName)}</h3>
           <p class="realm-epithet">${escapeHtml(realm.epithet)}</p>
           <div class="realm-pips">${pips}</div>
@@ -12681,17 +12725,17 @@ function viewSelect() {
         </div>
       </div>
       <div class="camp-bubble">${campLine}</div>
-      <div class="rank-row" title="Courage builds your traveler rank — every trial adds to it">
+      <div class="rank-row" title="${t("rank.tip", "Courage builds your traveler rank — every trial adds to it")}">
         <span class="rank-chip">${rank.icon} ${rank.title}</span>
         <div class="rank-bar" aria-hidden="true"><div class="rank-fill" style="width:${rankPct}%"></div></div>
         <span class="rank-next">${rank.next ? tf("rank.to", "{a}/{b} ⚡ to {title}", { a: courage, b: rank.next.min, title: rank.next.title }) : t("rank.max", "highest rank reached")}</span>
       </div>
       <div class="camp-stats">
-        <span class="camp-stat" title="Courage — earned every time you face a trial">${tf("camp.courage", "⚡ {n} courage", { n: courage })}</span>
-        <span class="camp-stat" title="Trials faced across the valley">${tf("camp.trials", "🛡 {a}/{b} trials", { a: facedTrials, b: totalTrials })}</span>
-        <button class="camp-stat as-btn" data-action="open-journal" title="Book of Sparks — the wisdom you've collected">${tf("camp.sparks", "✦ {a}/{b} sparks", { a: sparks, b: INSIGHT_CARDS.length })}</button>
-        ${streak >= 2 ? `<span class="camp-stat streak" title="Days in a row you've practiced">${tf("camp.streak", "🔥 {n}-day flame", { n: streak })}</span>` : ""}
-        ${worldstepCount() > 0 ? `<span class="camp-stat worldsteps" title="Real-world steps faced outside the game — the ones that count double">${tf("camp.realsteps", `🌍 {n} real step${worldstepCount() === 1 ? "" : "s"}`, { n: worldstepCount() })}</span>` : ""}
+        <span class="camp-stat" title="${t("hud.courage", "Courage — earned every time you face a trial")}">${tf("camp.courage", "⚡ {n} courage", { n: courage })}</span>
+        <span class="camp-stat" title="${t("camp.trialsTip", "Trials faced across the valley")}">${tf("camp.trials", "🛡 {a}/{b} trials", { a: facedTrials, b: totalTrials })}</span>
+        <button class="camp-stat as-btn" data-action="open-journal" title="${t("camp.sparksTip", "Book of Sparks — the wisdom you've collected")}">${tf("camp.sparks", "✦ {a}/{b} sparks", { a: sparks, b: INSIGHT_CARDS.length })}</button>
+        ${streak >= 2 ? `<span class="camp-stat streak" title="${t("camp.streakTip", "Days in a row you've practiced")}">${tf("camp.streak", "🔥 {n}-day flame", { n: streak })}</span>` : ""}
+        ${worldstepCount() > 0 ? `<span class="camp-stat worldsteps" title="${t("camp.realTip", "Real-world steps faced outside the game — the ones that count double")}">${tf("camp.realsteps", `🌍 {n} real step${worldstepCount() === 1 ? "" : "s"}`, { n: worldstepCount() })}</span>` : ""}
       </div>
       ${ch ? `
       <div class="quest-card ${doneToday ? "done" : ""}">
@@ -12809,12 +12853,12 @@ function mountJourney() {
     const rank = courageRank(getCourage());
     const pool = [
       bubble.textContent,
-      `“${realm.line}”`,
-      "“Small steps. That's the whole secret.”",
-      "“The fire helps. So does coming back tomorrow.”",
+      tf("camp.sayLine", "“{line}”", { line: realm.line }),
+      t("camp.say1", "“Small steps. That's the whole secret.”"),
+      t("camp.say2", "“The fire helps. So does coming back tomorrow.”"),
     ];
-    if (tamed > 0) pool.push(`“${tamed} shadow${tamed === 1 ? "" : "s"} tamed. The dawn is closer.”`);
-    if (rank.idx > 0) pool.push(`“They call me ${rank.title} now.”`);
+    if (tamed > 0) pool.push(tf(tamed === 1 ? "camp.sayTamed1" : "camp.sayTamed", `“{n} shadow${tamed === 1 ? "" : "s"} tamed. The dawn is closer.”`, { n: tamed }));
+    if (rank.idx > 0) pool.push(tf("camp.sayRank", "“They call me {rank} now.”", { rank: rank.title }));
     const lines = [...new Set(pool)];
     let li = 0;
     const iv = setInterval(() => {
@@ -12888,7 +12932,7 @@ function viewReport() {
       </tr>`).join("");
     const ws = getWorldsteps(k);
     const wsRows = ws.slice().sort((a, b) => a.step - b.step).map(w => `
-      <li>${escapeHtml(bridgeOf(k)[w.step]?.t || `Step ${w.step + 1}`)} — ${fmtD(w.ts)}${w.suds != null ? `, peak anxiety ${w.suds}/10` : ""}</li>`).join("");
+      <li>${escapeHtml(bridgeRaw(k)[w.step]?.t || `Step ${w.step + 1}`)} — ${fmtD(w.ts)}${w.suds != null ? `, peak anxiety ${w.suds}/10` : ""}</li>`).join("");
     return `
       <section class="report-fear">
         <h3>${escapeHtml(p.label)} <span class="report-clinical">(${escapeHtml(p.name)})</span></h3>
@@ -13190,12 +13234,23 @@ function viewRealmSoon(phobiaKey) {
     </div>`;
 }
 
+// The Guide's notes (src/phobia-info.js) through info.<key>.<field>[.<i>].
+function infoOf(key) {
+  const src = window.PhobiaInfo && window.PhobiaInfo[key];
+  if (!src) return null;
+  const out = {};
+  for (const [f, v] of Object.entries(src)) {
+    out[f] = Array.isArray(v) ? v.map((s, i) => t(`info.${key}.${f}.${i}`, s)) : t(`info.${key}.${f}`, v);
+  }
+  return out;
+}
+
 function viewLadder(phobiaKey) {
   const p = PHOBIAS[phobiaKey];
   const realm = realmOf(phobiaKey);
   const prog = getProgress(phobiaKey);
   const previous = state.log.filter(l => l.phobia === phobiaKey);
-  const info = (window.PhobiaInfo && window.PhobiaInfo[phobiaKey]) || null;
+  const info = infoOf(phobiaKey);
   const ch = window.Character && window.Character.loadCharacter();
   const total = p.levels.length;
   const done = Math.min(total, prog.highestCompleted + 1);
@@ -13312,7 +13367,7 @@ function viewLadder(phobiaKey) {
         <div class="trial-card">
           <div class="trial-head">
             <strong>${escapeHtml(lvTitle(phobiaKey, i))}</strong>
-            <span class="trial-flames" title="intensity ${i + 1} of 5">${flames}</span>
+            <span class="trial-flames" title="${tf("trial.intensity", "intensity {n} of 5", { n: i + 1 })}">${flames}</span>
           </div>
           <p class="trial-desc">${escapeHtml(lvDesc(phobiaKey, i))}</p>
           ${whisper}
@@ -13404,7 +13459,7 @@ function viewLadder(phobiaKey) {
       // build started recording encounters, and telling them "you haven't been
       // in the room together" directly under "knows your face" reads as a bug.
       const when = c.seen && c.seen.temper
-        ? tf("dog.lastSeen", "last time it seemed {t}", { t: escapeHtml(c.seen.temper) })
+        ? tf("dog.lastSeen", "last time it seemed {t}", { t: escapeHtml(temperText(c.seen.temper)) })
         : c.met
           ? t("dog.metBefore", "you've met before")
           : t("dog.notYet", "you haven't been in the room together");
@@ -13550,16 +13605,16 @@ function viewLadder(phobiaKey) {
       <header class="realm-hero">
         <div class="realm-hero-art" aria-hidden="true">${phobiaThumbnail(phobiaKey)}</div>
         <div class="realm-hero-grad" aria-hidden="true"></div>
-        <div class="realm-3d" id="realmHero3d" title="Drag to look around"></div>
+        <div class="realm-3d" id="realmHero3d" title="${t("realm.drag", "Drag to look around")}"></div>
         <div class="realm-hero-text">
-          <span class="realm-kicker">${realmIdx >= 0 ? `${t("realmWord", "Realm")} ${ROMAN[realmIdx] || realmIdx + 1} · ` : ""}${escapeHtml(p.name)} — ${escapeHtml(t(`phobia.${phobiaKey}.label`, p.label))}</span>
+          <span class="realm-kicker">${realmIdx >= 0 ? `${t("realmWord", "Realm")} ${ROMAN[realmIdx] || realmIdx + 1} · ` : ""}${escapeHtml(phName(phobiaKey))} — ${escapeHtml(phLabel(phobiaKey))}</span>
           <h2>${escapeHtml(realm.realmName)}</h2>
           <p class="realm-epithet">${escapeHtml(realm.epithet)}</p>
         </div>
       </header>
       ${guardian}
       ${pathStrip}
-      ${ch ? `<div class="realm-bubble"><span class="realm-bubble-avatar" aria-hidden="true">${window.Character.avatarSVG(ch, 40)}</span><span>“${escapeHtml(cleared ? realm.clearedLine : realm.line)}”</span></div>` : ""}
+      ${ch ? `<div class="realm-bubble"><span class="realm-bubble-avatar" aria-hidden="true">${window.Character.avatarSVG(ch, 40)}</span><span>${tf("camp.sayLine", "“{line}”", { line: escapeHtml(cleared ? realm.clearedLine : realm.line) })}</span></div>` : ""}
       ${tabs}
       ${mirrorBlock}
       ${heroCta}
@@ -13635,7 +13690,7 @@ function bridgeBlockFor(phobiaKey, prog) {
 // Tiny SVG line+dot chart for SUDS history. Returns an inline-SVG string.
 function drawSudsChart(sessions, w = 320, h = 100) {
   if (!sessions || sessions.length === 0) {
-    return `<svg viewBox="0 0 ${w} ${h}" class="insight-chart"><text x="${w/2}" y="${h/2}" text-anchor="middle" fill="#94a3b8" font-size="12">No sessions yet</text></svg>`;
+    return `<svg viewBox="0 0 ${w} ${h}" class="insight-chart"><text x="${w/2}" y="${h/2}" text-anchor="middle" fill="#94a3b8" font-size="12">${t("chart.none", "No sessions yet")}</text></svg>`;
   }
   const padX = 10, padY = 12;
   const innerW = w - padX * 2;
@@ -13667,15 +13722,15 @@ function drawSudsChart(sessions, w = 320, h = 100) {
       <polyline points="${linePts}" fill="none" stroke="#7cd1c5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
       ${predictedDots}
       ${dots}
-      <text x="${padX}" y="${padY - 2}" fill="#64748b" font-size="9">10 panic</text>
-      <text x="${padX}" y="${h - 2}" fill="#64748b" font-size="9">0 calm</text>
+      <text x="${padX}" y="${padY - 2}" fill="#64748b" font-size="9">${t("scale.panic", "10 panic")}</text>
+      <text x="${padX}" y="${h - 2}" fill="#64748b" font-size="9">${t("scale.calm", "0 calm")}</text>
     </svg>
   `;
 }
 
 function viewPhobiaProgress(phobiaKey) {
   const p = PHOBIAS[phobiaKey];
-  if (!p) return `<div class="panel"><h2>Not found</h2><p>That phobia doesn't exist on this device.</p></div>`;
+  if (!p) return `<div class="panel"><h2>${t("nf.h", "Not found")}</h2><p>${t("nf.p", "That phobia doesn't exist on this device.")}</p></div>`;
   const sessions = state.log.filter(l => l.phobia === phobiaKey);
   const prog = state.progress[phobiaKey];
   const highest = prog ? prog.highestCompleted + 1 : 0;
@@ -13685,7 +13740,7 @@ function viewPhobiaProgress(phobiaKey) {
   const rungStats = p.levels.map((lv, i) => {
     const ss = sessions.filter(s => s.level === i);
     return {
-      title: lv.title,
+      title: lvTitle(phobiaKey, i),
       attempts: ss.length,
       avg: ss.length ? (ss.reduce((s, l) => s + l.suds, 0) / ss.length) : null,
       best: ss.length ? Math.min(...ss.map(s => s.suds)) : null,
@@ -13702,48 +13757,48 @@ function viewPhobiaProgress(phobiaKey) {
 
   return `
     <div class="panel">
-      <a href="#${serializeRoute("ladder", { phobia: phobiaKey })}" class="back-link">← Back to ${p.label} ladder</a>
-      <h2>${escapeHtml(p.label)} <span class="small" style="color:var(--accent)">— ${escapeHtml(p.name)}</span></h2>
-      <p>${highest}/${total} rungs · ${sessions.length} session${sessions.length === 1 ? "" : "s"}</p>
+      <a href="#${serializeRoute("ladder", { phobia: phobiaKey })}" class="back-link">${tf("pp.back", "← Back to {fear} ladder", { fear: escapeHtml(phLabel(phobiaKey)) })}</a>
+      <h2>${escapeHtml(phLabel(phobiaKey))} <span class="small" style="color:var(--accent)">— ${escapeHtml(phName(phobiaKey))}</span></h2>
+      <p>${tf(sessions.length === 1 ? "pp.sum1" : "pp.sum", `{a}/{b} rungs · {n} session${sessions.length === 1 ? "" : "s"}`, { a: highest, b: total, n: sessions.length })}</p>
 
       <div class="stats-row">
-        <div class="stat"><div class="stat-num">${highest}</div><div class="stat-lbl">highest rung</div></div>
-        <div class="stat"><div class="stat-num">${sessions.length}</div><div class="stat-lbl">sessions</div></div>
-        <div class="stat"><div class="stat-num">${sessions.length ? (sessions.reduce((s, l) => s + l.suds, 0) / sessions.length).toFixed(1) : "—"}</div><div class="stat-lbl">avg SUDS</div></div>
+        <div class="stat"><div class="stat-num">${highest}</div><div class="stat-lbl">${t("pp.highest", "highest rung")}</div></div>
+        <div class="stat"><div class="stat-num">${sessions.length}</div><div class="stat-lbl">${t("pp.sessions", "sessions")}</div></div>
+        <div class="stat"><div class="stat-num">${sessions.length ? (sessions.reduce((s, l) => s + l.suds, 0) / sessions.length).toFixed(1) : "—"}</div><div class="stat-lbl">${t("pp.avg", "avg SUDS")}</div></div>
         <div class="stat" title="${t("prog.condTip", "Each visit puts you in a different time of day and weather. Facing the same thing in changing conditions is what makes the calm carry into real life.")}"><div class="stat-num">${condCount || "—"}</div><div class="stat-lbl">${t("prog.conditions", "conditions faced")}</div></div>
       </div>
 
       <div class="insight-card">
-        <h3>SUDS over time</h3>
+        <h3>${t("pp.chart", "SUDS over time")}</h3>
         ${drawSudsChart(sessions, 600, 120)}
         <div class="insight-legend">
-          <span><span class="dotmark" style="background:var(--accent)"></span>actual</span>
-          <span><span class="dotmark" style="background:#94a3b8;opacity:.6"></span>predicted</span>
+          <span><span class="dotmark" style="background:var(--accent)"></span>${t("pp.actual", "actual")}</span>
+          <span><span class="dotmark" style="background:#94a3b8;opacity:.6"></span>${t("pp.predicted", "predicted")}</span>
         </div>
       </div>
 
-      <h3 style="margin-top:18px">Per rung</h3>
+      <h3 style="margin-top:18px">${t("pp.perRung", "Per rung")}</h3>
       <div class="rung-stats">
         ${rungStats.map((r, i) => `
           <div class="rung-stat ${r.attempts ? "" : "untouched"}">
             <div class="rung-stat-num">${i + 1}</div>
             <div class="rung-stat-text">
-              <strong>${r.title}</strong>
-              <span class="small">${r.attempts ? `${r.attempts} attempt${r.attempts === 1 ? "" : "s"} · avg ${r.avg.toFixed(1)} · best ${r.best}` : "Not yet attempted"}</span>
+              <strong>${escapeHtml(r.title)}</strong>
+              <span class="small">${r.attempts ? tf(r.attempts === 1 ? "pp.attempts1" : "pp.attempts", `{n} attempt${r.attempts === 1 ? "" : "s"} · avg {a} · best {b}`, { n: r.attempts, a: r.avg.toFixed(1), b: r.best }) : t("pp.notYet", "Not yet attempted")}</span>
             </div>
           </div>
         `).join("")}
       </div>
 
       ${notes.length ? `
-        <h3 style="margin-top:18px">Journal</h3>
+        <h3 style="margin-top:18px">${t("pp.journal", "Journal")}</h3>
         <div class="journal-list">
           ${notes.map(n => `
             <div class="journal-entry">
               <div class="journal-meta">
-                <span class="journal-rung">Rung ${n.level + 1}</span>
+                <span class="journal-rung">${tf("pp.rung", "Rung {n}", { n: n.level + 1 })}</span>
                 <span class="small">${new Date(n.ts).toLocaleString()}</span>
-                <span class="small">SUDS ${n.suds}/10</span>
+                <span class="small">${tf("pp.suds", "SUDS {n}/10", { n: n.suds })}</span>
               </div>
               <p>${escapeHtml(n.note)}</p>
             </div>
@@ -13755,7 +13810,7 @@ function viewPhobiaProgress(phobiaKey) {
 }
 
 function viewProfiles() {
-  if (!window.Character) return `<div class="panel"><p>Loading…</p></div>`;
+  if (!window.Character) return `<div class="panel"><p>${t("loading", "Loading…")}</p></div>`;
   const all = window.Character.loadCharacters();
   const activeId = window.Character.activeCharacterId();
   const cards = all.map((c, i) => {
@@ -13766,13 +13821,13 @@ function viewProfiles() {
       <div class="profile-card ${isActive ? "active" : ""}" data-action="select-character" data-id="${c.id}" style="--i:${i}">
         <div class="profile-avatar">${window.Character.avatarSVG(c, 70)}</div>
         <div class="profile-text">
-          <strong>${c.name || "Unnamed"}</strong>
-          <span class="small">${phobiaCount} fear${phobiaCount === 1 ? "" : "s"} · ${sessions.length} session${sessions.length === 1 ? "" : "s"}</span>
-          ${isActive ? `<span class="profile-badge">active</span>` : ""}
+          <strong>${escapeHtml(c.name || t("pr.unnamed", "Unnamed"))}</strong>
+          <span class="small">${tf("pr.counts", `{f} fear${phobiaCount === 1 ? "" : "s"} · {s} session${sessions.length === 1 ? "" : "s"}`, { f: phobiaCount, s: sessions.length })}</span>
+          ${isActive ? `<span class="profile-badge">${t("pr.active", "active")}</span>` : ""}
         </div>
         <div class="profile-actions">
-          <button class="btn-ghost" data-action="edit-character" data-id="${c.id}" data-stop="1">Edit</button>
-          ${all.length > 1 ? `<button class="btn-warn" data-action="delete-character" data-id="${c.id}" data-stop="1">Delete</button>` : ""}
+          <button class="btn-ghost" data-action="edit-character" data-id="${c.id}" data-stop="1">${t("set.edit", "Edit")}</button>
+          ${all.length > 1 ? `<button class="btn-warn" data-action="delete-character" data-id="${c.id}" data-stop="1">${t("pr.delete", "Delete")}</button>` : ""}
         </div>
       </div>
     `;
@@ -13804,8 +13859,8 @@ function viewProfiles() {
   // home for "what I've achieved").
   const unlocked = unlockedMilestones();
   const milestonesSection = `
-    <h3 style="margin-top:26px">Milestones</h3>
-    <p class="small">${unlocked.length} of ${MILESTONES.length} earned — they unlock as you make progress.</p>
+    <h3 style="margin-top:26px">${t("ms.h", "Milestones")}</h3>
+    <p class="small">${tf("ms.earnedP", "{a} of {b} earned — they unlock as you make progress.", { a: unlocked.length, b: MILESTONES.length })}</p>
     <div class="milestones-grid">
       ${MILESTONES.map(m => {
         const got = unlocked.includes(m.id);
@@ -13817,12 +13872,12 @@ function viewProfiles() {
     </div>`;
   return `
     <div class="panel">
-      <h2>Your characters</h2>
-      <p>Each character keeps its own ladder progress, SUDS log, and phobia list. Switch between them any time.</p>
+      <h2>${t("pr.h", "Your characters")}</h2>
+      <p>${t("pr.p", "Each character keeps its own ladder progress, SUDS log, and phobia list. Switch between them any time.")}</p>
       ${statStrip}
       <div class="profiles-grid">${cards}</div>
       <div class="actions">
-        <button class="btn-primary" data-action="new-character">+ New character</button>
+        <button class="btn-primary" data-action="new-character">${t("pr.new", "+ New character")}</button>
       </div>
       ${milestonesSection}
     </div>
@@ -13847,8 +13902,8 @@ function viewInsights() {
 
   if (myPhobias.length === 0) {
     return `<div class="panel">
-      <h2>Your progress</h2>
-      <p>Once you've completed a rung, this is where the data lives. SUDS scores, prediction-vs-actual gaps, and your highest rung per phobia.</p>
+      <h2>${t("nav.progress", "Your progress")}</h2>
+      <p>${t("ins.empty", "Once you've completed a rung, this is where the data lives. SUDS scores, prediction-vs-actual gaps, and your highest rung per phobia.")}</p>
     </div>`;
   }
 
@@ -13867,17 +13922,17 @@ function viewInsights() {
         <div class="insight-head">
           <div class="insight-icon">${p.icon}</div>
           <div>
-            <h3>${p.label}</h3>
-            <div class="small">${highest}/${total} rungs · ${sessions.length} session${sessions.length === 1 ? "" : "s"} · avg SUDS ${avg}</div>
+            <h3>${escapeHtml(phLabel(key))}</h3>
+            <div class="small">${tf(sessions.length === 1 ? "ins.sum1" : "ins.sum", `{a}/{b} rungs · {n} session${sessions.length === 1 ? "" : "s"} · avg SUDS {avg}`, { a: highest, b: total, n: sessions.length, avg })}</div>
           </div>
         </div>
         ${drawSudsChart(sessions, 320, 90)}
         <div class="insight-legend">
-          <span><span class="dotmark" style="background:#7cd1c5"></span>actual</span>
-          <span><span class="dotmark" style="background:#94a3b8;opacity:.6"></span>predicted</span>
+          <span><span class="dotmark" style="background:#7cd1c5"></span>${t("pp.actual", "actual")}</span>
+          <span><span class="dotmark" style="background:#94a3b8;opacity:.6"></span>${t("pp.predicted", "predicted")}</span>
         </div>
         <div class="actions" style="margin-top:8px">
-          <button class="btn-ghost" data-action="select-phobia" data-phobia="${key}">Open ladder</button>
+          <button class="btn-ghost" data-action="select-phobia" data-phobia="${key}">${t("ins.open", "Open ladder")}</button>
         </div>
       </div>
     `;
@@ -13885,25 +13940,25 @@ function viewInsights() {
 
   return `
     <div class="panel">
-      <h2>Your progress</h2>
-      <p>Each chart plots how anxious you actually felt on each rung you climbed. Lighter dots are your <em>predictions</em> — the gap between predicted and actual is where the brain learns.</p>
+      <h2>${t("nav.progress", "Your progress")}</h2>
+      <p>${t("ins.p", "Each chart plots how anxious you actually felt on each rung you climbed. Lighter dots are your <em>predictions</em> — the gap between predicted and actual is where the brain learns.")}</p>
       <div class="stats-row">
-        <div class="stat"><div class="stat-num">${totalSessions}</div><div class="stat-lbl">total sessions</div></div>
-        <div class="stat"><div class="stat-num">${completedRungs}</div><div class="stat-lbl">rungs climbed</div></div>
-        <div class="stat"><div class="stat-num">${avgGap == null ? "—" : (avgGap >= 0 ? "+" : "") + avgGap.toFixed(1)}</div><div class="stat-lbl">avg over-prediction</div></div>
+        <div class="stat"><div class="stat-num">${totalSessions}</div><div class="stat-lbl">${t("ins.total", "total sessions")}</div></div>
+        <div class="stat"><div class="stat-num">${completedRungs}</div><div class="stat-lbl">${t("profile.rungs", "rungs climbed")}</div></div>
+        <div class="stat"><div class="stat-num">${avgGap == null ? "—" : (avgGap >= 0 ? "+" : "") + avgGap.toFixed(1)}</div><div class="stat-lbl">${t("ins.over", "avg over-prediction")}</div></div>
       </div>
       ${(avgGap != null && predicted.length >= 2) ? `<p class="hint" style="margin-top:-4px;margin-bottom:16px">${
-        avgGap >= 0.8 ? `On average, your fear came in about <strong>${avgGap.toFixed(1)} point${avgGap >= 1.5 ? "s" : ""} lower</strong> than you predicted. Your brain keeps over-estimating the danger — and each rung is teaching it otherwise.`
-        : avgGap <= -0.8 ? `Lately it's felt a little worse than you expected. That's honest data — slow down and repeat rungs until the numbers settle.`
-        : `Your predictions are landing close to what you actually feel — you're getting accurate at reading your own body.`
+        avgGap >= 0.8 ? tf("ins.lower", `On average, your fear came in about <strong>{n} point${avgGap >= 1.5 ? "s" : ""} lower</strong> than you predicted. Your brain keeps over-estimating the danger — and each rung is teaching it otherwise.`, { n: avgGap.toFixed(1) })
+        : avgGap <= -0.8 ? t("ins.worse", "Lately it's felt a little worse than you expected. That's honest data — slow down and repeat rungs until the numbers settle.")
+        : t("ins.close", "Your predictions are landing close to what you actually feel — you're getting accurate at reading your own body.")
       }</p>` : ""}
       <div class="insights-grid">${cards}</div>
 
       ${(() => {
         const unlocked = unlockedMilestones();
         return `
-          <h3 style="margin-top:24px">Milestones</h3>
-          <p class="small">Auto-unlocked as you make progress. ${unlocked.length} of ${MILESTONES.length} earned.</p>
+          <h3 style="margin-top:24px">${t("ms.h", "Milestones")}</h3>
+          <p class="small">${tf("ms.autoP", "Auto-unlocked as you make progress. {a} of {b} earned.", { a: unlocked.length, b: MILESTONES.length })}</p>
           <div class="milestones-grid">
             ${MILESTONES.map(m => {
               const got = unlocked.includes(m.id);
@@ -13920,8 +13975,8 @@ function viewInsights() {
       })()}
 
       <div class="actions" style="margin-top:18px">
-        <button class="btn-primary" id="shareCardBtn">Share progress card</button>
-        <button class="btn-ghost" data-action="open-report">📄 Full report for a therapist</button>
+        <button class="btn-primary" id="shareCardBtn">${t("ins.share", "Share progress card")}</button>
+        <button class="btn-ghost" data-action="open-report">${t("ins.report", "📄 Full report for a therapist")}</button>
       </div>
     </div>
   `;
@@ -14003,10 +14058,10 @@ function viewExposure(phobiaKey, levelIdx) {
     // "Tips" toggle for accessibility / touch users who prefer it.
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="dogs">
-        <button class="cmd-btn" data-cmd="sit" title="Keyboard: E"><span class="cmd-icon">🐾</span><span>${t("cmd.settle", "Settle (E)")}</span></button>
-        <button class="cmd-btn" data-cmd="ball" title="Keyboard: B"><span class="cmd-icon">⚪</span><span>${t("cmd.ball", "Throw ball (B)")}</span></button>
-        <button class="cmd-btn" data-cmd="treat" title="Keyboard: T"><span class="cmd-icon">🦴</span><span>${t("cmd.treat", "Give treat (T)")}</span></button>
-        <button class="cmd-btn" data-cmd="call" title="Keyboard: C"><span class="cmd-icon">👋</span><span>${t("cmd.call", "Call (C)")}</span></button>
+        <button class="cmd-btn" data-cmd="sit" title="${tf("cmd.key", "Keyboard: {k}", { k: "E" })}"><span class="cmd-icon">🐾</span><span>${t("cmd.settle", "Settle (E)")}</span></button>
+        <button class="cmd-btn" data-cmd="ball" title="${tf("cmd.key", "Keyboard: {k}", { k: "B" })}"><span class="cmd-icon">⚪</span><span>${t("cmd.ball", "Throw ball (B)")}</span></button>
+        <button class="cmd-btn" data-cmd="treat" title="${tf("cmd.key", "Keyboard: {k}", { k: "T" })}"><span class="cmd-icon">🦴</span><span>${t("cmd.treat", "Give treat (T)")}</span></button>
+        <button class="cmd-btn" data-cmd="call" title="${tf("cmd.key", "Keyboard: {k}", { k: "C" })}"><span class="cmd-icon">👋</span><span>${t("cmd.call", "Call (C)")}</span></button>
       </div>
     `;
   } else if (phobiaKey === "dogs" && intensity === "barking") {
@@ -14025,7 +14080,7 @@ function viewExposure(phobiaKey, levelIdx) {
         <button class="cmd-btn" data-cmd="edge"><span class="cmd-icon">↘</span><span>${t("cmd.h.edge", "Walk to edge")}</span></button>
         <button class="cmd-btn" data-cmd="back"><span class="cmd-icon">↖</span><span>${t("cmd.h.back", "Step back")}</span></button>
         <button class="cmd-btn" data-cmd="lookdown"><span class="cmd-icon">⤓</span><span>${t("cmd.h.look", "Look down")}</span></button>
-        <button class="cmd-btn" data-cmd="lean" title="Lean over the railing"><span class="cmd-icon">⤴</span><span>${t("cmd.h.lean", "Lean over")}</span></button>
+        <button class="cmd-btn" data-cmd="lean" title="${t("cmd.h.leanTip", "Lean over the railing")}"><span class="cmd-icon">⤴</span><span>${t("cmd.h.lean", "Lean over")}</span></button>
         <button class="cmd-btn" data-cmd="shake"><span class="cmd-icon">⇄</span><span>${t("cmd.h.shake", "Shake the railing")}</span></button>
         <button class="cmd-btn" data-cmd="coin"><span class="cmd-icon">🪙</span><span>${t("cmd.h.coin", "Drop a coin")}</span></button>
       </div>
@@ -14044,10 +14099,10 @@ function viewExposure(phobiaKey, levelIdx) {
     // release it outside. Click on the spider to drop the jar.
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="spiders">
-        <button class="cmd-btn" data-cmd="closer" title="Walk a little closer"><span class="cmd-icon">→</span><span>${t("cmd.sp.closer", "Step closer")}</span></button>
-        <button class="cmd-btn" data-cmd="back" title="Step back if you need to"><span class="cmd-icon">←</span><span>${t("cmd.sp.back", "Step back")}</span></button>
-        <button class="cmd-btn" data-cmd="focus" title="Tap to face it · hold to look closer (Z)"><span class="cmd-icon">🔍</span><span>${t("cmd.sp.look", "Look closer (hold)")}</span></button>
-        <button class="cmd-btn" data-cmd="jar" title="Click the spider to lower the glass"><span class="cmd-icon">🫙</span><span>${t("cmd.sp.jar", "Glass")}</span></button>
+        <button class="cmd-btn" data-cmd="closer" title="${t("cmd.sp.closerTip", "Walk a little closer")}"><span class="cmd-icon">→</span><span>${t("cmd.sp.closer", "Step closer")}</span></button>
+        <button class="cmd-btn" data-cmd="back" title="${t("cmd.sp.backTip", "Step back if you need to")}"><span class="cmd-icon">←</span><span>${t("cmd.sp.back", "Step back")}</span></button>
+        <button class="cmd-btn" data-cmd="focus" title="${t("cmd.sp.lookTip", "Tap to face it · hold to look closer (Z)")}"><span class="cmd-icon">🔍</span><span>${t("cmd.sp.look", "Look closer (hold)")}</span></button>
+        <button class="cmd-btn" data-cmd="jar" title="${t("cmd.sp.jarTip", "Click the spider to lower the glass")}"><span class="cmd-icon">🫙</span><span>${t("cmd.sp.jar", "Glass")}</span></button>
       </div>
     `;
   } else if (phobiaKey === "flying") {
@@ -14071,12 +14126,12 @@ function viewExposure(phobiaKey, levelIdx) {
   } else if (phobiaKey === "enclosed") {
     // One door, always working. The lift rides; the scanner slides you in.
     const eBtns = levelIdx === 4
-      ? `<button class="cmd-btn" data-cmd="slide" title="Keyboard: E"><span class="cmd-icon">↕</span><span class="cmd-label">${t("cmd.e.slideIn", "Slide in")}</span></button>`
+      ? `<button class="cmd-btn" data-cmd="slide" title="${tf("cmd.key", "Keyboard: {k}", { k: "E" })}"><span class="cmd-icon">↕</span><span class="cmd-label">${t("cmd.e.slideIn", "Slide in")}</span></button>`
       : levelIdx === 2
-        ? `<button class="cmd-btn" data-cmd="ride" title="Keyboard: E"><span class="cmd-icon">↕</span><span>${t("cmd.e.ride", "Ride two floors")}</span></button>
+        ? `<button class="cmd-btn" data-cmd="ride" title="${tf("cmd.key", "Keyboard: {k}", { k: "E" })}"><span class="cmd-icon">↕</span><span>${t("cmd.e.ride", "Ride two floors")}</span></button>
            <button class="cmd-btn" data-cmd="open"><span class="cmd-icon">◀▶</span><span>${t("cmd.e.openDoors", "Open the doors")}</span></button>
            <button class="cmd-btn" data-cmd="touch"><span class="cmd-icon">✋</span><span>${t("cmd.e.touch", "Touch the wall")}</span></button>`
-        : `<button class="cmd-btn" data-cmd="door" title="Keyboard: E"><span class="cmd-icon">🚪</span><span class="cmd-label">${t("cmd.e.close", "Close the door")}</span></button>
+        : `<button class="cmd-btn" data-cmd="door" title="${tf("cmd.key", "Keyboard: {k}", { k: "E" })}"><span class="cmd-icon">🚪</span><span class="cmd-label">${t("cmd.e.close", "Close the door")}</span></button>
            <button class="cmd-btn" data-cmd="light"><span class="cmd-icon">💡</span><span>${t("cmd.e.light", "Light switch")}</span></button>
            <button class="cmd-btn" data-cmd="touch"><span class="cmd-icon">✋</span><span>${t("cmd.e.touch", "Touch the wall")}</span></button>`;
     cmdBar = `
@@ -14095,8 +14150,8 @@ function viewExposure(phobiaKey, levelIdx) {
   } else if (phobiaKey === "snakes") {
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="snakes">
-        <button class="cmd-btn" data-cmd="still" data-press="true" title="Hold to stay calm — snake retreats"><span class="cmd-icon">🧘</span><span>${t("cmd.sn.still", "Hold still")}</span></button>
-        <button class="cmd-btn" data-cmd="extend" data-press="true" title="Press and hold to slowly extend your hand"><span class="cmd-icon">✋</span><span>${t("cmd.sn.extend", "Extend hand")}</span></button>
+        <button class="cmd-btn" data-cmd="still" data-press="true" title="${t("cmd.sn.stillTip", "Hold to stay calm — snake retreats")}"><span class="cmd-icon">🧘</span><span>${t("cmd.sn.still", "Hold still")}</span></button>
+        <button class="cmd-btn" data-cmd="extend" data-press="true" title="${t("cmd.sn.extendTip", "Press and hold to slowly extend your hand")}"><span class="cmd-icon">✋</span><span>${t("cmd.sn.extend", "Extend hand")}</span></button>
         <button class="cmd-btn" data-cmd="back-step"><span class="cmd-icon">↩</span><span>${t("cmd.sn.back", "Step back")}</span></button>
         <button class="cmd-btn" data-cmd="leaf"><span class="cmd-icon">🍃</span><span>${t("cmd.sn.leaf", "Drop a leaf")}</span></button>
       </div>
@@ -14120,7 +14175,7 @@ function viewExposure(phobiaKey, levelIdx) {
   } else if (phobiaKey === "dark") {
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="dark">
-        <button class="cmd-btn" data-cmd="flashlight" data-press="true" title="Keyboard: F"><span class="cmd-icon">🔦</span><span>${t("cmd.d.torch", "Hold flashlight")}</span></button>
+        <button class="cmd-btn" data-cmd="flashlight" data-press="true" title="${tf("cmd.key", "Keyboard: {k}", { k: "F" })}"><span class="cmd-icon">🔦</span><span>${t("cmd.d.torch", "Hold flashlight")}</span></button>
         <button class="cmd-btn" data-cmd="name"><span class="cmd-icon">🔍</span><span>${t("cmd.d.name", "Name what you see")}</span></button>
         <button class="cmd-btn" data-cmd="match"><span class="cmd-icon">🔥</span><span>${t("cmd.d.match", "Light a match")}</span></button>
       </div>
@@ -14162,7 +14217,7 @@ function viewExposure(phobiaKey, levelIdx) {
 
 function viewRate(phobiaKey, levelIdx) {
   const earlyNote = (lastRungOutcome && lastRungOutcome.finished === false)
-    ? '<p class="small" style="opacity:.75">You stepped out before the hold finished — that is always allowed. Rate how it felt anyway.</p>'
+    ? `<p class="small" style="opacity:.75">${t("rate.early", "You stepped out before the hold finished — that is always allowed. Rate how it felt anyway.")}</p>`
     : "";
   return `
     <div class="panel">
@@ -14173,7 +14228,7 @@ function viewRate(phobiaKey, levelIdx) {
         <label for="sudsPeak">${t("rate.peakLabel", "At its worst, in there")}</label>
         <div class="scale-row">
           <span class="small">${t("scale.calm", "0 calm")}</span>
-          <input type="range" id="sudsPeak" min="0" max="10" value="5" aria-label="Anxiety level at its worst during the trial, 0 calm to 10 panic" />
+          <input type="range" id="sudsPeak" min="0" max="10" value="5" aria-label="${t("rate.peakAria", "Anxiety level at its worst during the trial, 0 calm to 10 panic")}" />
           <span class="small">${t("scale.panic", "10 panic")}</span>
           <div class="value" id="sudsPeakValue">—</div>
         </div>
@@ -14183,12 +14238,12 @@ function viewRate(phobiaKey, levelIdx) {
         <label for="suds">${t("rate.nowLabel", "Right now")}</label>
         <div class="scale-row">
           <span class="small">${t("scale.calm", "0 calm")}</span>
-          <input type="range" id="suds" min="0" max="10" value="5" aria-label="Anxiety level right now, 0 calm to 10 panic" />
+          <input type="range" id="suds" min="0" max="10" value="5" aria-label="${t("rate.nowAria", "Anxiety level right now, 0 calm to 10 panic")}" />
           <span class="small">${t("scale.panic", "10 panic")}</span>
           <div class="value" id="sudsValue">—</div>
         </div>
-        <div class="hint" id="sudsHint">Move the slider to record how it actually felt — there's no right answer.</div>
-        <div class="hint">Low (0–3): you're ready to climb. &nbsp; Mid (4–6): a breath break helps. &nbsp; High (7–10): stay here, breathe, repeat.</div>
+        <div class="hint" id="sudsHint">${t("rate.hint", "Move the slider to record how it actually felt — there's no right answer.")}</div>
+        <div class="hint">${t("rate.bands", "Low (0–3): you're ready to climb. &nbsp; Mid (4–6): a breath break helps. &nbsp; High (7–10): stay here, breathe, repeat.")}</div>
       </div>
       <div class="actions">
         <button class="btn-warn" data-action="do-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("rate.breathe", "Take a breath first")}</button>
@@ -14204,7 +14259,7 @@ function viewBreathe(phobiaKey, levelIdx) {
       <h2>${t("breathe.h2", "The campfire breath")}</h2>
       <p>${t("breathe.p", "A traveler's tool: follow the circle. In for 4, hold, out for 4 — the long exhale presses your body's brake pedal. Stay as long as you like; the fire isn't going anywhere.")}</p>
       <div class="breath-wrap">
-        <div class="breath-circle" id="breathCircle">Breathe</div>
+        <div class="breath-circle" id="breathCircle">${t("breath.go", "Breathe")}</div>
       </div>
       <div class="actions" style="justify-content: center;">
         <button class="btn-primary" data-action="after-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("breathe.btn", "I'm calmer — continue")}</button>
@@ -14221,10 +14276,10 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
   // completed rung (the log entry this view reads was just pushed).
   const last = state.log[state.log.length - 1];
   const early = last && last.phobia === phobiaKey && last.level === levelIdx && last.finished === false;
-  const advice = early ? "Ending early is a valid choice, not a failure. When you're ready, try this rung again and stay a little longer."
-               : suds <= 3 ? "You're handling this well. The next rung will be a small bump."
-               : suds <= 6 ? "Solid. Consider repeating this rung once more before climbing."
-               : "Stay on this rung for a few more passes. You don't need to feel calm to climb — but each repeat is new evidence, and the alarm gets quieter with it.";
+  const advice = early ? t("advice.early", "Ending early is a valid choice, not a failure. When you're ready, try this rung again and stay a little longer.")
+               : suds <= 3 ? t("advice.low", "You're handling this well. The next rung will be a small bump.")
+               : suds <= 6 ? t("advice.mid", "Solid. Consider repeating this rung once more before climbing.")
+               : t("advice.high", "Stay on this rung for a few more passes. You don't need to feel calm to climb — but each repeat is new evidence, and the alarm gets quieter with it.");
 
   // Prediction comparison block.
   // Scored against the PEAK, not the end-of-trial reading — the prediction
@@ -14241,25 +14296,25 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       // When the user braced for catastrophe (high prediction) and it landed
       // low, name that explicitly — it's the single most therapeutic realisation.
       lesson = (predicted >= 7 && peakForPrediction <= 4)
-        ? `You expected this to be a <strong>${predicted}/10</strong> — near the top — and at its worst it was a <strong>${peakForPrediction}/10</strong>. You braced for something that didn't come. That gap, felt directly, is your brain updating what's actually dangerous.`
-        : `At its worst it was <strong>${diff} point${diff === 1 ? "" : "s"} quieter</strong> than you predicted. The brain learns by noticing this gap — please notice it.`;
+        ? tf("lesson.braced", "You expected this to be a <strong>{p}/10</strong> — near the top — and at its worst it was a <strong>{w}/10</strong>. You braced for something that didn't come. That gap, felt directly, is your brain updating what's actually dangerous.", { p: predicted, w: peakForPrediction })
+        : tf(diff === 1 ? "lesson.quieter1" : "lesson.quieter", `At its worst it was <strong>{d} point${diff === 1 ? "" : "s"} quieter</strong> than you predicted. The brain learns by noticing this gap — please notice it.`, { d: diff });
     } else if (diff <= -2) {
       tone = "warn";
-      lesson = `Your fear was a touch higher than you predicted. That's data too — sit with what surprised you, then plan a repeat.`;
+      lesson = t("lesson.higher", "Your fear was a touch higher than you predicted. That's data too — sit with what surprised you, then plan a repeat.");
     } else {
       tone = "neutral";
-      lesson = `Your prediction was close to what you felt. That's a sign you're getting accurate at reading your own body.`;
+      lesson = t("lesson.close", "Your prediction was close to what you felt. That's a sign you're getting accurate at reading your own body.");
     }
     predictionBlock = `
       <div class="prediction-card prediction-${tone}">
         <div class="prediction-meters">
           <div class="meter-row">
-            <span class="meter-label">Predicted</span>
+            <span class="meter-label">${t("meter.predicted", "Predicted")}</span>
             <div class="meter-track"><div class="meter-fill" style="width:${predicted * 10}%; background:#94a3b8"></div></div>
             <span class="meter-value">${predicted}/10</span>
           </div>
           <div class="meter-row">
-            <span class="meter-label">At its worst</span>
+            <span class="meter-label">${t("meter.worst", "At its worst")}</span>
             <div class="meter-track"><div class="meter-fill" style="width:${peakForPrediction * 10}%"></div></div>
             <span class="meter-value">${peakForPrediction}/10</span>
           </div>
@@ -14297,7 +14352,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       <div class="reality-card ${r.happened ? "rc-happened" : "rc-no"}">
         <span class="bridge-invite-kicker">${t("rc.kicker", "🧪 Reality check")}</span>
         <div class="rc-row"><span class="rc-lab">${t("rc.predicted", "Your alarm predicted")}</span>
-          <span><strong>“${escapeHtml(kitFearText(phobiaKey, X.fear))}”</strong>${X.belief != null ? ` <span class="rc-bel">${tf("rc.sure", "{n}% sure", { n: X.belief })}</span>` : ""}</span></div>
+          <span><strong>${tf("camp.sayLine", "“{line}”", { line: escapeHtml(kitFearText(phobiaKey, X.fear)) })}</strong>${X.belief != null ? ` <span class="rc-bel">${tf("rc.sure", "{n}% sure", { n: X.belief })}</span>` : ""}</span></div>
         <div class="rc-row"><span class="rc-lab">${t("rc.happened", "What happened")}</span><span>${r.line}</span></div>
         <p class="rc-verdict">${verdict}</p>
         <div class="suds rc-after">
@@ -14376,17 +14431,17 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       <div class="prediction-card prediction-good">
         <div class="prediction-meters">
           <div class="meter-row">
-            <span class="meter-label">At its peak</span>
+            <span class="meter-label">${t("meter.peak", "At its peak")}</span>
             <div class="meter-track"><div class="meter-fill" style="width:${peakN * 10}%; background:#e3a06b"></div></div>
             <span class="meter-value">${peakN}/10</span>
           </div>
           <div class="meter-row">
-            <span class="meter-label">By the end</span>
+            <span class="meter-label">${t("meter.end", "By the end")}</span>
             <div class="meter-track"><div class="meter-fill" style="width:${suds * 10}%"></div></div>
             <span class="meter-value">${suds}/10</span>
           </div>
         </div>
-        <p class="prediction-lesson">Your anxiety rose to about <strong>${peakN}/10</strong> — and while you stayed, it came down to <strong>${suds}/10</strong>. That fall, <em>without escaping</em>, is your nervous system learning it is safe. This is habituation, and it's exactly how fear unwinds.</p>
+        <p class="prediction-lesson">${tf("lesson.within", "Your anxiety rose to about <strong>{p}/10</strong> — and while you stayed, it came down to <strong>{s}/10</strong>. That fall, <em>without escaping</em>, is your nervous system learning it is safe. This is habituation, and it's exactly how fear unwinds.", { p: peakN, s: suds })}</p>
       </div>
     `;
   }
@@ -14404,17 +14459,17 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       <div class="prediction-card prediction-good">
         <div class="prediction-meters">
           <div class="meter-row">
-            <span class="meter-label">Last time</span>
+            <span class="meter-label">${t("meter.last", "Last time")}</span>
             <div class="meter-track"><div class="meter-fill" style="width:${prev.suds * 10}%; background:#94a3b8"></div></div>
             <span class="meter-value">${prev.suds}/10</span>
           </div>
           <div class="meter-row">
-            <span class="meter-label">This time</span>
+            <span class="meter-label">${t("meter.this", "This time")}</span>
             <div class="meter-track"><div class="meter-fill" style="width:${suds * 10}%"></div></div>
             <span class="meter-value">${suds}/10</span>
           </div>
         </div>
-        <p class="prediction-lesson">Last time this rung was a <strong>${prev.suds}/10</strong>. Today it's a <strong>${suds}/10</strong>. Same situation, less fear — that's your nervous system learning it's safe, across sessions. This is the whole point.</p>
+        <p class="prediction-lesson">${tf("lesson.across", "Last time this rung was a <strong>{a}/10</strong>. Today it's a <strong>{b}/10</strong>. Same situation, less fear — that's your nervous system learning it's safe, across sessions. This is the whole point.", { a: prev.suds, b: suds })}</p>
       </div>`;
     }
   }
@@ -14429,10 +14484,10 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
   let bridgeInvite = "";
   let mirrorPrompt = "";
   if (lastAward && lastAward.key === `${phobiaKey}.${levelIdx}` && last && Math.abs((last.ts || 0) - lastAward.ts) < 5000) {
-    const bits = [`+${lastAward.points} courage`];
-    if (lastAward.daily) bits.push(`🔥 daily ember +15`);
-    if (lastAward.streakAfter >= 2) bits.push(`day ${lastAward.streakAfter} of practice`);
-    rewardStrip = `<div class="reward-strip">${bits.join(" · ")}${lastAward.milestones.length ? `<div class="reward-milestone">🏅 Milestone unlocked: ${escapeHtml(lastAward.milestones.join(", "))}</div>` : ""}</div>`;
+    const bits = [tf("reward.courage", "+{n} courage", { n: lastAward.points })];
+    if (lastAward.daily) bits.push(t("reward.ember", "🔥 daily ember +15"));
+    if (lastAward.streakAfter >= 2) bits.push(tf("reward.day", "day {n} of practice", { n: lastAward.streakAfter }));
+    rewardStrip = `<div class="reward-strip">${bits.join(" · ")}${lastAward.milestones.length ? `<div class="reward-milestone">${escapeHtml(tf("reward.milestone", "🏅 Milestone unlocked: {list}", { list: lastAward.milestones.join(t("list.sep", ", ")) }))}</div>` : ""}</div>`;
     // Progress feedback at the peak moment. This used to show a blob with
     // eyes shrinking beside "the Hound Shadow weakened — strength 3/5", which
     // is the boss framing at the loudest point in the whole flow. The traveller
@@ -14440,7 +14495,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     if (!early && lastAward.advanced) {
       const rs = realmStatus(phobiaKey);
       shadowStrip = `
-        <div class="ground-gain" aria-label="Trials faced: ${rs.trials} of ${rs.totalTrials}">
+        <div class="ground-gain" aria-label="${tf("gain.aria", "Trials faced: {a} of {b}", { a: rs.trials, b: rs.totalTrials })}">
           <span class="gg-line">
             <strong>${rs.trials}</strong>/${rs.totalTrials} ${t("gain.trials", "trials faced here")}
           </span>
@@ -14498,7 +14553,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       const ownedN = getSparks().length;
       sparkBlock = `
         <div class="spark-reveal">
-          <div class="spark-card" id="sparkCard" role="button" tabindex="0" aria-label="Reveal your Spark of Wisdom: ${escapeHtml(card.title)}">
+          <div class="spark-card" id="sparkCard" role="button" tabindex="0" aria-label="${escapeHtml(tf("spark.revealAria", "Reveal your Spark of Wisdom: {t}", { t: t(`card.${card.id}.title`, card.title) }))}">
             <div class="spark-face spark-back"><span>✦</span><em>${t("spark.earned", "You earned a Spark of Wisdom")}</em><span class="spark-tap">${t("spark.tap", "tap to turn it over")}</span></div>
             <div class="spark-face spark-front"><span class="spark-icon">${card.icon}</span><strong>${escapeHtml(t(`card.${card.id}.title`, card.title))}</strong><p>${escapeHtml(t(`card.${card.id}.text`, card.text))}</p></div>
           </div>
@@ -14562,12 +14617,12 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       <p>${advice}</p>
 
       <div class="journal-row">
-        <label for="journalNote">Anything to remember? <span class="small">(optional — what helped, what surprised you)</span></label>
+        <label for="journalNote">${t("journal.q", "Anything to remember?")} <span class="small">${t("journal.qSub", "(optional — what helped, what surprised you)")}</span></label>
         <textarea id="journalNote" rows="2" maxlength="500" placeholder="${phobiaKey === "dogs"
           ? escapeHtml(t("journal.phDogs", "It barked and I didn't step back. My alarm went 7 → 4 in about half a minute."))
           : escapeHtml(t("journal.ph", "What helped? What surprised you? e.g. my SUDS dropped from 7 to 4 after about 30 seconds."))}"></textarea>
-        <button class="btn-ghost" id="saveJournal" style="font-size:12px; padding:6px 12px;">Save note</button>
-        <span class="small" id="journalSaved" style="opacity:0; transition:opacity .25s; color:var(--ok)">saved</span>
+        <button class="btn-ghost" id="saveJournal" style="font-size:12px; padding:6px 12px;">${t("journal.save", "Save note")}</button>
+        <span class="small" id="journalSaved" style="opacity:0; transition:opacity .25s; color:var(--ok)">${t("journal.saved", "saved")}</span>
       </div>
 
       <div class="actions">
@@ -15183,8 +15238,8 @@ function mountExposure(phobiaKey, levelIdx) {
     // and the Settings captions toggle controls those.)
     quickBar.innerHTML = `
       <button class="stage-quick-btn ${aMuted ? "muted" : ""}" id="quickAudio"
-        title="${aMuted ? "Scene sound muted — click to unmute" : "Mute scene sound"}"
-        aria-label="${aMuted ? "Sound muted" : "Mute sound"}">${aMuted ? "🔈" : "🔊"}</button>
+        title="${aMuted ? t("qa.mutedTip", "Scene sound muted — click to unmute") : t("qa.muteTip", "Mute scene sound")}"
+        aria-label="${aMuted ? t("qa.muted", "Sound muted") : t("qa.mute", "Mute sound")}">${aMuted ? "🔈" : "🔊"}</button>
     `;
     const a = quickBar.querySelector("#quickAudio");
     if (a) a.onclick = () => {
@@ -15434,7 +15489,7 @@ function mountExposure(phobiaKey, levelIdx) {
           // the body is doing from the alarm itself — a canned "your body is
           // learning this is safe" over a wave at its peak was simply false.
           if (window.PhobiaVoice && !window.__dogCoach) {
-            window.PhobiaVoice.speak("Still with it. Look around if you like — your body is learning that this is safe.");
+            window.PhobiaVoice.speak(t("vo.still", "Still with it. Look around if you like — your body is learning that this is safe."));
           }
         } catch {}
       }
@@ -15519,7 +15574,7 @@ function mountExposure(phobiaKey, levelIdx) {
   const continueBtn = document.getElementById("continueBtn");
   const holdBar = document.getElementById("holdBarFill");
   const holdLabel = document.getElementById("holdLabel");
-  continueBtn && (continueBtn.title = "You can stop at any time. Stopping early is logged as an early exit — never a failure.");
+  continueBtn && (continueBtn.title = t("hold.stopTip", "You can stop at any time. Stopping early is logged as an early exit — never a failure."));
   // Approach scenes require physically closing the distance to the feared
   // thing. For these, standing at safety must earn ZERO credit and the
   // look-only wall-clock fallback never applies — otherwise a frightened user
@@ -15682,7 +15737,7 @@ function mountExposure(phobiaKey, levelIdx) {
           if (window.PhobiaVoice) {
             try {
               // Spoken, in the warm register — the emotional payoff beat.
-              window.PhobiaVoice.speak("You did it. You stayed with it. That is real progress.", { audible: true, praise: true });
+              window.PhobiaVoice.speak(t("vo.didIt", "You did it. You stayed with it. That is real progress."), { audible: true, praise: true });
             } catch {}
           }
           // The avatar's face relaxes with the praise (brows past neutral,
@@ -15704,7 +15759,7 @@ function mountExposure(phobiaKey, levelIdx) {
           // toast only buried it.
           if (!window.__holdPolicy && window.PhobiaFX && window.PhobiaFX.contextPrompt) {
             window.PhobiaFX.contextPrompt(
-              "You did it. You stayed with the fear and it didn't break you.",
+              t("vo.didIt2", "You did it. You stayed with the fear and it didn't break you."),
               5000
             );
           }
@@ -15915,10 +15970,10 @@ function runBreathing() {
   const c = document.getElementById("breathCircle");
   if (!c) return;
   const phases = [
-    { cls: "inhale", text: "Inhale…", ms: 4000 },
-    { cls: "",       text: "Hold",    ms: 2000 },
-    { cls: "exhale", text: "Exhale…", ms: 4000 },
-    { cls: "",       text: "Hold",    ms: 2000 }
+    { cls: "inhale", text: t("breath.in", "Inhale…"), ms: 4000 },
+    { cls: "",       text: t("breath.hold", "Hold"),    ms: 2000 },
+    { cls: "exhale", text: t("breath.out", "Exhale…"), ms: 4000 },
+    { cls: "",       text: t("breath.hold", "Hold"),    ms: 2000 }
   ];
   let i = 0;
   function step() {
@@ -16784,8 +16839,8 @@ function scheduleReminders() {
       try {
         const ch = window.Character && window.Character.loadCharacter();
         const name = ch?.name ? `, ${ch.name}` : "";
-        new Notification("Step Up", {
-          body: `A small rung today${name}? You don't have to climb far.`,
+        new Notification("Mira", {
+          body: ch?.name ? tf("remind.bodyName", "A small rung today, {name}? You don't have to climb far.", { name: ch.name }) : t("remind.body", "A small rung today? You don't have to climb far."),
           icon: "icon.svg",
         });
         localStorage.setItem("fobia.lastReminder", String(now));
@@ -16810,10 +16865,10 @@ function importData() {
       const text = await file.text();
       const data = JSON.parse(text);
       if (!data || data.version == null) {
-        alert("This doesn't look like a Step Up export. Aborting.");
+        alert(t("imp.bad", "This doesn't look like a Mira export. Nothing was changed."));
         return;
       }
-      if (!confirm("Import this file? It will replace every character, session, note and setting on this device.")) return;
+      if (!confirm(t("imp.confirm", "Import this file? It will replace every character, session, note and setting on this device."))) return;
       // Restore each section if present
       if (Array.isArray(data.characters)) {
         localStorage.setItem("fobia.characters.v2", JSON.stringify(data.characters));
@@ -16832,10 +16887,10 @@ function importData() {
       if (data.customPhobias) {
         localStorage.setItem("fobia.customPhobias.v1", JSON.stringify(data.customPhobias));
       }
-      alert("Imported. Reloading…");
+      alert(t("imp.done", "Imported. Reloading…"));
       location.reload();
     } catch (err) {
-      alert("Couldn't read that file. Make sure it's a Step Up export.\n\n" + err.message);
+      alert(t("imp.err", "Couldn't read that file. Make sure it's a Mira export.") + "\n\n" + err.message);
     }
   };
   input.click();
@@ -16893,14 +16948,14 @@ function viewCustom(editingKey) {
   };
   const existing = Object.entries(all);
   const list = existing.length ? `
-    <h3>Your custom ladders</h3>
+    <h3>${t("cu.listH", "Your custom ladders")}</h3>
     <ul class="custom-list">
       ${existing.map(([k, c]) => `
         <li>
-          <strong>${escapeHtml(c.label || "Untitled")}</strong>
-          <span class="small">${(c.rungs || []).length} rungs</span>
-          <button class="btn-ghost" data-action="custom-edit" data-key="${k}" style="padding:4px 10px;font-size:12px;">Edit</button>
-          <button class="btn-warn" data-action="custom-delete" data-key="${k}" style="padding:4px 10px;font-size:12px;">Delete</button>
+          <strong>${escapeHtml(c.label || t("cu.untitled", "Untitled"))}</strong>
+          <span class="small">${tf("cu.rungs", "{n} rungs", { n: (c.rungs || []).length })}</span>
+          <button class="btn-ghost" data-action="custom-edit" data-key="${k}" style="padding:4px 10px;font-size:12px;">${t("set.edit", "Edit")}</button>
+          <button class="btn-warn" data-action="custom-delete" data-key="${k}" style="padding:4px 10px;font-size:12px;">${t("pr.delete", "Delete")}</button>
         </li>
       `).join("")}
     </ul>
@@ -16908,31 +16963,31 @@ function viewCustom(editingKey) {
 
   return `
     <div class="panel">
-      <h2>Build your own ladder</h2>
-      <p>Define a phobia we don't cover, or break one down differently. Five rungs, easiest first. The scene uses calm narration + breathing — no 3D required.</p>
+      <h2>${t("cu.h", "Build your own ladder")}</h2>
+      <p>${t("cu.p", "Define a phobia we don't cover, or break one down differently. Five rungs, easiest first. The scene uses calm narration + breathing — no 3D required.")}</p>
 
       <div class="custom-form">
-        <label>Phobia name <span class="small">(what you call it)</span>
-          <input id="custLabel" type="text" maxlength="40" value="${escapeHtml(c.label)}" placeholder="e.g. Driving alone at night"/>
+        <label>${t("cu.name", "Phobia name")} <span class="small">${t("cu.nameSub", "(what you call it)")}</span>
+          <input id="custLabel" type="text" maxlength="40" value="${escapeHtml(c.label)}" placeholder="${t("cu.namePh", "e.g. Driving alone at night")}"/>
         </label>
-        <label>Clinical name <span class="small">(optional, e.g. Vehophobia)</span>
-          <input id="custClinical" type="text" maxlength="40" value="${escapeHtml(c.clinicalName)}" placeholder="optional"/>
+        <label>${t("cu.clin", "Clinical name")} <span class="small">${t("cu.clinSub", "(optional, e.g. Vehophobia)")}</span>
+          <input id="custClinical" type="text" maxlength="40" value="${escapeHtml(c.clinicalName)}" placeholder="${t("cu.optional", "optional")}"/>
         </label>
-        <label>One-line description
-          <input id="custBlurb" type="text" maxlength="120" value="${escapeHtml(c.blurb)}" placeholder="Fear of …"/>
+        <label>${t("cu.blurb", "One-line description")}
+          <input id="custBlurb" type="text" maxlength="120" value="${escapeHtml(c.blurb)}" placeholder="${t("cu.blurbPh", "Fear of …")}"/>
         </label>
         <div class="rung-editors">
           ${c.rungs.map((r, i) => `
             <div class="rung-editor">
               <span class="rung-num">${i+1}</span>
-              <input type="text" maxlength="40" data-rung="${i}" data-field="title" value="${escapeHtml(r.title)}" placeholder="Rung ${i+1} title (easier first)"/>
-              <input type="text" maxlength="120" data-rung="${i}" data-field="desc"  value="${escapeHtml(r.desc)}"  placeholder="One-line description"/>
+              <input type="text" maxlength="40" data-rung="${i}" data-field="title" value="${escapeHtml(r.title)}" placeholder="${tf("cu.rungPh", "Rung {n} title (easier first)", { n: i + 1 })}"/>
+              <input type="text" maxlength="120" data-rung="${i}" data-field="desc"  value="${escapeHtml(r.desc)}"  placeholder="${t("cu.blurb", "One-line description")}"/>
             </div>
           `).join("")}
         </div>
         <div class="actions">
-          <button class="btn-primary" id="custSaveBtn">Save ladder</button>
-          <button class="btn-ghost" data-action="open-select">Cancel</button>
+          <button class="btn-primary" id="custSaveBtn">${t("cu.save", "Save ladder")}</button>
+          <button class="btn-ghost" data-action="open-select">${t("creator.cancel", "Cancel")}</button>
         </div>
       </div>
 
@@ -16958,7 +17013,7 @@ function attachCustomHandlers(editingKey) {
       desc:  el.querySelector('[data-field="desc"]').value.trim(),
     }));
     if (!label || rungs.some(r => !r.title)) {
-      alert("Please give your ladder a name and a title for each rung.");
+      alert(t("cu.need", "Please give your ladder a name and a title for each rung."));
       return;
     }
     const all = loadCustomPhobias();
@@ -16991,20 +17046,28 @@ function generateProgressCard() {
   ctx.fillStyle = spot;
   ctx.fillRect(0, 0, W, H);
 
+  // Persian mirrors the text columns to the right edge (the mini charts keep
+  // time running left to right). X() maps a left-edge x to its mirror.
+  const RTL = !!(window.I18n && window.I18n.isRTL());
+  const X = (x) => (RTL ? W - x : x);
+  ctx.direction = RTL ? "rtl" : "ltr";
+  ctx.textAlign = RTL ? "right" : "left";
+  const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, 'Noto Sans Arabic', sans-serif";
+
   // Brand
   ctx.fillStyle = "#7cd1c5";
-  ctx.font = "600 30px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-  ctx.fillText("● STEP UP", 80, 90);
+  ctx.font = `600 30px ${FONT}`;
+  ctx.fillText(t("card.brand", "● MIRA"), X(80), 90);
   ctx.fillStyle = "#94a3b8";
-  ctx.font = "20px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-  ctx.fillText("Gradual phobia exposure", 80, 122);
+  ctx.font = `20px ${FONT}`;
+  ctx.fillText(t("card.tag", "The Courage Journey · a practice game"), X(80), 122);
 
   // Character name + avatar (rendered through SVG → image)
   const ch = window.Character && window.Character.loadCharacter();
-  const name = ch?.name || "Anonymous";
+  const name = ch?.name || t("card.anon", "Anonymous");
   ctx.fillStyle = "#fff";
-  ctx.font = "700 64px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-  ctx.fillText(name, 80, 220);
+  ctx.font = `700 64px ${FONT}`;
+  ctx.fillText(name, X(80), 220);
 
   // Stats
   const totalSessions = state.log.length;
@@ -17020,17 +17083,17 @@ function generateProgressCard() {
 
   function drawStat(x, y, val, label) {
     ctx.fillStyle = "#7cd1c5";
-    ctx.font = "700 96px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-    ctx.fillText(val, x, y);
+    ctx.font = `700 96px ${FONT}`;
+    ctx.fillText(val, X(x), y);
     ctx.fillStyle = "#94a3b8";
-    ctx.font = "500 22px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-    ctx.fillText(label, x, y + 36);
+    ctx.font = `500 22px ${FONT}`;
+    ctx.fillText(label, X(x), y + 36);
   }
-  drawStat( 80, 380, String(totalSessions),  "TOTAL SESSIONS");
-  drawStat(380, 380, String(completedRungs), "RUNGS CLIMBED");
-  drawStat(680, 380, streak >= 1 ? `🔥 ${streak}` : "—", "DAY STREAK");
-  drawStat( 80, 540, ladders > 0 ? String(ladders) : "—", "VALLEYS WALKED");
-  drawStat(380, 540, avgGap == null ? "—" : (avgGap >= 0 ? "+" : "") + avgGap.toFixed(1), "AVG OVER-PREDICTION");
+  drawStat( 80, 380, String(totalSessions),  t("card.sessions", "TOTAL SESSIONS"));
+  drawStat(380, 380, String(completedRungs), t("card.rungs", "RUNGS CLIMBED"));
+  drawStat(680, 380, streak >= 1 ? `🔥 ${streak}` : "—", t("card.streak", "DAY STREAK"));
+  drawStat( 80, 540, ladders > 0 ? String(ladders) : "—", t("card.valleys", "VALLEYS WALKED"));
+  drawStat(380, 540, avgGap == null ? "—" : (avgGap >= 0 ? "+" : "") + avgGap.toFixed(1), t("card.over", "AVG OVER-PREDICTION"));
 
   // Per-phobia mini chart
   const myPhobias = ch
@@ -17042,8 +17105,8 @@ function generateProgressCard() {
   ctx.beginPath(); ctx.moveTo(80, lineY); ctx.lineTo(W - 80, lineY); ctx.stroke();
 
   ctx.fillStyle = "#fff";
-  ctx.font = "600 28px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-  ctx.fillText("Your fears in motion", 80, 760);
+  ctx.font = `600 28px ${FONT}`;
+  ctx.fillText(t("card.motion", "Your fears in motion"), X(80), 760);
 
   let row = 0;
   for (const key of myPhobias.slice(0, 4)) {
@@ -17053,10 +17116,10 @@ function generateProgressCard() {
     const baseY = 800 + row * 60;
     // Phobia label
     ctx.fillStyle = "#cbd5e1";
-    ctx.font = "500 22px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-    ctx.fillText(p.label, 80, baseY);
-    // Mini SUDS line for this phobia
-    const chartX = 380, chartW = W - 80 - chartX, chartH = 30;
+    ctx.font = `500 22px ${FONT}`;
+    ctx.fillText(phLabel(key), X(80), baseY);
+    // Mini SUDS line for this phobia (on the side away from the label)
+    const chartX = RTL ? 80 : 380, chartW = W - 80 - 380, chartH = 30;
     ctx.strokeStyle = "rgba(124,209,197,.5)";
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -17069,31 +17132,31 @@ function generateProgressCard() {
     // Average SUDS pill
     const avg = (sessions.reduce((s, l) => s + l.suds, 0) / sessions.length).toFixed(1);
     ctx.fillStyle = "#94a3b8";
-    ctx.font = "500 20px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-    ctx.fillText(`avg ${avg}`, 80, baseY + 24);
+    ctx.font = `500 20px ${FONT}`;
+    ctx.fillText(tf("card.avg", "avg {n}", { n: avg }), X(80), baseY + 24);
     row++;
   }
 
   // Footer
   ctx.fillStyle = "#5a6478";
-  ctx.font = "500 20px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-  ctx.fillText("Step Up · prototype, not therapy", 80, H - 60);
+  ctx.font = `500 20px ${FONT}`;
+  ctx.fillText(t("card.footer", "Mira · a practice game, not therapy"), X(80), H - 60);
 
   // Output
   canvas.toBlob((blob) => {
     if (!blob) return;
-    const file = new File([blob], "step-up-progress.png", { type: "image/png" });
+    const file = new File([blob], "mira-progress.png", { type: "image/png" });
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
       navigator.share({
         files: [file],
-        title: "My Step Up progress",
-        text: `${totalSessions} sessions, ${completedRungs} rungs climbed.`,
+        title: t("card.shareTitle", "My Mira progress"),
+        text: tf("card.shareText", "{s} sessions, {r} rungs climbed.", { s: totalSessions, r: completedRungs }),
       }).catch(() => {/* user cancelled */});
     } else {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "step-up-progress.png";
+      a.download = "mira-progress.png";
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
@@ -29572,14 +29635,14 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
             walkAnimTo = (c.opts.bounds.minZ ?? -0.2) + 0.05;
             walkAnimT  = 1.0;
             walkAnimFrom = c.position.z;
-            if (window.PhobiaVoice) window.PhobiaVoice.speak("Walking to the edge. Notice your feet.");
+            if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.h.walk", "Walking to the edge. Notice your feet."));
             break;
           case "back":
             // Smoothly walk back to the safe zone behind the door.
             walkAnimTo = (c.opts.bounds.maxZ ?? 4) - 0.2;
             walkAnimT  = 1.0;
             walkAnimFrom = c.position.z;
-            if (window.PhobiaVoice) window.PhobiaVoice.speak("Stepping back. Reset your breath.");
+            if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.h.back", "Stepping back. Reset your breath."));
             break;
           case "lean":
             hCoach.note("lean"); setTimeout(() => hSignal("pull"), 900);
@@ -29591,7 +29654,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
             leanFromPitch = c.pitch;
             leanFromZ = c.position.z;
             if (window.PhobiaVoice) {
-              window.PhobiaVoice.speak("Leaning over. Hold the rail. Let yourself feel it. You are safe.");
+              window.PhobiaVoice.speak(window.t("sc.h.lean", "Leaning over. Hold the rail. Let yourself feel it. You are safe."));
             }
             break;
           case "lookdown":
@@ -29599,7 +29662,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
             autoLookT = 1.0;
             autoLookFrom = c.pitch;
             autoLookTarget = -1.45;       // 83° below horizon
-            if (window.PhobiaVoice) window.PhobiaVoice.speak("Looking down. The drop is real. So is the railing.");
+            if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.h.down", "Looking down. The drop is real. So is the railing."));
             break;
           case "shake":
             shakeT = 1.0;
@@ -29620,7 +29683,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
           case "coin":
             setTimeout(() => hSignal("coin"), Math.min(3500, 900 + Math.sqrt(2 * DROP / 9.8) * 1000));
             dropCoin(c);
-            if (window.PhobiaVoice) window.PhobiaVoice.speak("Watch it fall. The drop is real. So is the railing under your hand.");
+            if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.h.coin", "Watch it fall. The drop is real. So is the railing under your hand."));
             break;
         }
       };
@@ -29729,10 +29792,10 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         // The most informative state — at the rail, peering over. Tell the
         // user what they can DO with this view (drop a pebble) and what
         // input drives it (clicking the air below).
-        return { gesture: "grab", hint: "click below to drop a pebble · click the railing to shake it" };
+        return { gesture: "grab", hint: window.t("sc.h.hintDrop", "click below to drop a pebble · click the railing to shake it") };
       }
       if (atEdge) {
-        return { gesture: "grab", hint: "you're at the edge · click the railing to shake · push forward to lean over" };
+        return { gesture: "grab", hint: window.t("sc.h.hintEdge", "you're at the edge · click the railing to shake · push forward to lean over") };
       }
       return { gesture: "rest", hint: "" };
     },
@@ -29771,7 +29834,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         // A gripped rail transmits the wobble into the hands/head
         if (_gripSteady > 0.25 && controls.kickShake) controls.kickShake(0.02);
         if (window.PhobiaFX && window.PhobiaFX.contextPrompt) {
-          window.PhobiaFX.contextPrompt("The railing is solid. It moves a little — it's strong.", 3500);
+          window.PhobiaFX.contextPrompt(window.t("sc.h.rail", "The railing is solid. It moves a little — it's strong."), 3500);
         }
         return;
       }
@@ -30119,7 +30182,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
             hCoach.note("lean"); hSignal("pull");
           // (the coach card speaks for this moment now)
             if (window.PhobiaVoice) {
-              window.PhobiaVoice.speak("Leaning over. Hold the rail. You are safe.");
+              window.PhobiaVoice.speak(window.t("sc.h.lean2", "Leaning over. Hold the rail. You are safe."));
             }
           // (the coach card speaks for this moment now)
             // Reset so the player can lean again later (after walking back)
@@ -36951,7 +37014,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           dogCtrl.walkTo(dog.position.x + dx * k, dog.position.z + dz * k);
         }
         if (window.PhobiaFX && window.PhobiaFX.contextPrompt) {
-          window.PhobiaFX.contextPrompt(`${dogName} is stepping close. Keep your hand low.`, 2200);
+          window.PhobiaFX.contextPrompt(window.tf("sc.d.stepping", "{dog} is stepping close. Keep your hand low.", { dog: dogName }), 2200);
         }
       } else {
         // Call the dog over — and CONFIRM it visibly, since the voice may be
@@ -36961,9 +37024,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         try { window.PhobiaExperiments && window.PhobiaExperiments.signal("dog.call"); } catch {}
         walkToPlayer(0.55, { arc: true });
         callGreetPending = true; callGreetDeadline = 0;
-        if (window.PhobiaVoice) window.PhobiaVoice.speak("Come here.", { speaker: "you" });
+        if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.d.come", "Come here."), { speaker: "you" });
         if (window.PhobiaFX && window.PhobiaFX.contextPrompt) {
-          window.PhobiaFX.contextPrompt(`${dogName} is coming to you…`, 2500);
+          window.PhobiaFX.contextPrompt(window.tf("sc.d.comingYou", "{dog} is coming to you…", { dog: dogName }), 2500);
         }
       }
       return;
@@ -36980,8 +37043,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     // Literal speak() calls so the voice pre-render extractor sees these
     // lines — a ternary argument fell back to browser TTS mid-scene.
     if (window.PhobiaVoice) {
-      if (kind === "treat") window.PhobiaVoice.speak("Treat.", { speaker: "you" });
-      else window.PhobiaVoice.speak("Go fetch.", { speaker: "you" });
+      if (kind === "treat") window.PhobiaVoice.speak(window.t("sc.d.treat", "Treat."), { speaker: "you" });
+      else window.PhobiaVoice.speak(window.t("sc.d.fetch", "Go fetch."), { speaker: "you" });
     }
   }
 
@@ -36997,7 +37060,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       // A collapsed tips bar still teaches the coping loop.
       if (intensity === "barking") {
         btn.disabled = true;
-        btn.title = "Not now — the dog is barking. Soften your gaze and step back for space.";
+        btn.title = window.t("sc.d.notNow", "Not now — the dog is barking. Soften your gaze and step back for space.");
         return;
       }
       btn.disabled = false;
@@ -37043,7 +37106,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     switch (cmd) {
       case "sit":
         dogCtrl.sit();
-        if (window.PhobiaVoice) window.PhobiaVoice.speak("Easy now. Settle.", { speaker: "you" });
+        if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.d.settle", "Easy now. Settle."), { speaker: "you" });
         break;
       case "stand":
         dogCtrl.stand();
@@ -37068,8 +37131,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         throwItem(cmd === "treat" ? "treat" : "ball", tx, tz);
         fetchPhase = "flying";
         if (window.PhobiaVoice) {
-          if (cmd === "treat") window.PhobiaVoice.speak("Treat.", { speaker: "you" });
-          else window.PhobiaVoice.speak("Go fetch.", { speaker: "you" });
+          if (cmd === "treat") window.PhobiaVoice.speak(window.t("sc.d.treat", "Treat."), { speaker: "you" });
+          else window.PhobiaVoice.speak(window.t("sc.d.fetch", "Go fetch."), { speaker: "you" });
         }
         break;
       }
@@ -37084,7 +37147,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           walkToPlayer(0.65, { arc: true });
           callGreetPending = true; callGreetDeadline = 0;
         }
-        if (window.PhobiaVoice) window.PhobiaVoice.speak("Come here.", { speaker: "you" });
+        if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.d.come", "Come here."), { speaker: "you" });
         break;
       }
       case "bark":
@@ -37438,8 +37501,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
               startlePrompted = true;
               window.PhobiaFX.contextPrompt(
                 alertRung
-                  ? `${dogName} answered a fast approach. Slow down — let it watch you come.`
-                  : `Quick moves startle dogs. Slow, easy steps — watch ${dogName} stay calm.`,
+                  ? window.tf("sc.d.fastAlert", "{dog} answered a fast approach. Slow down — let it watch you come.", { dog: dogName })
+                  : window.tf("sc.d.fast", "Quick moves startle dogs. Slow, easy steps — watch {dog} stay calm.", { dog: dogName }),
                 4600
               );
             }
@@ -38082,8 +38145,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
             window.PhobiaFX.achievement(
               "dogs.firstPet",
               "🤝",
-              "First pet",
-              `You touched ${dogName}. Real progress.`
+              window.t("ach.firstPet", "First pet"),
+              window.tf("ach.firstPetP", "You touched {dog}. Real progress.", { dog: dogName })
             );
           }
         }
@@ -38345,7 +38408,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           && (dogCtrl._sitTimer || 0) > 8 && !companionHold) {
         dogCtrl.lay();
         if (window.PhobiaVoice) {
-          window.PhobiaVoice.speak("Settling in. The dog feels safe with you.");
+          window.PhobiaVoice.speak(window.t("sc.d.settling", "Settling in. The dog feels safe with you."));
         }
       }
       // At ordinary trust the sit ends on its own instead: a dog that parks
@@ -38392,7 +38455,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           dogCtrl._companionPending = true;
           dogCtrl._companionDeadline = t + 12;
           if (window.PhobiaVoice && Math.random() < 0.3) {
-            window.PhobiaVoice.speak("The dog is coming over to you.");
+            window.PhobiaVoice.speak(window.t("sc.d.coming", "The dog is coming over to you."));
           }
         }
         nextAutoApproach = t + 18 + Math.random() * 14;   // ~18-32s between attempts
@@ -38723,7 +38786,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           if (window.PhobiaAudio?.dogMouthGrab) {
             try { window.PhobiaAudio.dogMouthGrab({ x: dog.position.x, y: dog.position.y + dogHeight * 0.5, z: dog.position.z }); } catch {}
           }
-          bumpTrust("treat", "Good. That builds the bond.");
+          bumpTrust("treat", window.t("sc.d.bond", "Good. That builds the bond."));
           lifeNextAt = Math.max(lifeNextAt, t + 5);
         } else if (Math.hypot(dx, dz) < 0.5) {
           // Pick up — re-parent to the HEAD BONE, with an audible chomp.
@@ -38822,10 +38885,10 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
             }, 600));
             // The bond reward is for completing the exchange — a give-up
             // drop still eats the treat but earns nothing.
-            if (!giveUp) bumpTrust("treat", "Good. That builds the bond.");
+            if (!giveUp) bumpTrust("treat", window.t("sc.d.bond", "Good. That builds the bond."));
           } else {
             // Ball stays; user can throw again
-            if (!giveUp) bumpTrust("fetch", "Good fetch.");
+            if (!giveUp) bumpTrust("fetch", window.t("sc.d.goodFetch", "Good fetch."));
             dogTimers.push(setTimeout(() => {
               if (item && item === droppedItem && fetchPhase === "dropped") {
                 scene.remove(item.mesh);
@@ -39207,7 +39270,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
             esc.settled = true;
             dogCtrl.aggression = 0.15;
             dogCtrl.tailWag += 3;
-            if (window.PhobiaFX?.contextPrompt) window.PhobiaFX.contextPrompt(`${dogName} is easing off. You stayed — it settled.`, 4000);
+            if (window.PhobiaFX?.contextPrompt) window.PhobiaFX.contextPrompt(window.tf("sc.d.easing", "{dog} is easing off. You stayed — it settled.", { dog: dogName }), 4000);
           }
         }
         // Spontaneous barks: gated on the arc, parameterized per rung. The
@@ -39243,7 +39306,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
             if (barkDistSnap < zoneM + 0.5) coach.goalDone("barkHeld");
             try { window.PhobiaExperiments && window.PhobiaExperiments.signal("dog.barkEndured"); } catch {}
             if (window.PhobiaFX?.achievement) {
-              window.PhobiaFX.achievement("dogs.barkHeld", "🐕", "Bark weathered", "It barked. You stayed.");
+              window.PhobiaFX.achievement("dogs.barkHeld", "🐕", window.t("ach.barkHeld", "Bark weathered"), window.t("ach.barkHeldP", "It barked. You stayed."));
             }
           }
           barkAt = 0;
@@ -40115,7 +40178,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       const tx = hitSpider ? spider.position.x : hit.point.x;
       const tz = hitSpider ? spider.position.z : hit.point.z;
       dropJarAt(tx, tz);
-      if (window.PhobiaVoice) window.PhobiaVoice.speak("Jar down. It's contained. Slow breath.");
+      if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.jarDown", "Jar down. It's contained. Slow breath."));
       jarMode = false;
     }
   }
@@ -40147,11 +40210,11 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         switch (btn.dataset.cmd) {
           case "closer":
             c.position.z = Math.max(c.opts.bounds.minZ + 0.2, c.position.z - 1.0);
-            if (window.PhobiaVoice) window.PhobiaVoice.speak("Closer. It is still. You are still.");
+            if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.closer", "Closer. It is still. You are still."));
             break;
           case "back":
             c.position.z = Math.min(c.opts.bounds.maxZ - 0.2, c.position.z + 1.0);
-            if (window.PhobiaVoice) window.PhobiaVoice.speak("Stepped back. Notice the relief. Then notice it pass.");
+            if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.back", "Stepped back. Notice the relief. Then notice it pass."));
             break;
           case "focus": {
             spZoomHeld = false;
@@ -40177,7 +40240,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               look(fromY + (targetYaw - fromY) * e2, fromP + (targetPitch - fromP) * e2);
             }, 16);
             sceneTimers.push(id);
-            if (window.PhobiaVoice) window.PhobiaVoice.speak("Look at it. Really look. The fear will rise. Then settle.");
+            if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.look", "Look at it. Really look. The fear will rise. Then settle."));
             break;
           }
           case "jar":
@@ -40191,9 +40254,9 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               if (Math.hypot(dx, dz) < 4) {
                 dropJarAt(spider.position.x, spider.position.z);
                 jarMode = false;
-                if (window.PhobiaVoice) window.PhobiaVoice.speak("Jar down. It's contained. Slow breath.");
+                if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.jarDown", "Jar down. It's contained. Slow breath."));
               } else if (window.PhobiaVoice) {
-                window.PhobiaVoice.speak("Click the spider to lower the jar.");
+                window.PhobiaVoice.speak(window.t("sc.s.clickJar", "Click the spider to lower the jar."));
               }
             }
             break;
@@ -40323,7 +40386,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         return { gesture: scriptedGesture, hint: "" };
       }
       if (jarPhase !== "idle") {
-        return { gesture: "rest", hint: "contained — slow breath, it releases in a moment" };
+        return { gesture: "rest", hint: window.t("sc.s.hintContained", "contained — slow breath, it releases in a moment") };
       }
       if (spiderReleased) return { gesture: "rest", hint: "" };
       if (controls) {
@@ -40334,11 +40397,11 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         // During a dart / close pass, prefer a calming ground-oriented hint
         // over a raw tooltip so the UX doesn't read as a game prompt mid-spike.
         if (pounceState !== "idle" || (skitterState === "skittering" && dist < 1.6)) {
-          return { gesture: "rest", hint: "it's fast — you can step back, or jar it" };
+          return { gesture: "rest", hint: window.t("sc.s.hintFast", "it's fast — you can step back, or jar it") };
         }
         return {
           gesture: "rest",
-          hint: jarMode ? "click the spider to lower the jar" : "click the spider to catch it under a jar",
+          hint: jarMode ? window.t("sc.s.hintJar", "click the spider to lower the jar") : window.t("sc.s.hintCatch", "click the spider to catch it under a jar"),
         };
       }
       return { gesture: "rest" };
@@ -40457,7 +40520,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           if (jar.userData.staleMiss || off > 0.6 * jarScale) {
             jar.userData.staleMiss = true;
             jarPhase = "lifting"; jarLifeT = 0;
-            if (window.PhobiaVoice) window.PhobiaVoice.speak("It moved — try again when it settles.");
+            if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.moved", "It moved — try again when it settles."));
           } else {
             if (!onWall) { spider.position.x = rest.x; spider.position.z = rest.z; }
             pounceState = "idle";
@@ -40470,7 +40533,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         jarLifeT += d;
         if (jarLifeT > 2.0) {
           jarPhase = "lifting"; jarLifeT = 0;
-          if (window.PhobiaVoice) window.PhobiaVoice.speak("Released outside. You did that calmly.");
+          if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.released", "Released outside. You did that calmly."));
           // A settled catch is a legitimate completion route — route it through
           // the same honest hold path (the fanfare still waits for the gate).
           window.__rungHoldComplete = true;
@@ -40698,7 +40761,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             if (distP > coilStartDist + 0.5 || distP > (B.inZoneDist ?? 3.4) + 0.6) {
               pounceState = "recoiling"; pounceT = 0; spiderCtrl.setCoil(0);
               if (!completionBeatDone) nextPounceAt = elapsed + 4 + Math.random() * 3;
-              if (!retreatPraised && window.PhobiaVoice) { retreatPraised = true; window.PhobiaVoice.speak("It backed down when you did. You control this distance."); }
+              if (!retreatPraised && window.PhobiaVoice) { retreatPraised = true; window.PhobiaVoice.speak(window.t("sc.s.backedDown", "It backed down when you did. You control this distance.")); }
             } else if (pounceT > thisCoil) {
               pounceState = "pouncing"; pounceT = 0; spiderCtrl.setCoil(0);
               if (p.play) p.play("Jump", 0.05, { once: true, timeScale: 1.4 });
@@ -40742,7 +40805,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               if (controls.snapLookAt) controls.snapLookAt(spider.position.x, spider.position.y + 0.05, spider.position.z, 0.6);
               if (A && A.chitinTik) try { A.chitinTik({ x: spider.position.x, y: spider.position.y, z: spider.position.z }, { intensity: 0.9 }); } catch {}
               arousalFloor = 1.0;
-              if (!holdPraised && window.PhobiaVoice) { holdPraised = true; window.PhobiaVoice.speak("It rushed you, and you stayed. Nothing happened. That is the fear letting go."); }
+              if (!holdPraised && window.PhobiaVoice) { holdPraised = true; window.PhobiaVoice.speak(window.t("sc.s.rushed", "It rushed you, and you stayed. Nothing happened. That is the fear letting go.")); }
             }
             if (pounceT > 0.35 || distP <= aim + 0.2) { pounceState = "recoiling"; pounceT = 0; }
           } else if (pounceState === "recoiling") {
@@ -40887,7 +40950,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           else if (pounceState === "idle" || pounceState === "recoiling") {
             completionBeatDone = true;
             nextPounceAt = Infinity;
-            if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt("It settled. You outlasted it.", 4500);
+            if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt(window.t("sc.s.settled", "It settled. You outlasted it."), 4500);
           }
         }
 
@@ -44563,7 +44626,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       snSignal("sCoil");
       if (!snakeCtl.defensiveSpoken && window.PhobiaVoice) {
         snakeCtl.defensiveSpoken = true;
-        window.PhobiaVoice.speak("It's warning you. Ease back, slow down — slow movement reads as safety.");
+        window.PhobiaVoice.speak(window.t("sc.n.warning", "It's warning you. Ease back, slow down — slow movement reads as safety."));
       }
       snakeCtl.defenseCooldown = B.strikeCooldown ?? 14;
     }
@@ -44671,7 +44734,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
         if (playerDist > 1.9 || approachSpeed < -0.2) {
           snakeCtl.strikePhase = "recoil"; snakeCtl.strikeT = 0; snakeCtl.jawTarget = 0;
           snakeCtl._lungeFrom = null;   // no lunge happened — nothing to snap back from
-          if (!retreatPraised && window.PhobiaVoice) { retreatPraised = true; window.PhobiaVoice.speak("You backed off, and it stood down. Slow reads as safe."); }
+          if (!retreatPraised && window.PhobiaVoice) { retreatPraised = true; window.PhobiaVoice.speak(window.t("sc.n.backedOff", "You backed off, and it stood down. Slow reads as safe.")); }
         } else if (snakeCtl.strikeT > TELE_DUR) {
           snakeCtl.strikePhase = "lunge"; snakeCtl.strikeT = 0; snakeCtl.jawTarget = 1.0; snakeCtl.strikeFired = false;
           snakeCtl._lungeFrom = { x: snake.position.x, z: snake.position.z };
@@ -44715,7 +44778,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           }
         }
         if (snakeCtl.strikeT > LUNGE_DUR) { snakeCtl.strikePhase = "recoil"; snakeCtl.strikeT = 0; snakeCtl.jawTarget = 0; snakeCtl.strikeFired = false;
-          if (!holdPraised && window.PhobiaVoice) { holdPraised = true; window.PhobiaVoice.speak("It struck, and stopped. Nothing reached you. That is the fear, not the danger.", { audible: true, praise: true }); }
+          if (!holdPraised && window.PhobiaVoice) { holdPraised = true; window.PhobiaVoice.speak(window.t("sc.n.struck", "It struck, and stopped. Nothing reached you. That is the fear, not the danger."), { audible: true, praise: true }); }
         }
       } else { // recoil
         snakeCtl.striking = false; snakeCtl.jawTarget = 0;
@@ -44996,13 +45059,13 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       c.position.x = Math.max((b.minX ?? -Infinity) + 0.2, Math.min((b.maxX ?? Infinity) - 0.2, c.position.x + ax / al));
       c.position.z = Math.max((b.minZ ?? -Infinity) + 0.2, Math.min((b.maxZ ?? Infinity) - 0.2, c.position.z + az / al));
       prevPlayerPos = null; approachSpeed = 0;
-      if (window.PhobiaVoice) window.PhobiaVoice.speak("Stepped back. Notice your feet again.");
+      if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.n.back", "Stepped back. Notice your feet again."));
     };
     const leafBtn = bar.querySelector('[data-cmd="leaf"]');
     if (leafBtn) leafBtn.onclick = (e) => {
       e.stopPropagation();
       dropLeaf();
-      if (window.PhobiaVoice) window.PhobiaVoice.speak("A leaf. The snake watches. Movement, not threat.");
+      if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.n.leaf", "A leaf. The snake watches. Movement, not threat."));
     };
   }
   // Falling leaf — when one lands the snake briefly turns to track it
@@ -45161,7 +45224,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           // snake settles with its mouth locked open / striking flag stuck true.
           snakeCtl.strikePhase = "none"; snakeCtl.striking = false; snakeCtl.jawTarget = 0;
           if (snakeCtl.state !== "retreat") snakeEnter(intensity === "apex" && distS < 3 ? "retreat" : "bask", controls);
-          if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt("It settled. You held your ground and it stood down.", 4500);
+          if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt(window.t("sc.n.settled", "It settled. You held your ground and it stood down."), 4500);
         }
       }
       // ---- Fear grade the daylight (subtle — it stays a sunny clearing) ----
@@ -45247,7 +45310,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
         if (sniffT >= 0.999 && !sniffMet) {
           sniffMet = true;
           if (window.PhobiaVoice) {
-            window.PhobiaVoice.speak("It met your hand. You stayed still. The fear is teachable.");
+            window.PhobiaVoice.speak(window.t("sc.n.hand", "It met your hand. You stayed still. The fear is teachable."));
           }
         }
       } else {
