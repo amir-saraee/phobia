@@ -4,7 +4,8 @@
 //
 // It serves the repo itself on a free port (no dev server needed), then:
 //   1. first run: consent → Step inside → creator → straight to trial 1's gate
-//   2. trial 1: walk to the dog, stay until the alarm settles, rate, complete
+//   2. trial 1: walk to the dog, stay until the alarm settles, rate (tap the
+//      two readings), complete — with its trial stars logged and shown
 //   3. the hardest dog trial mounts and runs; a spider and a snake trial run
 //      the same coach and complete; so do a heights, a dark and a tight-space
 //      trial (walk in — and close the door behind you)
@@ -154,9 +155,12 @@ async function firstRunAndTrial(browser, base) {
   await shot(page, "03-trial-met");
   await click(page, "#continueBtn");
   check("rate page renders", await waitFor(page, () => /#\/dogs\/rate\/0/.test(location.hash) && !!document.getElementById("sudsPeak"), 6000), await hash(page));
-  await page.evaluate(() => {
-    document.querySelectorAll('input[type="range"]').forEach((r) => { r.value = "3"; r.dispatchEvent(new Event("input", { bubbles: true })); r.dispatchEvent(new Event("change", { bubbles: true })); });
-  });
+  // The two readings are tap-a-number chips; Save waits for both.
+  await click(page, '.suds-chips[data-for="sudsPeak"] .sc[data-v="4"]');
+  const saveAfterOne = await page.evaluate(() => document.getElementById("rateSubmit").disabled);
+  await click(page, '.suds-chips[data-for="suds"] .sc[data-v="3"]');
+  const rated = await page.evaluate(() => ({ disabled: document.getElementById("rateSubmit").disabled, peak: document.getElementById("sudsPeak").value, now: document.getElementById("suds").value }));
+  check("rate: tapping both readings enables Save", saveAfterOne && !rated.disabled && rated.peak === "4" && rated.now === "3", JSON.stringify(rated));
   await click(page, "#rateSubmit");
   await sleep(1500);
   // A reality check may sit between rate and complete; step through it.
@@ -166,6 +170,11 @@ async function firstRunAndTrial(browser, base) {
   }
   check("complete page renders", /#\/dogs\/done\/0/.test(await hash(page)), await hash(page));
   check("complete: primer + Mirror offered after trial 1", await page.evaluate(() => !!document.querySelector(".first-next [data-action='open-primer']")));
+  const starInfo = await page.evaluate(() => {
+    const l = state.log[state.log.length - 1];
+    return { logged: l && l.stars, goals: l && Array.isArray(l.goals) ? l.goals.length : 0, lit: document.querySelectorAll(".vc-stars i.on").length, cta: !!document.querySelector(".vc-cta [data-action='next-level']") };
+  });
+  check("complete: trial stars logged and shown", typeof starInfo.logged === "number" && starInfo.logged >= 1 && starInfo.goals === 3 && starInfo.lit === starInfo.logged && starInfo.cta, JSON.stringify(starInfo));
   check("complete: feedback link present", await page.evaluate(() => !!document.querySelector(".fb-after [data-action='open-feedback']")));
   await shot(page, "04-complete");
   await page.evaluate(() => document.querySelector(".fb-after [data-action='open-feedback']").click());

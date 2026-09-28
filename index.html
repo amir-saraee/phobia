@@ -76,6 +76,8 @@ if ("serviceWorker" in navigator) {
     --warn: #f59e0b;
     --danger: #ef4444;
     --ok: #34d399;
+    --star: #fcd34d;
+    --star-dim: rgba(252, 211, 77, .22);
     /* ---- Standardized spacing scale (8px base) ---- */
     --space-1: 4px;
     --space-2: 8px;
@@ -128,6 +130,9 @@ if ("serviceWorker" in navigator) {
     --shadow-lg: 0 18px 50px rgba(120, 130, 160, .22);
   }
   body.light-mode { background: radial-gradient(1200px 800px at 70% -10%, #fafdff 0%, var(--bg) 60%); }
+  body.light-mode { --star: #d97706; --star-dim: rgba(217, 119, 6, .2); }
+  /* The 3D stage is always a dark room, whatever the page theme. */
+  .stage { --star: #fcd34d; --star-dim: rgba(252, 211, 77, .22); }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body {
@@ -519,6 +524,31 @@ if ("serviceWorker" in navigator) {
     font-size: 28px; font-weight: 700; min-width: 56px; text-align: center;
   }
   .suds .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .suds .suds-range { display: none; }
+  .suds-chips { display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 6px; }
+  .suds-chips .sc {
+    position: relative; min-height: 46px; padding: 0; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    font: inherit; font-weight: 800; font-size: 16px;
+    transition: transform .12s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
+  }
+  .suds-chips .sc::after {
+    content: ""; position: absolute; left: 22%; right: 22%; bottom: 6px; height: 3px; border-radius: 2px;
+    background: var(--c); opacity: .8;
+  }
+  .suds-chips .sc:hover, .suds-chips .sc:focus-visible { border-color: var(--c); transform: translateY(-1px); outline: none; }
+  .suds-chips .sc.on {
+    background: var(--c); border-color: var(--c); color: #0b1020;
+    transform: scale(1.1); box-shadow: 0 6px 16px rgba(0,0,0,.28); z-index: 1;
+  }
+  .suds-chips .sc.on::after { display: none; }
+  .suds-ends { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 7px; }
+  @media (max-width: 600px) {
+    .suds { padding: 14px 12px; }
+    .suds-chips { gap: 3px; }
+    .suds-chips .sc { min-height: 42px; font-size: 14px; border-radius: 8px; }
+    .suds-chips .sc::after { bottom: 5px; }
+  }
 
   /* Breathing screen */
   .breath-wrap {
@@ -965,6 +995,57 @@ if ("serviceWorker" in navigator) {
   .dog-coach .dc-goal.done span { text-decoration: line-through; text-decoration-color: rgba(169,232,210,.45); }
   .dog-coach .dc-goal.done i { color: var(--ok); opacity: 1; }
   .dog-coach .dc-n { color: #9faae7; font-weight: 700; margin-left: 3px; }
+  /* Trial stars: a row atop the goals, and a star at the end of each goal. */
+  .dog-coach .dc-stars-row {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 10px; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; color: var(--muted);
+  }
+  .dog-coach .dc-stars { letter-spacing: 1px; font-size: 14px; }
+  .dog-coach .dc-stars i, .dog-coach .dc-gs { font-style: normal; color: var(--star-dim); transition: color .4s ease, text-shadow .4s ease; }
+  .dog-coach .dc-stars i.on { color: var(--star); text-shadow: 0 0 8px rgba(252,211,77,.55); }
+  .dog-coach .dc-goal span { flex: 1 1 auto; }
+  .dog-coach .dc-gs { flex: 0 0 auto; font-weight: 400; font-size: 12px; margin-inline-start: 4px; }
+  .dog-coach .dc-goal.done .dc-gs { color: var(--star); text-shadow: 0 0 6px rgba(252,211,77,.5); }
+  /* The star landing — top-centre of the view, one at a time. */
+  .stage .star-pop {
+    position: absolute; top: 16px; left: 50%; z-index: 12;
+    display: flex; align-items: center; gap: 12px;
+    max-width: min(440px, calc(100% - 24px)); box-sizing: border-box;
+    padding: 10px 16px 10px 12px; border-radius: 16px;
+    background: linear-gradient(135deg, rgba(38, 32, 12, .92), rgba(20, 22, 40, .92));
+    border: 1px solid rgba(252,211,77,.6);
+    box-shadow: 0 10px 34px rgba(0,0,0,.35), 0 0 24px rgba(252,211,77,.18);
+    color: var(--text); pointer-events: none;
+    transform: translateX(-50%);
+    animation: starPopIn 2.9s cubic-bezier(.2,.9,.25,1) forwards;
+  }
+  .stage .star-pop .sp-row { font-size: 24px; letter-spacing: 2px; white-space: nowrap; line-height: 1; }
+  .stage .star-pop .sp-row i { font-style: normal; color: rgba(252,211,77,.2); display: inline-block; }
+  .stage .star-pop .sp-row i.on { color: var(--star); text-shadow: 0 0 12px rgba(252,211,77,.7); }
+  .stage .star-pop .sp-row i.new { animation: starSpin .8s .15s cubic-bezier(.3,1.6,.5,1) both; }
+  .stage .star-pop .sp-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 12.5px; line-height: 1.3; color: #dbe3f0; }
+  .stage .star-pop .sp-txt b { color: var(--star); font-size: 13.5px; letter-spacing: .02em; }
+  .stage .star-pop.all { border-color: rgba(252,211,77,.9); box-shadow: 0 10px 34px rgba(0,0,0,.35), 0 0 40px rgba(252,211,77,.35); }
+  @keyframes starPopIn {
+    0% { opacity: 0; transform: translate(-50%, -14px) scale(.9); }
+    9% { opacity: 1; transform: translate(-50%, 0) scale(1.03); }
+    14% { transform: translate(-50%, 0) scale(1); }
+    82% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -10px) scale(.96); }
+  }
+  @keyframes starSpin {
+    0% { transform: scale(0) rotate(-120deg); }
+    100% { transform: scale(1) rotate(0); }
+  }
+  @media (max-width: 600px) {
+    .stage .star-pop { top: auto; bottom: 46%; padding: 8px 12px 8px 10px; gap: 9px; }
+    .stage .star-pop .sp-row { font-size: 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .stage .star-pop { animation: starPopFade 2.9s linear forwards; }
+    .stage .star-pop .sp-row i.new { animation: none; }
+    @keyframes starPopFade { 0%, 100% { opacity: 0; } 8%, 85% { opacity: 1; } }
+  }
   .dog-coach .dc-foot { display: flex; justify-content: space-between; align-items: baseline; margin-top: 7px; font-size: 11px; color: var(--muted); }
   .dog-coach .dc-dog { font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
   .dog-coach .dc-trust { color: #f4a3b4; letter-spacing: 1px; }
@@ -4069,6 +4150,16 @@ if ("serviceWorker" in navigator) {
   body.light-mode .tf { background: #cbd3e0; }
   .tf.on { background: linear-gradient(180deg, #ffd86b, #ff7a3d); }
   .trial-desc { margin: 3px 0 4px; font-size: 13.5px; }
+  /* Stars: best attempt per trial, per realm, across the valley. */
+  .stars { display: inline-flex; gap: 1px; white-space: nowrap; letter-spacing: 0; }
+  .stars i { font-style: normal; color: var(--star-dim); }
+  .stars i.on { color: var(--star); text-shadow: 0 0 6px rgba(252,211,77,.35); }
+  .trial-stars { font-size: 16px; flex: 0 0 auto; }
+  .trial-open { margin: 0 0 4px; font-size: 12.5px; color: var(--star); opacity: .9; }
+  .gs-star { color: var(--star); margin-inline-end: 2px; font-size: 14px; }
+  .realm-stars { margin-inline-start: 8px; font-size: 12px; font-weight: 700; color: var(--star); align-self: center; white-space: nowrap; }
+  .realm-stars i { font-style: normal; color: var(--muted); font-weight: 600; }
+  .camp-stat.stars-stat { color: var(--star); }
   .trial-whisper { margin: 0 0 6px; font-size: 12.8px; color: var(--accent); font-style: italic; }
   .trial-whisper.misty { color: var(--muted); opacity: .75; }
   .trial-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
@@ -4202,6 +4293,93 @@ if ("serviceWorker" in navigator) {
   .quest-body p { margin: 0 0 10px; font-size: 12.5px; color: #b9a98a; }
   .quest-card.done .quest-body p { color: #9dbfb4; }
 
+  /* ---- Level-complete hero: stars, numbers, rewards, next step ---- */
+  .vc-hero { position: relative; text-align: center; padding-bottom: 6px; }
+  .vc-hero .badge { display: inline-block; }
+  .vc-stars-wrap { margin: 6px 0 4px; }
+  .vc-stars { display: flex; justify-content: center; align-items: flex-end; gap: 10px; font-size: 54px; line-height: 1; margin: 8px 0 6px; }
+  .vc-stars i { font-style: normal; color: var(--star-dim); display: inline-block; text-shadow: none; }
+  .vc-stars i:nth-child(2) { font-size: 66px; transform: translateY(-6px); }
+  .vc-stars i.on {
+    color: var(--star); text-shadow: 0 0 22px rgba(252,211,77,.55), 0 2px 0 #b8860b;
+    animation: vcStarIn .7s cubic-bezier(.3,1.7,.5,1) both; animation-delay: calc(.35s + var(--i) * .38s);
+  }
+  .vc-stars i:nth-child(2).on { animation-name: vcStarInMid; }
+  @keyframes vcStarIn { 0% { transform: scale(0) rotate(-140deg); opacity: 0; } 100% { transform: scale(1) rotate(0); opacity: 1; } }
+  @keyframes vcStarInMid { 0% { transform: translateY(-6px) scale(0) rotate(-140deg); opacity: 0; } 100% { transform: translateY(-6px) scale(1) rotate(0); opacity: 1; } }
+  .vc-stars-wrap.all .vc-stars { filter: drop-shadow(0 0 18px rgba(252,211,77,.35)); }
+  .vc-stars-head { font-weight: 800; font-size: 17px; color: var(--text); margin-bottom: 8px; }
+  .vc-best {
+    display: inline-block; vertical-align: middle; margin-inline-start: 6px; padding: 2px 9px; border-radius: 999px;
+    background: var(--star); color: #1c1603; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+    animation: vcBest 1.6s ease 1.6s both;
+  }
+  @keyframes vcBest { 0% { transform: scale(.6); opacity: 0; } 40% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+  .vc-goals { list-style: none; margin: 0 auto 4px; padding: 0; display: inline-flex; flex-direction: column; gap: 5px; text-align: start; max-width: 520px; }
+  .vc-goals li { display: flex; gap: 8px; align-items: baseline; font-size: 13.5px; color: var(--muted); line-height: 1.35; }
+  .vc-goals li b { color: var(--star-dim); font-weight: 400; flex: 0 0 auto; }
+  .vc-goals li.done { color: var(--text); }
+  .vc-goals li.done b { color: var(--star); }
+  .vc-statrow { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
+  .vc-stat {
+    display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 92px;
+    padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,.04); border: 1px solid var(--border-2);
+  }
+  .vc-sv { font-size: 17px; font-weight: 800; color: var(--text); white-space: nowrap; }
+  .vc-sv i { font-style: normal; color: var(--muted); font-weight: 600; margin: 0 2px; }
+  .vc-sl { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .vc-chips { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
+  .vc-chip {
+    padding: 5px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 700;
+    background: rgba(124,209,197,.12); border: 1px solid rgba(124,209,197,.35); color: var(--accent);
+    animation: vcChip .5s ease both; animation-delay: 1.5s;
+  }
+  .vc-chip:nth-child(2) { animation-delay: 1.65s; } .vc-chip:nth-child(3) { animation-delay: 1.8s; } .vc-chip:nth-child(4) { animation-delay: 1.95s; }
+  .vc-chip.gold { background: rgba(252,211,77,.12); border-color: rgba(252,211,77,.45); color: var(--star); }
+  .vc-chip.ember { background: rgba(251,146,60,.12); border-color: rgba(251,146,60,.4); color: #fdba74; }
+  body.light-mode .vc-chip.ember { color: #c2410c; }
+  body.light-mode .vc-stat { background: var(--panel-2); }
+  @keyframes vcChip { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .vc-ms { margin: 6px 0 0; font-size: 12.5px; font-weight: 600; color: var(--text); }
+  .vc-rank { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; max-width: 520px; margin: 12px auto 2px; font-size: 12.5px; }
+  .vc-rank-title { font-weight: 700; color: var(--text); white-space: nowrap; }
+  .vc-rank .rank-bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,.1); overflow: hidden; }
+  .vc-rank .rank-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--accent), var(--star)); transition: width 1.4s cubic-bezier(.3,.8,.3,1); }
+  .vc-rank-n { color: var(--muted); white-space: nowrap; }
+  .vc-rank-n b { color: var(--star); font-size: 14px; }
+  .vc-cta { justify-content: center; margin-top: 16px; }
+  .vc-more { margin: 14px 0 6px; border: 1px solid var(--border-2); border-radius: 12px; padding: 0 14px; background: rgba(255,255,255,.02); }
+  .vc-more > summary { cursor: pointer; padding: 12px 0; font-size: 13.5px; font-weight: 600; color: var(--muted); list-style: none; }
+  .vc-more > summary::-webkit-details-marker { display: none; }
+  .vc-more > summary::before { content: "▸"; display: inline-block; margin-inline-end: 8px; transition: transform .2s ease; }
+  [dir="rtl"] .vc-more > summary::before { transform: scaleX(-1); }
+  .vc-more[open] > summary::before { transform: rotate(90deg); }
+  .vc-more[open] { padding-bottom: 12px; }
+  @media (max-width: 600px) {
+    .vc-stars { font-size: 44px; gap: 8px; }
+    .vc-stars i:nth-child(2) { font-size: 54px; }
+    .vc-stat { min-width: 0; flex: 1 1 40%; }
+    .vc-rank { grid-template-columns: 1fr; gap: 6px; text-align: center; }
+    .vc-cta > * { flex: 1 1 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .vc-stars i.on, .vc-best, .vc-chip { animation: none; }
+    .vc-rank .rank-fill { transition: none; }
+  }
+
+  .companion-card {
+    display: flex; gap: 14px; align-items: flex-start; margin: 12px 0;
+    padding: 14px 16px; border-radius: 14px;
+    background: linear-gradient(135deg, rgba(251,146,60,.14), rgba(252,211,77,.06));
+    border: 1px solid rgba(251,146,60,.45);
+    animation: vcChip .6s ease 2.2s both;
+  }
+  .companion-card .cc-icon { font-size: 34px; line-height: 1; }
+  .companion-card .cc-body { display: flex; flex-direction: column; gap: 4px; }
+  .companion-card strong { font-size: 16px; }
+  .companion-card p { margin: 0 0 6px; font-size: 13.5px; color: var(--muted); }
+  .companion-card .btn-ghost { align-self: flex-start; }
+  @media (prefers-reduced-motion: reduce) { .companion-card { animation: none; } }
   /* ---- Victory celebration: a single calm ember rise ---- */
   .victory-panel { position: relative; overflow: hidden; }
   .ember-burst { position: absolute; inset: 0; pointer-events: none; overflow: hidden; border-radius: inherit; }
@@ -7847,6 +8025,12 @@ const PhobiaAudio = (() => {
       bell(523.25, now, 0.5, 0.04);
       bell(659.25, now + 0.12, 0.55, 0.04);
       bell(783.99, now + 0.24, 0.9, 0.05);
+    } else if (/^star[123]$/.test(kind)) {
+      // A trial star landing on the level card: one bright bell and its
+      // fifth, a step higher for each star.
+      const f = [659.25, 783.99, 987.77][+kind.slice(4) - 1];
+      bell(f, now, 0.45, 0.05);
+      bell(f * 1.5, now + 0.06, 0.7, 0.032);
     } else {
       // "whoosh" — a soft air swell for stepping into a realm / trial.
       const src = c.createBufferSource(); src.buffer = noiseBuffer(0.8);
@@ -10010,6 +10194,14 @@ function dogCompanions() {
     return Object.assign({}, c, { name, trust, seen, met, band: dogTrustBand(trust, met) });
   });
 }
+// Who waits at the campfire: a dog joins once you've faced all of its
+// trials — Buddy after trials 1–2, Koda after 3–5. The animal the realm was
+// afraid of, lying by your fire, is the reward that says what changed.
+const CAMP_COMPANION_AT = { shiba: 1, husky: 4 };
+function campCompanions() {
+  const hc = getProgress("dogs").highestCompleted ?? -1;
+  return dogCompanions().filter((c) => hc >= CAMP_COMPANION_AT[c.breed]);
+}
 function worldstepCount() {
   const cs = activeCharSlice();
   return Object.values(cs.worldsteps || {}).reduce((s, arr) => s + arr.length, 0);
@@ -10237,6 +10429,40 @@ function awardCourage(points, reason) {
 }
 function getCourage() { return activeCharSlice().courage || 0; }
 
+// ---------- Trial stars ----------
+// Three per trial (the coach's three goals). A trial's stars are its best
+// attempt; sessions from before stars existed count a finished hold as the
+// one star it would have been.
+function entryStars(l) {
+  if (typeof l.stars === "number") return l.stars;
+  return l.finished ? 1 : 0;
+}
+function bestStars(phobiaKey, levelIdx) {
+  let b = -1;   // -1: never played
+  for (const l of state.log) if (l.phobia === phobiaKey && l.level === levelIdx) b = Math.max(b, entryStars(l));
+  return b;
+}
+// The goals of the best attempt — so "replay for ★★★" can name what's left.
+function bestStarGoals(phobiaKey, levelIdx) {
+  let best = null, bs = -1;
+  for (const l of state.log) {
+    if (l.phobia !== phobiaKey || l.level !== levelIdx || !Array.isArray(l.goals)) continue;
+    const s = entryStars(l);
+    if (s >= bs) { bs = s; best = l.goals; }
+  }
+  return best;
+}
+function realmStars(phobiaKey) {
+  const n = (PHOBIAS[phobiaKey] && PHOBIAS[phobiaKey].levels.length) || 5;
+  let s = 0;
+  for (let i = 0; i < n; i++) s += Math.max(0, bestStars(phobiaKey, i));
+  return { stars: s, total: n * 3 };
+}
+function starsHTML(n, total = 3, cls = "") {
+  return `<span class="stars ${cls}" aria-label="${escapeHtml(tf("stars.aria", "{n} of {m} stars", { n: Math.max(0, n), m: total }))}">${
+    Array.from({ length: total }, (_, i) => `<i class="${i < n ? "on" : ""}">★</i>`).join("")}</span>`;
+}
+
 let lastAward = null;   // {points, streakAfter, milestones[], key, ts} — surfaced on the Complete screen
 function markCompleted(phobiaKey, levelIdx, suds, predicted, peak, outcome, extra) {
   const p = getProgress(phobiaKey);
@@ -10253,6 +10479,8 @@ function markCompleted(phobiaKey, levelIdx, suds, predicted, peak, outcome, extr
   // a daily-quest loop that rewards showing up, checked BEFORE this session
   // is pushed to the log.
   const firstToday = finished && !state.log.some(l => l.finished !== false && isSameLocalDay(l.ts));
+  // The trial's best stars BEFORE this attempt — new stars pay a bonus.
+  const prevBest = Math.max(0, bestStars(phobiaKey, levelIdx));
   if (finished) p.highestCompleted = Math.max(p.highestCompleted, levelIdx);
   state.progress[phobiaKey] = p;
   // The conditions this rung was practised in. Varied-context practice is what
@@ -10278,8 +10506,14 @@ function markCompleted(phobiaKey, levelIdx, suds, predicted, peak, outcome, extr
   const basePoints = 10 + 5 * levelIdx;
   const isFirstTime = wasNew;
   const points = Math.round((isFirstTime ? basePoints * 2 : basePoints) * (finished ? 1 : 0.5));
+  const courageBefore = getCourage();
   awardCourage(points, finished ? (isFirstTime ? t("courage.first", "first time") : t("courage.well", "well done")) : t("courage.showed", "you showed up"));
   if (firstToday) awardCourage(15, t("courage.ember", "daily ember"));
+  // Stars beyond this trial's old best: +5 each. A replay that earns the
+  // star you missed pays — coming back is the point.
+  const stars = entryStars(entry);
+  const newStars = Math.max(0, stars - prevBest);
+  if (newStars) awardCourage(5 * newStars, t("courage.stars", "new stars"));
   // Check for newly-unlocked milestones (after the log push so they see this entry)
   const newMilestones = checkMilestones() || [];
   // Stash the concrete reward so the Complete screen can surface it at the peak
@@ -10296,6 +10530,8 @@ function markCompleted(phobiaKey, levelIdx, suds, predicted, peak, outcome, extr
     spark: finished ? (awardSpark()?.id || null) : null,
     daily: firstToday,
     advanced: wasNew,
+    stars, prevBest, starBonus: 5 * newStars,
+    courageBefore, courageAfter: getCourage(),
   };
   // Award an achievement toast for first-time completions
   if (wasNew) {
@@ -11114,11 +11350,46 @@ function attachHandlers(view, params) {
     sparkCard.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); }
     });
-    setTimeout(() => { if (sparkCard.isConnected) flip(); }, 2200);
+    // It turns itself over once you can actually see it — it now sits under
+    // the level card, and flipping off-screen wasted the reveal.
+    try {
+      const io = new IntersectionObserver((ents) => {
+        if (ents.some((e) => e.isIntersecting)) { io.disconnect(); setTimeout(() => { if (sparkCard.isConnected) flip(); }, 1100); }
+      }, { threshold: 0.6 });
+      io.observe(sparkCard);
+    } catch { setTimeout(() => { if (sparkCard.isConnected) flip(); }, 2200); }
+  }
+  // Level card: courage counts up and the rank bar fills, after the stars land.
+  const vcRank = document.querySelector(".vc-rank");
+  if (vcRank) {
+    const fill = vcRank.querySelector(".rank-fill"), num = vcRank.querySelector(".vc-courage");
+    const c0 = +vcRank.dataset.c0 || 0, c1 = +vcRank.dataset.c1 || 0;
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const run = () => {
+      if (!vcRank.isConnected) return;
+      if (fill) fill.style.width = vcRank.dataset.to + "%";
+      if (!num || reduce || c1 <= c0) { if (num) num.textContent = c1; return; }
+      const t0 = performance.now(), dur = 1300;
+      const step = (now) => {
+        const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+        num.textContent = Math.round(c0 + (c1 - c0) * e);
+        if (k < 1 && num.isConnected) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    };
+    setTimeout(run, reduce ? 0 : 1700);
   }
   // Victory shimmer — once, only when this render carries the fresh celebration.
+  // With stars on the card, each one chimes as it lands and the shimmer
+  // follows the last.
   if (view === "complete" && document.querySelector(".ember-burst")) {
-    try { PhobiaAudio.ui("victory"); } catch {}
+    const lit = document.querySelectorAll(".vc-stars i.on").length;
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!lit || reduce) { try { PhobiaAudio.ui("victory"); } catch {} }
+    else {
+      for (let i = 0; i < lit; i++) setTimeout(() => { try { if (document.querySelector(".vc-stars")) PhobiaAudio.ui("star" + (i + 1)); } catch {} }, 600 + i * 380);
+      setTimeout(() => { try { if (document.querySelector(".vc-stars")) PhobiaAudio.ui("victory", 0.8); } catch {} }, 600 + lit * 380 + 250);
+    }
   }
   const howBtn = document.getElementById("howItWorksBtn");
   if (howBtn) howBtn.onclick = () => {
@@ -11851,6 +12122,7 @@ function handleAction(d, params) {
     }
     case "open-select":     go("select"); break;
     case "open-journal":    go("journal"); break;
+    case "go-camp":         go("select"); break;
     case "open-custom":     go("custom"); break;
     case "open-report":     go("report"); break;
     case "do-worldstep":    openWorldstepModal(d.phobia, parseInt(d.step, 10)); break;
@@ -12350,6 +12622,10 @@ function handleRateSubmit(d, params) {
       engagedSec: ev.engagedSec, dur: Math.round((ev.wave || []).length * 0.5),
       wave: downsampleWave(ev.wave, 60), marks: (ev.marks || []).filter((m) => m.kind !== "read").slice(-40),
     };
+    if (Array.isArray(ev.goals) && ev.goals.length) {
+      extra.stars = Math.max(0, Math.min(3, ev.stars | 0));
+      extra.goals = ev.goals.slice(0, 3).map((g) => ({ id: g.id, done: !!g.done, text: String(g.text || "").slice(0, 90) }));
+    }
   }
   window.__lastTrialEvidence = null;
   markCompleted(phobia, level, suds, predicted, peak, outcome, extra);
@@ -12731,7 +13007,7 @@ function viewSelect() {
           <span class="realm-kicker">${t("realmWord", "Realm")} ${ROMAN[i] || i + 1} · ${escapeHtml(phName(k))}</span>
           <h3 class="realm-name">${escapeHtml(realm.realmName)}</h3>
           <p class="realm-epithet">${escapeHtml(realm.epithet)}</p>
-          <div class="realm-pips">${pips}</div>
+          <div class="realm-pips">${pips}${(() => { const rsS = realmStars(k); return rsS.stars > 0 ? `<span class="realm-stars" title="${escapeHtml(tf("stars.aria", "{n} of {m} stars", { n: rsS.stars, m: rsS.total }))}">★ ${rsS.stars}<i>/${rsS.total}</i></span>` : ""; })()}</div>
           <p class="realm-state">${escapeHtml(stateLine)}</p>
           <span class="realm-cta">${done === 0 ? t("node.enter", "Enter the realm") : cleared ? t("node.again", "Walk it again") : t("node.continue", "Continue")} <span class="arr">→</span></span>
         </div>
@@ -12762,6 +13038,8 @@ function viewSelect() {
       <div class="camp-stats">
         <span class="camp-stat" title="${t("hud.courage", "Courage — earned every time you face a trial")}">${tf("camp.courage", "⚡ {n} courage", { n: courage })}</span>
         <span class="camp-stat" title="${t("camp.trialsTip", "Trials faced across the valley")}">${tf("camp.trials", "🛡 {a}/{b} trials", { a: facedTrials, b: totalTrials })}</span>
+        ${(() => { const st = keys.reduce((a, k) => { const r = realmStars(k); return { s: a.s + r.stars, m: a.m + r.total }; }, { s: 0, m: 0 });
+          return st.s > 0 ? `<span class="camp-stat stars-stat" title="${t("camp.starsTip", "Trial stars — three in every trial, for its skill, reading the moment, and staying")}">${tf("camp.stars", "★ {a}/{b} stars", { a: st.s, b: st.m })}</span>` : ""; })()}
         <button class="camp-stat as-btn" data-action="open-journal" title="${t("camp.sparksTip", "Book of Sparks — the wisdom you've collected")}">${tf("camp.sparks", "✦ {a}/{b} sparks", { a: sparks, b: INSIGHT_CARDS.length })}</button>
         ${streak >= 2 ? `<span class="camp-stat streak" title="${t("camp.streakTip", "Days in a row you've practiced")}">${tf("camp.streak", "🔥 {n}-day flame", { n: streak })}</span>` : ""}
         ${worldstepCount() > 0 ? `<span class="camp-stat worldsteps" title="${t("camp.realTip", "Real-world steps faced outside the game — the ones that count double")}">${tf("camp.realsteps", `🌍 {n} real step${worldstepCount() === 1 ? "" : "s"}`, { n: worldstepCount() })}</span>` : ""}
@@ -12888,6 +13166,10 @@ function mountJourney() {
     ];
     if (tamed > 0) pool.push(tf(tamed === 1 ? "camp.sayTamed1" : "camp.sayTamed", `“{n} shadow${tamed === 1 ? "" : "s"} tamed. The dawn is closer.”`, { n: tamed }));
     if (rank.idx > 0) pool.push(tf("camp.sayRank", "“They call me {rank} now.”", { rank: rank.title }));
+    const pals = campCompanions();
+    if (pals.length) pool.push(tf(pals.length > 1 ? "camp.sayPals" : "camp.sayPal", pals.length > 1
+      ? "“{a} and {b} by my fire. I used to cross the street.”"
+      : "“{a} dozes by my fire now. I used to cross the street.”", { a: pals[0].name, b: pals[1] ? pals[1].name : "" }));
     const lines = [...new Set(pool)];
     let li = 0;
     const iv = setInterval(() => {
@@ -13151,7 +13433,7 @@ function mountShell3D(view, params) {
       if (view === "select") {
         const el = document.getElementById("camp3d");
         const ch = window.Character && window.Character.loadCharacter();
-        if (el && window.ShellScenes && window.ShellScenes.mountCamp(el, charHexes(ch))) {
+        if (el && window.ShellScenes && window.ShellScenes.mountCamp(el, charHexes(ch), campCompanions().map((c) => c.breed))) {
           el.closest(".camp-scene")?.classList.add("has3d");
         }
       } else if (view === "ladder") {
@@ -13312,8 +13594,10 @@ function viewLadder(phobiaKey) {
   const rstat = realmStatus(phobiaKey);
   const groundStat = (label, value) =>
     `<div class="ground-stat"><span class="gs-v">${value}</span><span class="gs-l">${label}</span></div>`;
+  const rStars = realmStars(phobiaKey);
   const groundStats = [
     groundStat(t("ground.trials", "trials faced"), `${done}<i>/${total}</i>`),
+    groundStat(t("ground.stars", "stars"), `<span class="gs-star">★</span>${rStars.stars}<i>/${rStars.total}</i>`),
     longest != null ? groundStat(t("ground.longest", "longest stay"), `${Math.round(longest)}<i>s</i>`) : "",
     // Only worth showing once there are two readings to compare.
     (firstFear != null && lastFear != null && rated.length > 1)
@@ -13389,16 +13673,21 @@ function viewLadder(phobiaKey) {
       : `<p class="trial-whisper misty">${t("trial.misty", "🕯 The whisper for this trial is still in the mist…")}</p>`;
     const stats = [tf("trial.hold", "hold ~{n}s", { n: minHold })];
     if (lastSuds != null) stats.unshift(tf("trial.lastFear", "last fear {n}/10", { n: lastSuds }));
-    const btn = doneT ? t("trial.again", "Face it again") : current ? t("trial.face", "Face this trial") : t("trial.skip", "Skip ahead");
+    // Best stars so far; a played trial with a star still open says which.
+    const bs = bestStars(phobiaKey, i);
+    const openGoal = (bs >= 0 && bs < 3) ? (bestStarGoals(phobiaKey, i) || []).find((g) => !g.done) : null;
+    const btn = (doneT && bs >= 0 && bs < 3) ? t("trial.replayStars", "Replay for ★★★")
+      : doneT ? t("trial.again", "Face it again") : current ? t("trial.face", "Face this trial") : t("trial.skip", "Skip ahead");
     return `
       <li class="trial ${doneT ? "done" : ""} ${current ? "current" : ""} ${future ? "future" : ""}">
         <div class="trial-marker">${doneT ? "🔥" : `<span>${i + 1}</span>`}</div>
         <div class="trial-card">
           <div class="trial-head">
             <strong>${escapeHtml(lvTitle(phobiaKey, i))}</strong>
-            <span class="trial-flames" title="${tf("trial.intensity", "intensity {n} of 5", { n: i + 1 })}">${flames}</span>
+            ${bs >= 0 ? starsHTML(bs, 3, "trial-stars") : `<span class="trial-flames" title="${tf("trial.intensity", "intensity {n} of 5", { n: i + 1 })}">${flames}</span>`}
           </div>
           <p class="trial-desc">${escapeHtml(lvDesc(phobiaKey, i))}</p>
+          ${openGoal ? `<p class="trial-open">${tf("trial.openStar", "☆ Still open: {g}", { g: escapeHtml(openGoal.text) })}</p>` : ""}
           ${whisper}
           <div class="trial-foot">
             <span class="trial-stats">${stats.join(" · ")}</span>
@@ -14053,13 +14342,8 @@ ${hasCreatureKit(phobiaKey) ? `
       </div>` : ""}
 
       <div class="suds" style="margin-top:18px">
-        <label for="predictedSuds">${tf("predict.label", "How anxious do you expect to feel during {t}?", { t: `<strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>` })}</label>
-        <div class="scale-row">
-          <span class="small">${t("scale.calm", "0 calm")}</span>
-          <input type="range" id="predictedSuds" min="0" max="10" value="${suggested}"/>
-          <span class="small">${t("scale.panic", "10 panic")}</span>
-          <div class="value" id="predictedValue">${suggested}</div>
-        </div>
+        <label id="lbl-predictedSuds">${tf("predict.label", "How anxious do you expect to feel during {t}?", { t: `<strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>` })}</label>
+        ${sudsScale("predictedSuds", suggested, { picked: true, valueId: "predictedValue" })}
         <div class="hint">${t("predict.hint", "After the trial, you'll rate how it actually felt — and we'll compare. The gap is where the learning happens.")}</div>
       </div>
 
@@ -14244,6 +14528,50 @@ function viewExposure(phobiaKey, levelIdx) {
   `;
 }
 
+// A 0–10 reading as eleven tappable numbers — one tap, no dragging a thumb
+// to a spot. The range input stays (hidden) as the value's home, so every
+// reader of #suds / #sudsPeak / #predictedSuds and the document-level input
+// listener work unchanged; a chip just sets it and fires "input".
+function sudsColor(v) {
+  const a = Math.max(0, Math.min(1, v / 10));
+  const lerp = (x, y, k) => Math.round(x + (y - x) * k);
+  const [r, g, b] = a < 0.5
+    ? [lerp(124, 245, a / 0.5), lerp(209, 176, a / 0.5), lerp(197, 75, a / 0.5)]
+    : [lerp(245, 239, (a - 0.5) / 0.5), lerp(176, 107, (a - 0.5) / 0.5), lerp(75, 91, (a - 0.5) / 0.5)];
+  return `rgb(${r},${g},${b})`;
+}
+function sudsScale(id, value, { picked = false, aria = "", valueId = "" } = {}) {
+  return `
+    <input type="range" id="${id}" class="suds-range" min="0" max="10" value="${value}" tabindex="-1" aria-hidden="true"/>
+    <div class="suds-chips" role="radiogroup" data-for="${id}" ${aria ? `aria-label="${escapeHtml(aria)}"` : `aria-labelledby="lbl-${id}"`}>
+      ${Array.from({ length: 11 }, (_, v) => {
+        const on = picked && v === +value;
+        return `<button type="button" class="sc${on ? " on" : ""}" role="radio" aria-checked="${on}" data-v="${v}" style="--c:${sudsColor(v)}">${v}</button>`;
+      }).join("")}
+    </div>
+    <div class="suds-ends"><span>${t("scale.calm", "0 calm")}</span><span>${t("scale.panic", "10 panic")}</span></div>
+    ${valueId ? `<span id="${valueId}" hidden>${picked ? value : "—"}</span>` : ""}`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target && e.target.closest && e.target.closest(".suds-chips .sc");
+  if (!b) return;
+  const inp = document.getElementById(b.parentElement.dataset.for);
+  if (!inp) return;
+  inp.value = b.dataset.v;
+  inp.dispatchEvent(new Event("input", { bubbles: true }));
+  inp.dispatchEvent(new Event("change", { bubbles: true }));
+  try { if (window.PhobiaFX && window.PhobiaFX.haptic) window.PhobiaFX.haptic(8); } catch {}
+});
+function syncSudsChips(inp) {
+  const row = inp && inp.id && document.querySelector(`.suds-chips[data-for="${inp.id}"]`);
+  if (!row) return;
+  row.querySelectorAll(".sc").forEach((x) => {
+    const on = x.dataset.v === String(inp.value);
+    x.classList.toggle("on", on);
+    x.setAttribute("aria-checked", on ? "true" : "false");
+  });
+}
+
 function viewRate(phobiaKey, levelIdx) {
   const earlyNote = (lastRungOutcome && lastRungOutcome.finished === false)
     ? `<p class="small" style="opacity:.75">${t("rate.early", "You stepped out before the hold finished — that is always allowed. Rate how it felt anyway.")}</p>`
@@ -14254,24 +14582,14 @@ function viewRate(phobiaKey, levelIdx) {
       ${earlyNote}
       <p>${t("rate.p", "Two readings on the <strong>SUDS</strong> scale — Subjective Units of Distress. Be honest; the journal is only for you.")}</p>
       <div class="suds">
-        <label for="sudsPeak">${t("rate.peakLabel", "At its worst, in there")}</label>
-        <div class="scale-row">
-          <span class="small">${t("scale.calm", "0 calm")}</span>
-          <input type="range" id="sudsPeak" min="0" max="10" value="5" aria-label="${t("rate.peakAria", "Anxiety level at its worst during the trial, 0 calm to 10 panic")}" />
-          <span class="small">${t("scale.panic", "10 panic")}</span>
-          <div class="value" id="sudsPeakValue">—</div>
-        </div>
+        <label id="lbl-sudsPeak">${t("rate.peakLabel", "At its worst, in there")}</label>
+        ${sudsScale("sudsPeak", 5, { aria: t("rate.peakAria", "Anxiety level at its worst during the trial, 0 calm to 10 panic"), valueId: "sudsPeakValue" })}
         <div class="hint" id="sudsPeakHint">${t("rate.peakHint", "The highest it got while you were in the scene — this is the number your prediction was about.")}</div>
       </div>
       <div class="suds">
-        <label for="suds">${t("rate.nowLabel", "Right now")}</label>
-        <div class="scale-row">
-          <span class="small">${t("scale.calm", "0 calm")}</span>
-          <input type="range" id="suds" min="0" max="10" value="5" aria-label="${t("rate.nowAria", "Anxiety level right now, 0 calm to 10 panic")}" />
-          <span class="small">${t("scale.panic", "10 panic")}</span>
-          <div class="value" id="sudsValue">—</div>
-        </div>
-        <div class="hint" id="sudsHint">${t("rate.hint", "Move the slider to record how it actually felt — there's no right answer.")}</div>
+        <label id="lbl-suds">${t("rate.nowLabel", "Right now")}</label>
+        ${sudsScale("suds", 5, { aria: t("rate.nowAria", "Anxiety level right now, 0 calm to 10 panic"), valueId: "sudsValue" })}
+        <div class="hint" id="sudsHint">${t("rate.hintTap", "Tap a number for how it actually felt — there's no right answer.")}</div>
         <div class="hint">${t("rate.bands", "Low (0–3): you're ready to climb. &nbsp; Mid (4–6): a breath break helps. &nbsp; High (7–10): stay here, breathe, repeat.")}</div>
       </div>
       <div class="actions">
@@ -14591,14 +14909,103 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     }
   }
 
+  // ---- The level-complete card ----
+  // What a game says at the end of a level, up top and above the fold: the
+  // stars, the few numbers that were yours, what it paid, and the next step.
+  // The long-form lessons stay — folded underneath, for whoever wants them.
+  const fresh = !!(lastAward && lastAward.key === `${phobiaKey}.${levelIdx}` && last && Math.abs((last.ts || 0) - lastAward.ts) < 5000);
+  const hasStars = !!(lastEntry && typeof lastEntry.stars === "number");
+  const nStars = hasStars ? lastEntry.stars : 0;
+  let starHero = "";
+  if (hasStars) {
+    const gl = Array.isArray(lastEntry.goals) ? lastEntry.goals : [];
+    const newBest = fresh && lastAward.prevBest > 0 && nStars > lastAward.prevBest;
+    const head = nStars >= 3 ? t("vc.s3", "All three stars")
+      : nStars === 2 ? t("vc.s2", "Two stars")
+      : nStars === 1 ? t("vc.s1", "One star")
+      : t("vc.s0", "No stars this time — showing up still counts");
+    starHero = `
+      <div class="vc-stars-wrap${nStars >= 3 ? " all" : ""}">
+        <div class="vc-stars" role="img" aria-label="${escapeHtml(tf("stars.aria", "{n} of {m} stars", { n: nStars, m: 3 }))}">
+          ${[0, 1, 2].map((i) => `<i class="${i < nStars ? "on" : ""}" style="--i:${i}">★</i>`).join("")}
+        </div>
+        <div class="vc-stars-head">${head}${newBest ? ` <span class="vc-best">${t("vc.newBest", "new best")}</span>` : ""}</div>
+        ${gl.length ? `<ul class="vc-goals">${gl.map((g) => `<li class="${g.done ? "done" : ""}"><b aria-hidden="true">${g.done ? "★" : "☆"}</b><span>${escapeHtml(g.text)}</span></li>`).join("")}</ul>` : ""}
+      </div>`;
+  }
+  const stat = (icon, v, l) => `<div class="vc-stat"><span class="vc-sv">${icon} ${v}</span><span class="vc-sl">${l}</span></div>`;
+  const statBits = [];
+  if (last && last.heldSec) statBits.push(stat("⏱", `${last.heldSec}s`, t("vc.stayed", "you stayed")));
+  if (ev && ev.settledAt != null) statBits.push(stat("〰", `${ev.settledAt}s`, t("vc.settled", "alarm settled by")));
+  else if (ev && ev.peak) statBits.push(stat("〰", `${ev.peak}`, t("vc.peak", "alarm peak")));
+  if (predicted != null && !Number.isNaN(+predicted)) statBits.push(stat("🔮", `${predicted}<i>→</i>${peakForPrediction}`, t("vc.guess", "guessed → felt")));
+  if (ev && ev.reads > 0) statBits.push(stat("👁", `${ev.readsRight}/${ev.reads}`, t("vc.reads", "read right")));
+  const statsRow = statBits.length ? `<div class="vc-statrow">${statBits.join("")}</div>` : "";
+  // Courage, counted up, and the rank bar filling toward the next title.
+  let rankRow = "";
+  if (fresh) {
+    const before = lastAward.courageBefore || 0, after = lastAward.courageAfter || getCourage();
+    const rA = courageRank(after), rB = courageRank(before);
+    const span = (r, c) => r.next ? Math.max(0, Math.min(100, ((c - RANKS[r.idx].min) / (r.next.min - RANKS[r.idx].min)) * 100)) : 100;
+    const from = rB.idx === rA.idx ? span(rA, before) : 0;
+    const chips = [`<span class="vc-chip">${tf("reward.courage", "+{n} courage", { n: lastAward.points })}</span>`];
+    if (lastAward.starBonus) chips.push(`<span class="vc-chip gold">${tf("vc.starBonus", "+{n} for new stars", { n: lastAward.starBonus })}</span>`);
+    if (lastAward.daily) chips.push(`<span class="vc-chip ember">${t("reward.ember", "🔥 daily ember +15")}</span>`);
+    if (lastAward.streakAfter >= 2) chips.push(`<span class="vc-chip">${tf("reward.day", "day {n} of practice", { n: lastAward.streakAfter })}</span>`);
+    rankRow = `
+      <div class="vc-chips">${chips.join("")}</div>
+      ${lastAward.milestones.length ? `<div class="reward-milestone vc-ms">${escapeHtml(tf("reward.milestone", "🏅 Milestone unlocked: {list}", { list: lastAward.milestones.join(t("list.sep", ", ")) }))}</div>` : ""}
+      <div class="vc-rank" data-to="${span(rA, after).toFixed(1)}" data-c0="${before}" data-c1="${after}">
+        <span class="vc-rank-title">${rA.icon} ${escapeHtml(rA.title)}${rA.idx > rB.idx ? ` <span class="vc-best">${t("vc.rankUp", "rank up!")}</span>` : ""}</span>
+        <div class="rank-bar"><div class="rank-fill" style="width:${from.toFixed(1)}%"></div></div>
+        <span class="vc-rank-n">⚡ <b class="vc-courage">${before}</b>${rA.next ? ` / ${rA.next.min} ${tf("vc.toRank", "to {title}", { title: escapeHtml(rA.next.title) })}` : ""}</span>
+      </div>`;
+  }
+  // The next step, where the thumb already is. A star still open makes a
+  // replay the obvious second button — coming back is how this works.
+  const replayBtn = `<button class="btn-ghost vc-replay" data-action="start-level" data-phobia="${phobiaKey}" data-level="${levelIdx}">${early
+    ? t("vc.tryAgain", "↻ Try it again")
+    : t("vc.replay", "↻ Replay for ★★★")}</button>`;
+  const nextBtn = !isLast
+    ? `<button class="btn-primary" data-action="next-level" data-phobia="${phobiaKey}" data-level="${next}">${tf("complete.next", "Next trial: {t}", { t: escapeHtml(lvTitle(phobiaKey, next)) })}</button>`
+    : `<button class="btn-primary" data-action="back-ladder" data-phobia="${phobiaKey}">${realmStatus(phobiaKey).tamed
+        ? t("complete.tamed", "🕊 The realm is behind you — see it")
+        : t("complete.walked", "🌍 The valley is walked — see the Real Path")}</button>`;
+  const heroCta = `<div class="actions vc-cta">${nextBtn}${(early || (hasStars && nStars < 3)) ? replayBtn : ""}</div>`;
+  // A dog joins the campfire the first time its last trial is faced.
+  let companionBlock = "";
+  if (fresh && !early && lastAward.advanced && phobiaKey === "dogs") {
+    const joined = dogCompanions().find((c) => CAMP_COMPANION_AT[c.breed] === levelIdx);
+    if (joined) {
+      const nm = escapeHtml(joined.name);
+      companionBlock = `
+        <div class="companion-card">
+          <span class="cc-icon" aria-hidden="true">🐕</span>
+          <div class="cc-body">
+            <span class="bridge-invite-kicker">${t("cc.kicker", "🔥 A new friend at camp")}</span>
+            <strong>${tf("cc.title", "{name} joined your campfire", { name: nm })}</strong>
+            <p>${tf("cc.p", "You walked up to {name} and stayed. From now on, {name} rests by your fire at camp.", { name: nm })}</p>
+            <button class="btn-ghost" data-action="go-camp">${t("cc.see", "See your camp")}</button>
+          </div>
+        </div>`;
+    }
+  }
+
   return `
     <div class="panel victory-panel">
-      <span class="badge">${early ? tf("complete.early", "Trial {n} · stepped back", { n: levelIdx + 1 }) : tf("complete.faced", "Trial {n} faced", { n: levelIdx + 1 })} · ${escapeHtml(realmOf(phobiaKey).realmName)}</span>
-      <h2 style="margin-top: 10px;">${early ? t("complete.h2early", "You stepped back — showing up still counts.") : t("complete.h2", "Trial faced. That's ground you hold now.")}</h2>
-      ${celebration}
-      ${rewardStrip}
+      <div class="vc-hero">
+        <span class="badge">${early ? tf("complete.early", "Trial {n} · stepped back", { n: levelIdx + 1 }) : tf("complete.faced", "Trial {n} faced", { n: levelIdx + 1 })} · ${escapeHtml(realmOf(phobiaKey).realmName)}</span>
+        <h2 style="margin-top: 10px;">${early ? t("complete.h2early", "You stepped back — showing up still counts.") : t("complete.h2", "Trial faced. That's ground you hold now.")}</h2>
+        ${celebration}
+        ${starHero}
+        ${statsRow}
+        ${rankRow || rewardStrip}
+        ${heroCta}
+      </div>
+      ${companionBlock}
       ${shadowStrip}
       ${realityBlock}
+      ${sparkBlock}
       ${waveBlock}
       ${(() => {
         // After the FIRST dog: the two things that used to stand in front of
@@ -14618,6 +15025,10 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
             </div>
           </div>`;
       })()}
+      ${bridgeInvite}
+      ${mirrorPrompt}
+      <details class="vc-more">
+        <summary>${t("vc.more", "More about this trial — what you felt, and a note to yourself")}</summary>
       ${(() => {
         // Experiments run this session — the prediction vs what happened, at
         // the moment the comparison lands hardest.
@@ -14634,9 +15045,6 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
               </div>`).join("")}
           </div>`;
       })()}
-      ${sparkBlock}
-      ${bridgeInvite}
-      ${mirrorPrompt}
       <p>${early
         ? tf("complete.stood", "You stood with {t} and rated your fear at {n}.", { t: `<strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>`, n: `<strong>${suds}/10</strong>` })
         : tf("complete.facedLine", "You faced {t} and rated your fear at {n}.", { t: `<strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>`, n: `<strong>${suds}/10</strong>` })}</p>
@@ -14653,6 +15061,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
         <button class="btn-ghost" id="saveJournal" style="font-size:12px; padding:6px 12px;">${t("journal.save", "Save note")}</button>
         <span class="small" id="journalSaved" style="opacity:0; transition:opacity .25s; color:var(--ok)">${t("journal.saved", "saved")}</span>
       </div>
+      </details>
 
       <div class="actions">
         ${!isLast
@@ -15706,7 +16115,14 @@ function mountExposure(phobiaKey, levelIdx) {
       if (pol && typeof pol.label === "function") {
         try { const L = pol.label(facingSec, minHold, polEngaged, polReady); if (L) { polLabel = L.label || null; polPill = L.pill || null; } } catch {}
       }
-      if (hpT) hpT.textContent = holdMet ? t("hold.pillDone", "held ✓ · continue →") : (polPill || `${facingSec}/${minHold}s`);
+      // Held: the pill becomes the exit, carrying the stars so far — a star
+      // that lands after the hold shows up here too.
+      let starTxt = "";
+      const SC = window.__coach;
+      if (holdMet && SC && SC.starsTotal) starTxt = "★".repeat(SC.stars) + "☆".repeat(Math.max(0, SC.starsTotal - SC.stars));
+      if (hpT) hpT.textContent = holdMet
+        ? (starTxt ? tf("hold.pillStars", "{s} · continue →", { s: starTxt }) : t("hold.pillDone", "held ✓ · continue →"))
+        : (polPill || `${facingSec}/${minHold}s`);
       holdPill.classList.toggle("in-zone", inZone);
       if (holdMet && !holdPill.classList.contains("complete")) {
         holdPill.classList.add("complete");
@@ -15970,6 +16386,7 @@ function startSceneAudio(phobiaKey, levelIdx) {
 // SUDS slider live update (also used on rate + predict views)
 document.addEventListener("input", (e) => {
   if (!e.target) return;
+  if (e.target.classList && e.target.classList.contains("suds-range")) syncSudsChips(e.target);
   if (e.target.id === "suds" || e.target.id === "sudsPeak") {
     // First move records the reading: reveal it, hide its hint. Save waits
     // for BOTH readings — the peak is what the prediction is scored against,
@@ -34651,25 +35068,57 @@ function makeCreatureCoach(opts) {
   // Tap the card header on phones to show/hide the goals — the wave stays.
   root.querySelector(".dc-head").addEventListener("click", () => root.classList.toggle("dc-open"));
 
-  // ---------------- goals ----------------
+  // ---------------- goals = the trial's stars ----------------
+  // Every trial asks three things — this rung's skill, reading the moment,
+  // staying until the alarm settles — and each one met is a star. Stars only
+  // ever reward approach and attention (never speed, never a low rating), and
+  // a trial with a star still open is a reason to come back: repetition is
+  // the part of exposure that does the work.
   const goals = (o.goals || []).map((g) => Object.assign({ n: 0, need: 1, done: false }, g));
+  const starsDone = () => goals.filter((g) => g.done).length;
+  const starRow = (n, fresh = -1) => goals.map((_, i) =>
+    `<i class="${i < n ? "on" : ""}${i === fresh ? " new" : ""}">★</i>`).join("");
   function renderGoals() {
     const next = goals.find((g) => !g.done);
-    goalsEl.innerHTML = goals.map((g) => {
+    const n = starsDone();
+    goalsEl.innerHTML = `<li class="dc-stars-row"><span>${t("dc.stars", "Trial stars")}</span><span class="dc-stars" aria-label="${esc(tf("dc.starsAria", "{n} of {m} stars", { n, m: goals.length }))}">${starRow(n)}</span></li>` + goals.map((g) => {
       const cnt = g.need > 1 ? ` <span class="dc-n">${Math.min(g.n, g.need)}/${g.need}</span>` : "";
-      return `<li class="dc-goal${g.done ? " done" : ""}${g.required ? " req" : ""}${g === next ? " next" : ""}"><i>${g.done ? "✓" : g.icon || "○"}</i><span>${esc(g.text)}${cnt}</span></li>`;
+      return `<li class="dc-goal${g.done ? " done" : ""}${g.required ? " req" : ""}${g === next ? " next" : ""}"><i>${g.done ? "✓" : g.icon || "○"}</i><span>${esc(g.text)}${cnt}</span><b class="dc-gs" aria-hidden="true">★</b></li>`;
     }).join("");
   }
   renderGoals();
+  // A star landing: a gold card drops in at the top of the view, one at a
+  // time (two goals can land in the same second), and the coach card glints.
+  let popFreeAt = 0;
+  function starPop(g) {
+    if (!stage) return;
+    const n = starsDone(), all = n === goals.length;
+    const html = `<span class="sp-row">${starRow(n, n - 1)}</span><span class="sp-txt"><b>${all ? t("dc.starAll", "All three stars!") : t("dc.starOne", "Star earned")}</b><span>${esc(g.text)}</span></span>`;
+    const now = performance.now();
+    const wait = Math.max(0, popFreeAt - now);
+    popFreeAt = now + wait + 1500;
+    setTimeout(() => {
+      if (!root.isConnected) return;
+      stage.querySelectorAll(".star-pop").forEach((e) => e.remove());
+      const el = document.createElement("div");
+      el.className = "star-pop" + (all ? " all" : "");
+      el.setAttribute("role", "status");
+      el.innerHTML = html;
+      stage.appendChild(el);
+      setTimeout(() => { try { el.remove(); } catch {} }, 2900);
+    }, wait);
+  }
   function goalDone(id) {
     const g = goals.find((x) => x.id === id);
     if (!g || g.done) return;
     g.n = g.need; g.done = true;
     renderGoals();
-    // No chime: exposure scenes carry world sound only. A tick in the palm
-    // and a glint on the card say it instead.
+    // No chime: exposure scenes carry world sound only. A tick in the palm,
+    // a glint on the card and the star itself say it instead.
     try { if (window.PhobiaFX && window.PhobiaFX.haptic) window.PhobiaFX.haptic(12); } catch {}
     root.classList.remove("dc-ping"); void root.offsetWidth; root.classList.add("dc-ping");
+    starPop(g);
+    if (id === "read") retire("starsLeft");
   }
   function goalCount(id, n) {
     const g = goals.find((x) => x.id === id);
@@ -34680,7 +35129,14 @@ function makeCreatureCoach(opts) {
 
   // ---------------- callouts (teaching moments, each once per trial) ----------------
   const said = new Set();
-  let calloutT = 0, calloutQueue = [];
+  let calloutT = 0, calloutQueue = [], calloutKey = null;
+  // A tip about a moment that has passed is worse than none: drop it from
+  // the queue, and cut it short if it's the one on screen.
+  function retire(key) {
+    said.add(key);
+    calloutQueue = calloutQueue.filter((c) => c.key !== key);
+    if (calloutKey === key && calloutT > 0.4) calloutT = 0.4;
+  }
   // `urgent` beats (you just escaped; it's falling; it settled) are about
   // THIS moment — they jump the queue and cut the current tip short rather
   // than landing fifteen seconds late behind it.
@@ -34712,6 +35168,7 @@ function makeCreatureCoach(opts) {
     if (!calloutQueue.length || readOpen || readResultT > 0) return;
     if (document.querySelector(".tour-overlay:not(.dismiss), .countdown")) return;
     const c = calloutQueue.shift();
+    calloutKey = c.key;
     callout.innerHTML = c.html;
     callout.classList.add("show");
     calloutT = c.ms / 1000;
@@ -34866,7 +35323,8 @@ function makeCreatureCoach(opts) {
   }
 
   // ---------------- settle / hold policy ----------------
-  let settledLatched = false, everSettled = false;
+  let settledLatched = false, everSettled = false, heldSeen = false;
+  let lastHoldSec = 0;       // the hold timer's own credited seconds (wall clock)
   function settleLine() { return Math.max(10, engagedPeak * 0.5); }
   function word(v) {
     return v < 15 ? t("dc.calm", "calm") : v < 35 ? t("dc.uneasy", "uneasy") : v < 55 ? t("dc.alarmed", "alarmed") : v < 75 ? t("dc.high", "high") : t("dc.peak", "peak");
@@ -34874,6 +35332,7 @@ function makeCreatureCoach(opts) {
   const holdPolicy = {
     engaged: () => engaged,
     ready: (sec, minHold) => {
+      lastHoldSec = sec;
       if (engagedPeak < 12) return true;           // nothing to settle
       if (sec >= minHold * 2.4) return true;       // never hostage to a stubborn wave
       return settledNow;
@@ -34960,6 +35419,25 @@ function makeCreatureCoach(opts) {
         { dog: nameH }), 8000, true);
     }
     if (settledLatched && cur > line + 12) { settledLatched = false; root.classList.remove("dc-settled"); }
+    // The hold can also finish on the long-stay fallback (a stubborn alarm).
+    // Staying that long is exactly the thing the star is for — so it lands,
+    // and the goal says honestly how it was earned.
+    if (window.__rungHoldComplete && !heldSeen) {
+      heldSeen = true;
+      const sg = goals.find((x) => x.id === "settle");
+      if (sg && !sg.done && !everSettled && engagedPeak >= 12 && lastHoldSec >= o.minHold * 2.4) {
+        sg.text = t("dc.gStayedLong", "Stayed the long way — a stubborn alarm today");
+        goalDone("settle");
+      }
+      // One star still open, and it's one the animal can still give: say so,
+      // once, and leave the choice with the player.
+      const open = goals.filter((x) => !x.done && x.id !== "settle");
+      if (!K.place && open.length === 1 && open[0].id === "read") {
+        teach("starsLeft", tf("dc.tStarsLeft",
+          "Trial held — continue whenever you like. <b>One star is still open:</b> {g}. Stay a little longer if you want all three.",
+          { g: esc(open[0].text) }), 8000);
+      }
+    }
 
     // Rise / fall teaching beats
     if (engaged && cur > 22) teach("rise", K.texts.rise ? K.texts.rise() : t("dc.tRise",
@@ -35109,6 +35587,8 @@ function makeCreatureCoach(opts) {
     delete out._running; delete out._close; delete out._runFrom; delete out._lastRunT; delete out._explicitRuns;
     out.minDist = isFinite(ev.minDist) ? +ev.minDist.toFixed(1) : null;
     out.stareSec = Math.round(ev.stareSec);
+    out.goals = goals.map((g) => ({ id: g.id, done: !!g.done, text: g.text }));
+    out.stars = starsDone();
     return out;
   }
   function dispose() {
@@ -35121,6 +35601,7 @@ function makeCreatureCoach(opts) {
     get engaged() { return engaged; }, get alarm() { return alarm; },
     get readOpen() { return !!readOpen; }, get settled() { return settledLatched; },
     get readId() { return readOpen ? readOpen.id : null; },
+    get stars() { return starsDone(); }, get starsTotal() { return goals.length; },
     // Did the alarm genuinely come down (or never rise far enough to need to)?
     get everSettled() { return everSettled || engagedPeak < 12; },
   };
@@ -36717,6 +37198,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   // this, if the user leaves the scene in the first 6 s the timer fires
   // against a disposed dogCtrl (silent error, but a real leak).
   const dogTimers = [];
+  let playInvited = false;
   if (intensity === "barking") {
     // Barking rung starts already "noticed" — the dog is facing you and
     // barking, so avoidance coaching and distance tips should fire.
@@ -39011,6 +39493,26 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           completionBeatDone = true; _completedCalm = true;
           kExcite = 0;
           if (barkState !== "settling") { barkState = "watching"; barkStateT = 0; }
+        }
+        // Play time. The hold is done and the dog has settled — the part
+        // most players never found (the ball and the treat live in a
+        // collapsed bar). Offered once, never required: playing with the dog
+        // you were afraid of is the natural next rep, and it builds the bond.
+        if (completionBeatDone && !playInvited) {
+          playInvited = true;
+          dogTimers.push(setTimeout(() => {
+            try {
+              coach.teach("play", IS_COARSE_POINTER
+                ? window.tf("dc.tPlayM", "<b>Want to play?</b> Tap ⚪ to toss {dog} the ball, or 🦴 for a treat — play builds your bond ♥. Continue whenever you like.", { dog: dogName })
+                : window.tf("dc.tPlay", "<b>Want to play?</b> Press <b>B</b> to toss {dog} the ball, or <b>T</b> for a treat — play builds your bond ♥. Continue whenever you like.", { dog: dogName }), 9000);
+              const bar = document.querySelector("#stage .scene-cmd-bar, .scene-cmd-bar");
+              const tg = document.querySelector(".cmd-toggle");
+              if (bar && bar.classList.contains("collapsed") && tg) tg.click();
+              // A still player has the chrome auto-hidden — bring it back so
+              // the ball and the treat are actually there to see.
+              window.dispatchEvent(new Event("pointermove"));
+            } catch {}
+          }, 3200));
         }
       }
 
@@ -48797,7 +49299,7 @@ const ShellScenes = (() => {
   }
 
   // ---- The camp: a real campsite — your 3D traveler by a living fire ----
-  function mountCamp(container, charHexes) {
+  function mountCamp(container, charHexes, companions = []) {
     const ctx = makeCtx(container, { fov: 30, fog: 0x0c1224, fogDensity: 0.04 });
     if (!ctx) return null;
     const { scene, camera } = ctx;
@@ -48876,6 +49378,33 @@ const ShellScenes = (() => {
         scene.add(figure);
       } catch { figure = null; }
     }
+    // Companions: the dogs you've befriended, resting by the fire. Head low
+    // and easy, now and then lifting to look about — never towards you fast.
+    const pals = [];
+    const PAL_SPOTS = {
+      shiba: { pos: [0.74, 0, 0.3], face: [-0.4, 1.6], size: 0.6 },
+      husky: { pos: [0.5, 0, -0.95], face: [-0.6, 2.2], size: 0.86 },
+    };
+    (companions || []).forEach((breed, i) => {
+      const spot = PAL_SPOTS[breed];
+      if (!spot || !DOG_MODELS[breed]) return;
+      try {
+        const dog = buildCreature(DOG_MODELS[breed], { targetSize: spot.size, axis: "max" });
+        dog.position.set(spot.pos[0], spot.pos[1], spot.pos[2]);
+        dog.rotation.y = Math.atan2(spot.face[0] - spot.pos[0], spot.face[1] - spot.pos[2]);
+        scene.add(dog);
+        const pal = { dog, next: 5 + i * 3.5 + Math.random() * 3, low: true };
+        dog.userData.onReady = () => {
+          try { applyVignetteCoat(dog, breed); } catch {}
+          dog.traverse((o) => { if (o.isMesh) { o.castShadow = true; } });
+          const parts = dog.userData.parts;
+          if (parts && parts.play) parts.play("Idle_2_HeadLow", 0.2);
+          if (parts && parts.mixer) parts.mixer.update(0.05 + i * 0.7);
+          try { ctx.renderer.render(scene, camera); } catch {}
+        };
+        pals.push(pal);
+      } catch {}
+    });
     camera.position.set(0.15, 1.15, 3.5);
     camera.lookAt(-0.15, 0.75, 0);
     const campAudio = [];
@@ -48901,6 +49430,16 @@ const ShellScenes = (() => {
       flies.update(t);
       tufts.update(t);
       if (figure && figure.userData && figure.userData.animate) figure.userData.animate(t);
+      for (const pal of pals) {
+        const parts = pal.dog.userData.parts;
+        if (!parts || !parts.mixer) continue;
+        parts.mixer.update(dt);
+        if (t > pal.next) {
+          pal.low = !pal.low;
+          parts.play(pal.low ? "Idle_2_HeadLow" : "^Idle$", 0.8);
+          pal.next = t + (pal.low ? 9 + Math.random() * 8 : 3 + Math.random() * 3);
+        }
+      }
       camera.position.x = 0.15 + Math.sin(t * 0.14) * 0.12;
       camera.position.y = 1.15 + Math.sin(t * 0.1) * 0.03;
       camera.lookAt(-0.15, 0.75, 0);

@@ -17,6 +17,8 @@ Six realms, five 3D trials each. Three have animals that read how you move; thre
 | 🌙 The House at Night | The dark (nyctophobia) | your bedroom with the lamp on → total dark, only the house's sounds (hold **F** for a flashlight — the coach counts what it does) |
 | 🚪 The Narrow Passage | Tight spaces (claustrophobia) | a small room, door closed behind you → a phone booth → a lift → a storage closet → lying in an MRI scanner |
 
+Every trial has **three stars** — its skill (let the dog come to you, stand on the glass…), reading the moment, and staying until the alarm settles — earned live in the scene and kept as your best on the map, so there's always a reason to go back (repetition is the part of exposure that does the work). Stars only ever reward approach and attention, never speed or a low rating. Face all of a dog's trials and it comes to rest by your campfire.
+
 Your custom character walks every scene. In the place realms the coach reads your body and the room instead of an animal: name a tight breath, a creak or a gust as *body*, *place* or *danger*. Nothing in them ever moves toward you — the walls stay put and the door always opens (opening it counts as relief, not learning). The older prototype realms (water, flying…) are still behind `LAUNCH_OPEN` in `index.html`; add `?all=1` to the URL to play them for QA.
 
 ## Built on real psychology
