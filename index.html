@@ -4298,6 +4298,9 @@ if ("serviceWorker" in navigator) {
   html[dir="rtl"] .quest-card { text-align: right; }
   .story-quest .lanterns { justify-content: flex-start; margin: 6px 0 10px; }
   .quest-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 0; }
+  .realm-view .story-card { margin: 12px 0; }
+  .realm-story-line { margin: 10px 0; font-size: 13.5px; color: var(--muted); }
+  .exposure-header .exp-focus { margin: 6px 0 0; font-size: 13.5px; color: var(--star); font-weight: 600; }
   .quest-actions > * { flex: 1 1 auto; }
   /* Title screen, returning: previously / next. */
   .arrive-recap { font-size: 13.5px !important; }
@@ -13966,6 +13969,18 @@ function viewLadder(phobiaKey) {
         </div>
       </header>
       ${guardian}
+      ${(() => {
+        // This realm's chapter of the story. A page waiting here — before the
+        // first trial, the resident's own account of how their fear began —
+        // is offered in full; otherwise one line says how far the chapter is.
+        const S = window.Story, chap = S && S.chapterOfRealm(phobiaKey);
+        if (!chap) return "";
+        const ids = chap.beats.map((b) => b.id);
+        const waiting = ids.find((id) => S.isUnlocked(id) && !S.isSeen(id));
+        if (waiting) return S.cardHTML(waiting, { kicker: `📖 ${escapeHtml(S.chapterLabel(chap))}` });
+        const read = ids.filter((id) => S.isSeen(id)).length;
+        return `<p class="realm-story-line">📖 ${escapeHtml(S.chapterLabel(chap))} · ${tf("rs.read", "{a} of {b} pages read", { a: read, b: ids.length })} · <button type="button" class="linklike" data-action="open-story">${t("rs.open", "open the story")}</button></p>`;
+      })()}
       ${pathStrip}
       ${ch ? `<div class="realm-bubble"><span class="realm-bubble-avatar" aria-hidden="true">${window.Character.avatarSVG(ch, 40)}</span><span>${tf("camp.sayLine", "“{line}”", { line: escapeHtml(cleared ? realm.clearedLine : realm.line) })}</span></div>` : ""}
       ${tabs}
@@ -14548,6 +14563,14 @@ function viewExposure(phobiaKey, levelIdx) {
         <div class="badge">${tf("exp.stepBadge", "Step {n} of {m}", { n: levelIdx + 1, m: p.levels.length })} · ${escapeHtml(t(`phobia.${phobiaKey}.label`, p.label))}</div>
         <h2>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</h2>
         <p>${escapeHtml(lvDesc(phobiaKey, levelIdx))}</p>
+        ${(() => {
+          // Today's practice stays in view above the stage for the whole
+          // trial (the one-off prompt in the scene can be overtaken by the
+          // scene's own lines). Not on replays, not in the demo.
+          const f = window.Story && !window.__demoMode && (getProgress(phobiaKey).highestCompleted ?? -1) < levelIdx
+            ? window.Story.focusFor(phobiaKey, levelIdx) : null;
+          return f ? `<p class="exp-focus">🎯 ${escapeHtml(f.text)}</p>` : "";
+        })()}
       </div>
       <div class="stage-wrap">
         <div class="stage ${p.sceneClass}" id="stage" data-min-hold="${minHold}" data-level="${levelIdx}"></div>
@@ -15924,6 +15947,16 @@ function mountExposure(phobiaKey, levelIdx) {
     // nagging. Event-driven cues and the grounding exit still speak.
     const rungReplay = (() => { try { return getProgress(phobiaKey).highestCompleted >= levelIdx; } catch { return false; } })();
     const lines = rungReplay ? [] : ((VOICE_LINES[phobiaKey] || [])[levelIdx] || []);
+    // Today's practice — the idea the story's next page will name — once,
+    // nine seconds in, after the intro hint has had its moment.
+    if (!rungReplay && !window.__demoMode && window.Story) {
+      const f = window.Story.focusFor(phobiaKey, levelIdx);
+      if (f && f.text) setTimeout(() => {
+        const st = document.getElementById("stage");
+        if (!st || !st.isConnected || !(window.PhobiaFX && window.PhobiaFX.contextPrompt)) return;
+        try { window.PhobiaFX.contextPrompt("🎯 " + f.text, 7000); } catch {}
+      }, 9000);
+    }
     // The rung's framing line nearly repeats the subtitle printed right above
     // the stage. When that header is actually on screen, the caption would be
     // the same sentence twice — skip it (fullscreen hides the header, so the
