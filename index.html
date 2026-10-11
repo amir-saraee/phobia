@@ -11248,8 +11248,16 @@ function render(view, params) {
   if (view === "character") attachCharacterHandlers(params.editing);
   if (view === "custom")    attachCustomHandlers(params.editing);
   if ((view === "story" || view === "journal") && window.Story) window.Story.mountBook();
-  if (view === "exposure")  mountExposure(params.phobia, params.level);
-  if (view === "demo")      mountExposure("dogs", 0);
+  // A frame for the page (and its loading card) to paint before the scene is
+  // built — then build, unless the player already left.
+  if (view === "exposure" || view === "demo") {
+    const key = view === "demo" ? "dogs" : params.phobia, lvl = view === "demo" ? 0 : params.level;
+    const stageEl = document.getElementById("stage");
+    requestAnimationFrame(() => setTimeout(() => {
+      if (!stageEl || !stageEl.isConnected) return;
+      mountExposure(key, lvl);
+    }, 0));
+  }
   if (view === "breathe")   runBreathing();
   if (view === "threshold" || view === "select" || view === "ladder") mountShell3D(view, params);
   if (view === "welcome" || view === "traveler") mountRoomStage(view);
@@ -11856,7 +11864,7 @@ function openSettings() {
   };
   const qSel = drawer.querySelector("#qualitySelect");
   if (qSel) qSel.onchange = () => {
-    try { localStorage.setItem("fobia.quality", qSel.value); } catch {}
+    try { localStorage.setItem("fobia.quality", qSel.value); localStorage.removeItem("fobia.autoTier"); } catch {}
     // The setting takes effect on the next scene mount — show a small confirmation
     const note = document.createElement("div");
     note.className = "settings-note";
@@ -12326,7 +12334,7 @@ function openStageBreath(stage) {
 // FEEDBACK_URL: paste a Google Form / Tally link here. Empty = Copy only —
 // for the playtest phase, testers send the note to whoever shared Mira.
 const FEEDBACK_URL = "";
-const APP_BUILD = "2026-09-27 · launch-dogs";
+const APP_BUILD = "2026-10-11 · lanterns";
 function feedbackDiag() {
   const lines = [
     `build: ${APP_BUILD}`,
@@ -14573,7 +14581,7 @@ function viewExposure(phobiaKey, levelIdx) {
         })()}
       </div>
       <div class="stage-wrap">
-        <div class="stage ${p.sceneClass}" id="stage" data-min-hold="${minHold}" data-level="${levelIdx}"></div>
+        <div class="stage ${p.sceneClass}" id="stage" data-min-hold="${minHold}" data-level="${levelIdx}"><div class="loading">${t("stage.loading", "Setting the scene…")}</div></div>
         ${cmdBar}
       </div>
       <div class="step-controls">
@@ -15871,8 +15879,9 @@ function mountExposure(phobiaKey, levelIdx) {
       try {
         const note = document.createElement("div");
         note.className = "scene-fallback-note";
-        note.textContent = "3D scene couldn't load — showing the simple version. Reloading the page usually fixes it.";
+        note.textContent = t("stage.3dFail", "3D scene couldn't load — showing the simple version. Reloading the page usually fixes it.");
         stage.appendChild(note);
+        stage.querySelectorAll(".loading").forEach((n) => n.remove());
         setTimeout(() => { note.style.opacity = "0"; setTimeout(() => note.remove(), 600); }, 9000);
       } catch {}
       return false;
@@ -16314,8 +16323,14 @@ function mountExposure(phobiaKey, levelIdx) {
     if (inactivityInterval) { clearInterval(inactivityInterval); inactivityInterval = null; }
     INACTIVITY_EVENTS.forEach(ev => window.removeEventListener(ev, onAnyActivity));
   }
-  // Also stop audio when 3D scene tears down (page navigation)
-  window.addEventListener("beforeunload", stopAllAudio);
+  // Also stop audio when the page goes away. One listener for the page's
+  // life, calling whichever trial is current — this used to add a new one
+  // (a new closure) every time a trial opened.
+  window.__stopTrialAudio = stopAllAudio;
+  if (!window.__trialUnloadWired) {
+    window.__trialUnloadWired = true;
+    window.addEventListener("beforeunload", () => { try { window.__stopTrialAudio && window.__stopTrialAudio(); } catch {} });
+  }
 
   // SUDS slider live update. The readout starts blank ("—") and Save stays
   // disabled until the user actually moves the slider, so the rating is a
@@ -17994,7 +18009,11 @@ function boot() {
   scheduleReminders();
   // Warm caches for heavy assets (dog model) in the background
   if (window.Scene3D && window.Scene3D.prefetch) {
-    setTimeout(() => window.Scene3D.prefetch(), 1500);
+    setTimeout(() => {
+      let realm = null;
+      try { realm = window.Character && window.Character.loadCharacter() ? continueTarget().key : null; } catch {}
+      window.Scene3D.prefetch({ realm });
+    }, 1500);
   }
   // Honor the URL on first load so refreshes / shared links land correctly
   const route = location.hash ? parseRoute(location.hash) : { view: "welcome", params: {} };
@@ -18176,8 +18195,8 @@ const CREATURE_MODELS = {
   // Walk clips now cover the defensive display, and the extra file never
   // shipped — prefetching it just 404'd on every boot.)
 };
-function prefetchCreatureModels() {
-  Object.values(CREATURE_MODELS).forEach((url) => { try { loadGLTF(url); } catch {} });
+function prefetchCreatureModels(only) {
+  Object.entries(CREATURE_MODELS).forEach(([k, url]) => { if (!only || k === only) { try { loadGLTF(url); } catch {} } });
 }
 
 // Generic rigged-creature loader. Returns a Group SYNCHRONOUSLY (so scenes can
@@ -18315,13 +18334,18 @@ const IS_COARSE_POINTER = ((typeof window !== "undefined") && window.matchMedia
   // localStorage.setItem("fobia.forceTouch", "1") + reload.
   || (() => { try { return localStorage.getItem("fobia.forceTouch") === "1"; } catch { return false; } })();
 const IS_MOBILE = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent || "");
-// Only genuinely weak hardware auto-drops to "low" (few cores / little RAM;
-// deviceMemory is absent on iOS, but every iPhone that runs this clears the
-// core check). A modern phone GPU handles the medium tier comfortably, and
-// the adaptive-resolution fallback in the render loop catches the stragglers
-// — so "is a phone" alone no longer forces the flat, shadowless low tier.
-const WEAK_DEVICE = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4)
-  || (navigator.deviceMemory && navigator.deviceMemory <= 3);
+// Only genuinely weak hardware auto-drops to "low": 2 threads, 2 GB, or a
+// 4-thread phone / low-memory machine (deviceMemory is absent on iOS, but
+// every iPhone that runs this clears the core check). A modern phone GPU
+// handles medium comfortably — "is a phone" alone doesn't force the flat,
+// shadowless tier. A 4-thread laptop with memory to spare used to land on
+// low too; it starts on medium now, and the frame governor (plus the
+// remembered demotion in resolveQuality) catches any that can't hold it.
+const WEAK_DEVICE = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2)
+  || (navigator.deviceMemory && navigator.deviceMemory <= 2)
+  || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4
+      && (IS_MOBILE || (navigator.deviceMemory && navigator.deviceMemory <= 4)));
+const MODEST_DEVICE = !!(navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4);
 
 // Read the user's chosen graphics tier (settings drawer) and resolve to a tier.
 // We re-evaluate on every mount, so the user's choice takes effect on the next
@@ -18329,8 +18353,28 @@ const WEAK_DEVICE = (navigator.hardwareConcurrency && navigator.hardwareConcurre
 function resolveQuality() {
   let pref = "auto";
   try { pref = localStorage.getItem("fobia.quality") || "auto"; } catch {}
-  if (pref === "auto") return WEAK_DEVICE ? "low" : IS_MOBILE ? "medium" : "high";
+  if (pref === "auto") {
+    const base = WEAK_DEVICE ? "low" : (IS_MOBILE || MODEST_DEVICE) ? "medium" : "high";
+    // A scene that had to shed effects on "auto" remembers it for two weeks
+    // (or until the player picks a Graphics setting themselves).
+    let demoted = null;
+    try {
+      const d = JSON.parse(localStorage.getItem("fobia.autoTier") || "null");
+      if (d && d.tier && Date.now() - d.at < 14 * 864e5) demoted = d.tier;
+    } catch {}
+    const rank = { low: 0, medium: 1, high: 2 };
+    return demoted && rank[demoted] < rank[base] ? demoted : base;
+  }
   return pref;
+}
+// Called by the frame governor: on "auto", start the next scene one tier down.
+function demoteAutoTier(current) {
+  try {
+    if ((localStorage.getItem("fobia.quality") || "auto") !== "auto") return;
+    const next = current === "high" ? "medium" : "low";
+    if (next === current) return;
+    localStorage.setItem("fobia.autoTier", JSON.stringify({ tier: next, at: Date.now() }));
+  } catch {}
 }
 let QUALITY = resolveQuality();
 let IS_LOW_POWER = QUALITY === "low";
@@ -19623,13 +19667,16 @@ class FPControls {
   // forces the camera mode at mount so the cinematic intro starts at the
   // right blend value (otherwise the first few frames reset _tpSmoothPos
   // and the cinematic dolly-in is lost).
-  setCameraMode(mode, instant = false) {
+  setCameraMode(mode, instant = false, remember = false) {
     if (mode !== "fp" && mode !== "tp") mode = "fp";
     this.cameraMode = mode;
     if (instant) {
       this.tpBlend = mode === "tp" ? 1 : 0;
     }
-    try { localStorage.setItem("fobia.cameraMode", mode); } catch {}
+    // Only a choice the player made is their preference. A scene that locks
+    // or prefers a view (the MRI is first-person) used to overwrite it, so
+    // the next dog visit opened in the wrong view.
+    if (remember) { try { localStorage.setItem("fobia.cameraMode", mode); } catch {} }
     // Keep the avatar coherent with the camera on EVERY mode change: the
     // renderer registers this to sync the body's head visibility and the FP
     // hands. Syncing only in the toggle-button handler left any direct
@@ -19648,7 +19695,7 @@ class FPControls {
     this.obstacles = Array.isArray(list) ? list : null;
   }
   toggleCameraMode() {
-    this.setCameraMode(this.cameraMode === "tp" ? "fp" : "tp");
+    this.setCameraMode(this.cameraMode === "tp" ? "fp" : "tp", false, true);
     return this.cameraMode;
   }
 
@@ -25982,6 +26029,9 @@ function unmount() {
     });
   }
   active = null;
+  // The debug hooks held the dead scene, renderer and composer reachable
+  // until the next trial mounted.
+  window.__active = null; window.__tickNow = null; window.__renderNow = null;
 }
 
 const SETUPS = {
@@ -26206,9 +26256,15 @@ const PhobiaPhysics = (() => {
     return loadP;
   }
 
+  // Each begin() takes a ticket; end() (scene unmount) invalidates it. If the
+  // scene left while Rapier was still loading, the world it asked for is
+  // never built — it used to be, and then stepped every frame of the NEXT
+  // scene, since that scene's unmount had nothing to free.
+  let gen = 0;
   async function begin(opts = {}) {
+    const ticket = ++gen;
     const mod = await load();
-    if (!mod) return null;
+    if (!mod || ticket !== gen) return null;
     end();
     groundY = opts.groundY ?? 0;
     world = new R.World({ x: 0, y: -9.81, z: 0 });
@@ -26218,6 +26274,7 @@ const PhobiaPhysics = (() => {
     return world;
   }
   function end() {
+    gen++;
     if (world) { try { world.free(); } catch {} }
     world = null; props = []; onImpact = null; pendingBoxes = null;
   }
@@ -26452,11 +26509,15 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   const setup = SETUPS[phobiaKey];
   if (!setup) throw new Error("Unknown phobia: " + phobiaKey);
 
-  // Loading hint while textures/scene set up
-  const loading = document.createElement("div");
-  loading.className = "loading";
-  loading.textContent = "Loading scene…";
-  container.appendChild(loading);
+  // Loading hint while textures/scene set up (the trial view paints its own
+  // first; reuse it).
+  let loading = container.querySelector(".loading");
+  if (!loading) {
+    loading = document.createElement("div");
+    loading.className = "loading";
+    loading.textContent = window.t("stage.loading", "Setting the scene…");
+    container.appendChild(loading);
+  }
 
   const renderer = makeRenderer(container);
   container.appendChild(renderer.domElement);
@@ -26661,6 +26722,13 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   let _prSlowT = 0, _prFastT = 0;
   let _prFailed = Infinity, _prFailedAt = -1e9;
   const _prMax = renderer.getPixelRatio();
+  // Below DPR 1 is allowed only as a last resort on a device that is still
+  // struggling with every effect off — a softer image beats a slideshow.
+  const _prFloor = 0.75;
+  // Effects shed, in order, once the resolution floor is reached and frames
+  // are still slow: SSAO → bloom → shadows refreshed every 2nd then 3rd frame
+  // → sub-1 resolution. `_shed` counts the steps taken.
+  let _shed = 0, _shadowEvery = 1, _shadowFrame = 0, _shedNoticeShown = false;
   // Performance overlay (settings → Performance overlay, or fobia.perfHud=1):
   // reads the same EMA the adaptive-resolution logic trusts, so what it shows
   // is what the engine acts on. Lazily created; pref polled at 2 Hz so the
@@ -26869,7 +26937,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // is the user's ethical exit at any moment. We bake it into every
       // approach scene's intro so users know it's there before they need it.
       const T = window.t, TF = window.tf;
-      const escNote = " &nbsp;·&nbsp; <span style=\"opacity:.75\">" + ((IS_TOUCH || IS_COARSE_POINTER)
+      const escNote = " &nbsp;·&nbsp; <span style=\"opacity:.75\">" + (IS_COARSE_POINTER
         ? T("intro.esc.m", "Tap <b>🛟</b> any time to ground yourself.")
         : T("intro.esc.d", "Press <b>Esc</b> any time to ground yourself.")) + "</span>";
       // Movement wording follows IS_COARSE_POINTER (where the on-screen joystick
@@ -27280,24 +27348,23 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     const rawDt = (now - lastTime) / 1000;
     const dt = Math.min(0.05, rawDt);
     lastTime = now;
-    // ---- Adaptive resolution ----
-    // A weak device otherwise stutters until the user finds the Graphics
-    // setting. Track a slow EMA of the real frame time; if we sit above
-    // ~35 ms (sub-30 fps) for a sustained stretch, step the pixel ratio
-    // down 0.25 (floor 1.0). One quiet notice, and never step back up
-    // mid-scene (oscillation looks worse than either state).
-    // Two-way controller aiming at 60 fps. The old one only ever stepped
-    // DOWN, and only past 35 ms (sub-30 fps) — so on most machines it never
-    // acted at all, and one stall (the first-frame shader compile, a model
-    // upload) could drop the resolution for the rest of the scene. Now:
-    //   - frames over 100 ms and the first two seconds are ignored (stalls,
-    //     not load);
-    //   - a full second above ~18.5 ms steps the ratio down by 1/8;
-    //   - five seconds below ~12.5 ms (a high-refresh display with headroom)
-    //     steps it back up, never past the tier's own cap, and never straight
-    //     back onto a ratio that just failed.
-    if (rawDt < 0.1 && t > 2.0) {
-      _frameEMA += (rawDt - _frameEMA) * 0.05;
+    // ---- Frame governor ----
+    // A weak device otherwise stutters until the player finds the Graphics
+    // setting. A slow EMA of the real frame time, aiming at 60 fps:
+    //   - the first two seconds are ignored (shader compiles, uploads);
+    //     frames up to 1.5 s count — a 1–3 fps slideshow is load, not a
+    //     stall, and the device that most needs help — but each sample is
+    //     clamped, so one hitch barely moves the average;
+    //   - a full second above ~18.5 ms steps the pixel ratio down by 1/8,
+    //     to 1.0;
+    //   - at 1.0 and still slow for two seconds, it sheds an effect instead
+    //     (shedEffect: SSAO → bloom → shadows every 2nd, 3rd frame → down to
+    //     0.75 resolution), and a device that needed two such steps on
+    //     "auto" starts its next scene a tier lower;
+    //   - five seconds below ~12.5 ms steps the ratio back up, never past the
+    //     tier's cap and never straight back onto a ratio that just failed.
+    if (rawDt < 1.5 && t > 2.0) {
+      _frameEMA += (Math.min(rawDt, 0.1) - _frameEMA) * 0.05;
       if (_frameEMA > 0.0185) { _prSlowT += rawDt; _prFastT = 0; }
       else if (_frameEMA < 0.0125) { _prFastT += rawDt; _prSlowT = 0; }
       else { _prSlowT = 0; _prFastT = 0; }
@@ -27306,6 +27373,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       if (_prSlowT > 1.0 && pr > 1.0 + 1e-3) {
         newPR = Math.max(1.0, pr - 0.125);
         _prFailed = pr; _prFailedAt = now;
+      } else if (_prSlowT > 2.0 && pr <= 1.0 + 1e-3 && shedEffect()) {
+        // Shed one effect, then give it two seconds to show.
+        _prSlowT = 0; _frameEMA = 0.0167;
       } else if (_prFastT > 5.0 && pr < _prMax - 1e-3
           && !(pr + 0.125 >= _prFailed - 1e-3 && now - _prFailedAt < 30000)) {
         newPR = Math.min(_prMax, pr + 0.125);
@@ -27318,7 +27388,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         _frameEMA = 0.0167;   // a fresh window for the new ratio
         if (newPR < pr && !_prNoticeShown && window.PhobiaFX && window.PhobiaFX.contextPrompt) {
           _prNoticeShown = true;
-          try { window.PhobiaFX.contextPrompt("Lowered render resolution to keep things smooth.", 3200); } catch {}
+          try { window.PhobiaFX.contextPrompt(window.t("perf.lowerRes", "Lowered render resolution to keep things smooth."), 3200); } catch {}
         }
       }
     }
@@ -27527,7 +27597,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // takes over again automatically. Wrapped in try/catch because WebGL
     // context-loss (tab backgrounded too long) can throw during render.
     try {
-      renderer.shadowMap.needsUpdate = true;   // once per frame (see makeRenderer)
+      // Once per frame (see makeRenderer) — or every 2nd/3rd frame once the
+      // governor has had to shed effects on a struggling device.
+      if (_shadowEvery <= 1 || (++_shadowFrame % _shadowEvery) === 0) renderer.shadowMap.needsUpdate = true;
       if (renderer.xr.isPresenting) {
         renderer.render(scene, camera);
       } else {
@@ -27543,6 +27615,29 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // dedupe), and each needs its condition to HOLD for a beat rather than clip a
   // single frame, so a creature that jitters across a threshold stays quiet.
   const _beat = { threatT: 0, calmT: 0, wasThreat: false, contactT: 0, nearT: 0, prevFear: 0, spikeT: 0, creature: null };
+  // One step down the effects ladder. Returns false when nothing is left.
+  function shedEffect() {
+    let did = false;
+    if (ssaoPass && ssaoPass.enabled) { ssaoPass.enabled = false; did = true; }
+    else if (bloomPass && bloomPass.enabled && composer.passes.includes(bloomPass)) { bloomPass.enabled = false; did = true; }
+    else if (renderer.shadowMap.enabled && _shadowEvery < 3) { _shadowEvery++; did = true; }
+    else if (renderer.getPixelRatio() > _prFloor + 1e-3) {
+      renderer.setPixelRatio(Math.max(_prFloor, renderer.getPixelRatio() - 0.125));
+      sizePost(container.clientWidth, container.clientHeight);
+      _prFailed = Infinity;   // allow the climb back once things are fast
+      did = true;
+    }
+    if (!did) return false;
+    _shed++;
+    // A device that needed this much help on "auto" starts the next scene a
+    // tier lower instead of stuttering through its first seconds again.
+    if (_shed >= 2) demoteAutoTier(QUALITY);
+    if (!_shedNoticeShown && window.PhobiaFX && window.PhobiaFX.contextPrompt) {
+      _shedNoticeShown = true;
+      try { window.PhobiaFX.contextPrompt(window.t("perf.shed", "Simplified a few effects to keep things smooth."), 3200); } catch {}
+    }
+    return true;
+  }
   function detectEventBeats(t, dt) {
     const N = window.PhobiaNarrator;
     if (!N || !N.event || !phobiaKey) return;
@@ -27590,8 +27685,12 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // the group carrying userData.parts.mixer. Cached, and re-looked-up only
     // while nothing has been found (creature GLTFs load asynchronously).
     if (controls) {
-      if (!_beat.creature || !_beat.creature.parent) {
+      // Heights, the dark and tight spaces have no creature at all, and this
+      // used to walk the whole scene graph every frame looking for one. Look
+      // twice a second until something turns up (GLTFs stream in), then keep it.
+      if ((!_beat.creature || !_beat.creature.parent) && t >= (_beat.nextSearchT || 0)) {
         _beat.creature = null;
+        _beat.nextSearchT = t + 0.5;
         scene.traverse((o) => {
           if (!_beat.creature && o.userData && o.userData.parts && o.userData.parts.mixer) _beat.creature = o;
         });
@@ -27603,7 +27702,8 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         // It must have closed the gap ITSELF: walking up to it and stopping
         // used to be announced as "it's coming to you".
         const cMoved = _beat.cPrev ? Math.hypot(c.position.x - _beat.cPrev.x, c.position.z - _beat.cPrev.z) / d : 0;
-        _beat.cPrev = { x: c.position.x, z: c.position.z };
+        if (!_beat.cPrev) _beat.cPrev = { x: 0, z: 0 };
+        _beat.cPrev.x = c.position.x; _beat.cPrev.z = c.position.z;
         _beat.cTowardT = (cMoved > 0.25 && dist < (_beat.cPrevDist ?? dist) - 1e-4) ? 1.2 : Math.max(0, (_beat.cTowardT || 0) - d);
         _beat.cPrevDist = dist;
         _beat.nearT = (dist < 2.2 && still && _beat.cTowardT > 0) ? _beat.nearT + d : Math.max(0, _beat.nearT - d);
@@ -27818,7 +27918,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       fxStyle(fearMeter, "opacity", value > 5 ? "1" : "0");
       if (fearMeterFill) fxStyle(fearMeterFill, "width", `${Math.round(value)}%`);
       // Camera shake at high fear (over 80) — adds the visceral panic feel
-      if (value > 80 && camera && !ctx.grounding) {
+      if (value > 80 && camera && !ctx.grounding && !(controls && controls._reduceMotion)) {
         const k = (value - 80) / 20;
         camera.position.x += (Math.random() - 0.5) * 0.015 * k;
         camera.position.y += (Math.random() - 0.5) * 0.012 * k;
@@ -27876,7 +27976,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // "four things you can hear" needs the ambience present but gentle.
     try { if (window.PhobiaAudio) window.PhobiaAudio.duck(true); } catch {}
     groundingOverlay.classList.add("active");
-    if (!IS_TOUCH) groundingExitHint.classList.add("visible");
+    if (!IS_COARSE_POINTER) groundingExitHint.classList.add("visible");
     groundingStep = 0;
     function nextStep() {
       if (!groundingActive || groundingStep >= groundingScript.length) {
@@ -35022,6 +35122,7 @@ class DogController {
 }
 
 // ---------- Dogs scene ----------
+const _coachSize = new THREE.Vector2();
 // Small colour lerp on packed hex — used to blend the rung's mood with the
 // visit's hour without allocating a Color per field.
 function _hexMix(a, b, t) {
@@ -35402,6 +35503,7 @@ function makeCreatureCoach(opts) {
     }
   }
 
+  const hudCache = { word: null, col: null, legend: null, sig: null };
   // ---------------- settle / hold policy ----------------
   let settledLatched = false, everSettled = false, heldSeen = false;
   let lastHoldSec = 0;       // the hold timer's own credited seconds (wall clock)
@@ -35570,11 +35672,16 @@ function makeCreatureCoach(opts) {
     waveAcc += d;
     if (waveAcc >= 0.5) { waveAcc -= 0.5; ev.wave.push(Math.round(cur)); if (ev.wave.length > 720) ev.wave.splice(0, 2); }
 
-    // HUD
-    wordEl.textContent = word(cur);
-    root.style.setProperty("--dc-c", colorFor(cur));
-    legendEl.classList.toggle("on", engagedPeak >= 12 && !settledLatched);
-    draw();
+    // HUD — only what changed. The wave gains a sample every 0.25 s, yet it
+    // was cleared and re-stroked (240 segments) every frame, and the word,
+    // colour and legend were rewritten into the DOM 60 times a second.
+    const hw = word(cur), hc = colorFor(Math.round(cur));
+    if (hw !== hudCache.word) { hudCache.word = hw; wordEl.textContent = hw; }
+    if (hc !== hudCache.col) { hudCache.col = hc; root.style.setProperty("--dc-c", hc); }
+    const legendOn = engagedPeak >= 12 && !settledLatched;
+    if (legendOn !== hudCache.legend) { hudCache.legend = legendOn; legendEl.classList.toggle("on", legendOn); }
+    const sig = liveIdx + "|" + liveMarks.length + "|" + (legendOn ? Math.round(settleLine()) : -1);
+    if (sig !== hudCache.sig) { hudCache.sig = sig; draw(); }
 
     // Float the card in the band under the top HUD row, following the dog
     // across (clamped clear of this panel), eased so it doesn't jitter with
@@ -35906,6 +36013,19 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   floor.position.y = -1;
   floor.receiveShadow = true;
   scene.add(floor);
+  // The hallway you came in from. The front wall is a one-sided dollhouse
+  // plane, so the third-person camera often sits just outside it — and below
+  // the floor's edge there was nothing: a black wedge in the corner of the
+  // frame. A strip of darker boards beyond the wall reads as the hall. Plain
+  // colour (no maps), not a shadow receiver: it's only ever seen at the edge.
+  const hallFloor = new THREE.Mesh(
+    new THREE.PlaneGeometry(ROOM_W + 8, 7),
+    new THREE.MeshStandardMaterial({ color: 0x9a7a56, roughness: 0.85 })
+  );
+  hallFloor.rotation.x = -Math.PI / 2;
+  hallFloor.position.set(0, -1.002, ROOM.z1 + 3.5);
+  hallFloor.userData.noCollide = true;
+  scene.add(hallFloor);
 
   // Soft area rug between the user and the dog — border is baked into the
   // texture now (the old translucent "outline" overlay darkened the whole rug).
@@ -38559,8 +38679,11 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         // Where the dog's head is on screen, so a question about it can sit
         // just above it instead of on top of it.
         _coachV.set(dog.position.x, dog.position.y + dogHeight * 1.08, dog.position.z).project(camera);
-        const cvs = active.renderer && active.renderer.domElement;
-        const sw = (cvs && cvs.clientWidth) || 0, sh = (cvs && cvs.clientHeight) || 0;
+        // The renderer already knows its CSS size; reading the canvas's
+        // clientWidth here forced a layout every frame (styles were written
+        // earlier in the same frame).
+        if (active.renderer) active.renderer.getSize(_coachSize); else _coachSize.set(0, 0);
+        const sw = _coachSize.x, sh = _coachSize.y;
         const headX = _coachV.z < 1 ? (_coachV.x + 1) / 2 * sw : null;
         const headY = _coachV.z < 1 ? (1 - _coachV.y) / 2 * sh : null;
         // Looking at you? (the snout is +Z at yaw 0)
@@ -48491,7 +48614,11 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
 // it. Bone lengths, rest orientations and axis conventions cancel out. The one
 // thing it cannot carry is twist about the bone's own axis — acceptable here,
 // since this rig has no twist bones and its limbs are near-radially symmetric.
-const HUMAN_ANIM_URL = "assets/anim/human-anim.gltf";
+// The one clip the game plays, stripped out of the 46-clip CC0 library by
+// scripts/strip-anim.cjs (61 KB instead of 4 MB — every traveler figure used to
+// fetch the whole library to swing its arms). Re-run the script if
+// HUMAN_CLIPS starts using another clip; the full library stays as the source.
+const HUMAN_ANIM_URL = "assets/anim/human-walk.gltf";
 
 // target bone → the library bone that drives it, and the library bone whose
 // position defines the direction it points. Parents MUST come before children:
@@ -48528,19 +48655,12 @@ const RETARGET_TIPS = [
   { t: "R_ankle", s: "DEF-foot.R", c: "DEF-toe.R",         rest: [0, -0.511, 0.86] },
 ];
 
-// Clip names this app actually uses, mapped to intent. The library ships 46;
-// the rest are combat, swimming and spellcasting.
+// Clip names this app plays, mapped to intent. Only these ship: the source
+// library has 46 (others that might suit: Idle_Loop, Walk_Formal_Loop for a
+// warier approach, Jog_Fwd_Loop, Crouch_Idle_Loop, Hit_Chest, Interact) —
+// add a name here AND list it when re-running scripts/strip-anim.cjs.
 const HUMAN_CLIPS = {
-  idle:    "Idle_Loop",
   walk:    "Walk_Loop",
-  wary:    "Walk_Formal_Loop",   // stiffer, shorter stride — the approach walk
-  jog:     "Jog_Fwd_Loop",
-  crouch:  "Crouch_Idle_Loop",
-  sit:     "Sitting_Idle_Loop",
-  sitIn:   "Sitting_Enter",
-  sitOut:  "Sitting_Exit",
-  flinch:  "Hit_Chest",
-  reach:   "Interact",
 };
 
 let _humanMotion = null;        // resolved sampler, or false once known-bad
@@ -48633,6 +48753,7 @@ const _rtA = new THREE.Vector3(), _rtB = new THREE.Vector3();
 const _rtDir = new THREE.Vector3(), _rtRest = new THREE.Vector3();
 const _rtMat = new THREE.Matrix4();
 const _rtRootQ = new THREE.Quaternion();
+const _rtQ = new THREE.Quaternion();
 // The library clip's frame → this rig's own frame. The sampler's skeleton is
 // never placed in the scene, so its bone directions are in the LIBRARY's
 // frame; they used to be applied as if they were world directions, which is
@@ -48738,8 +48859,7 @@ function applyRetarget(rig, motion, weight = 1, only = null) {
     if (weight >= 1) {
       tb.quaternion.setFromUnitVectors(_rtRest, _rtDir);
     } else {
-      const q = tb.quaternion.clone().setFromUnitVectors(_rtRest, _rtDir);
-      tb.quaternion.slerp(q, weight);
+      tb.quaternion.slerp(_rtQ.setFromUnitVectors(_rtRest, _rtDir), weight);
     }
     tb.updateMatrixWorld(false);
   };
@@ -48795,7 +48915,7 @@ function buildAvatarFigure(c, mode = "walk") {
   let idleW = idleSide;
   // Ask for the CC0 motion library the moment a figure exists. It streams in
   // the background; until it lands (or if it fails) the procedural animation
-  // below runs unchanged, so nothing ever waits on a 4 MB download.
+  // below runs unchanged, so nothing ever waits on the download.
   let motion = null;
   try {
     loadHumanMotion().then((m) => { motion = m || null; });
@@ -49108,19 +49228,25 @@ const ShellScenes = (() => {
     window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   function makeCtx(container, opts = {}) {
+    // These are backdrops (the title room, the camp, a realm's hero), so on a
+    // weak device they get the low tier's budget: no MSAA, DPR 1, no shadow
+    // maps, 30 fps. The tier is read fresh — sceneQuality() only refreshes
+    // when a trial mounts, so a changed Graphics setting used to miss them.
+    const tier = resolveQuality();
+    const lowTier = tier === "low";
     let renderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer = new THREE.WebGLRenderer({ antialias: !lowTier, alpha: true, powerPreference: lowTier ? "low-power" : "default" });
     } catch { return null; }
     const w = container.clientWidth || 320, h = container.clientHeight || 220;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(lowTier ? 1 : Math.min(window.devicePixelRatio || 1, tier === "medium" ? 1.5 : 2));
     renderer.setSize(w, h);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = opts.exposure || 1.0;
     // Real shadows are what ground the figure/creature in these vignettes —
     // the scenes are tiny (a handful of meshes), so soft maps are cheap.
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = !lowTier;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
@@ -49137,17 +49263,27 @@ const ShellScenes = (() => {
     }) : null;
     if (ro) ro.observe(container);
     ctx.ro = ro;
+    // Nothing to draw while the vignette is scrolled away (the camp sits
+    // above a long map) or the tab is hidden.
+    ctx.visible = true;
+    const io = ("IntersectionObserver" in window) ? new IntersectionObserver((es) => {
+      ctx.visible = es.some((e) => e.isIntersecting);
+    }) : null;
+    if (io) io.observe(container);
+    ctx.io = io;
+    const minGap = lowTier ? 1000 / 31 : 0;
     let last = performance.now();
     function tick() {
       if (ctx.disposed) return;
       if (!container.isConnected) { disposeCtx(ctx); return; }
+      ctx.raf = requestAnimationFrame(tick);
       const now = performance.now();
+      if (!ctx.visible || document.hidden || now - last < minGap) return;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       ctx.elapsed += dt;
       if (ctx.onTick) { try { ctx.onTick(dt, ctx.elapsed); } catch {} }
       renderer.render(scene, camera);
-      ctx.raf = requestAnimationFrame(tick);
     }
     ctx.start = () => {
       if (reduceMotion()) {
@@ -49168,8 +49304,12 @@ const ShellScenes = (() => {
     ctx.disposed = true;
     cancelAnimationFrame(ctx.raf);
     if (ctx.ro) { try { ctx.ro.disconnect(); } catch {} }
+    if (ctx.io) { try { ctx.io.disconnect(); } catch {} }
     if (ctx.cleanupExtra) { try { ctx.cleanupExtra(); } catch {} }
     try { disposeObject(ctx.scene); } catch {}
+    // Release the GL context now, not at the next GC: going map → realm →
+    // map makes a fresh context each time, and browsers cap live contexts.
+    try { ctx.renderer.forceContextLoss(); } catch {}
     try { ctx.renderer.dispose(); } catch {}
     const el = ctx.renderer.domElement;
     if (el && el.parentNode) el.parentNode.removeChild(el);
@@ -50524,9 +50664,21 @@ window.ShellScenes = ShellScenes;
 // ---------- Asset prefetch ----------
 // Warms the GLTFLoader cache for the dog models (vendored locally, ~3 MB each)
 // so the dogs scene mounts without a hitch the first time the user opens it.
-function prefetch() {
-  try { prefetchDogModels(); } catch { /* silent — not critical */ }
-  try { prefetchCreatureModels(); } catch { /* silent — not critical */ }
+// Only the realm the traveler is headed for (the dogs are ~6 MB of models and
+// coats — no use to someone walking the Summit), only once the main thread is
+// idle, and nothing at all on a data-saver or 2G connection: the scene loads
+// what it needs when it opens.
+function prefetch(opts = {}) {
+  try {
+    const c = navigator.connection;
+    if (c && (c.saveData || /(^|-)2g$/.test(c.effectiveType || ""))) return;
+  } catch {}
+  const realm = opts.realm || "dogs";
+  const idle = window.requestIdleCallback || ((f) => setTimeout(f, 300));
+  idle(() => {
+    if (realm === "dogs") { try { prefetchDogModels(); } catch { /* not critical */ } }
+    if (realm === "spiders" || realm === "snakes") { try { prefetchCreatureModels(realm === "spiders" ? "spider" : "snake"); } catch { /* not critical */ } }
+  }, { timeout: 4000 });
 }
 
 // ---------- Expose to the classic script ----------

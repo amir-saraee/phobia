@@ -60,6 +60,8 @@ The same smoke test runs as a git `pre-push` hook (`git config core.hooksPath .g
 
 After re-baking dog coats, run `npm run compress-textures` — the game loads the JPEG copies.
 
+The traveler's arms are driven by one clip from the CC0 animation library. `node scripts/strip-anim.cjs [Clip_Name …]` writes `assets/anim/human-walk.gltf` (61 KB, the clips you name) from the 4 MB source; re-run it if `HUMAN_CLIPS` starts using another clip.
+
 On Linux the smoke test finds Chromium itself (Playwright's, or `CHROME=/path`), adds `--no-sandbox` when running as root, and — since software WebGL crawls at the high tier — plays on the low graphics tier (`SMOKE_QUALITY=high` to override).
 
 ## Feedback

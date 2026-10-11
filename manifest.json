@@ -1,7 +1,7 @@
 {
   "name": "Mira — The Courage Journey",
   "short_name": "Mira",
-  "description": "A tiny game about big fears — starting with a fear of dogs, one small, safe step at a time.",
+  "description": "A tiny game about big fears — dogs, spiders, snakes, heights, the dark and tight spaces — one small, safe step at a time, with a story that teaches why fears start and how they unwind.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
