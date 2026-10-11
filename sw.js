@@ -11,7 +11,7 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v24-stars";
+const VERSION = "mira-v25-story";
 // Installed on the first visit, in the background — so it holds only what the
 // creature realms (dogs, spiders, snakes) need to boot and play offline. The
 // place realms (heights, the dark, tight spaces) are procedural and need nothing
@@ -26,6 +26,7 @@ const SHELL = [
   "./src/character.js",
   "./src/phobia-info.js",
   "./src/i18n.js",
+  "./src/story.js",
   // Self-hosted three.js (0.160.0). The addons it pulls are runtime-cached.
   "./assets/vendor/three/three.module.min.js",
   // Rigged dogs (Quaternius, CC0) + their photo-projected coats (JPEG ship

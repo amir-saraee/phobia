@@ -6,6 +6,8 @@
 
 ## What's in it now
 
+**A story you walk, one trial at a time — *The Lanterns of the Valley*.** Every path nobody walks goes dark; Mira, the valley's lantern-keeper, walks beside you while you relight them. Each realm is a chapter with a resident whose fear began a *different* way — Aram was bitten at seven, Leyla learned it from her mother's face, Bahman from his grandmother's stories, Sahar from a body she misread, Nima from a lamp that never went off, Shirin from one stuck lift — so the causes of phobias arrive as people. Every finished trial turns a page, and every page carries one idea about how fears unwind (the ladder, the wave, testing the prediction, lowering shields, naming it, spacing, sensations, lapses…): 38 lessons across the valley, none repeated, collected in the Story Book under *What you've learned*. The trial before a page shows its idea as **today's practice** — something you do in the scene, then read about. Returning travelers get a note from Mira about last time (in their own numbers) and why coming back today is part of the method.
+
 Six realms, five 3D trials each. Three have animals that read how you move; three are places that don't move at all — which is the point:
 
 | Realm | Fear | The ladder |
@@ -31,12 +33,13 @@ Mira is a game shell around genuine CBT graded-exposure mechanics:
 - **🌍 The Real Path** — every in-game trial unlocks a matching tiny *real-world* step (worth more than any game trial)
 - **🪞 The Mirror** — a 5-item fear-severity self-check (rated about real life) that shows your baseline → now change in numbers
 - **📄 Progress report** — a printable, clinician-readable record you can hand a therapist
+- **📖 The Story Book** — why fears start (one frightening moment, learning by watching, stories and a brain primed for some fears, a misread body, a normal childhood fear that never got tested, a panic that spread, temperament and genes) and how they unwind (graded exposure, staying until it falls, expectancy violation, safety behaviours, attention, affect labelling, cognitive restructuring, interoceptive exposure, spacing and sleep, acceptance, relapse prevention, when to get help) — earned page by page
 
 > **A practice game, not therapy.** Real exposure work for phobias belongs with a trained clinician. Use Mira for curiosity, education, or as a conversation starter — not treatment.
 
 ## Tech
 
-Single-file vanilla JS + Three.js (no build step), Rapier physics, procedural + recorded audio, rigged CC0 creature models (Quaternius), installable PWA, offline-capable, English/Persian with full RTL. Three.js and Rapier are self-hosted under `assets/vendor/` — no runtime CDN.
+Single-file vanilla JS + Three.js (no build step) — the story lives in its own module, `src/story.js` (pages, Persian, the page player, the book; DOM + SVG only, no WebGL) — Rapier physics, procedural + recorded audio, rigged CC0 creature models (Quaternius), installable PWA, offline-capable, English/Persian with full RTL. Three.js and Rapier are self-hosted under `assets/vendor/` — no runtime CDN.
 
 ## Run locally
 
@@ -56,6 +59,8 @@ npm run smoke                  # ~3 min: first run + dog trials + a spider, snak
 The same smoke test runs as a git `pre-push` hook (`git config core.hooksPath .githooks`, already set in this clone). Skip it once with `SKIP_SMOKE=1 git push`. `SMOKE_SHOTS=1` keeps screenshots in `.smoke-shots/`.
 
 After re-baking dog coats, run `npm run compress-textures` — the game loads the JPEG copies.
+
+On Linux the smoke test finds Chromium itself (Playwright's, or `CHROME=/path`), adds `--no-sandbox` when running as root, and — since software WebGL crawls at the high tier — plays on the low graphics tier (`SMOKE_QUALITY=high` to override).
 
 ## Feedback
 

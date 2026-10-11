@@ -51,6 +51,7 @@ if ("serviceWorker" in navigator) {
 <script src="src/i18n.js" defer></script>
 <script src="src/character.js" defer></script>
 <script src="src/phobia-info.js" defer></script>
+<script src="src/story.js" defer></script>
 <script type="importmap">
 {
   "imports": {
@@ -4292,6 +4293,17 @@ if ("serviceWorker" in navigator) {
   .quest-card.done .quest-body strong { color: #d9efe7; }
   .quest-body p { margin: 0 0 10px; font-size: 12.5px; color: #b9a98a; }
   .quest-card.done .quest-body p { color: #9dbfb4; }
+  /* The camp's story card: the quest card, carrying the six lanterns. */
+  .story-quest { max-width: 520px; }
+  html[dir="rtl"] .quest-card { text-align: right; }
+  .story-quest .lanterns { justify-content: flex-start; margin: 6px 0 10px; }
+  .quest-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 0; }
+  .quest-actions > * { flex: 1 1 auto; }
+  /* Title screen, returning: previously / next. */
+  .arrive-recap { font-size: 13.5px !important; }
+  .arrive-recap span { display: inline-block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; opacity: .7; margin-inline-end: 6px; }
+  html[dir="rtl"] .arrive-recap span { letter-spacing: 0; font-size: 12px; }
+  .arrive-next { font-weight: 650; opacity: .95 !important; }
 
   /* ---- Level-complete hero: stars, numbers, rewards, next step ---- */
   .vc-hero { position: relative; text-align: center; padding-bottom: 6px; }
@@ -5032,6 +5044,9 @@ if ("serviceWorker" in navigator) {
     padding: 0 calc(24px + var(--safe-l)) 0 calc(24px + var(--safe-r));
     pointer-events: none;
   }
+  /* The returning title screen carries a taller sheet (Mira's note, what's
+     next), so its headline sits higher to stay clear of it. */
+  .mob-hero-high { top: 25%; transform: translateY(-50%); }
   .mob-hero-kicker {
     font-size: 11px;
     letter-spacing: 0.22em;
@@ -10322,6 +10337,17 @@ function activateCharacterState() {
       progress: state.progress && Object.keys(state.progress).length ? state.progress : {},
       log: state.log && state.log.length ? state.log : [],
     };
+    // What a visitor did before they had a traveler — the self-check's
+    // answers (the Mirror baseline), the story pages read — belongs to the
+    // traveler they become. The quiz promised its answers seed the Mirror;
+    // they used to stay behind in the "default" slot.
+    const pre = id !== "default" && state.byCharacter.default;
+    if (pre) {
+      const mine = state.byCharacter[id];
+      if (pre.checks && Object.keys(pre.checks).length) { mine.checks = pre.checks; delete pre.checks; }
+      if (pre.story) mine.story = JSON.parse(JSON.stringify(pre.story));
+      if (pre.primer) mine.primer = Object.assign({}, pre.primer);
+    }
   }
   state.progress = state.byCharacter[id].progress;
   state.log      = state.byCharacter[id].log;
@@ -10971,6 +10997,7 @@ function serializeRoute(view, params = {}) {
     case "quiz":      return "/check";
     case "about":     return "/about";
     case "journal":   return "/journal";
+    case "story":     return "/story";
     case "report":    return "/report";
     case "insights":  return "/insights";
     case "profiles":  return "/profiles";
@@ -10998,6 +11025,7 @@ function parseRoute(hash) {
     case "check":    return { view: "quiz",      params: {} };
     case "about":    return { view: "about",     params: {} };
     case "journal":  return { view: "journal",   params: {} };
+    case "story":    return { view: "story",     params: {} };
     case "report":   return { view: "report",    params: {} };
     case "insights": return { view: "insights",  params: {} };
     case "profiles": return { view: "profiles",  params: {} };
@@ -11197,7 +11225,13 @@ function render(view, params) {
     v.innerHTML = viewComplete(params.phobia, params.level, suds, predicted, peak);
   }
   if (view === "insights")    v.innerHTML = viewInsights();
-  if (view === "journal")     v.innerHTML = viewJournal();
+  // The Story Book holds the chapters, what you've learned, and the Sparks —
+  // one book instead of two. #/journal opens it on the Sparks tab.
+  if (view === "journal" || view === "story") {
+    v.innerHTML = window.Story
+      ? window.Story.viewBook({ tab: view === "journal" ? "sparks" : "chapters", sparksHTML: sparksGridHTML() })
+      : viewJournal();
+  }
   if (view === "about")       v.innerHTML = viewAbout();
   if (view === "report")      v.innerHTML = viewReport();
   if (view === "profiles")    v.innerHTML = viewProfiles();
@@ -11210,6 +11244,7 @@ function render(view, params) {
   attachHandlers(view, params);
   if (view === "character") attachCharacterHandlers(params.editing);
   if (view === "custom")    attachCustomHandlers(params.editing);
+  if ((view === "story" || view === "journal") && window.Story) window.Story.mountBook();
   if (view === "exposure")  mountExposure(params.phobia, params.level);
   if (view === "demo")      mountExposure("dogs", 0);
   if (view === "breathe")   runBreathing();
@@ -11486,8 +11521,8 @@ function openMenu() {
       </div>
     ` : ""}
     <ul class="menu-list">
-      <li><button data-go="welcome">${t("menu.title", "🌌 Title screen — the story")}</button></li>
-      <li><button data-go="select">${t("menu.valley", "🗺 The Valley of Fears")}</button></li>
+      <li><button data-go="story">${t("menu.storyBook", "📖 The story — Mira's lanterns")}</button></li>
+      <li><button data-go="select">${t("menu.camp", "🏕 Camp — the valley map")}</button></li>
       ${ch ? `<li><button data-go="ladder" data-phobia="${(() => { try { return currentRealmKey(); } catch { return ch.primaryPhobia || ""; } })()}">${t("menu.trials", "Continue your trials")}</button></li>` : ""}
       <li><button data-go="journal">${t("menu.sparks", "✦ Book of Sparks")}</button></li>
       <li><button data-go="insights">${t("menu.story", "📜 Your story so far")}</button></li>
@@ -11930,20 +11965,68 @@ function closeSettings() {
   }
 }
 
+// ---------- Starting a trial (one door for every button) ----------
+// Where "Continue" goes: the next untried trial of the current realm, or of
+// the next realm whose lantern isn't lit yet.
+function continueTarget() {
+  const keys = journeyKeys();
+  const walked = (k) => (getProgress(k).highestCompleted ?? -1) + 1 >= PHOBIAS[k].levels.length;
+  const nextOf = (k) => Math.min(PHOBIAS[k].levels.length - 1, (getProgress(k).highestCompleted ?? -1) + 1);
+  let k = currentRealmKey();
+  if (walked(k)) { const nk = keys.find((x) => !walked(x)); if (nk) k = nk; }
+  return { key: k, level: nextOf(k), allWalked: keys.length > 0 && keys.every(walked) };
+}
+// A story page that belongs before this trial (the chapter's opening, or the
+// page the last trial turned) plays first; then `then`.
+function storyGate(phobia, lvl, then) {
+  const S = window.Story;
+  let id = null;
+  try { id = S && S.pendingBefore(phobia, lvl); } catch {}
+  if (id) S.play(id, { onDone: then, cta: tf("st.toTrial", "To trial {n} →", { n: lvl + 1 }) });
+  else then();
+}
+// Every "face this trial" button lands here: story page → predict → scene.
+// (The one-minute primer no longer stands in front of trial 2 as well — the
+// story carries the why now; the primer stays one tap away on the realm page
+// and after trial 1.)
+function startTrial(phobia, lvl) {
+  if (!PHOBIAS[phobia]) { go("select"); return; }
+  try { PhobiaAudio.ui("whoosh"); } catch {}
+  const max = PHOBIAS[phobia].levels.length - 1;
+  const level = Math.max(0, Math.min(max, Number.isFinite(lvl) ? lvl : 0));
+  storyGate(phobia, level, () => go("predict", { phobia, level }));
+}
+function continueJourney() {
+  const ch = window.Character && window.Character.loadCharacter();
+  if (!ch) { handleAction({ action: "make-traveler" }, {}); return; }
+  const tgt = continueTarget();
+  if (tgt.allWalked) {
+    const S = window.Story;
+    if (S && S.isUnlocked("epilogue") && !S.isSeen("epilogue")) { S.play("epilogue", { onDone: () => go("select") }); return; }
+    go("select");
+    return;
+  }
+  startTrial(tgt.key, tgt.level);
+}
+
 function handleAction(d, params) {
   switch (d.action) {
     case "begin":           {
-      // First-time visitors go through the character creator; returners go to select.
+      // First-time visitors go through the (3D) traveler creator, the same
+      // door the title screen uses; returners go to camp.
       const existing = window.Character && window.Character.loadCharacter();
-      go(existing ? "select" : "character", existing ? {} : { editing: false });
+      if (existing) go("select");
+      else handleAction({ action: "make-traveler" }, params);
       break;
     }
-    // ---- Mobile arrival flow: room → traveler → the dog ----
+    // ---- Arrival flow: room → prologue → traveler → chapter → trial 1 ----
     case "make-traveler": {
       _travelerDraft = (window.Character && window.Character.loadCharacter())
         || (window.Character && window.Character.defaultCharacter())
         || null;
-      go("traveler");
+      const S = window.Story;
+      if (S && !S.isSeen("prologue")) S.play("prologue", { onDone: () => go("traveler"), cta: t("st.toCreator", "Become a traveler →") });
+      else go("traveler");
       break;
     }
     case "edit-character": {
@@ -11978,11 +12061,29 @@ function handleAction(d, params) {
       const fk = draft.primaryPhobia;
       const firstRun = (getProgress(fk).highestCompleted ?? -1) < 0 &&
         !(state.log || []).some((l) => l.phobia === fk);
-      if (firstRun) go("predict", { phobia: fk, level: 0 });
+      // The chapter's opening page plays on the way in.
+      if (firstRun) storyGate(fk, 0, () => go("predict", { phobia: fk, level: 0 }));
       else go("ladder", { phobia: fk });
       break;
     }
-    case "go-dogs": go("ladder", { phobia: "dogs" }); break;
+    case "go-dogs": continueJourney(); break;
+    case "story-continue": continueJourney(); break;
+    case "open-story": go("story"); break;
+    case "story-play": {
+      const S = window.Story, id = d.beat;
+      if (!S || !id) break;
+      S.play(id, { onDone: () => {
+        // The card that opened it now reads as read; the book re-renders.
+        document.querySelectorAll(".story-card").forEach((c) => {
+          if (c.dataset.beat !== id) return;
+          c.classList.add("read");
+          const b = c.querySelector(".sc-read");
+          if (b) { b.textContent = t("st.reread", "Read again"); b.classList.replace("btn-primary", "btn-ghost"); }
+        });
+        if (document.getElementById("storyBook")) { const r = parseRoute(location.hash); render(r.view, r.params); }
+      } });
+      break;
+    }
     case "open-settings": try { openSettings(); } catch {} break;
 
     case "try-demo": go("demo"); break;
@@ -12006,19 +12107,7 @@ function handleAction(d, params) {
       break;
     }
     case "select-phobia":   if (d.nudgeId) markNudgeDone(d.nudgeId); try { PhobiaAudio.ui("whoosh"); } catch {} go("ladder", { phobia: d.phobia }); break;
-    case "start-level": {
-      try { PhobiaAudio.ui("whoosh"); } catch {}
-      const lvl = parseInt(d.level, 10);
-      const toPredict = () => go("predict", { phobia: d.phobia, level: lvl });
-      // One minute on what the fear IS — but after the first dog, not before
-      // it: trial 1's complete screen offers it, and if it was skipped there
-      // it opens in front of trial 2. Before any dog it was just more reading.
-      if (hasCreatureKit(d.phobia) && !primerSeen(d.phobia) && (getProgress(d.phobia).highestCompleted ?? -1) >= 0) {
-        openPrimer(d.phobia, { then: toPredict, skipGoes: true });
-      }
-      else toPredict();
-      break;
-    }
+    case "start-level": startTrial(d.phobia, parseInt(d.level, 10)); break;
     case "open-primer": openPrimer(d.phobia || "dogs"); break;
     case "open-feedback": openFeedback(d.context || ""); break;
     case "scroll-to": {
@@ -12067,7 +12156,7 @@ function handleAction(d, params) {
       break;
     }
     case "after-breathe":   go("rate", { phobia: d.phobia, level: parseInt(d.level, 10) }); break;
-    case "next-level":      go("predict", { phobia: d.phobia, level: parseInt(d.level, 10) }); break;   // through predict (was straight to exposure, dropping the core "predict vs actual" step)
+    case "next-level":      startTrial(d.phobia, parseInt(d.level, 10)); break;   // story page (if one is waiting) → predict → the trial
     case "back-ladder":     go("ladder", { phobia: d.phobia }); break;
     case "open-insights":   go("insights"); break;
     case "open-profiles":   go("profiles"); break;
@@ -12081,7 +12170,9 @@ function handleAction(d, params) {
       else go("select");
       break;
     }
-    case "edit-character": {
+    // (Was a second "edit-character" case — unreachable behind the first, so
+    // a profile card's Edit opened whichever traveler happened to be active.)
+    case "edit-character-id": {
       window.Character.setActiveCharacter(d.id);
       activateCharacterState();
       go("character", { editing: true });
@@ -12665,33 +12756,60 @@ function starfieldHTML(n) {
 function viewArrival() {
   const ch = window.Character && window.Character.loadCharacter();
   const named = ch && ch.name ? escapeHtml(ch.name) : null;
-  return `
+  const S = window.Story;
+  const top = `
   <div class="mob-stage" id="arrivalStage" aria-hidden="true"></div>
   <div class="mob-top">
     <span class="mob-top-title">Mira</span>
     <span class="mob-spacer"></span>
     <button class="mob-icon-btn" data-action="open-settings" aria-label="${t("a11y.settings", "Settings")}">⚙</button>
-  </div>
+  </div>`;
+  // First visit: one line of story, one button. The prologue plays on the
+  // way to the creator; the self-check stays one tap away for the visitor
+  // who came to learn about fear rather than to play.
+  if (!named) return `${top}
   <div class="mob-hero">
-    <p class="mob-hero-kicker">${t("arrive.kicker", "The Meadow Yard")}</p>
-    <h1 class="mob-hero-title">${named
-      ? tf("arrive.back", "Welcome back,<br>{name}", { name: named })
-      : t("arrive.title", "There is a dog<br>in this room.")}</h1>
+    <p class="mob-hero-kicker">${t("arrive.kicker2", "The Valley of Fears")}</p>
+    <h1 class="mob-hero-title">${t("arrive.title2", "Every fear is a path<br>you stopped walking.")}</h1>
   </div>
   <div class="mob-sheet">
     <div class="mob-sheet-grab"></div>
-    <p>${named
-      ? t("arrive.copyBack", "Your traveler is where you left them. Pick up the ladder whenever you're ready.")
-      : t("arrive.copy", "Five small trials, at your pace, with a dog that reads how you move. You can leave any of them at any moment.")}</p>
+    <p>${t("arrive.copy2", "Six of them cross this valley — dogs, spiders, snakes, heights, the dark and tight spaces. Walk one with Mira, the lantern-keeper, in small steps you choose. You can turn back from any of them, at any moment.")}</p>
     <div class="mob-thumb">
-      ${named
-        ? `<button class="mob-btn mob-btn-primary" data-action="go-dogs">${t("arrive.ctaBack", "Continue")}</button>`
-        : `<button class="mob-btn mob-btn-primary" data-action="make-traveler">${t("arrive.cta", "Step inside")}</button>`}
+      <button class="mob-btn mob-btn-primary" data-action="make-traveler">${t("arrive.cta2", "Step inside — begin the story")}</button>
     </div>
-    ${named ? `<div class="mob-thumb">
-      <button class="mob-btn mob-btn-ghost" data-action="edit-character">${t("arrive.edit", "Change traveler")}</button>
-      <button class="mob-btn mob-btn-ghost" data-action="open-quiz">${t("arrive.mirror", "The Mirror")}</button>
-    </div>` : ""}
+    <div class="mob-thumb">
+      <button class="mob-btn mob-btn-ghost" data-action="open-quiz">${t("arrive.quiz", "🪞 Not sure which fear? A 1-minute self-check")}</button>
+    </div>
+  </div>`;
+  // Returning: where the story is, what happened last time, and the one
+  // button that picks it up. It used to say "Continue" and always open the
+  // dog realm, whatever fear the traveler had chosen.
+  const tgt = continueTarget();
+  const realm = realmOf(tgt.key);
+  const chap = S && S.chapterOfRealm(tgt.key);
+  const recap = S ? S.recapLine() : "";
+  const note = S ? S.morningNoteHTML() : "";
+  const nextLine = tgt.allWalked
+    ? t("arrive.allWalked", "Every lantern is lit. Come back for a booster walk — or take a real step out there.")
+    : tf("arrive.next", "Next: {realm} · trial {n} — {title}", { realm: escapeHtml(realm.realmName), n: tgt.level + 1, title: escapeHtml(lvTitle(tgt.key, tgt.level)) });
+  return `${top}
+  <div class="mob-hero mob-hero-high">
+    <p class="mob-hero-kicker">${escapeHtml(chap ? S.chapterLabel(chap) : realm.realmName)}</p>
+    <h1 class="mob-hero-title">${tf("arrive.back", "Welcome back,<br>{name}", { name: named })}</h1>
+  </div>
+  <div class="mob-sheet">
+    <div class="mob-sheet-grab"></div>
+    ${note}
+    ${recap && !note ? `<p class="arrive-recap"><span>${t("arrive.prev", "Previously")}</span> ${escapeHtml(recap)}</p>` : ""}
+    <p class="arrive-next">${nextLine}</p>
+    <div class="mob-thumb">
+      <button class="mob-btn mob-btn-primary" data-action="story-continue">${t("arrive.ctaStory", "Continue the story")}</button>
+    </div>
+    <div class="mob-thumb">
+      <button class="mob-btn mob-btn-ghost" data-action="go-camp">${t("arrive.camp", "🏕 Camp")}</button>
+      <button class="mob-btn mob-btn-ghost" data-action="open-story">${t("arrive.story", "📖 The story")}</button>
+    </div>
   </div>`;
 }
 
@@ -12768,122 +12886,6 @@ function viewTraveler() {
   </div>`;
 }
 
-function viewWelcome() {
-  const ch = window.Character && window.Character.loadCharacter();
-  const heroLine = ch
-    ? tf("story.welcomeBack", "Welcome back, {name}. The valley kept your place.", { name: `<strong>${escapeHtml(ch.name || "traveler")}</strong>` })
-    : t("story.firstLine", "Everyone carries a fear. This one is yours to face — one small, safe step at a time.");
-  const cta = ch
-    ? `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaBack", "Continue the journey")}</button>`
-    : `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaNew", "Create your traveler")}</button>
-       <button class="btn-ghost demo-cta" data-action="try-demo">${t("story.tryFirst", "👣 Step inside first — 60 seconds, nothing to set up")}</button>
-       <button class="btn-ghost demo-cta" data-action="open-quiz">${t("story.quizLink", "🪞 Or start with the 60-second self-check")}</button>`;
-  const realmTeasers = FEATURED.filter(k => PHOBIAS[k]).map(k => `
-    <button class="landing-realm" data-action="select-phobia" data-phobia="${k}" ${ch ? "" : `disabled title="${t("story.createFirst", "Create your traveler first")}"`}>
-      <strong>${escapeHtml(realmOf(k).realmName)}</strong>
-      <span>${escapeHtml(PHOBIAS[k].label)}</span>
-    </button>`).join("");
-
-  const beats = [
-    { kicker: t("story.kicker", "a tiny game about big fears"), title: t("story.title", "The Valley of Fears"), copy: heroLine, extra: "" },
-    { kicker: t("story.beat", "the story"), title: t("story.b1h", "Fear starts small."), copy: t("story.b1p", "A bark behind a fence. A spider in the bath. A balcony you didn't step onto. A room that felt too tight to breathe in."), extra: "" },
-    { kicker: t("story.beat", "the story"), title: t("story.b2h", "Avoid it, and it grows."), copy: t("story.b2p", "Every time you cross the street, take the stairs, leave the light on — the relief feels wonderful. And the shadow learns you fear it. That relief is exactly what feeds it."), extra: "" },
-    { kicker: t("story.beat", "the story"), title: t("story.b3h", "But fear has a secret."), copy: t("story.b3p", "Stay near it — gently, on your own terms — and it rises, peaks, and <em>falls by itself</em>. Your body learns what nobody could tell you: it's safe. Face the shadow, and it shrinks."), extra: "" },
-    { kicker: t("story.beat", "the story"), title: t("story.b4h", "That's the whole game."), copy: t("story.b4p", 'Six famous fears live in this valley. Each holds five trials, from "barely a whisper" to "the real thing". Walk them at your own pace — you can leave any trial at any moment, and leaving is never a defeat.'), extra: `<div class="landing-realms" id="landingRealms">${realmTeasers}</div>` },
-    { kicker: t("story.beat", "the story"), title: t("story.b5h", "Your journey starts at the campfire."), copy: t("story.b5p", "Make a traveler — a face, a name, the fears you want to face. They walk every scene with you: their hand on the railing, their feet at the cellar stairs."), extra: `<p class="landing-disclaimer">${t("story.disclaimer", "<strong>A practice game, not therapy.</strong> Real exposure work for phobias belongs with a trained clinician who paces it and supports you. Use Mira for curiosity, education, or as a conversation starter — not treatment.")}</p>` },
-  ];
-
-  const dots = beats.map((_, i) =>
-    `<button type="button" class="landing-beat" data-beat="${i}" aria-label="${t("story.beatN", "Story beat")} ${i + 1}" ${i === 0 ? `aria-current="true"` : ""}></button>`
-  ).join("");
-
-  return `
-  <div class="landing" id="landingRoot">
-    <div class="landing-stage" id="landing3d" aria-hidden="true"></div>
-    <button type="button" class="landing-skip" data-action="begin">${ch ? t("story.skipBack", "Skip to camp") : t("story.skipNew", "Skip to traveler")}</button>
-    <div class="landing-hud">
-      <p class="landing-kicker" id="landingKicker">${beats[0].kicker}</p>
-      <h1 class="landing-title" id="landingTitle">${beats[0].title}</h1>
-      <p class="landing-copy" id="landingCopy">${beats[0].copy}</p>
-      <div id="landingExtra"></div>
-      <div class="landing-actions">${cta}</div>
-      <div class="landing-beats" role="tablist" aria-label="${t("story.beats", "Story chapters")}">${dots}</div>
-      <p class="landing-hint">${t("story.hint3d", "drag to look · click chapters")}</p>
-    </div>
-    <textarea id="landingBeats" hidden>${escapeHtml(JSON.stringify(beats.map(b => ({ kicker: b.kicker, title: b.title, copy: b.copy, extra: b.extra }))))}</textarea>
-  </div>`;
-}
-
-function mountLandingHUD() {
-  const root = document.getElementById("landingRoot");
-  if (!root) return;
-  let beats = [];
-  try {
-    const raw = document.getElementById("landingBeats");
-    const src = raw && (raw.value || raw.textContent || "");
-    if (src) beats = JSON.parse(src);
-  } catch { beats = []; }
-  const kicker = document.getElementById("landingKicker");
-  const title = document.getElementById("landingTitle");
-  const copy = document.getElementById("landingCopy");
-  const extra = document.getElementById("landingExtra");
-  const dots = [...root.querySelectorAll(".landing-beat")];
-  let idx = 0;
-  let paused = false;
-  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  function show(i, fromUser) {
-    if (fromUser) paused = true;
-    idx = Math.max(0, Math.min(beats.length - 1, i));
-    const b = beats[idx] || {};
-    if (kicker) kicker.textContent = b.kicker || "";
-    if (title) title.textContent = b.title || "";
-    if (copy) copy.innerHTML = b.copy || "";
-    if (extra) extra.innerHTML = b.extra || "";
-    dots.forEach((d, n) => d.setAttribute("aria-current", n === idx ? "true" : "false"));
-    if (window.ShellScenes && window.ShellScenes.setLandingBeat) {
-      try { window.ShellScenes.setLandingBeat(idx); } catch {}
-    }
-    // Re-bind data-action on injected realm buttons.
-    if (extra) {
-      extra.querySelectorAll("[data-action]").forEach((el) => {
-        el.addEventListener("click", (e) => {
-          if (el.dataset.stop) e.stopPropagation();
-          try { PhobiaAudio.unlock(); } catch {}
-          handleAction(el.dataset, {});
-        });
-      });
-    }
-  }
-  dots.forEach((d) => d.addEventListener("click", () => show(parseInt(d.dataset.beat, 10) || 0, true)));
-  root.addEventListener("wheel", (e) => {
-    if (Math.abs(e.deltaY) < 18) return;
-    e.preventDefault();
-    show(idx + (e.deltaY > 0 ? 1 : -1), true);
-  }, { passive: false });
-  let touchY = null;
-  root.addEventListener("touchstart", (e) => { touchY = e.touches[0] && e.touches[0].clientY; }, { passive: true });
-  root.addEventListener("touchend", (e) => {
-    if (touchY == null) return;
-    const y = e.changedTouches[0] && e.changedTouches[0].clientY;
-    const dy = touchY - y;
-    touchY = null;
-    if (Math.abs(dy) > 48) show(idx + (dy > 0 ? 1 : -1), true);
-  }, { passive: true });
-  window.addEventListener("keydown", function onKey(e) {
-    if (!root.isConnected) { window.removeEventListener("keydown", onKey); return; }
-    if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); show(idx + 1, true); }
-    if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); show(idx - 1, true); }
-  });
-  if (!reduce && beats.length > 1) {
-    const timer = setInterval(() => {
-      if (!root.isConnected) { clearInterval(timer); return; }
-      if (paused) return;
-      show((idx + 1) % beats.length);
-    }, 7800);
-  }
-  show(0);
-}
-
 function viewThreshold() {
   const ch = window.Character && window.Character.loadCharacter();
   if (!ch) {
@@ -12957,14 +12959,6 @@ function viewSelect() {
   const needBackup = state.log.length >= 5 &&
     (Date.now() - _lastExport > 14 * 864e5) &&
     (Date.now() - _backupSnooze > 7 * 864e5);
-  // Today's step targets the current realm — unless it's already tamed, in
-  // which case the quest moves the traveler on to the next untamed realm.
-  let questKey = curKey;
-  if ((getProgress(curKey).highestCompleted ?? -1) + 1 >= PHOBIAS[curKey].levels.length) {
-    questKey = keys.find(k => (getProgress(k).highestCompleted ?? -1) + 1 < PHOBIAS[k].levels.length) || curKey;
-  }
-  const questRealm = realmOf(questKey);
-  const questDone = Math.min(PHOBIAS[questKey].levels.length - 1, (getProgress(questKey).highestCompleted ?? -1) + 1);
 
   // Campfire line: the character speaks about where they are on the journey.
   const curRealm = realmOf(curKey);
@@ -13044,20 +13038,7 @@ function viewSelect() {
         ${streak >= 2 ? `<span class="camp-stat streak" title="${t("camp.streakTip", "Days in a row you've practiced")}">${tf("camp.streak", "🔥 {n}-day flame", { n: streak })}</span>` : ""}
         ${worldstepCount() > 0 ? `<span class="camp-stat worldsteps" title="${t("camp.realTip", "Real-world steps faced outside the game — the ones that count double")}">${tf("camp.realsteps", `🌍 {n} real step${worldstepCount() === 1 ? "" : "s"}`, { n: worldstepCount() })}</span>` : ""}
       </div>
-      ${ch ? `
-      <div class="quest-card ${doneToday ? "done" : ""}">
-        <div class="quest-head">
-          <span class="quest-flag">${t("quest.flag", "🪧 Today's step")}</span>
-          ${doneToday ? `<span class="quest-chip done-chip">${t("quest.earned", "🔥 ember earned")}</span>` : `<span class="quest-chip">${t("quest.bonus", "+15 ember for the first trial today")}</span>`}
-        </div>
-        <div class="quest-body">
-          <strong>${escapeHtml(questRealm.realmName)} · ${tf("quest.trial", "trial {n}", { n: questDone + 1 })}: ${escapeHtml(lvTitle(questKey, questDone))}</strong>
-          <p>${doneToday ? t("quest.doneP", "You showed up today — the flame is lit. Another step is always welcome.") : t("quest.todoP", "One small step a day keeps the flame lit. You can step out at any moment.")}</p>
-        </div>
-        <button class="${doneToday ? "btn-ghost" : "btn-primary"}" data-action="start-level" data-phobia="${questKey}" data-level="${questDone}">
-          ${doneToday ? t("quest.btnDone", "Take another step") : t("quest.btnTodo", "Take today's step")}
-        </button>
-      </div>` : ""}
+      ${ch ? storyCampCard() : ""}
       ${needBackup ? `
       <div class="backup-nudge">
         <span>💾 ${t("camp.backup", "Your whole journey lives only on this device. One browser cleanup could erase it — take a copy?")}</span>
@@ -13109,6 +13090,43 @@ function viewSelect() {
       </div>
     </section>` : ""}
   </div>`;
+}
+
+// The camp's one obvious next action: where the story is (six lanterns, the
+// current chapter), the trial that turns its next page, and today's ember.
+// It replaces "Today's step", which pointed at the same trial without saying
+// why it mattered.
+function storyCampCard() {
+  const S = window.Story;
+  const tgt = continueTarget();
+  const doneToday = state.log.some(l => l.finished !== false && isSameLocalDay(l.ts));
+  const chap = S && S.chapterOfRealm(tgt.key);
+  const waiting = S && S.nextUnread(tgt.key);
+  const realm = realmOf(tgt.key);
+  const body = tgt.allWalked
+    ? t("camp.storyAll", "All six lanterns are lit. Booster walks and real steps keep them that way.")
+    : waiting
+      ? tf("camp.pageWaiting", "📖 A new page is waiting: “{t}”.", { t: escapeHtml(S.titleOf(waiting)) })
+      : (doneToday ? t("quest.doneP", "You showed up today — the flame is lit. Another step is always welcome.")
+        : t("camp.storyP", "Every finished trial turns a page of the story. You can step out of any trial at any moment."));
+  return `
+      <div class="quest-card story-quest ${doneToday ? "done" : ""}">
+        <div class="quest-head">
+          <span class="quest-flag">${chap ? escapeHtml(S.chapterLabel(chap)) : t("quest.flag", "🪧 Today's step")}</span>
+          ${doneToday ? `<span class="quest-chip done-chip">${t("quest.earned", "🔥 ember earned")}</span>` : `<span class="quest-chip">${t("quest.bonus", "+15 ember for the first trial today")}</span>`}
+        </div>
+        ${S ? S.lanternsHTML({ current: tgt.key }) : ""}
+        <div class="quest-body">
+          ${tgt.allWalked ? "" : `<strong>${tf("camp.storyNext", "{realm} · trial {n}: {title}", { realm: escapeHtml(realm.realmName), n: tgt.level + 1, title: escapeHtml(lvTitle(tgt.key, tgt.level)) })}</strong>`}
+          <p>${body}</p>
+        </div>
+        <div class="actions quest-actions">
+          ${waiting && !tgt.allWalked && !(S.pendingBefore(tgt.key, tgt.level) === waiting)
+            ? `<button class="btn-ghost" data-action="story-play" data-beat="${escapeHtml(waiting)}">${t("st.read", "Read the page")}</button>` : ""}
+          <button class="${doneToday && !waiting ? "btn-ghost" : "btn-primary"}" data-action="story-continue">${tgt.allWalked ? t("camp.storyCtaAll", "Choose a booster walk ↓") : doneToday ? t("camp.storyCtaDone", "Take another step") : t("camp.storyCta", "Continue the story")}</button>
+          <button class="btn-ghost" data-action="open-story">${t("camp.openStory", "📖 The story")}</button>
+        </div>
+      </div>`;
 }
 
 function mountJourney() {
@@ -13491,6 +13509,23 @@ function isSameLocalDay(ts) {
 // The Book of Sparks — every psychology card earned so far, plus face-down
 // slots for the ones still out there. Psychoeducation as a collection screen:
 // learning reads as loot, not homework.
+// The Sparks, as the Story Book's third tab.
+function sparksGridHTML() {
+  const owned = getSparks();
+  const cards = INSIGHT_CARDS.map((c, i) => {
+    const has = owned.includes(c.id);
+    return `
+      <div class="spark-slot ${has ? "owned" : "readable"}" style="--i:${i}"${has ? "" : ` title="${t("journal.readableTip", "Read ahead — it becomes yours when you live it in a trial")}"`}>
+        <span class="spark-icon">${c.icon}</span>
+        <strong>${escapeHtml(t(`card.${c.id}.title`, c.title))}</strong>
+        <p>${escapeHtml(t(`card.${c.id}.text`, c.text))}</p>
+        ${has ? "" : `<span class="spark-unlived">${t("journal.unlived", "📖 read ahead — not yet lived")}</span>`}
+      </div>`;
+  }).join("");
+  return `
+    <p>${t("journal.p2", "The psychology of fear, one spark at a time — read it all now, or collect each piece by living it in a trial.")} ${owned.length ? tf("journal.have", "You hold <strong>{a} of {b}</strong>.", { a: owned.length, b: INSIGHT_CARDS.length }) : ""}</p>
+    <div class="spark-grid">${cards}</div>`;
+}
 function viewJournal() {
   const owned = getSparks();
   // Unearned sparks used to be "?" boxes — the app's best CBT writing,
@@ -14144,7 +14179,7 @@ function viewProfiles() {
           ${isActive ? `<span class="profile-badge">${t("pr.active", "active")}</span>` : ""}
         </div>
         <div class="profile-actions">
-          <button class="btn-ghost" data-action="edit-character" data-id="${c.id}" data-stop="1">${t("set.edit", "Edit")}</button>
+          <button class="btn-ghost" data-action="edit-character-id" data-id="${c.id}" data-stop="1">${t("set.edit", "Edit")}</button>
           ${all.length > 1 ? `<button class="btn-warn" data-action="delete-character" data-id="${c.id}" data-stop="1">${t("pr.delete", "Delete")}</button>` : ""}
         </div>
       </div>
@@ -14319,6 +14354,7 @@ function viewPredict(phobiaKey, levelIdx) {
         : `<h2 style="margin-top:10px">${t("predict.h2", "At the gate: name your fear's number")}</h2>
       <p>${t("predict.p", "A traveler's ritual that makes the trial count double: <em>predict</em> how loud the fear will be, then see how it actually goes. Most people over-predict — and catching your own shadow exaggerating is exactly the lesson the brain needs.")}</p>`}
       <p class="hint" style="margin-top:14px">${t("predict.youllBe", "You'll be:")} <strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>${lv.desc ? ` — ${escapeHtml(lvDesc(phobiaKey, levelIdx))}` : ""}</p>
+      ${window.Story ? window.Story.focusHTML(phobiaKey, levelIdx) : ""}
 ${hasCreatureKit(phobiaKey) ? `
       <div class="expect-block">
         <div class="expect-q">${expectQ(phobiaKey)}</div>
@@ -14604,7 +14640,7 @@ function viewBreathe(phobiaKey, levelIdx) {
   return `
     <div class="panel">
       <h2>${t("breathe.h2", "The campfire breath")}</h2>
-      <p>${t("breathe.p", "A traveler's tool: follow the circle. In for 4, hold, out for 4 — the long exhale presses your body's brake pedal. Stay as long as you like; the fire isn't going anywhere.")}</p>
+      <p>${t("breathe.p", "A traveler's tool: follow the circle. In for 4, out for 6 — the long exhale presses your body's brake pedal. Stay as long as you like; the fire isn't going anywhere.")}</p>
       <div class="breath-wrap">
         <div class="breath-circle" id="breathCircle">${t("breath.go", "Breathe")}</div>
       </div>
@@ -15002,6 +15038,16 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
         ${rankRow || rewardStrip}
         ${heroCta}
       </div>
+      ${(() => {
+        // The page this trial turned — right under the next step, since the
+        // next step plays it anyway if it's still unread.
+        const S = window.Story;
+        if (!S || early) return "";
+        const id = S.pendingAfter(phobiaKey, levelIdx);
+        const out = id ? [S.cardHTML(id)] : [];
+        if (S.isUnlocked("epilogue") && !S.isSeen("epilogue")) out.push(S.cardHTML("epilogue", { kicker: t("st.cardEpi", "🌅 Every lantern is lit — the last page of the story") }));
+        return out.join("");
+      })()}
       ${companionBlock}
       ${shadowStrip}
       ${realityBlock}
@@ -16419,17 +16465,18 @@ document.addEventListener("input", (e) => {
 function runBreathing() {
   const c = document.getElementById("breathCircle");
   if (!c) return;
+  // In 4, out 6 — the same rhythm as the in-scene breath and the Spark card
+  // (this page used to count 4-hold-4-hold, contradicting both).
   const phases = [
     { cls: "inhale", text: t("breath.in", "Inhale…"), ms: 4000 },
-    { cls: "",       text: t("breath.hold", "Hold"),    ms: 2000 },
-    { cls: "exhale", text: t("breath.out", "Exhale…"), ms: 4000 },
-    { cls: "",       text: t("breath.hold", "Hold"),    ms: 2000 }
+    { cls: "exhale", text: t("breath.out", "Exhale…"), ms: 6000 },
   ];
   let i = 0;
   function step() {
     if (!c.isConnected) return;
     c.classList.remove("inhale", "exhale");
     const phase = phases[i % phases.length];
+    c.style.transitionDuration = phase.ms + "ms";
     if (phase.cls) c.classList.add(phase.cls);
     c.textContent = phase.text;
     i++;
