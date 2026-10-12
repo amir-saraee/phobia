@@ -490,6 +490,9 @@ if ("serviceWorker" in navigator) {
   .stage.chrome-hidden > .step-controls, .stage.chrome-hidden > .scene-cmd-bar {
     opacity: 0; pointer-events: none;
   }
+  /* The walk instruction stays until the player has moved: the person it is
+     for is the one frozen at the entrance — exactly who the idle fade hit. */
+  .stage.chrome-hidden .controls-hint.until-moved { opacity: 1; }
   /* Two things are exempt, for the same reason: they are the ones a frightened
      person needs. The grounding button is the way out, and once .step-controls
      has faded the pill is the only remaining answer to "how much longer". */
@@ -502,6 +505,11 @@ if ("serviceWorker" in navigator) {
   }
   .stage-caption .lvl { color: var(--accent); font-weight: 600; }
 
+  .rate-checkins {
+    margin: 10px 0 12px; padding: 8px 12px; border-radius: 10px;
+    background: var(--panel-2); border: 1px dashed var(--border); font-size: 14px;
+  }
+  .rate-checkins b { font-size: 16px; }
   /* SUDS slider */
   .suds {
     margin-top: 18px; padding: 18px;
@@ -1119,6 +1127,32 @@ if ("serviceWorker" in navigator) {
   .dc-read-res .dc-res-means { font-size: 13px; line-height: 1.45; color: #dbe3f0; }
   .dc-new { font-size: 10.5px; font-weight: 700; color: #0b1020; background: #a5b4fc; padding: 1px 6px; border-radius: 999px; margin-left: 6px; white-space: nowrap; }
   .stage:has(.dc-read.show) .ctx-prompt, .stage:has(.dc-read.show) .reach-hint { opacity: 0 !important; }
+  /* …and the narrator's captions: a queued line explaining the very signal
+     being asked about ("it turned its head away — a polite 'no trouble'")
+     used to sit under the question, giving the answer away. */
+  .stage:has(.dc-read.show) .captions { opacity: 0 !important; }
+  /* Check-in: the player's own 0–10, top-centre under the hold pill. */
+  .stage .dc-check {
+    position: absolute; left: 50%; top: 56px; z-index: 9; transform: translate(-50%, -6px);
+    width: min(440px, calc(100% - 24px)); box-sizing: border-box;
+    padding: 10px 12px 8px; border-radius: 14px;
+    background: rgba(12, 17, 32, .88); border: 1px solid rgba(252,211,77,.45);
+    color: var(--text); box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    opacity: 0; pointer-events: none; transition: opacity .25s ease, transform .25s ease;
+  }
+  .stage .dc-check.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  .stage .dc-check.result { pointer-events: none; }
+  .dc-check-q { font-size: 13px; line-height: 1.35; margin-bottom: 7px; }
+  .dc-check-opts { display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 4px; }
+  .dc-chk {
+    min-height: 32px; padding: 0; border-radius: 8px; cursor: pointer; font: 700 13px/1 inherit;
+    border: 1px solid rgba(255,255,255,.16); background: rgba(28,36,64,.78); color: var(--text);
+    box-shadow: inset 0 -3px 0 var(--c);
+  }
+  .dc-chk:hover, .dc-chk:focus-visible { border-color: var(--c); outline: none; }
+  .dc-check-ends { display: flex; justify-content: space-between; font-size: 10.5px; opacity: .6; margin-top: 4px; }
+  .dc-check-res { font-size: 13px; line-height: 1.45; color: #f6e7b8; }
+  .stage:has(.dc-check.show) .ctx-prompt { opacity: 0 !important; }
   @media (max-width: 600px) {
     .stage .dog-coach { top: 58px; right: 8px; width: 156px; padding: 7px 9px 6px; border-radius: 12px; }
     .stage .dog-coach canvas.dc-wave { height: 34px !important; }
@@ -1133,6 +1167,10 @@ if ("serviceWorker" in navigator) {
     .stage:has(.dog-coach) .gyro-btn { top: 220px !important; right: 8px !important; }
     .stage .dc-callout::after { display: none; }
     .stage .dc-read { width: min(360px, calc(100% - 16px)); }
+    /* Phones: the coach card owns the top-right; the check-in sits low,
+       above the joystick lane and the command bar. */
+    .stage .dc-check { top: auto; bottom: calc(var(--cmdbar-top, 0px) + 200px); width: calc(100% - 16px); }
+    .dc-chk { min-height: 36px; }
     .dc-opt { min-width: 0; font-size: 12px; padding: 10px 6px; }
   }
   @media (max-width: 600px) {
@@ -4528,8 +4566,11 @@ if ("serviceWorker" in navigator) {
     .stage .reach-hint { bottom: 172px; }
     .stage .ctx-prompt { bottom: 236px; font-size: 12px; max-width: 90%; }
     .stage.cmds-open .reach-hint { bottom: max(172px, calc(var(--cmdbar-top, 176px) + 8px)); }
-    .stage.cmds-open .captions   { bottom: max(228px, calc(var(--cmdbar-top, 176px) + 64px)); }
-    .stage.cmds-open .ctx-prompt { bottom: max(292px, calc(var(--cmdbar-top, 176px) + 128px)); }
+    /* (+110 / +172, not +64 / +128: the reach hint wraps to three lines on a
+       phone — "Buddy is right beside you · tap to pet…" — and its top ran
+       into the caption above it.) */
+    .stage.cmds-open .captions   { bottom: max(228px, calc(var(--cmdbar-top, 176px) + 110px)); }
+    .stage.cmds-open .ctx-prompt { bottom: max(292px, calc(var(--cmdbar-top, 176px) + 172px)); }
     /* The hold pill shares the top row with the coach card: cap it short of
        the card, and drop the (full) bar once it becomes "continue". */
     .stage:has(.dog-coach) .hold-pill { max-width: calc(100% - 200px); }
@@ -8413,14 +8454,14 @@ const PhobiaNarrator = (() => {
       ],
       panic: [
         "You're safe. It's small. Feet on the floor, slow breath out.",
-        "Step back whenever you need to. The jar is always there.",
+        "Step back whenever you need to. That's always allowed.",
       ],
       // Used INSTEAD of panic while the spider is actively darting/pouncing —
       // the guide must never say "it hasn't moved" over a skitter.
       threatened: [
         "It darted. You flinched and stayed. That's the whole skill.",
         "Fast legs, small body. The fear spikes, then it settles. Stay with it.",
-        "You can jar it any time. For this breath, just hold your ground.",
+        "The jar comes later. For this breath, just hold your ground.",
       ],
       avoidance: [
         "You gave yourself space. Good. Step back in when you're ready.",
@@ -9017,7 +9058,7 @@ const VOICE_LINES = {
     ["A dim cellar. Something small in the far corner.", "Just look from here. Notice your feet on the cold floor."],
     ["A small spider on the concrete. It shifts, then stills.", "Watch the legs. Watch your breath. Both can happen at once."],
     ["It's closer now, and it darts when it moves.", "When it skitters, your body jumps. Let it. Then settle."],
-    ["A big one, near your feet. You can see the legs work.", "Step back any time. Or lower the jar over it. You're in control."],
+    ["A big one, near your feet. You can see the legs work.", "Step back any time. When it's settled, the jar is yours. You're in control."],
     ["On the wall, right at eye level. Legs twitching.", "Hold your ground for one breath. If it lunges, you can back away."],
   ],
   enclosed: [
@@ -9608,7 +9649,7 @@ const SPIDER_SIGNALS = {
   stilt:    { cls: "space", icon: "⬆️", name: "Rises up on its legs",  look: "body lifted high, legs straight, very still",
               means: "A startled spider rises to run. It's getting ready to leave — give it a moment and it will." },
   crouch:   { cls: "space", icon: "⤵️", name: "Crouches low",          look: "body pressed down, legs bunched under it",
-              means: "A crouch means you came fast and it's startled. If it jumps, it jumps to get away — and it stops short." },
+              means: "A crouch is a spider gathering itself to spring. Its jumps are short and mostly about getting somewhere else — it stops short of you." },
 };
 const SPIDER_FEARS = [
   { id: "run",   text: "It'll run at me" },
@@ -9738,7 +9779,7 @@ const HEIGHTS_SIGNALS = {
             means: "Wind is stronger up high, and it feels like more than it is. A gust that tugs your sleeve can't move a standing adult off their feet." },
   rattle: { cls: "place", icon: "🔩", name: "The railing rattles",   look: "the railing rattles when you shake it",
             means: "Railings are loose-fitted and rated to hold a crowd leaning on them. Rattle is noise, not weakness." },
-  coin:   { cls: "place", icon: "🪙", name: "A long fall",           look: "the coin takes a long time to land",
+  coin:   { cls: "place", icon: "🪙", name: "Over the edge",         look: "you watch the coin drop away below the rail",
             means: "That's just how far down it is — the drop is real, and so is the rail between you and it. Height isn't danger; falling is, and nothing here is making you fall." },
 };
 const HEIGHTS_FEARS = [
@@ -11574,7 +11615,9 @@ function openMenu() {
   });
   // Esc closes
   function onEsc(e) {
-    if (e.key === "Escape") { closeMenu(); document.removeEventListener("keydown", onEsc); }
+    // (stopPropagation: the trial's panic key listens on window, and closing
+    // the menu used to start a grounding exercise as well.)
+    if (e.key === "Escape") { e.stopPropagation(); closeMenu(); document.removeEventListener("keydown", onEsc); }
   }
   document.addEventListener("keydown", onEsc);
 }
@@ -12723,6 +12766,7 @@ function handleRateSubmit(d, params) {
       kinds: ev.kinds || {}, notes: ev.notes || {},
       engagedSec: ev.engagedSec, dur: Math.round((ev.wave || []).length * 0.5),
       wave: downsampleWave(ev.wave, 60), marks: (ev.marks || []).filter((m) => m.kind !== "read").slice(-40),
+      checkins: (ev.checkins || []).slice(0, 3).map((c) => c.v),
     };
     if (Array.isArray(ev.goals) && ev.goals.length) {
       extra.stars = Math.max(0, Math.min(3, ev.stars | 0));
@@ -14455,6 +14499,7 @@ function viewExposure(phobiaKey, levelIdx) {
         <button class="cmd-btn" data-cmd="lean" title="${t("cmd.h.leanTip", "Lean over the railing")}"><span class="cmd-icon">⤴</span><span>${t("cmd.h.lean", "Lean over")}</span></button>
         <button class="cmd-btn" data-cmd="shake"><span class="cmd-icon">⇄</span><span>${t("cmd.h.shake", "Shake the railing")}</span></button>
         <button class="cmd-btn" data-cmd="coin"><span class="cmd-icon">🪙</span><span>${t("cmd.h.coin", "Drop a coin")}</span></button>
+        <button class="cmd-btn" data-cmd="grip" title="${tf("cmd.key", "Keyboard: {k}", { k: "R" })}"><span class="cmd-icon">🤲</span><span class="cmd-label">${t("cmd.h.letGo", "Hands off the rail")}</span></button>
       </div>
     `;
   } else if (phobiaKey === "water") {
@@ -14502,6 +14547,7 @@ function viewExposure(phobiaKey, levelIdx) {
       : levelIdx === 2
         ? `<button class="cmd-btn" data-cmd="ride" title="${tf("cmd.key", "Keyboard: {k}", { k: "E" })}"><span class="cmd-icon">↕</span><span>${t("cmd.e.ride", "Ride two floors")}</span></button>
            <button class="cmd-btn" data-cmd="open"><span class="cmd-icon">◀▶</span><span>${t("cmd.e.openDoors", "Open the doors")}</span></button>
+           <button class="cmd-btn" data-cmd="close"><span class="cmd-icon">▶◀</span><span>${t("cmd.e.closeDoors", "Close the doors")}</span></button>
            <button class="cmd-btn" data-cmd="touch"><span class="cmd-icon">✋</span><span>${t("cmd.e.touch", "Touch the wall")}</span></button>`
         : `<button class="cmd-btn" data-cmd="door" title="${tf("cmd.key", "Keyboard: {k}", { k: "E" })}"><span class="cmd-icon">🚪</span><span class="cmd-label">${t("cmd.e.close", "Close the door")}</span></button>
            <button class="cmd-btn" data-cmd="light"><span class="cmd-icon">💡</span><span>${t("cmd.e.light", "Light switch")}</span></button>
@@ -14522,8 +14568,8 @@ function viewExposure(phobiaKey, levelIdx) {
   } else if (phobiaKey === "snakes") {
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="snakes">
-        <button class="cmd-btn" data-cmd="still" data-press="true" title="${t("cmd.sn.stillTip", "Hold to stay calm — snake retreats")}"><span class="cmd-icon">🧘</span><span>${t("cmd.sn.still", "Hold still")}</span></button>
-        <button class="cmd-btn" data-cmd="extend" data-press="true" title="${t("cmd.sn.extendTip", "Press and hold to slowly extend your hand")}"><span class="cmd-icon">✋</span><span>${t("cmd.sn.extend", "Extend hand")}</span></button>
+        <button class="cmd-btn" data-cmd="still" data-press="true" title="${t("cmd.sn.stillTip2", "Hold to keep still — a watching snake loses interest (key: H)")}"><span class="cmd-icon">🧘</span><span>${t("cmd.sn.still2", "Hold still (H)")}</span></button>
+        <button class="cmd-btn" data-cmd="extend" data-press="true" title="${t("cmd.sn.extendTip2", "Press and hold to slowly extend your hand (key: E)")}"><span class="cmd-icon">✋</span><span>${t("cmd.sn.extend2", "Extend hand (E)")}</span></button>
         <button class="cmd-btn" data-cmd="back-step"><span class="cmd-icon">↩</span><span>${t("cmd.sn.back", "Step back")}</span></button>
         <button class="cmd-btn" data-cmd="leaf"><span class="cmd-icon">🍃</span><span>${t("cmd.sn.leaf", "Drop a leaf")}</span></button>
       </div>
@@ -14643,10 +14689,18 @@ function viewRate(phobiaKey, levelIdx) {
   const earlyNote = (lastRungOutcome && lastRungOutcome.finished === false)
     ? `<p class="small" style="opacity:.75">${t("rate.early", "You stepped out before the hold finished — that is always allowed. Rate how it felt anyway.")}</p>`
     : "";
+  // The player's own readings from inside the trial — a memory aid, never a
+  // pre-filled answer (the peak they remember is the one that counts).
+  const ev = window.__lastTrialEvidence;
+  const chk = (ev && ev.phobia === phobiaKey && ev.level === levelIdx && Array.isArray(ev.checkins)) ? ev.checkins.map((c) => c.v) : [];
+  const chkNote = chk.length
+    ? `<p class="rate-checkins">🗣 ${tf("rate.checkins", "Your check-ins in there: {list}", { list: chk.map((v) => `<b style="color:${sudsColor(v)}">${v}</b>`).join(` <span aria-hidden="true">${window.I18n && window.I18n.isRTL() ? "←" : "→"}</span> `) })}</p>`
+    : "";
   return `
     <div class="panel">
       <h2>${t("rate.h2", "The trial is behind you. How loud was it?")}</h2>
       ${earlyNote}
+      ${chkNote}
       <p>${t("rate.p", "Two readings on the <strong>SUDS</strong> scale — Subjective Units of Distress. Be honest; the journal is only for you.")}</p>
       <div class="suds">
         <label id="lbl-sudsPeak">${t("rate.peakLabel", "At its worst, in there")}</label>
@@ -15609,7 +15663,14 @@ function mountExposure(phobiaKey, levelIdx) {
   })();
   const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
   if (immersiveOn) {
+    // Instantly, not through the stage's height transition: on a phone busy
+    // building the scene that 0.25 s animation ran for seconds, and both
+    // scrolls below measured the half-grown stage — the "centre the room"
+    // glide then lifted the page until the joystick hung off the bottom.
+    stage.style.transition = "none";
     stage.classList.add("theater");
+    void stage.offsetHeight;
+    stage.style.transition = "";
     // Theater makes the stage ~100dvh tall. On phones the page above it
     // (header + step badge) pushes the stage's BOTTOM below the fold — which
     // is exactly where the joystick lives, so touch players got half a
@@ -15626,8 +15687,16 @@ function mountExposure(phobiaKey, levelIdx) {
   // on. Carry them inside for the duration and put them back after. Listeners
   // are bound per-element, so they survive the move.
   let fsMoved = null;
+  let fsWas = false;
   const onFsChange = () => {
     const full = fsEl() === stage;
+    // Esc in fullscreen belongs to the browser: it leaves fullscreen and the
+    // page never hears it. Someone who pressed it to stop should know the
+    // next one (or G) grounds them.
+    if (fsWas && !full && stage.isConnected) {
+      try { if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt(t("grnd.afterFs", "Need a moment? Press Esc again — or G — to ground yourself."), 4500); } catch {}
+    }
+    fsWas = full;
     if (full && !fsMoved) {
       fsMoved = [];
       for (const sel of [".scene-cmd-bar", ".step-controls"]) {
@@ -15662,9 +15731,10 @@ function mountExposure(phobiaKey, levelIdx) {
       if (req) Promise.resolve(req.call(stage, { navigationUI: "hide" })).catch(() => {});
     } catch {}
   };
+  // (Not on a key: pressing W went fullscreen, and then the panic key, Esc,
+  // was spent by the browser leaving fullscreen instead of grounding.)
   if (immersiveOn) {
     stage.addEventListener("pointerdown", goImmersive, { once: true });
-    window.addEventListener("keydown", goImmersive, { once: true });
   }
 
   // Chrome auto-hide — the video-player contract: still for a moment and the
@@ -17756,7 +17826,10 @@ function runTutorialTour(stage, phobiaKey) {
   // isCoarsePointer() is this (classic) script's helper. IS_COARSE_POINTER is a
   // const inside the 3D module's scope and is NOT visible here — referencing it
   // threw on every first run and killed the tour before it rendered.
-  const isTouch = isCoarsePointer() || ("ontouchstart" in window);
+  // (Coarse pointer only, like the scene itself: a touchscreen laptop has a
+  // keyboard and no joystick, and was told to use one — and a 🛟 button it
+  // never gets.)
+  const isTouch = isCoarsePointer();
   // What the user actually DOES in this specific scene — keyed off the phobia
   // so the orientation never teaches the wrong mental model (the old tour told
   // dog users to "grip the rail / splash the water"). Character-driven scenes
@@ -17765,7 +17838,7 @@ function runTutorialTour(stage, phobiaKey) {
   const interactCopy = isTouch ? {
     dogs: t("tour.i.dogs.m", "Walk up with the joystick, then tap the dog to pet it. The buttons below the scene throw a ball, share a treat, or call it over."),
     heights: t("tour.i.heights.m", "Walk to the edge with the joystick and look down when you're ready. Tap things in the world to interact."),
-    spiders: t("tour.i.spiders.m", "Walk a little closer at your own pace. Tap the spider to lower a glass jar over it."),
+    spiders: t("tour.i.spiders.m2", "Walk a little closer at your own pace and stay with it. Once your alarm settles, tap the spider to catch it under a glass jar."),
     snakes: t("tour.i.snakes.m", "Walk toward the snake slowly. The buttons below help you hold still or extend a hand."),
     water: t("tour.i.water", "Wade in step by step. Look down and splash when you feel ready."),
     dark: t("tour.i.dark.m", "Walk into the dark with the joystick. The buttons below hold a flashlight or strike a match — the coach will count what they do."),
@@ -17773,8 +17846,8 @@ function runTutorialTour(stage, phobiaKey) {
   } : {
     dogs: t("tour.i.dogs.d", "Walk up to the dog, then click it to pet. Click the floor to throw a ball (shift-click for a treat) — the “Show controls” pill reveals buttons too."),
     heights: t("tour.i.heights.d", "Walk to the edge and look down when you're ready. Click things in the world to interact."),
-    spiders: t("tour.i.spiders.d", "Walk a little closer at your own pace. Click the spider to lower a glass jar over it."),
-    snakes: t("tour.i.snakes.d", "Walk toward the snake slowly. Hold still and it stays calm."),
+    spiders: t("tour.i.spiders.d2", "Walk a little closer at your own pace and stay with it. Once your alarm settles, click the spider to catch it under a glass jar."),
+    snakes: t("tour.i.snakes.d2", "Walk toward the snake slowly. Hold H to keep still — it loses interest — or E to slowly offer a hand."),
     water: t("tour.i.water", "Wade in step by step. Look down and splash when you feel ready."),
     dark: t("tour.i.dark.d", "Walk into the dark at your pace. Hold F for a flashlight — the coach will count what it does."),
     enclosed: t("tour.i.enclosed.d", "Walk in, then click the door (or press E) to close it. In the lift, E rides; in the scanner, E slides you in or out. The door always opens."),
@@ -18515,8 +18588,13 @@ class TouchJoystick {
     this.active = true;
     this.pid = e.pointerId;
     const r = this.dom.getBoundingClientRect();
-    this.center.x = r.left + r.width / 2;
-    this.center.y = r.top + r.height / 2;
+    // The throw is the ring actually drawn (it was a fixed 44 px on an
+    // 84 px phone base — the thumb left the ring at full push), and the
+    // centre floats to where the thumb lands: a touch off-centre used to
+    // jump straight to that speed.
+    if (r.width > 0) this.maxRadius = Math.max(28, r.width * 0.42);
+    this.base = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    this.center.x = e.clientX; this.center.y = e.clientY;
     try { this.dom.setPointerCapture(e.pointerId); } catch {}
     this._move(e);
   }
@@ -18530,10 +18608,20 @@ class TouchJoystick {
       dx = dx / m * this.maxRadius;
       dy = dy / m * this.maxRadius;
     }
-    this.thumb.style.transform = `translate(${dx}px, ${dy}px)`;
-    // Analog: x = right(+), y = down(+). FPControls applies the dead zone and
-    // scales walk speed by magnitude.
-    this.controls.setMoveAxis(dx / this.maxRadius, dy / this.maxRadius);
+    // (the knob is drawn from where the thumb first landed)
+    const ox = this.base ? this.center.x - this.base.x : 0, oy = this.base ? this.center.y - this.base.y : 0;
+    let vx = ox + dx, vy = oy + dy; const vm = Math.hypot(vx, vy);
+    if (vm > this.maxRadius) { vx = vx / vm * this.maxRadius; vy = vy / vm * this.maxRadius; }
+    this.thumb.style.transform = `translate(${vx}px, ${vy}px)`;
+    // Analog: x = right(+), y = down(+). A curve, not a line: the first part
+    // of the throw is a slow creep (the careful approach this whole game is
+    // about needed the thumb held inside ~10 px), the rest opens up to a walk.
+    // FPControls applies its 0.08 dead zone and scales speed by magnitude.
+    const k = Math.min(1, Math.hypot(dx, dy) / this.maxRadius);
+    if (k < 0.1) { this.controls.setMoveAxis(0, 0); return; }
+    const mag = 0.09 + 0.91 * Math.pow((k - 0.1) / 0.9, 1.6);
+    const dm = Math.hypot(dx, dy) || 1;
+    this.controls.setMoveAxis(dx / dm * mag, dy / dm * mag);
   }
   _up(e) {
     if (!this.active || e.pointerId !== this.pid) return;
@@ -18650,6 +18738,10 @@ class FPControls {
 
     dom.style.touchAction = "none";
     dom.style.cursor = "grab";
+    // Right-click isn't look: the context menu it opened could swallow the
+    // pointerup and leave a drag stuck on.
+    this._onCtx = (e) => e.preventDefault();
+    dom.addEventListener("contextmenu", this._onCtx);
     dom.addEventListener("pointerdown", this._onDown);
     window.addEventListener("pointermove", this._onMove);
     window.addEventListener("pointerup", this._onUp);
@@ -18734,6 +18826,7 @@ class FPControls {
 
   _onDown(e) {
     if (!this.enabled) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     // Pointer-lock opt-in: a mouse click captures the pointer. A denied or
     // cooldown-blocked request rejects — swallow it and fall through to the
     // regular drag setup so look never dies.
@@ -18756,9 +18849,13 @@ class FPControls {
       if (!this.enabled) return;
       const mx = Math.max(-60, Math.min(60, e.movementX || 0));
       const my = Math.max(-60, Math.min(60, e.movementY || 0));
+      // Raw mouse counts are much finer-grained than a drag across the
+      // canvas: at the drag rate (~0.2° a count, 3–9× a usual FPS default)
+      // a nudge whipped the view round.
+      const ls = this.opts.lookSpeed * 0.45;
       this._lookTo(
-        (this._yawT ?? this.yaw) - mx * this.opts.lookSpeed,
-        (this._pitchT ?? this.pitch) - my * this.opts.lookSpeed
+        (this._yawT ?? this.yaw) - mx * ls,
+        (this._pitchT ?? this.pitch) - my * ls
       );
       return;
     }
@@ -18789,6 +18886,14 @@ class FPControls {
     if (!this._plLocked) this.dom.style.cursor = "grab";
   }
   _onKey(e) {
+    // Typing is not walking: the feedback box (reachable mid-trial from the
+    // menu) used to walk the avatar with every W/A/S/D, and swallowed the
+    // arrow keys the caret needed.
+    const tg = e.target;
+    if (tg && (/^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName) || tg.isContentEditable)) return;
+    // A Cmd/Ctrl chord is a shortcut, not a step — and on macOS the keyup of
+    // a key pressed under Cmd never arrives, which left the player walking.
+    if (e.metaKey || e.ctrlKey) return;
     // Only capture our movement keys so we don't break form input elsewhere.
     // Shift is tracked (creep modifier) but never preventDefault-ed.
     if (["KeyW","KeyA","KeyS","KeyD","ArrowUp","ArrowDown","ArrowLeft","ArrowRight","ShiftLeft","ShiftRight"].includes(e.code)) {
@@ -18797,7 +18902,12 @@ class FPControls {
       if (e.code.startsWith("Arrow")) e.preventDefault();
     }
   }
-  _onKeyUp(e) { this.keys[e.code] = false; }
+  _onKeyUp(e) {
+    this.keys[e.code] = false;
+    if (e.code === "MetaLeft" || e.code === "MetaRight") this.keys = Object.create(null);   // see _onKey
+  }
+  // Let go of everything held (an overlay took over: grounding, a breath).
+  releaseAll() { this.keys = Object.create(null); this._moveAxis = null; }
 
   // Analog movement axis from a virtual joystick (or gamepad). x = right(+),
   // y = down(+) in screen space; magnitude 0..1 scales the walk speed so a slow
@@ -18841,10 +18951,24 @@ class FPControls {
     // 10 Hz cutoff the lag is ~1.5 frames — imperceptible latency that kills
     // the per-pixel stair-stepping of raw mouse deltas.
     if (this.opts.lookSmoothing > 0 && this._yawT != null) {
+      // A scene that turns the head itself — the heights look-down and
+      // lean-over, "Look away" at the needle, the mirror check — writes
+      // yaw/pitch directly. Once the player had dragged even once, the
+      // filter below pulled ~65% of that straight back toward the old
+      // target: the lean-over peer showed about half its angle and the
+      // coping buttons barely moved the view. Carry the scene's move into
+      // the target (keeping any look input still in flight), unless the
+      // writer set the target too.
+      if (this._yawSet != null) {
+        const ey = this.yaw - this._yawSet, ep = this.pitch - this._pitchSet;
+        if (ey && this._yawT !== this.yaw) this._yawT += ey;
+        if (ep && this._pitchT !== this.pitch) this._pitchT += ep;
+      }
       const a = 1 - Math.exp(-2 * Math.PI * this.opts.lookSmoothing * dt);
       this.yaw += (this._yawT - this.yaw) * a;
       this.pitch += (this._pitchT - this.pitch) * a;
     }
+    this._yawSet = this.yaw; this._pitchSet = this.pitch;
     // Apply rotation
     this.camera.rotation.order = "YXZ";
     this.camera.rotation.y = this.yaw;
@@ -18971,7 +19095,10 @@ class FPControls {
       if (vLen0 > 0.08) {
         dot = (this._vel.x * ix + this._vel.z * iz) / vLen0;
       }
-      if (dot < -0.1) velRate = 3.6;                  // reverse: plant & push
+      // Reverse is the retreat, and retreat is sacred: it brakes as hard as
+      // a stop (it was 3.6/s — the slowest response in the game, ~0.5 s to
+      // get two-thirds of the way into backing off).
+      if (dot < -0.1) velRate = 11;                   // reverse: plant & push
       else if (dot < 0.4) velRate = 5.5;              // sharp cut
       else if (vLen0 < 0.12) velRate = 11.0;          // first-step impulse
       else velRate = 7.2;                             // cruise
@@ -19084,6 +19211,20 @@ class FPControls {
         // bounds.minZ (heights). Without it the bounds re-clamp cancelled the
         // forward motion every frame, so the peer-over never happened.
         if (!this._leanBypass) this.position.z = Math.max(b.minZ, Math.min(b.maxZ, this.position.z));
+      }
+    }
+    // Walls, bounds and bodies stop the BODY — make them stop the momentum
+    // too. Velocity pressed into a rail or the dog survived every clamp, so
+    // turning round to back away first had to unwind it: a fifth of a second
+    // standing still, pressing S, before the retreat began.
+    if (dt > 0 && (this._vel.x || this._vel.z)) {
+      const bx = this._vel.x * dt - (this.position.x - _prevX);
+      const bz = this._vel.z * dt - (this.position.z - _prevZ);
+      const bl = Math.hypot(bx, bz);
+      if (bl > 1e-5) {
+        const nx = bx / bl, nz = bz / bl;
+        const vn = this._vel.x * nx + this._vel.z * nz;
+        if (vn > 0) { this._vel.x -= nx * vn; this._vel.z -= nz * vn; }
       }
     }
 
@@ -19252,8 +19393,11 @@ class FPControls {
     this._prevYawRoll = this.yaw;
     const strafe = ((this.keys.KeyD || this.keys.ArrowRight) ? 1 : 0)
                  - ((this.keys.KeyA || this.keys.ArrowLeft) ? 1 : 0);
+    // The turn-lean only while walking (and gentler): rolling the horizon
+    // when a player who is standing still looks around is a textbook
+    // simulator-sickness trigger.
     const rollTarget = Math.max(-0.07, Math.min(0.07,
-      -yawVel * 0.018
+      -yawVel * 0.010 * this._walkAmt
       - strafe * 0.028 * this._walkAmt
       + Math.sin((this._walkPhase || 0) - 1.95) * 0.010 * this._walkAmt
     )) * fpBobScale;
@@ -19526,7 +19670,21 @@ class FPControls {
         this._tpSmoothLook.y += (lookY - this._tpSmoothLook.y) * k;
         this._tpSmoothLook.z += (lookZ - this._tpSmoothLook.z) * k;
       }
+      // Blend the two orientations through the switch instead of handing
+      // over to lookAt the instant the boom starts to move. Going back to
+      // first person, the last second of the glide put the camera within a
+      // hand of the eye still aiming at a point behind and below it —
+      // staring down into the torso — and then snapped forward.
+      const fpQ = this._fpQ || (this._fpQ = new THREE.Quaternion());
+      fpQ.copy(this.camera.quaternion);
       this.camera.lookAt(this._tpSmoothLook);
+      if (this.tpBlend < 0.999) {
+        const b = Math.min(1, this.tpBlend * 1.15);
+        const w = b * b * (3 - 2 * b);
+        const tpQ = this._tpQ || (this._tpQ = new THREE.Quaternion());
+        tpQ.copy(this.camera.quaternion);
+        this.camera.quaternion.copy(fpQ).slerp(tpQ, w);
+      }
       this.camera.rotation.order = "YXZ";
     } else {
       // Reset smoothing when fully in FP so re-entering TP starts fresh
@@ -19630,9 +19788,13 @@ class FPControls {
     // Fast-decaying jitter
     if ((this._shakeAmt || 0) > 0.0008) {
       const s = this._shakeAmt * (this._reduceMotion ? 0.3 : 1) * fpw;
-      this.camera.rotation.x += (Math.random() - 0.5) * s;
-      this.camera.rotation.y += (Math.random() - 0.5) * s;
-      this.camera.rotation.z += (Math.random() - 0.5) * s * 0.6;
+      // A flinch is a fast wobble, not per-frame static: white noise each
+      // frame read as the game stuttering, and shook harder the higher the
+      // frame rate. Incommensurate ~8–14 Hz sines instead.
+      const st = (this._shakeT = (this._shakeT || 0) + dt);
+      this.camera.rotation.x += (Math.sin(st * 61 + 0.4) * 0.6 + Math.sin(st * 89 + 2.1) * 0.4) * s * 0.5;
+      this.camera.rotation.y += (Math.sin(st * 53 + 1.3) * 0.6 + Math.sin(st * 97 + 0.7) * 0.4) * s * 0.5;
+      this.camera.rotation.z += Math.sin(st * 71 + 2.9) * s * 0.3;
       this._shakeAmt *= Math.pow(0.0025, dt);    // ≈ to 0 over ~0.3 s
     } else {
       this._shakeAmt = 0;
@@ -19712,6 +19874,7 @@ class FPControls {
     window.removeEventListener("pointercancel", this._onUp);
     window.removeEventListener("keydown", this._onKey);
     window.removeEventListener("keyup",   this._onKeyUp);
+    try { this.dom.removeEventListener("contextmenu", this._onCtx); } catch {}
     window.removeEventListener("blur", this._onBlur);
     document.removeEventListener("visibilitychange", this._onBlur);
     this.dom.style.cursor = "";
@@ -26706,6 +26869,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
 
   let updateFn = null;
   let controls = null;
+  let modeFovFp = 60, modeFovTp = 60;   // first/third-person fov (set at build)
+  let fovGlide = false;                 // easing the fov through a camera switch
+  let avatarView = null;                // the view the avatar is dressed for (see syncAvatarView)
   let hands = null;
   let body = null;
   let gyroCleanup = null;
@@ -26714,6 +26880,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   let reachRing = null;      // in-world "this is reachable" ground ring (lazy)
   let _cursorPointer = false;
   let _frameEMA = 0.016;     // adaptive-resolution frame-time tracker
+  let _frameRawEMA = 0.016;  // unclamped, for the performance overlay
   let _lastPRDrop = 0;
   let _prNoticeShown = false;
   // Two-way controller state (see the tick): time spent over / under budget,
@@ -26771,7 +26938,10 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // heights drives it from vertigo every frame — simply overwrite this,
     // which is correct: there it is already a deliberate instrument.
     const sceneBaseFov = camera.fov;
-    const fpFov = Math.min(70, Math.max(sceneBaseFov, sceneBaseFov + 14));
+    // (only ever widens: the old min(70) narrowed a scene already wider —
+    // the MRI's 74° became 70 in the first person it is locked to)
+    const fpFov = Math.max(sceneBaseFov, Math.min(70, sceneBaseFov + 14));
+    modeFovFp = fpFov; modeFovTp = sceneBaseFov;
     const applyModeFov = (mode) => {
       const want = mode === "tp" ? sceneBaseFov : fpFov;
       if (Math.abs(camera.fov - want) < 0.01) return;
@@ -27012,13 +27182,14 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         const spawnX = controls.position.x, spawnZ = controls.position.z;
         const hintShownAt = Date.now();
         let nudged = false;
+        hint.classList.add("until-moved");
         const moveWatch = setInterval(() => {
           if (!hint || !hint.isConnected) { clearInterval(moveWatch); return; }
           const moved = Math.hypot(controls.position.x - spawnX, controls.position.z - spawnZ);
           const elapsed = Date.now() - hintShownAt;
           if (moved > 0.4 || elapsed > 30000) {
             hint.style.opacity = "0";
-            hint.classList.remove("nudge");
+            hint.classList.remove("nudge", "until-moved");
             clearInterval(moveWatch);
             return;
           }
@@ -27222,20 +27393,11 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // Sync body's head visibility AND the FP hands' visibility to the
       // controls' camera mode. In TP, body's head shows + FP hands hide
       // (so the user sees ONE clear character, not body + floating hands).
-      if (controls && controls.cameraMode) {
-        body.setCameraMode(controls.cameraMode);
-        if (hands && hands.setCameraMode) hands.setCameraMode(controls.cameraMode);
-      }
-      // …and keep them synced through every later mode change, no matter who
-      // calls controls.setCameraMode (toggle button, scene code, debug).
-      if (controls) {
-        controls.onCameraModeChange = (m) => {
-          try {
-            if (body) body.setCameraMode(m);
-            if (hands && hands.setCameraMode) hands.setCameraMode(m);
-          } catch {}
-        };
-      }
+      // …kept in step through every later change by syncAvatarView (each
+      // frame), which flips them at the HALFWAY point of the camera glide.
+      // Flipping on the button press showed a headless body for half a
+      // second going in, and the inside of the head coming out.
+      syncAvatarView(true);
       // Anchor the body to the player's feet immediately. The per-frame
       // body.update() already does this, but running it once now means the body
       // is correctly placed on frame 0 — no 1-frame flash of the body (and its
@@ -27250,7 +27412,10 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     if (controls) {
       const prevModeHook = controls.onCameraModeChange;
       controls.onCameraModeChange = (m) => {
-        try { applyModeFov(m); } catch {}
+        // A glide eases the fov in the tick; an instant switch sets it now.
+        const settled = (m === "tp" && controls.tpBlend > 0.998) || (m === "fp" && controls.tpBlend < 0.002);
+        if (settled) { fovGlide = false; try { applyModeFov(m); } catch {} }
+        else fovGlide = true;
         if (prevModeHook) { try { prevModeHook(m); } catch {} }
       };
       applyModeFov(controls.cameraMode);
@@ -27301,6 +27466,28 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   reachHint.className = "reach-hint";
   container.appendChild(reachHint);
 
+  // The avatar's head / FP hands follow where the camera actually is.
+  function syncAvatarView(force) {
+    if (!controls) return;
+    const m = (controls.tpBlend || 0) > 0.5 ? "tp" : "fp";
+    if (m === avatarView && !force) return;
+    avatarView = m;
+    try {
+      if (body) body.setCameraMode(m);
+      if (hands && hands.setCameraMode) hands.setCameraMode(m);
+    } catch {}
+  }
+  // Field of view eases with the glide too (it jumped on the press while
+  // the position glided). Only during a switch: scenes that drive the fov
+  // themselves (the heights vertigo) own it the rest of the time.
+  function glideFov() {
+    if (!fovGlide || !controls) return;
+    const b = Math.max(0, Math.min(1, controls.tpBlend || 0));
+    const want = modeFovFp + (modeFovTp - modeFovFp) * b;
+    if (Math.abs(camera.fov - want) > 0.01) { camera.fov = want; camera.updateProjectionMatrix(); }
+    if (b < 0.002 || b > 0.998) fovGlide = false;
+  }
+
   // Click → tell the scene to perform its action; also fire a hand pulse
   function onCanvasClick(e) {
     // Physical props first — and BEFORE the dragging guard: FPControls sets
@@ -27312,11 +27499,12 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     try {
       if (window.PhobiaGrab && PhobiaGrab.click(e, camera, scene, renderer, hands, controls)) return;
     } catch {}
-    // Only treat short clicks as interactions, not drags
-    if (controls && controls.dragging) return;
+    // (No `dragging` guard here either: for the reason above it was true on
+    // every tap, so the railing shake, the pebble, the splash and the hand
+    // squeeze never fired. Drags are already filtered out by the caller.)
     if (hands) hands.fireAction();
     if (onClickFn) {
-      try { onClickFn(controls, hands, scene); } catch (err) { console.warn(err); }
+      try { onClickFn(controls, hands, scene, e); } catch (err) { console.warn(err); }
     }
   }
   // Use pointerup so we don't conflict with drag-look
@@ -27345,8 +27533,18 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     if (!container.isConnected || !active) return;
     const now = performance.now();
     const t = (now - t0) / 1000;
+    const tFrame = t;
     const rawDt = (now - lastTime) / 1000;
-    const dt = Math.min(0.05, rawDt);
+    // Simulate in slices of at most 50 ms — the step every system here was
+    // tuned for — and up to three a frame. A single clamped step meant a
+    // device under 20 fps ran the whole game in slow motion (walking, the
+    // creature, prompt timers, the alarm settling): at 10 fps, half speed.
+    // Three slices keep 7–20 fps in real time (rendering, not simulation,
+    // is what a slow frame is spent on); below that it slows rather than
+    // spend ever more of a starved frame simulating.
+    const simSpan = Math.min(0.15, rawDt);
+    const simSteps = Math.max(1, Math.ceil(simSpan / 0.05 - 1e-6));
+    const dt = simSpan / simSteps;
     lastTime = now;
     // ---- Frame governor ----
     // A weak device otherwise stutters until the player finds the Graphics
@@ -27363,6 +27561,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     //     "auto" starts its next scene a tier lower;
     //   - five seconds below ~12.5 ms steps the ratio back up, never past the
     //     tier's cap and never straight back onto a ratio that just failed.
+    if (rawDt < 1.5) _frameRawEMA += (rawDt - _frameRawEMA) * 0.1;
     if (rawDt < 1.5 && t > 2.0) {
       _frameEMA += (Math.min(rawDt, 0.1) - _frameEMA) * 0.05;
       if (_frameEMA > 0.0185) { _prSlowT += rawDt; _prFastT = 0; }
@@ -27405,176 +27604,183 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       if (_perfHudEl) {
         _perfHudEl.style.display = hudOn ? "block" : "none";
         if (hudOn) {
-          const fps = _frameEMA > 0 ? Math.round(1 / _frameEMA) : 0;
-          _perfHudEl.textContent = fps + " fps · " + Math.round(_frameEMA * 1000) + " ms · "
+          // The real frame rate (the governor's own average clamps each
+          // sample, so it can't read below 10 fps).
+          const fps = _frameRawEMA > 0 ? Math.round(1 / _frameRawEMA) : 0;
+          _perfHudEl.textContent = fps + " fps · " + Math.round(_frameRawEMA * 1000) + " ms · "
             + QUALITY + " · " + renderer.getPixelRatio().toFixed(2) + "x";
         }
       }
     }
-    // Each per-frame call is wrapped so ONE faulty subsystem can't stop the
-    // whole render loop. Errors are silently swallowed in production; they
-    // surface in the console so devs can find them. Without this, a single
-    // throw in (say) the dog audio scheduler would freeze the entire scene.
-    try { if (controls) controls.update(dt); }
-    catch (e) { console.warn("controls.update:", e); }
-    // Tick the unified Fear state every frame so it can ramp / decay smoothly.
-    // Scenes feed inputs in their own update() callbacks (proximity, gaze).
-    try { if (window.PhobiaFear) window.PhobiaFear.update(dt); }
-    catch (e) { console.warn("PhobiaFear.update:", e); }
+    for (let step = 0; step < simSteps; step++) {
+      // (the first slice of a two-slice frame happened half a frame ago)
+      const t = tFrame - (simSteps - 1 - step) * dt;
+      // Each per-frame call is wrapped so ONE faulty subsystem can't stop the
+      // whole render loop. Errors are silently swallowed in production; they
+      // surface in the console so devs can find them. Without this, a single
+      // throw in (say) the dog audio scheduler would freeze the entire scene.
+      try { if (controls) controls.update(dt); }
+      catch (e) { console.warn("controls.update:", e); }
+      try { syncAvatarView(); glideFov(); } catch {}
+      // Tick the unified Fear state every frame so it can ramp / decay smoothly.
+      // Scenes feed inputs in their own update() callbacks (proximity, gaze).
+      try { if (window.PhobiaFear) window.PhobiaFear.update(dt); }
+      catch (e) { console.warn("PhobiaFear.update:", e); }
 
-    // ---- VR thumbstick locomotion + snap-turn ----
-    // When in an immersive session, read the controllers' thumbstick axes:
-    //   Left stick: smooth locomotion (strafe + forward), aligned to the
-    //               headset's facing direction.
-    //   Right stick: snap-turn 30° in the direction of a flick > 0.7.
-    // Snap-turn (vs smooth-turn) is the comfort default — smooth rotation
-    // is the #1 cause of VR motion sickness.
-    if (renderer.xr.isPresenting) {
-      const session = renderer.xr.getSession();
-      if (session && session.inputSources) {
-        for (const src of session.inputSources) {
-          if (!src.gamepad || !src.gamepad.axes || src.gamepad.axes.length < 4) continue;
-          const ax = src.gamepad.axes;
-          // Trackpad axes are sometimes 0,1; thumbstick is 2,3 — both check
-          const stickX = ax[2] !== undefined ? ax[2] : ax[0];
-          const stickY = ax[3] !== undefined ? ax[3] : ax[1];
-          if (src.handedness === "left") {
-            if (Math.abs(stickX) > 0.15 || Math.abs(stickY) > 0.15) {
-              // Forward = headset's horizontal facing direction
-              const xrCam = renderer.xr.getCamera();
-              const dir = _audVec1.set(0, 0, -1).applyQuaternion(xrCam.quaternion);
-              dir.y = 0;
-              if (dir.lengthSq() > 0.0001) dir.normalize();
-              const right = _audVec2.set(dir.z, 0, -dir.x);
-              const speed = 1.6 * dt;
-              camera.position.addScaledVector(dir, -stickY * speed);
-              camera.position.addScaledVector(right, stickX * speed);
-              // Respect walkable scene bounds when present
-              if (controls && controls.opts && controls.opts.bounds) {
-                const b = controls.opts.bounds;
-                camera.position.x = Math.max(b.minX, Math.min(b.maxX, camera.position.x));
-                camera.position.z = Math.max(b.minZ, Math.min(b.maxZ, camera.position.z));
+      // ---- VR thumbstick locomotion + snap-turn ----
+      // When in an immersive session, read the controllers' thumbstick axes:
+      //   Left stick: smooth locomotion (strafe + forward), aligned to the
+      //               headset's facing direction.
+      //   Right stick: snap-turn 30° in the direction of a flick > 0.7.
+      // Snap-turn (vs smooth-turn) is the comfort default — smooth rotation
+      // is the #1 cause of VR motion sickness.
+      if (renderer.xr.isPresenting) {
+        const session = renderer.xr.getSession();
+        if (session && session.inputSources) {
+          for (const src of session.inputSources) {
+            if (!src.gamepad || !src.gamepad.axes || src.gamepad.axes.length < 4) continue;
+            const ax = src.gamepad.axes;
+            // Trackpad axes are sometimes 0,1; thumbstick is 2,3 — both check
+            const stickX = ax[2] !== undefined ? ax[2] : ax[0];
+            const stickY = ax[3] !== undefined ? ax[3] : ax[1];
+            if (src.handedness === "left") {
+              if (Math.abs(stickX) > 0.15 || Math.abs(stickY) > 0.15) {
+                // Forward = headset's horizontal facing direction
+                const xrCam = renderer.xr.getCamera();
+                const dir = _audVec1.set(0, 0, -1).applyQuaternion(xrCam.quaternion);
+                dir.y = 0;
+                if (dir.lengthSq() > 0.0001) dir.normalize();
+                const right = _audVec2.set(dir.z, 0, -dir.x);
+                const speed = 1.6 * dt;
+                camera.position.addScaledVector(dir, -stickY * speed);
+                camera.position.addScaledVector(right, stickX * speed);
+                // Respect walkable scene bounds when present
+                if (controls && controls.opts && controls.opts.bounds) {
+                  const b = controls.opts.bounds;
+                  camera.position.x = Math.max(b.minX, Math.min(b.maxX, camera.position.x));
+                  camera.position.z = Math.max(b.minZ, Math.min(b.maxZ, camera.position.z));
+                }
+              }
+            } else if (src.handedness === "right") {
+              // Snap-turn — only triggers once per flick (waits for the stick
+              // to return to centre before another turn)
+              if (Math.abs(stickX) > 0.7 && !active._lastSnapTurn) {
+                camera.rotation.y -= Math.sign(stickX) * (Math.PI / 6);
+                active._lastSnapTurn = true;
+              } else if (Math.abs(stickX) < 0.3) {
+                active._lastSnapTurn = false;
               }
             }
-          } else if (src.handedness === "right") {
-            // Snap-turn — only triggers once per flick (waits for the stick
-            // to return to centre before another turn)
-            if (Math.abs(stickX) > 0.7 && !active._lastSnapTurn) {
-              camera.rotation.y -= Math.sign(stickX) * (Math.PI / 6);
-              active._lastSnapTurn = true;
-            } else if (Math.abs(stickX) < 0.3) {
-              active._lastSnapTurn = false;
-            }
           }
         }
       }
-    }
 
-    try { if (updateFn) updateFn(t, controls, dt); }
-    catch (e) { console.warn("scene update:", e); }
-    // Interaction probe: scene tells us what gesture is appropriate right now
-    try {
-      if (interactFn && hands) {
-        const probe = interactFn(controls, hands, t, dt) || {};
-        hands.setGesture(probe.gesture || "rest");
-        // Gate NEW hint text through the cross-channel dedupe so a caption or
-        // context prompt saying nearly the same thing doesn't triple-stack.
-        if ((probe.hint || "") !== active._lastReachHint) {
-          active._lastReachHint = probe.hint || "";
-          active._reachHintOk = !probe.hint ||
-            !window.PhobiaFX || !window.PhobiaFX.promptGate ||
-            window.PhobiaFX.promptGate("hint", probe.hint);
-        }
-        const showHint = probe.hint && active._reachHintOk;
-        // Written only on change: rewriting textContent replaced the text node
-        // (and invalidated style/layout for the overlay) on every frame.
-        const hintText = showHint ? probe.hint : "";
-        if (reachHint._text !== hintText) { reachHint._text = hintText; reachHint.textContent = hintText; }
-        const hintOp = showHint ? "1" : "0";
-        if (reachHint._op !== hintOp) { reachHint._op = hintOp; reachHint.style.opacity = hintOp; }
-        // In-world affordance: scenes may return `target` (an Object3D) when
-        // something is genuinely reachable — a soft pulsing ring appears on
-        // the ground under it, and the cursor becomes a pointer. The bottom
-        // text hint alone was easy to miss, especially in third person.
-        if (probe.target && probe.target.position) {
-          if (!reachRing) {
-            reachRing = new THREE.Mesh(
-              new THREE.RingGeometry(0.82, 1.0, 40),
-              new THREE.MeshBasicMaterial({
-                color: 0x7cd1c5, transparent: true, opacity: 0.3,
-                depthWrite: false, side: THREE.DoubleSide,
-              })
-            );
-            reachRing.rotation.x = -Math.PI / 2;
-            reachRing.userData.noCollide = true;
-            scene.add(reachRing);
+      try { if (updateFn) updateFn(t, controls, dt); }
+      catch (e) { console.warn("scene update:", e); }
+      // Interaction probe: scene tells us what gesture is appropriate right now
+      try {
+        if (interactFn && hands) {
+          const probe = interactFn(controls, hands, t, dt) || {};
+          hands.setGesture(probe.gesture || "rest");
+          // Gate NEW hint text through the cross-channel dedupe so a caption or
+          // context prompt saying nearly the same thing doesn't triple-stack.
+          if ((probe.hint || "") !== active._lastReachHint) {
+            active._lastReachHint = probe.hint || "";
+            active._reachHintOk = !probe.hint ||
+              !window.PhobiaFX || !window.PhobiaFX.promptGate ||
+              window.PhobiaFX.promptGate("hint", probe.hint);
           }
-          const rr = probe.targetRadius || 0.55;
-          reachRing.scale.setScalar(rr * (1 + Math.sin(t * 2.6) * 0.06));
-          reachRing.position.set(
-            probe.target.position.x,
-            (probe.targetY != null ? probe.targetY : probe.target.position.y) + 0.02,
-            probe.target.position.z
-          );
-          reachRing.material.opacity = 0.22 + (Math.sin(t * 2.6) * 0.5 + 0.5) * 0.16;
-          reachRing.visible = true;
-        } else if (reachRing) {
-          reachRing.visible = false;
+          const showHint = probe.hint && active._reachHintOk;
+          // Written only on change: rewriting textContent replaced the text node
+          // (and invalidated style/layout for the overlay) on every frame.
+          const hintText = showHint ? probe.hint : "";
+          if (reachHint._text !== hintText) { reachHint._text = hintText; reachHint.textContent = hintText; }
+          const hintOp = showHint ? "1" : "0";
+          if (reachHint._op !== hintOp) { reachHint._op = hintOp; reachHint.style.opacity = hintOp; }
+          // In-world affordance: scenes may return `target` (an Object3D) when
+          // something is genuinely reachable — a soft pulsing ring appears on
+          // the ground under it, and the cursor becomes a pointer. The bottom
+          // text hint alone was easy to miss, especially in third person.
+          if (probe.target && probe.target.position) {
+            if (!reachRing) {
+              reachRing = new THREE.Mesh(
+                new THREE.RingGeometry(0.82, 1.0, 40),
+                new THREE.MeshBasicMaterial({
+                  color: 0x7cd1c5, transparent: true, opacity: 0.3,
+                  depthWrite: false, side: THREE.DoubleSide,
+                })
+              );
+              reachRing.rotation.x = -Math.PI / 2;
+              reachRing.userData.noCollide = true;
+              scene.add(reachRing);
+            }
+            const rr = probe.targetRadius || 0.55;
+            reachRing.scale.setScalar(rr * (1 + Math.sin(t * 2.6) * 0.06));
+            reachRing.position.set(
+              probe.target.position.x,
+              (probe.targetY != null ? probe.targetY : probe.target.position.y) + 0.02,
+              probe.target.position.z
+            );
+            reachRing.material.opacity = 0.22 + (Math.sin(t * 2.6) * 0.5 + 0.5) * 0.16;
+            reachRing.visible = true;
+          } else if (reachRing) {
+            reachRing.visible = false;
+          }
+          const wantPointer = !!probe.hint && !(controls.isPointerLocked && controls.isPointerLocked());
+          if (wantPointer !== _cursorPointer) {
+            _cursorPointer = wantPointer;
+            renderer.domElement.style.cursor = wantPointer ? "pointer" : "grab";
+          }
         }
-        const wantPointer = !!probe.hint && !(controls.isPointerLocked && controls.isPointerLocked());
-        if (wantPointer !== _cursorPointer) {
-          _cursorPointer = wantPointer;
-          renderer.domElement.style.cursor = wantPointer ? "pointer" : "grab";
+      } catch (e) { console.warn("scene interact:", e); }
+      try { if (hands) hands.update(t, dt, controls); }
+      catch (e) { console.warn("hands.update:", e); }
+      try {
+        if (body && controls) {
+          const w = controls.getWalkState ? controls.getWalkState() : { phase: 0, amount: 0 };
+          body.update(t, w.phase, w.amount, controls, hands);
         }
-      }
-    } catch (e) { console.warn("scene interact:", e); }
-    try { if (hands) hands.update(t, dt, controls); }
-    catch (e) { console.warn("hands.update:", e); }
-    try {
-      if (body && controls) {
-        const w = controls.getWalkState ? controls.getWalkState() : { phase: 0, amount: 0 };
-        body.update(t, w.phase, w.amount, controls, hands);
-      }
-    } catch (e) { console.warn("body.update:", e); }
-    // ---- Event beats ----
-    // The narrator's normal tick is a poll on an 8-second gap, so the moments
-    // that actually land — it came at you, you touched it, it startled you and
-    // you stayed — either got missed or got commented on long after they were
-    // over. Detected centrally here rather than per scene so every rung of
-    // every phobia gets them from the one set of signals the engine already
-    // publishes (PhobiaThreat, fear, and the contact the body/hands measure).
-    try { detectEventBeats(t, dt); } catch (e) { console.warn("event beats:", e); }
-    // Physical layer: carry the held prop (kinematic target must be set
-    // BEFORE the world steps), then advance the simulation.
-    try {
-      if (window.PhobiaPhysics && PhobiaPhysics.active()) {
-        PhobiaGrab.update(camera, hands);
-        PhobiaPhysics.step(dt);
-      }
-    } catch (e) { console.warn("physics:", e); }
-    // Behavioral experiments read the same signal set the narrator beats do —
-    // plain numbers across the module/classic boundary.
-    try {
-      if (window.PhobiaExperiments) {
-        const fwd = _audVec2.set(0, 0, -1).applyQuaternion(camera.quaternion);
-        let cx = null, cy = null, cz = null, hasFocus = false;
-        const th = window.PhobiaThreat;
-        if (_beat.creature) {
-          _beat.creature.getWorldPosition(_audVec3);
-          cx = _audVec3.x; cy = _audVec3.y; cz = _audVec3.z; hasFocus = true;
-        } else if (th) { cx = th.x; cy = th.y; cz = th.z; hasFocus = true; }
-        window.PhobiaExperiments.frame({
-          dt: dt || 0.016,
-          px: controls && controls.position ? controls.position.x : null,
-          pz: controls && controls.position ? controls.position.z : null,
-          fx: fwd.x, fy: fwd.y, fz: fwd.z,
-          cx, cy, cz, hasFocus,
-          fear: window.PhobiaFear ? PhobiaFear.get() : 0,
-          threat: !!window.PhobiaThreat,
-          landed: Math.max((body && body._contactLanded) || 0, (hands && hands.contactK) || 0),
-        });
-      }
-    } catch {}
+      } catch (e) { console.warn("body.update:", e); }
+      // ---- Event beats ----
+      // The narrator's normal tick is a poll on an 8-second gap, so the moments
+      // that actually land — it came at you, you touched it, it startled you and
+      // you stayed — either got missed or got commented on long after they were
+      // over. Detected centrally here rather than per scene so every rung of
+      // every phobia gets them from the one set of signals the engine already
+      // publishes (PhobiaThreat, fear, and the contact the body/hands measure).
+      try { detectEventBeats(t, dt); } catch (e) { console.warn("event beats:", e); }
+      // Physical layer: carry the held prop (kinematic target must be set
+      // BEFORE the world steps), then advance the simulation.
+      try {
+        if (window.PhobiaPhysics && PhobiaPhysics.active()) {
+          PhobiaGrab.update(camera, hands);
+          PhobiaPhysics.step(dt);
+        }
+      } catch (e) { console.warn("physics:", e); }
+      // Behavioral experiments read the same signal set the narrator beats do —
+      // plain numbers across the module/classic boundary.
+      try {
+        if (window.PhobiaExperiments) {
+          const fwd = _audVec2.set(0, 0, -1).applyQuaternion(camera.quaternion);
+          let cx = null, cy = null, cz = null, hasFocus = false;
+          const th = window.PhobiaThreat;
+          if (_beat.creature) {
+            _beat.creature.getWorldPosition(_audVec3);
+            cx = _audVec3.x; cy = _audVec3.y; cz = _audVec3.z; hasFocus = true;
+          } else if (th) { cx = th.x; cy = th.y; cz = th.z; hasFocus = true; }
+          window.PhobiaExperiments.frame({
+            dt: dt || 0.016,
+            px: controls && controls.position ? controls.position.x : null,
+            pz: controls && controls.position ? controls.position.z : null,
+            fx: fwd.x, fy: fwd.y, fz: fwd.z,
+            cx, cy, cz, hasFocus,
+            fear: window.PhobiaFear ? PhobiaFear.get() : 0,
+            threat: !!window.PhobiaThreat,
+            landed: Math.max((body && body._contactLanded) || 0, (hands && hands.contactK) || 0),
+          });
+        }
+      } catch {}
+    }
     // Update the spatial-audio listener so HRTF panning tracks the camera.
     // We sample the camera's forward + up vectors every frame so any sound
     // played via PhobiaAudio.spatial(pos) is correctly localised.
@@ -27735,6 +27941,12 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     const w = container.clientWidth, h = container.clientHeight;
     if (!w || !h) return;
     camera.aspect = w / h;
+    // A phone held upright (theater mode, ~0.5 aspect) kept the vertical fov
+    // and so saw a ~29° slit across — the dog at your side was off-frame.
+    // Zoom out a little as the screen narrows (through camera.zoom, so the
+    // scenes that drive fov themselves — vertigo, the spider's zoom — keep
+    // working on top).
+    camera.zoom = camera.aspect < 0.95 ? Math.max(0.6, Math.pow(camera.aspect / 0.95, 0.7)) : 1;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
     sizePost(w, h);
@@ -27919,10 +28131,11 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       if (fearMeterFill) fxStyle(fearMeterFill, "width", `${Math.round(value)}%`);
       // Camera shake at high fear (over 80) — adds the visceral panic feel
       if (value > 80 && camera && !ctx.grounding && !(controls && controls._reduceMotion)) {
-        const k = (value - 80) / 20;
-        camera.position.x += (Math.random() - 0.5) * 0.015 * k;
-        camera.position.y += (Math.random() - 0.5) * 0.012 * k;
-        camera.rotation.z += (Math.random() - 0.5) * 0.003 * k;
+        // (smooth tremor, not per-frame white noise — see kickShake)
+        const k = (value - 80) / 20, ts = performance.now() / 1000;
+        camera.position.x += (Math.sin(ts * 37 + 0.3) * 0.6 + Math.sin(ts * 59 + 1.9) * 0.4) * 0.0075 * k;
+        camera.position.y += (Math.sin(ts * 43 + 2.2) * 0.6 + Math.sin(ts * 67 + 0.8) * 0.4) * 0.006 * k;
+        camera.rotation.z += Math.sin(ts * 31 + 1.1) * 0.0015 * k;
       }
     });
   }
@@ -27976,6 +28189,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // "four things you can hear" needs the ambience present but gentle.
     try { if (window.PhobiaAudio) window.PhobiaAudio.duck(true); } catch {}
     groundingOverlay.classList.add("active");
+    try { if (controls && controls.releaseAll) controls.releaseAll(); } catch {}
     if (!IS_COARSE_POINTER) groundingExitHint.classList.add("visible");
     groundingStep = 0;
     function nextStep() {
@@ -28009,9 +28223,10 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     groundingExitHint.classList.remove("visible");
   }
   // Esc key → grounding (panic stop)
+  // G too: in fullscreen the browser keeps Esc for itself.
   function onGroundingKey(e) {
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
-    if (e.key === "Escape") {
+    if (e.key === "Escape" || (e.code === "KeyG" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat)) {
       e.preventDefault();
       if (groundingActive) endGrounding();
       else startGrounding();
@@ -28175,9 +28390,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     e.stopPropagation();
     if (!controls) return;
     if (controls._cameraModeLocked) return;
-    const next = controls.toggleCameraMode();
-    if (body) body.setCameraMode(next);
-    if (hands && hands.setCameraMode) hands.setCameraMode(next);
+    controls.toggleCameraMode();
     refreshCameraLabel();
     markUserToggled();
   });
@@ -28187,9 +28400,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
     if (!controls) return;
     if (controls._cameraModeLocked) return;
-    const next = controls.toggleCameraMode();
-    if (body) body.setCameraMode(next);
-    if (hands && hands.setCameraMode) hands.setCameraMode(next);
+    controls.toggleCameraMode();
     refreshCameraLabel();
     markUserToggled();
   }
@@ -30124,11 +30335,13 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
     scene.add(wind);
   }
 
-  // Falling debris (small pebbles) tumbling past at the highest rungs —
-  // makes the drop feel real and scaled.
+  // (Falling debris used to stream past from 10–40 m overhead on the top
+  // rungs "to make the drop feel real". It read as the building shedding
+  // bits of itself — a real danger cue in a scene whose whole message is
+  // that nothing here is making you fall. The motes and paper stay.)
   let debris = null;
   let debrisData = null;
-  if (h > 0.7) {
+  if (false) {
     const N = 25;
     const positions = new Float32Array(N * 3);
     debrisData = [];
@@ -30197,6 +30410,26 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
   // Grip strength from last frame's posture pass — a held rail steadies the
   // body against the sway, and rail shakes only reach the head through it.
   let _gripSteady = 0;
+  // Hands on the rail are the player's choice. They used to grab it on their
+  // own at the edge, with no way to let go — while the story asks you to
+  // loosen your grip. Letting go is a step (a small fresh wave), and holding
+  // on again is always one press away.
+  let railHandsOff = false, handsOffT = 0, handsOffTold = false;
+  function toggleRailHands() {
+    railHandsOff = !railHandsOff;
+    const bar = document.querySelector('.scene-cmd-bar[data-scene="heights"]');
+    const lb = bar && bar.querySelector('[data-cmd="grip"] .cmd-label');
+    if (lb) lb.textContent = railHandsOff ? window.t("cmd.h.holdOn", "Hold the rail") : window.t("cmd.h.letGo", "Hands off the rail");
+    if (railHandsOff) {
+      try { hCoach.note("handsOff"); if (hCoach.engaged) hCoach.pulse(0.14, "letgo", hLastDist); } catch {}
+    }
+  }
+  const onGripKey = (e) => {
+    if (e.code !== "KeyR" || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+    toggleRailHands();
+  };
+  window.addEventListener("keydown", onGripKey);
   // Glass-skywalk underfoot edge-detect (first-crossing jolt fires once)
   let _wasOnGlass = false;
   // Auto-look-down animation state (driven by the "Look down" command button)
@@ -30270,7 +30503,20 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         e.stopPropagation();
         const c = storedActiveControls;
         if (!c) return;
+        // Lean and coin are things you do AT the rail. From the back of the
+        // platform the lean glided the player ~5 m and over the edge in one
+        // second, and a coin fell through the slab. Walk them up first; the
+        // next press does it.
+        const edgeZ = (c.opts.bounds.minZ ?? -0.2);
+        if ((btn.dataset.cmd === "lean" && c.position.z > edgeZ + 0.6) || (btn.dataset.cmd === "coin" && c.position.z > 1.0)) {
+          walkAnimTo = edgeZ + 0.05; walkAnimT = 1.0; walkAnimFrom = c.position.z;
+          if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt(window.t("sc.h.edgeFirst", "To the rail first — press again when you're there."), 3200);
+          return;
+        }
         switch (btn.dataset.cmd) {
+          case "grip":
+            toggleRailHands();
+            break;
           case "edge":
             // Smoothly walk the user TO the edge. Animated over ~2.5 seconds
             // so the user feels the approach instead of teleporting — that
@@ -30364,7 +30610,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
     stage: document.getElementById("stage"),
     levelIdx: rung, intensity: rung >= 4 ? "apex" : rung >= 2 ? "alert" : "calm",
     dogName: window.t("coach.h.name", "the edge"), title: window.t(`level.heights.${rung}.title`, level.title),
-    inZoneDist: hZone, nearD: 0.1, farSpan: 2.6,
+    inZoneDist: hZone, nearD: 0.1, farSpan: 2.6, readAfterHold: true,   // looking down, the coin and the lean still prompt after it
     sizeMul: H_COACH.sizeMul, tau: H_COACH.tau, hFloor: H_COACH.hFloor,
     minHold: level.minHold || 12,
     coarse: IS_COARSE_POINTER,
@@ -30435,14 +30681,14 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         // The most informative state — at the rail, peering over. Tell the
         // user what they can DO with this view (drop a pebble) and what
         // input drives it (clicking the air below).
-        return { gesture: "grab", hint: IS_COARSE_POINTER ? window.t("sc.h.hintDropT", "tap below to drop a pebble · tap the railing to shake it") : window.t("sc.h.hintDrop", "click below to drop a pebble · click the railing to shake it") };
+        return { gesture: "grab", hint: IS_COARSE_POINTER ? window.t("sc.h.hintDropT", "tap below to drop a coin · tap the railing to shake it") : window.t("sc.h.hintDrop", "click below to drop a coin · click the railing to shake it") };
       }
       if (atEdge) {
-        return { gesture: "grab", hint: IS_COARSE_POINTER ? window.t("sc.h.hintEdgeT", "you're at the edge · tap the railing to shake · push the joystick forward to lean over") : window.t("sc.h.hintEdge", "you're at the edge · click the railing to shake · push forward to lean over") };
+        return { gesture: "grab", hint: IS_COARSE_POINTER ? window.t("sc.h.hintEdgeT", "you're at the edge · tap the railing to shake · look down and push the joystick forward to lean over") : window.t("sc.h.hintEdge", "you're at the edge · click the railing to shake · look down and push forward to lean over") };
       }
       return { gesture: "rest", hint: "" };
     },
-    onClick(controls, hands, scene) {
+    onClick(controls, hands, scene, ev) {
       // World-aware click. Three behaviours emerge from where the user is
       // pointing:
       //   1. Pointing at / near the railing → shake the railing
@@ -30460,9 +30706,28 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
       // their hand is.
       const ray = new THREE.Raycaster();
       ray.setFromCamera(new THREE.Vector2(0, 0), camera);
-      // Did we hit the railing? (any segment / post)
-      const railHits = ray.intersectObjects([...railSegments, ...railPosts], false);
-      if (railHits.length > 0) {
+      // Did we hit the railing? Aim where the player actually clicked or
+      // tapped (the hint says "tap the railing" — a centre-of-view ray made
+      // that a lottery under drag-look), with a hand's width of slack around
+      // the 5 cm top rail; the centre of view still counts too.
+      const nearTopRail = (r) => {
+        const o = r.ray.origin, d = r.ray.direction;
+        if (Math.abs(d.z) < 1e-4) return false;
+        const k = (-0.4 - o.z) / d.z;
+        if (k <= 0 || k > 6) return false;
+        const y = o.y + d.y * k, x = o.x + d.x * k;
+        return Math.abs(x) < halfLen && y > cameraY - 0.68 && y < cameraY - 0.32;
+      };
+      let railHit = ray.intersectObjects([...railSegments, ...railPosts], false).length > 0;
+      if (!railHit && ev && ev.clientX != null && ev.target && ev.target.getBoundingClientRect) {
+        const rc = ev.target.getBoundingClientRect();
+        if (rc.width > 0 && rc.height > 0) {
+          const pr = new THREE.Raycaster();
+          pr.setFromCamera(new THREE.Vector2(((ev.clientX - rc.left) / rc.width) * 2 - 1, -((ev.clientY - rc.top) / rc.height) * 2 + 1), camera);
+          railHit = pr.intersectObjects([...railSegments, ...railPosts], false).length > 0 || nearTopRail(pr);
+        }
+      }
+      if (railHit) {
         // SHAKE — the user is touching the rail; their grip rocks it.
         shakeT = 1.0;
         hCoach.note("shake"); setTimeout(() => hSignal("rattle"), 700);
@@ -30596,8 +30861,10 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
       if (hasGlass && controls) {
         const onGlass = controls.position.z < (-0.5 + glassDepth);
         controls.opts.surface = onGlass ? "glass" : "hard";
-        if (onGlass && !_wasOnGlass) {
-          if (controls.kickShake) controls.kickShake(0.02);
+        // (The FIRST step onto the pane — the jolt and the spike — is handled
+        // once, further down; this one is just the glass tick on a re-entry.
+        // Both used to fire on that first step: a double jolt, a double click.)
+        if (onGlass && !_wasOnGlass && _glassCrossed) {
           if (window.PhobiaAudio && window.PhobiaAudio.indicatorClick) {
             try { window.PhobiaAudio.indicatorClick({ x: controls.position.x, y: platTopY, z: controls.position.z }); } catch {}
           }
@@ -30624,7 +30891,10 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         if (_gustPeak > 0.85 && hLastDist < hZone + 0.8) {
           hCoach.pulse(0.18 + 0.12 * (_gustPeak - 0.85), "gust", hLastDist);
           hSignal(rung >= 3 && Math.random() < 0.5 ? "sway" : "gust");
-          if (rung === 3 && hCoach.engaged) hState.gustEdgeT = 4;   // hold the edge for 4 s after it
+          // Rung 3's star: still at the edge 3 s after a strong gust. Started
+          // once and left running — the next gust used to reset it, and they
+          // come every few seconds up here, so the star was luck.
+          if (rung === 3 && hCoach.engaged && !(hState.gustEdgeT > 0)) hState.gustEdgeT = 3;
         }
         // A hard gust up high lands a sharp involuntary head-jolt on top of
         // the smooth shove — the flinch a real edge gust forces out of you.
@@ -30814,9 +31084,20 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         // forward over the rail. This is the most visceral exposure cue —
         // their own forward momentum becomes the thing that puts them past
         // the edge.
-        if (atEdge && goingIn && z <= minZ + 0.05) {
+        //
+        // ...but only when it's what they're plainly doing: facing the drop
+        // and already looking down over it, pressing on for a good second.
+        // It used to fire on any 0.8 s of forward input at the rail line —
+        // walking along the rail, or a thumb resting on the joystick — and
+        // re-armed every 8 s: a sudden 74° look over a 165 m drop nobody
+        // chose. An exposure is the player's step, never a trap. It re-arms
+        // once they've stepped back from the rail.
+        const yawW = Math.atan2(Math.sin(controls.yaw), Math.cos(controls.yaw));
+        const facingDrop = Math.abs(yawW) < 0.5 && controls.pitch < -0.4;
+        if (z > minZ + 0.45) playerState.autoLeanFired = false;
+        if (atEdge && goingIn && facingDrop && z <= minZ + 0.05) {
           playerState.pressingAgainstRail += dtN;
-          if (playerState.pressingAgainstRail > 0.8 && !playerState.autoLeanFired
+          if (playerState.pressingAgainstRail > 1.2 && !playerState.autoLeanFired
               && leanT === 0) {
             playerState.autoLeanFired = true;
             leanT = 1.0;
@@ -30828,8 +31109,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
               window.PhobiaVoice.speak(window.t("sc.h.lean2", "Leaning over. Hold the rail. You are safe."));
             }
           // (the coach card speaks for this moment now)
-            // Reset so the player can lean again later (after walking back)
-            setTimeout(() => { playerState.autoLeanFired = false; }, 8000);
+            // (re-arms above, once they've walked back from the rail)
           }
         } else {
           playerState.pressingAgainstRail = 0;
@@ -30909,7 +31189,14 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         // Look-down proximity (0 = horizon, 1 = looking straight down)
         const lookDown = Math.max(0, Math.min(1, (-controls.pitch - 0.10) / 1.3));
         // Reach for the railing once you're within ~1.5 m of it
-        const reach = edgeProx > 0.4 ? Math.min(1, (edgeProx - 0.4) * 2.5) : 0;
+        const reach = railHandsOff ? 0 : edgeProx > 0.4 ? Math.min(1, (edgeProx - 0.4) * 2.5) : 0;
+        if (railHandsOff && hCoach.engaged) {
+          handsOffT += dt || 0.016;
+          if (handsOffT > 5 && !handsOffTold) {
+            handsOffTold = true;
+            hCoach.teach("handsOff", window.t("dc.h.tHandsOff", "<b>Hands off the rail</b> — and you're standing exactly where you were. The rail was never what held you up; your feet were."), 8000);
+          }
+        }
         // Lean forward steeply when peering over the edge or auto-lean fired
         const lean = (leanT > 0)
           ? Math.min(1, 1 - leanT)
@@ -31207,6 +31494,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
       try { if (window.__holdPolicy === hCoach.holdPolicy) window.__holdPolicy = null; } catch {}
       try { if (window.__coach === hCoach) window.__coach = null; } catch {}
       try { const bar = document.querySelector('.scene-cmd-bar[data-scene="heights"]'); if (bar) bar.dataset.wired = ""; } catch {}
+      try { window.removeEventListener("keydown", onGripKey); } catch {}
     },
   };
 }
@@ -35346,7 +35634,8 @@ function makeCreatureCoach(opts) {
       if (calloutT <= 0) callout.classList.remove("show");
       return;
     }
-    if (!calloutQueue.length || readOpen || readResultT > 0) return;
+    // (one voice at a time: a check-in in progress keeps the next tip waiting)
+    if (!calloutQueue.length || readOpen || readResultT > 0 || checkOpen || checkResultT > 0) return;
     if (document.querySelector(".tour-overlay:not(.dismiss), .countdown")) return;
     const c = calloutQueue.shift();
     calloutKey = c.key;
@@ -35368,6 +35657,7 @@ function makeCreatureCoach(opts) {
     } catch {}
   }
 
+  let groundAnchor = null;   // where the player stood when last in the zone
   // ---------------- reading the dog ----------------
   let readOpen = null;       // { id, t0, until }
   let readCooldown = 3;      // seconds before the first prompt may appear
@@ -35379,9 +35669,19 @@ function makeCreatureCoach(opts) {
     if (!S) return false;
     if (readOpen || readResultT > 0 || readCooldown > 0) return false;
     if (s.onScreen === false) return false;
-    if (s.dist != null && s.dist > 9.5) return false;
+    // Close enough to actually see it: an 8 cm spider is a few pixels at
+    // 9 m, and a tongue flick less. A kit can set its own reach.
+    if (s.dist != null && s.dist > (o.readMaxDist ?? 9.5)) return false;
     // Variety: a signal already read this trial comes back only rarely.
     if (seenThisTrial.has(id) && Math.random() < 0.7) return false;
+    // A moment in the scene outranks a check-in: many prompts are one-shot
+    // (a creak in the dark, the lift's first lurch) and were simply lost
+    // while a check-in sat open. The check-in steps aside and comes back.
+    if (checkOpen || checkResultT > 0) {
+      if (checkOpen) checkNextAt = engagedSec + 8;
+      checkOpen = null; checkResultT = 0;
+      checkBox.classList.remove("show", "result");
+    }
     readOpen = { id, t0: clock, until: clock + (o.coarse ? 11 : 9) };
     seenThisTrial.add(id);
     callout.classList.remove("show"); calloutT = 0;
@@ -35425,6 +35725,65 @@ function makeCreatureCoach(opts) {
     readCooldown = 7 + Math.random() * 4;
     if (right && ev.readsRight === 1) teach("firstRead", K.texts.firstRead(), 7500);
   }
+  // ---------------- check-ins: the player's own reading ----------------
+  // In real exposure work the therapist asks "0 to 10, how loud is it now?"
+  // every few minutes — the numbers falling while you stay are the lesson,
+  // in the player's own words rather than the game's model of them. Up to
+  // three per trial, a few seconds apart, never over a read prompt, gone if
+  // ignored. Not a star: stars reward approach and attention, never a number.
+  const checkBox = document.createElement("div");
+  checkBox.className = "dc-check";
+  checkBox.setAttribute("role", "group");
+  checkBox.setAttribute("aria-label", t("dc.chkAria", "Check in: how loud is your alarm?"));
+  if (stage) stage.appendChild(checkBox);
+  let checkOpen = null;      // { t0, until }
+  let checkNextAt = 5;       // engaged seconds before the next one may appear
+  let checkResultT = 0;
+  const checkins = [];       // { t, v, alarm }
+  ev.checkins = checkins;
+  const chkColor = (v) => (typeof sudsColor === "function" ? sudsColor(v) : "#7cd1c5");
+  function openCheck() {
+    const prev = checkins.length ? checkins[checkins.length - 1].v : null;
+    checkOpen = { t0: clock, until: clock + (o.coarse ? 14 : 12) };
+    checkBox.innerHTML = `
+      <div class="dc-check-q">🗣 ${prev == null ? t("dc.chkQ", "Check in: how loud is your alarm right now?") : tf("dc.chkQ2", "And now? (last time you said {v})", { v: prev })}</div>
+      <div class="dc-check-opts">${Array.from({ length: 11 }, (_, v) => `<button type="button" class="dc-chk" data-v="${v}" style="--c:${chkColor(v)}">${v}</button>`).join("")}</div>
+      <div class="dc-check-ends"><span>${t("scale.calm", "0 calm")}</span><span>${t("scale.panic", "10 panic")}</span></div>`;
+    checkBox.querySelectorAll(".dc-chk").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); answerCheck(+b.dataset.v); }));
+    checkBox.classList.remove("result");
+    checkBox.classList.add("show");
+  }
+  function answerCheck(v) {
+    if (!checkOpen) return;
+    checkOpen = null;
+    const prev = checkins.length ? checkins[checkins.length - 1].v : null;
+    checkins.push({ t: +clock.toFixed(1), v, alarm: Math.round(alarm) });
+    mark("check", v);
+    const msg = prev == null ? tf("dc.chk1", "Noted: {v}/10. Stay — we'll check again in a little while.", { v })
+      : v < prev ? tf("dc.chkDown", "{a} → {b}. Coming down while you stay — that's the lesson, in your own numbers.", { a: prev, b: v })
+      : v > prev ? tf("dc.chkUp", "{a} → {b}. A wave can rise before it falls. Stay with it.", { a: prev, b: v })
+      : tf("dc.chkSame", "Still {v}. Some waves are slow — staying is the work.", { v });
+    checkBox.innerHTML = `<div class="dc-check-res">${msg}</div>`;
+    checkBox.classList.add("result");
+    checkResultT = 4.5;
+    checkNextAt = engagedSec + 14;
+    readCooldown = Math.max(readCooldown, 3);
+    try { if (window.PhobiaFX && window.PhobiaFX.haptic) window.PhobiaFX.haptic(8); } catch {}
+  }
+  function pumpCheck(d) {
+    if (checkOpen && clock > checkOpen.until) { checkOpen = null; checkBox.classList.remove("show"); checkNextAt = engagedSec + 12; }
+    if (checkResultT > 0) { checkResultT -= d; if (checkResultT <= 0) checkBox.classList.remove("show", "result"); }
+    if (checkOpen || checkResultT > 0 || !engaged || checkins.length >= 3 || engagedSec < checkNextAt) return;
+    if (readOpen || readResultT > 0 || calloutT > 0) return;   // never over a prompt or a tip being read
+    if (document.querySelector(".tour-overlay:not(.dismiss), .countdown, .grounding-overlay.active, .stage-breath")) return;
+    openCheck();
+  }
+  function onCheckKey(e) {
+    if (!checkOpen || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    if (/^[0-9]$/.test(e.key)) { e.preventDefault(); answerCheck(+e.key); }
+  }
+  window.addEventListener("keydown", onCheckKey);
   function onKey(e) {
     if (!readOpen || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
@@ -35438,9 +35797,9 @@ function makeCreatureCoach(opts) {
   const live = [];           // last ~60 s @ 4 Hz
   const liveMarks = [];      // {i, kind}
   let liveAcc = 0, liveIdx = 0;
-  function mark(kind) {
-    liveMarks.push({ i: liveIdx, kind });
-    ev.marks.push({ t: +clock.toFixed(1), kind });
+  function mark(kind, v) {
+    liveMarks.push({ i: liveIdx, kind, v });
+    ev.marks.push(v == null ? { t: +clock.toFixed(1), kind } : { t: +clock.toFixed(1), kind, v });
     if (ev.marks.length > 200) ev.marks.shift();
   }
   function colorFor(v) {
@@ -35497,8 +35856,8 @@ function makeCreatureCoach(opts) {
     for (const m of liveMarks) {
       const i = m.i - first; if (i < 0) continue;
       const mx = x0 + (i / N) * W;
-      const glyph = m.kind === "escape" ? "↩" : m.kind === "read" ? "◆" : (m.kind === "run" || m.kind === "lunge") ? "»" : m.kind === "settle" ? "✓" : m.kind === "spike" ? "•" : "·";
-      g.fillStyle = m.kind === "escape" ? "rgba(239,107,91,.95)" : m.kind === "read" ? "rgba(165,180,252,.95)" : m.kind === "settle" ? "rgba(52,211,153,.95)" : "rgba(255,255,255,.75)";
+      const glyph = m.kind === "check" ? String(m.v) : m.kind === "escape" ? "↩" : m.kind === "read" ? "◆" : (m.kind === "run" || m.kind === "lunge") ? "»" : m.kind === "settle" ? "✓" : m.kind === "spike" ? "•" : "·";
+      g.fillStyle = m.kind === "check" ? "rgba(252,211,77,.95)" : m.kind === "escape" ? "rgba(239,107,91,.95)" : m.kind === "read" ? "rgba(165,180,252,.95)" : m.kind === "settle" ? "rgba(52,211,153,.95)" : "rgba(255,255,255,.75)";
       g.fillText(glyph, mx, 10);
     }
   }
@@ -35576,7 +35935,26 @@ function makeCreatureCoach(opts) {
     // engagement (the hold's definition of being IN the exposure)
     // Hysteresis: in at the zone line, out only a step past it, so a dog
     // pacing at the edge doesn't flicker the hold between "paused" and not.
-    engaged = engaged ? dist < o.inZoneDist + 0.6 : dist < o.inZoneDist;
+    let inZone = engaged ? dist < o.inZoneDist + 0.6 : dist < o.inZoneDist;
+    // Holding your ground: an exposure is left by the PLAYER moving away.
+    // The hold used to pause ("come back within 2.6 m") whenever the dog
+    // wandered off by itself while you stood exactly where you were — the
+    // player who did everything right was told to chase it. So once in,
+    // you stay in while you haven't backed away from where you stood (up to
+    // a generous distance — past that, there's nothing left to be near).
+    // Creatures only: a place realm's "distance" is the scene's own measure
+    // of being in it (the Dark adds metres while the torch is on), so there
+    // the number alone decides.
+    if (!K.place && s.px != null && s.dogX != null) {
+      if (inZone && dist < o.inZoneDist) { if (!groundAnchor) groundAnchor = { x: 0, z: 0 }; groundAnchor.x = s.px; groundAnchor.z = s.pz; }
+      if (!inZone && engaged && groundAnchor && dist < o.inZoneDist + 4.5) {
+        const ux = s.px - s.dogX, uz = s.pz - s.dogZ, ul = Math.hypot(ux, uz) || 1;
+        const away = ((s.px - groundAnchor.x) * ux + (s.pz - groundAnchor.z) * uz) / ul;
+        if (away < 0.6) inZone = true;
+      }
+      if (!inZone) groundAnchor = null;
+    }
+    engaged = inZone;
     if (engaged) { engagedSec += d; everEngaged = true; }
     const cur = window.PhobiaFear ? window.PhobiaFear.get() : alarm;
     if (engaged) engagedPeak = Math.max(engagedPeak, cur);
@@ -35589,7 +35967,11 @@ function makeCreatureCoach(opts) {
     // Settled: well under the in-zone peak, and no spike in the last moments.
     const line = settleLine();
     const grounding = !!(window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding());
-    settledNow = engaged && engagedPeak >= 12 && cur <= line && (clock - lastPulseT) > 2.5 && !grounding;
+    // ...and with the creature still near. Held ground keeps the hold
+    // running while it wanders off, but an alarm that fell because the snake
+    // left (or the spider was carried out) is relief, not habituation.
+    const nearNow = dist < o.inZoneDist + 0.6;
+    settledNow = engaged && nearNow && engagedPeak >= 12 && cur <= line && (clock - lastPulseT) > 2.5 && !grounding;
     if (settledNow && !settledLatched && engagedSec > 5) {
       settledLatched = true; everSettled = true;
       ev.settledAt = Math.round(clock);
@@ -35614,7 +35996,9 @@ function makeCreatureCoach(opts) {
       // One star still open, and it's one the animal can still give: say so,
       // once, and leave the choice with the player.
       const open = goals.filter((x) => !x.done && x.id !== "settle");
-      if (!K.place && open.length === 1 && open[0].id === "read") {
+      // (A place realm says so only if its scene keeps offering moments
+      // after the hold — o.readAfterHold.)
+      if ((!K.place || o.readAfterHold) && open.length === 1 && open[0].id === "read") {
         teach("starsLeft", tf("dc.tStarsLeft",
           "Trial held — continue whenever you like. <b>One star is still open:</b> {g}. Stay a little longer if you want all three.",
           { g: esc(open[0].text) }), 8000);
@@ -35715,6 +36099,7 @@ function makeCreatureCoach(opts) {
       if (clock > readOpen.until) { readOpen = null; readBox.classList.remove("show"); readCooldown = 4; }
     }
     if (readResultT > 0) { readResultT -= d; if (readResultT <= 0) readBox.classList.remove("show", "result"); }
+    pumpCheck(d);
     pumpCallout(d);
     if (s.trust != null) setTrust(s.trust);
   }
@@ -35780,7 +36165,8 @@ function makeCreatureCoach(opts) {
   }
   function dispose() {
     window.removeEventListener("keydown", onKey);
-    try { root.remove(); callout.remove(); readBox.remove(); } catch {}
+    window.removeEventListener("keydown", onCheckKey);
+    try { root.remove(); callout.remove(); readBox.remove(); checkBox.remove(); } catch {}
   }
   return {
     update, pulse, signal, answer, note, teach, goalDone, goalCount, setTrust, setFoot, safety,
@@ -35789,6 +36175,7 @@ function makeCreatureCoach(opts) {
     get readOpen() { return !!readOpen; }, get settled() { return settledLatched; },
     get readId() { return readOpen ? readOpen.id : null; },
     get stars() { return starsDone(); }, get starsTotal() { return goals.length; },
+    goalIsDone: (id) => { const g = goals.find((x) => x.id === id); return !!(g && g.done); },
     // Did the alarm genuinely come down (or never rise far enough to need to)?
     get everSettled() { return everSettled || engagedPeak < 12; },
   };
@@ -36889,6 +37276,11 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       const prox = Math.max(0.2, Math.min(1, 1.25 - dd / 6));
       const amp = base * prox;
       if (window.PhobiaFX && window.PhobiaFX.bodyStartle) window.PhobiaFX.bodyStartle(amp);
+      // bodyStartle moves the third-person body; the first-person head needs
+      // its own flinch (kickShake fades itself out in third person). The
+      // barking rung is first person, and its barks moved nothing at all.
+      const sc = storedActiveControls;
+      if (sc && sc.kickShake) sc.kickShake(0.012 + 0.03 * amp);
       // The involuntary inhale rides the big flinches only — a gasp per
       // across-the-room bark would train the player to stop believing it.
       if (amp > 0.34 && window.PhobiaAudio && window.PhobiaAudio.breathCatch) {
@@ -38701,7 +39093,11 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         });
         // Rung goals that are about where you stand.
         if (levelIdx === 0 && playerDist < zoneM) coach.goalDone("near");
-        if (levelIdx === 1 && playerDist < 1.9 && coachToward > 0.25 && coachPlayerSpeed < 0.35) coachArriveT += d;
+        // "Let it come to you — stay put": counted where this dog actually
+        // stops. A new traveler's Buddy trails at ~2.5 m and halts around
+        // 2 m, so a fixed 1.9 m line paid the star only to players whose
+        // earlier sessions had already built trust.
+        if (levelIdx === 1 && playerDist < Math.max(1.9, dogCtrl.followRadius + 0.5) && coachToward > 0.25 && coachPlayerSpeed < 0.35) coachArriveT += d;
         else if (levelIdx === 1) coachArriveT = Math.max(0, coachArriveT - d * 0.5);
         if (coachArriveT > 0.6) coach.goalDone("arrive");
         if (levelIdx === 2 && esc.stood) {
@@ -40801,6 +41197,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   // and the spider has been "released outside" — it's gone, the user wins.
   // Clicking the floor near the spider also lowers the jar there.
   let jarMode = false;
+  let silk = null, silkFrom = null;   // the wall spider's dragline (see "The dragline")
+  let spStep = null;                  // "Step closer" glide
   let jar = null;
   // Set once the spider has been jarred and carried outside. It is parked at
   // y = −50, but its x/z stayed live in the obstacle list, the fear inputs,
@@ -40886,6 +41284,33 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     }
   }
 
+  // ----- The jar: the finale, not the exit -----
+  // Catching the spider under a glass and carrying it out is where real
+  // one-session treatment for spider fear ends — mastery, done at arm's
+  // reach once the alarm has come down. It used to work from anywhere at any
+  // moment: a free "settled" star, "You outlasted it" over a spider that had
+  // just been carried out, and up to half a minute in an empty cellar. Now
+  // it opens when the hold is met, within reach; before that a click on the
+  // spider says what it's for, and stepping back stays the way out.
+  const JAR_REACH = Math.max(1.8, (B.inZoneDist ?? 3.0) + 0.5);
+  function jarBlock() {
+    if (spiderReleased || jarPhase !== "idle") return "busy";
+    if (!window.__rungHoldComplete) return "hold";
+    const c = spiderControls;
+    if (c && Math.hypot(spider.position.x - c.position.x, spider.position.z - c.position.z) > JAR_REACH) return "far";
+    return null;
+  }
+  let jarToldAt = -99;
+  function jarTell(why) {
+    const now = performance.now() / 1000;
+    if (now - jarToldAt < 4) return;
+    jarToldAt = now;
+    const msg = why === "far"
+      ? window.tf("sc.s.jarFar", "Come within {m} m to use the jar — arm's reach.", { m: JAR_REACH.toFixed(1).replace(/\.0$/, "") })
+      : window.t("sc.s.jarLater", "The jar comes last: stay until your alarm settles — then you can catch it and carry it out.");
+    if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt(msg, 4000);
+  }
+
   // ----- Click-on-spider / click-on-floor (mouse / touch) -----
   // When in "jar mode" (the user clicked the Glass jar button) the next
   // click drops the jar. Otherwise click on the spider gently nudges it
@@ -40932,6 +41357,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     let p = hit.object, hitSpider = false;
     while (p) { if (p === spider) { hitSpider = true; break; } p = p.parent; }
     if (jarMode || hitSpider) {
+      const why = jarBlock();
+      if (why) { if (why !== "busy") jarTell(why); jarMode = false; return; }
       const tx = hitSpider ? spider.position.x : hit.point.x;
       const tz = hitSpider ? spider.position.z : hit.point.z;
       dropJarAt(tx, tz);
@@ -40965,10 +41392,22 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         e.stopPropagation();
         const c = spiderControls; if (!c && btn.dataset.cmd !== "jar") return;
         switch (btn.dataset.cmd) {
-          case "closer":
-            c.position.z = Math.max(c.opts.bounds.minZ + 0.2, c.position.z - 1.0);
+          case "closer": {
+            // A short walk TOWARD the spider (it was a 1 m teleport along −z
+            // that always startled it — the jump read as a rush — and on the
+            // wall rung could land you inside the pillar). Stops at arm's
+            // reach; the approach-speed sense is paused while it plays.
+            const dx = spider.position.x - c.position.x, dz = spider.position.z - c.position.z;
+            const dd = Math.hypot(dx, dz) || 1;
+            const go = Math.max(0, Math.min(1.0, dd - Math.max(1.0, GUARD + 0.5)));
+            if (go < 0.1) break;
+            const b = c.opts.bounds || {};
+            const tx = Math.max(b.minX ?? -9, Math.min(b.maxX ?? 9, c.position.x + dx / dd * go));
+            const tz = Math.max((b.minZ ?? -9) + 0.2, Math.min(b.maxZ ?? 9, c.position.z + dz / dd * go));
+            spStep = { fx: c.position.x, fz: c.position.z, tx, tz, k: 0 };
             if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.closer", "Closer. It is still. You are still."));
             break;
+          }
           case "back":
             c.position.z = Math.min(c.opts.bounds.maxZ - 0.2, c.position.z + 1.0);
             if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.back", "Stepped back. Notice the relief. Then notice it pass."));
@@ -41000,23 +41439,16 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.look", "Look at it. Really look. The fear will rise. Then settle."));
             break;
           }
-          case "jar":
-            // Arms the next click to lower the jar (or drops it on the spider directly)
-            if (jarPhase !== "idle" || spiderReleased) return;
-            jarMode = true;
-            // If they clicked the button while reasonably close, just drop directly
-            if (c) {
-              const dx = spider.position.x - c.position.x;
-              const dz = spider.position.z - c.position.z;
-              if (Math.hypot(dx, dz) < 4) {
-                dropJarAt(spider.position.x, spider.position.z);
-                jarMode = false;
-                if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.jarDown", "Jar down. It's contained. Slow breath."));
-              } else if (window.PhobiaVoice) {
-                window.PhobiaVoice.speak(IS_COARSE_POINTER ? window.t("sc.s.tapJar", "Tap the spider to lower the jar.") : window.t("sc.s.clickJar", "Click the spider to lower the jar."));
-              }
-            }
+          case "jar": {
+            // Within reach and after the hold: lower it straight over the spider.
+            const why = jarBlock();
+            if (why === "busy") return;
+            if (why) { jarTell(why); return; }
+            dropJarAt(spider.position.x, spider.position.z);
+            jarMode = false;
+            if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.jarDown", "Jar down. It's contained. Slow breath."));
             break;
+          }
         }
       };
     });
@@ -41054,7 +41486,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     kit: creatureKit("spiders"),
     stage: document.getElementById("stage"),
     levelIdx, intensity, dogName: spName, title: window.t("creature.spider", "House spider"),
-    inZoneDist: spZone, sizeMul: SP_COACH.sizeMul, tau: SP_COACH.tau, hFloor: SP_COACH.hFloor,
+    inZoneDist: spZone, readMaxDist: Math.max(3.2, spZone + 1.4), sizeMul: SP_COACH.sizeMul, tau: SP_COACH.tau, hFloor: SP_COACH.hFloor,
     nearD: 0.3, farSpan: 2.7,
     minHold: level.minHold || 12,
     coarse: IS_COARSE_POINTER,
@@ -41154,7 +41586,14 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         // During a dart / close pass, prefer a calming ground-oriented hint
         // over a raw tooltip so the UX doesn't read as a game prompt mid-spike.
         if (pounceState !== "idle" || (skitterState === "skittering" && dist < 1.6)) {
-          return { gesture: "rest", hint: window.t("sc.s.hintFast", "it's fast — you can step back, or jar it") };
+          return { gesture: "rest", hint: window.t("sc.s.hintFast2", "it's fast — stay, or step back if you need to") };
+        }
+        // The jar isn't on offer until the hold is met (see jarBlock).
+        if (!window.__rungHoldComplete) {
+          return { gesture: "rest", hint: IS_COARSE_POINTER ? window.t("sc.s.hintLookT", "stay with it · hold 🔍 to look closer") : window.t("sc.s.hintLook", "stay with it · hold Z to look closer") };
+        }
+        if (dist > JAR_REACH) {
+          return { gesture: "rest", hint: window.tf("sc.s.hintReach", "walk within {m} m to catch it under the jar", { m: JAR_REACH.toFixed(1).replace(/\.0$/, "") }) };
         }
         return {
           gesture: "rest",
@@ -41293,9 +41732,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         if (jarLifeT > 2.0) {
           jarPhase = "lifting"; jarLifeT = 0;
           if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.released", "Released outside. You did that calmly."));
-          // A settled catch is a legitimate completion route — route it through
-          // the same honest hold path (the fanfare still waits for the gate).
-          window.__rungHoldComplete = true;
+          // (The hold was already met — the jar only opens after it.)
+          if (!jar.userData.staleMiss) { try { spCoach.note && spCoach.note("caught"); } catch {} }
           if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.15);
         }
       } else if (jar && jarPhase === "lifting") {
@@ -41321,6 +41759,18 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         const dzp = controls ? controls.position.z - spider.position.z : 0;
         const distP = Math.hypot(dxp, dzp) || 0.0001;
 
+        // "Step closer" glide (the button): eased over 0.8 s, cancelled by any
+        // movement input, and never measured as a rush.
+        if (spStep && controls) {
+          spStep.k = Math.min(1, spStep.k + d / 0.8);
+          const e = spStep.k * spStep.k * (3 - 2 * spStep.k);
+          controls.position.x = spStep.fx + (spStep.tx - spStep.fx) * e;
+          controls.position.z = spStep.fz + (spStep.tz - spStep.fz) * e;
+          controls._walkAmt = Math.min(1, (controls._walkAmt || 0) + 0.1);
+          controls._walkPhase = (controls._walkPhase || 0) + d * Math.PI * 3;
+          spPrevPlayer = null; spApproachSpeed = 0;
+          if (spStep.k >= 1 || (controls.hasMoveInput && controls.hasMoveInput())) spStep = null;
+        }
         // Player's OWN radial approach speed (the snake's calc): a rush and a
         // careful creep must not read the same to the flagship creature.
         if (controls && d > 0) {
@@ -41357,8 +41807,12 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         // ---- Ambient skitter machine (data-driven, suppressed during a pounce) ----
         if (B.skitter && loose && controls && pounceState === "idle" && elapsed > (B.firstSkitterAt ?? 0)) {
           skitterT += d;
+          // The longer you stay, the calmer it gets — darts slow by up to a
+          // third (the dog's settleAfter beat). It used to speed UP by 40%:
+          // a creature that grows more frantic the longer you stay near it
+          // teaches the opposite of what staying is for.
           const esc = B.escalate ? clamp01((elapsed - (B.firstSkitterAt ?? 0)) / (B.settleAfter ?? 45)) : 0;
-          const baseSpd = (B.skitterSpeed ?? 1.2) * (1 + 0.4 * esc);
+          const baseSpd = (B.skitterSpeed ?? 1.2) * (1 - 0.3 * esc);
           const evr = B.skitterEvery ?? [2.5, 4.5];
           if (skitterState !== "skittering") dartClock += d;
           if (skitterState === "lurking") {
@@ -41405,7 +41859,10 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               skitterTargetYaw = Math.atan2(skitterDir.x, skitterDir.z);
               // A dash your way is the trigger that habituates (each one hits
               // softer); a dash away is the evidence it's going somewhere else.
-              spDartToward = (skitterDir.x * dxp + skitterDir.z * dzp) / distP;
+              // (On the wall skitterDir.z is UP/DOWN the face, not toward you:
+              // a climb used to count as a dash at the player, and a descent as
+              // turning away. There only the sideways part can come your way.)
+              spDartToward = onWall ? (skitterDir.x * dxp) / distP : (skitterDir.x * dxp + skitterDir.z * dzp) / distP;
               if (spDartToward > 0.35 && distP < 6) {
                 spPulse(0.16 + 0.3 * clamp01(1 - distP / 3.2), "dart", distP);
                 spSignal("dart");
@@ -41454,7 +41911,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             if (skitterT > pauseDur) {
               skitterState = "lurking"; skitterT = 0;
               microShuffleAt = 1.2 + Math.random() * 2.2;
-              nextSkitter = (distP > 3.5 ? evr[1] : evr[0]) + Math.random() * (evr[1] - evr[0]);
+              nextSkitter = ((distP > 3.5 ? evr[1] : evr[0]) + Math.random() * (evr[1] - evr[0])) * (1 + 0.4 * esc);
             }
           }
         }
@@ -41523,6 +41980,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               if (!retreatPraised && window.PhobiaVoice) { retreatPraised = true; window.PhobiaVoice.speak(window.t("sc.s.backedDown", "It backed down when you did. You control this distance.")); }
             } else if (pounceT > thisCoil) {
               pounceState = "pouncing"; pounceT = 0; spiderCtrl.setCoil(0);
+              if (onWall) silkFrom = { x: spider.position.x, y: spider.position.y, z: spider.position.z };
               if (p.play) p.play("Jump", 0.05, { once: true, timeScale: 1.4 });
               arousalFloor = Math.max(arousalFloor, 0.5);
             }
@@ -41609,6 +42067,28 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               if (!completionBeatDone) nextPounceAt = elapsed + (pev[0] + Math.random() * (pev[1] - pev[0])) * (1 + Math.min(0.6, heldCycles * 0.15));
             }
           }
+        }
+
+        // ---- The dragline ----
+        // Off the wall it hangs from its silk: the jump drops it out toward
+        // you on a thread, and it climbs that thread back. It used to end the
+        // jump in mid-air and drift back to the pillar through empty space.
+        if (onWall) {
+          const off = pounceState === "pouncing" || pounceState === "recoiling";
+          if (off && silkFrom) {
+            if (!silk) {
+              const g = new THREE.BufferGeometry();
+              g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
+              silk = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xe8edf2, transparent: true, opacity: 0.6 }));
+              silk.frustumCulled = false; silk.userData.noPick = true;
+              scene.add(silk);
+            }
+            const a = silk.geometry.attributes.position.array;
+            a[0] = silkFrom.x; a[1] = silkFrom.y + 0.04; a[2] = silkFrom.z;
+            a[3] = spider.position.x; a[4] = spider.position.y + (spiderCtrl.height || 0.05) * 0.5; a[5] = spider.position.z;
+            silk.geometry.attributes.position.needsUpdate = true;
+            silk.visible = true;
+          } else if (silk) silk.visible = false;
         }
 
         // ---- Threat beacon (FP gaze fixation, "hold still while it moves") ----
@@ -41710,6 +42190,22 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             completionBeatDone = true;
             nextPounceAt = Infinity;
             if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt(window.t("sc.s.settled", "It settled. You outlasted it."), 4500);
+          }
+          // The last step, offered once: catch it and carry it out. Opens the
+          // command bar (the jar's there) the way the dog's play invite does.
+          if (completionBeatDone && !spiderReleased) {
+            sceneTimers.push(setTimeout(() => {
+              if (spiderReleased || jarPhase !== "idle") return;
+              try {
+                spCoach.teach("jarInvite", IS_COARSE_POINTER
+                  ? window.t("sc.s.jarInviteT", "<b>Held.</b> One last step, if you want it: tap the spider (or 🫙) to catch it under the jar and carry it outside. Continue whenever you like.")
+                  : window.t("sc.s.jarInvite", "<b>Held.</b> One last step, if you want it: click the spider (or 🫙) to catch it under the jar and carry it outside. Continue whenever you like."), 9000);
+                const bar = document.querySelector('.scene-cmd-bar[data-scene="spiders"]');
+                const tg = document.querySelector(".cmd-toggle");
+                if (bar && bar.classList.contains("collapsed") && tg) tg.click();
+                window.dispatchEvent(new Event("pointermove"));
+              } catch {}
+            }, B.pounce ? 5200 : 2600));
           }
         }
 
@@ -42420,11 +42916,14 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
     stage: document.getElementById("stage"),
     levelIdx: rung, intensity: rung >= 4 ? "apex" : rung >= 2 ? "alert" : "calm",
     dogName: window.t("coach.e.name", "the space"), title: window.t(`level.enclosed.${rung}.title`, level.title),
-    inZoneDist: 1.0, nearD: 0.2, farSpan: 2.6,
+    inZoneDist: 1.0, nearD: 0.2, farSpan: 2.6, readAfterHold: true,
     sizeMul: E_COACH.sizeMul, tau: E_COACH.tau, hFloor: E_COACH.hFloor,
     minHold: level.minHold || 12, coarse: IS_COARSE_POINTER,
     holdText: LIFT ? { begin: () => window.t("dc.e.hBeginLift", "Step into the lift and press a floor to begin — at your pace"), back: () => window.t("dc.e.hBackLift", "Paused — the doors are open. Close them, or ride again, to carry on") }
-      : MRI ? { begin: () => window.t("dc.e.hBeginMri", "Tap “Slide in” when you're ready — at your pace"), back: () => window.t("dc.e.hBackMri", "Paused — you're out of the scanner. Slide back in when you're ready") }
+      : MRI ? (IS_COARSE_POINTER
+        ? { begin: () => window.t("dc.e.hBeginMri", "Tap “Slide in” when you're ready — at your pace"), back: () => window.t("dc.e.hBackMri", "Paused — you're out of the scanner. Slide back in when you're ready") }
+        // (the bar with “Slide in” is collapsed on desktop — name the key)
+        : { begin: () => window.t("dc.e.hBeginMriK", "Press E to slide in when you're ready — at your pace"), back: () => window.t("dc.e.hBackMriK", "Paused — you're out of the scanner. Press E to slide back in when you're ready") })
       : null,
     expect: (() => { const e = window.__pendingExpect; return (e && e.phobia === "enclosed" && e.level === levelIdx) ? e : null; })(),
     goals: [
@@ -42449,6 +42948,7 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
   // ---------------- State + actions ----------------
   let clock = 0, disposed = false, inside = false, shut = false, wasEngaged = false;
   let everClosedInside = false, backT = 0, darkT = 0, reachT = 0, touchT = 0, sigGap = 4, moved = 0, prevX = null, prevZ = null;
+  let measuredAt = -99;
   let latchSaid = false, ventSaid = false, humSaid = false, knockSaid = false, nextEventAt = 9 + Math.random() * 4;
   const bodySaid = {};
   const A = () => window.PhobiaAudio;
@@ -42468,6 +42968,7 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
   }
   // Lift.
   let floor = 1, liftState = "open", liftTarget = 1, moveT = 0, moveDur = 0, idleT = 0, floorsRidden = 0, rideStartInside = false;
+  let doorsByLift = false;   // the doors opened themselves at a floor (you didn't)
   function liftGo(n) {
     if (!LIFT) return;
     if (!inside) { coach.teach("liftOut", window.t("dc.e.tLiftOut", "Step inside the lift first — then pick a floor."), 4500, true); return; }
@@ -42486,6 +42987,9 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
   }
   // MRI.
   let mriState = "out", scanOn = false, scanT = 0, scanDur = 0, nextScanAt = 0, scanHandle = null, scansDone = 0, techSaid = false;
+  // "Lie still through a whole scan" — measured now: how far the head turned
+  // during the scan (it used to tick at the end of any scan, still or not).
+  let scanMove = 0, scanPrevYaw = null, scanPrevPitch = 0, blurSaid = false;
   function slide(inward) {
     if (!MRI) return;
     if (inward && mriState === "out") {
@@ -42500,7 +43004,7 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
     }
   }
   function startScan() {
-    scanOn = true; scanT = 0; scanDur = 6 + Math.random() * 4;
+    scanOn = true; scanT = 0; scanDur = 6 + Math.random() * 4; scanMove = 0; scanPrevYaw = null;
     try { scanHandle = A() && A().mriSequence ? A().mriSequence(scanDur) : null; } catch { scanHandle = null; }
     coach.pulse(0.26, "noise", lastDist); coach.note("knock");
     if (!knockSaid) setTimeout(() => { if (!disposed && scanOn && sig("knock")) knockSaid = true; }, 900);
@@ -42511,7 +43015,12 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
     try { if (scanHandle && !completed) scanHandle.stop(); } catch {}
     scanHandle = null;
     if (completed) {
-      scansDone++; if (coach.engaged) coach.goalDone("scan");
+      scansDone++;
+      if (scanMove < 0.6) { if (coach.engaged) coach.goalDone("scan"); }
+      else if (!blurSaid) {
+        blurSaid = true;
+        coach.teach("techBlur", window.t("dc.e.tTechBlur", "Technician: “That one came out a little blurry — you moved. No problem. Try to keep your head still for the next one.”"), 7000, true);
+      }
       try { window.PhobiaExperiments && window.PhobiaExperiments.signal("mri.scan"); } catch {}
     }
     nextScanAt = clock + 5 + Math.random() * 4;
@@ -42524,7 +43033,10 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
     if (rung === 3 && cordBead) cordBead.userData.pull = 1;
   }
   function act(a) {
-    if (a === "door") setDoor(doorTarget < 0.5, true);
+    // The lift's doors are clickable like any door, but they belong to the
+    // lift: clicking them mid-ride opened them between floors, and during
+    // "closing" left the lift stuck there with its doors open.
+    if (a === "door") { if (LIFT) act(doorTarget < 0.5 ? "open" : "close"); else setDoor(doorTarget < 0.5, true); }
     else if (a === "open") { if (LIFT) liftOpen(); else setDoor(true, true); }
     else if (a === "close") { if (LIFT) { if (liftState === "open") { setDoor(false, true); liftState = "closing-idle"; } } else setDoor(false, true); }
     else if (a === "light") toggleLight();
@@ -42532,12 +43044,24 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
     else if (/^floor\d$/.test(a)) liftGo(+a.slice(5));
     else if (a === "slide") slide(mriState === "out");
     else if (a === "ball") slide(false);
-    else if (a === "touch") touchT = 3;
+    else if (a === "touch") {
+      touchT = 3;
+      // "The walls feel closer" — so measure them. A hand flat on the wall
+      // is the check: the room is the size it was. (It used to only move the
+      // hand.) Once per ~10 s.
+      if (inside && clock - measuredAt > 10 && I && I.x1 != null) {
+        measuredAt = clock;
+        coach.note("measure");
+        coach.teach("measure" + Math.round(clock), window.tf("dc.e.tMeasure", "Hand on the wall: the room is still {w} × {d} m — the size it was when you stepped in. \"Closer\" is the alarm's estimate, not the room.",
+          { w: (I.x1 - I.x0).toFixed(1), d: (I.z1 - I.z0).toFixed(1) }), 6500, true);
+      }
+    }
   }
   function liftOpen() {
+    if (liftState === "closing") { liftState = "open"; idleT = 0; doorsByLift = false; setDoor(true, true); return; }   // changed your mind mid-close: no ride
     if (liftState === "moving") { coach.teach("liftMoving" + Math.floor(clock / 6), window.t("dc.e.tLiftMoving", "Lift doors open at a floor — you'll be there in a few seconds."), 4000, true); return; }
     if (doorTarget < 0.5) {
-      setDoor(true, true); liftState = "opening";
+      setDoor(true, true); liftState = "opening"; doorsByLift = false;
       if (cop) for (const n in cop.userData.floorBtns) cop.userData.floorBtns[n].material.emissiveIntensity = 0;
     }
   }
@@ -42548,7 +43072,9 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
   let downX = 0, downY = 0, downT = 0, downId = -1, controlsRef = null;
   const onDown = (e) => { downX = e.clientX; downY = e.clientY; downT = performance.now(); downId = e.pointerId; };
   const onUp = (e) => {
-    if (e.pointerId !== downId || Math.hypot(e.clientX - downX, e.clientY - downY) > 6 || performance.now() - downT > 400) return;
+    // (a fingertip wobbles and a nervous tap is slow — the shared touch slop)
+    const touch = e.pointerType === "touch" || IS_COARSE_POINTER;
+    if (e.pointerId !== downId || Math.hypot(e.clientX - downX, e.clientY - downY) > (touch ? 16 : 6) || performance.now() - downT > (touch ? 600 : 400)) return;
     const rect = canvasEl.getBoundingClientRect();
     ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
@@ -42680,15 +43206,20 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
         const e3 = slideK * slideK * (3 - 2 * slideK);
         room.position.z = -SLIDE * e3;
         if (mriState === "sliding" && slideK >= 0.999) {
-          mriState = "in"; nextScanAt = clock + 5;
+          mriState = "in"; nextScanAt = clock + 3;
           if (!techSaid) { techSaid = true; coach.teach("tech1", window.t("dc.e.tTech", "Technician, in your headphones: “All good. The scans are loud — knocking, a few seconds each. Squeeze the ball any time and I'll hear you.”"), 9000); }
         }
         inside = slideK > 0.72; shut = inside;
         lastDist = 0.2 + (1 - e3) * 2.8;
         // scans
-        if (mriState === "in" && !scanOn && clock > nextScanAt && !window.__rungHoldComplete) startScan();
+        // (and after the hold while the still-scan star is open)
+        if (mriState === "in" && !scanOn && clock > nextScanAt && (!window.__rungHoldComplete || !coach.goalIsDone("scan"))) startScan();
         if (scanOn) {
           scanT += d;
+          if (controls) {
+            if (scanPrevYaw != null) scanMove += Math.abs(controls.yaw - scanPrevYaw) + Math.abs(controls.pitch - scanPrevPitch);
+            scanPrevYaw = controls.yaw; scanPrevPitch = controls.pitch;
+          }
           const left = Math.max(0, Math.ceil(scanDur - scanT));
           if (gantryPaint) gantryPaint("● " + window.t("mri.scanning", "SCANNING"), "0:" + String(left).padStart(2, "0"));
           P.position.x = Math.sin(clock * 71) * 0.0005;
@@ -42705,7 +43236,12 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
         shut = doorAmt < 0.06;
         const deep = Math.hypot(px - L.deep.x, pz - L.deep.z);
         const dp = doorWorld();
-        lastDist = inside ? (shut ? 0.2 + 0.25 * deep : 1.15 + 0.6 * doorAmt) : 1.6 + 0.6 * Math.hypot(px - dp.x, pz - dp.z);
+        // Staying in the lift while its doors open at a floor is still being
+        // in the lift — the hold used to pause every time they did (up to
+        // seven seconds a ride), exactly where the story says "stay until the
+        // doors open by themselves". Opening them yourself still pauses it.
+        lastDist = inside ? (shut ? 0.2 + 0.25 * deep : (LIFT && doorsByLift ? 0.75 : 1.15 + 0.6 * doorAmt)) : 1.6 + 0.6 * Math.hypot(px - dp.x, pz - dp.z);
+        if (LIFT && shut) doorsByLift = false;
         // the latch: closing yourself in
         if (inside && shut && doorTarget === 0 && !everClosedInside) {
           everClosedInside = true;
@@ -42735,7 +43271,7 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
                 floorsRidden += rode; coach.goalCount("ride", floorsRidden);
                 try { window.PhobiaExperiments && window.PhobiaExperiments.signal("lift.arrive"); } catch {}
               }
-              setDoor(true, false);
+              setDoor(true, false); doorsByLift = true;
             }
           } else if (liftState === "open") {
             idleT += d;
@@ -42750,8 +43286,9 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
         if (rung === 1 && inside && shut && pz < -0.6) { backT += d; if (backT > 10) coach.goalDone("back"); } else if (rung === 1) backT = Math.max(0, backT - d * 2);
         if (rung === 3 && inside && shut && !lightOn) { darkT += d; if (darkT > 5) coach.goalDone("dark"); } else if (rung === 3) darkT = 0;
         // the room's own sounds and air, one at a time, while you're in it
-        if (inside && shut && clock > nextEventAt && !window.__rungHoldComplete && (!LIFT || liftState !== "moving")) {
-          nextEventAt = clock + 11 + Math.random() * 7;
+        // (and after the hold too, while the read star still wants a moment)
+        if (inside && shut && clock > nextEventAt && (!window.__rungHoldComplete || !coach.goalIsDone("read")) && (!LIFT || liftState !== "moving")) {
+          nextEventAt = clock + 8 + Math.random() * 5;
           const kind = (rung === 0 || rung === 1 || LIFT) && !ventSaid && Math.random() < 0.6 ? "vent" : "hum";
           if (kind === "vent") { try { A() && A().machineHum && A().machineHum(3.5, 38, 0.03); } catch {} coach.pulse(0.08, "noise", lastDist); if (sig("vent")) ventSaid = true; }
           else { try { A() && A().machineHum && A().machineHum(5, rung === 3 ? 52 : 100, rung === 3 ? 0.06 : 0.03); } catch {} coach.pulse(0.12, "noise", lastDist); if (!humSaid) setTimeout(() => { if (!disposed && sig("hum")) humSaid = true; }, 1800); }
@@ -45079,6 +45616,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
 
   let snakesControls = null;
   let stillness = 0;       // 0..1, builds while user holds the "Hold still" button
+  let snStillTold = false;
   const baseSnakeZ = snake.position.z;
   const snakeHomeX = snake.position.x;
   let stillHeld = false;
@@ -45238,7 +45776,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     kit: creatureKit("snakes"),
     stage: document.getElementById("stage"),
     levelIdx, intensity, dogName: window.t("coach.sn.name", "the snake"), title: window.t("creature.snake", "Grass snake"),
-    inZoneDist: snZone, sizeMul: SN_COACH.sizeMul, tau: SN_COACH.tau, hFloor: SN_COACH.hFloor,
+    inZoneDist: snZone, readMaxDist: snZone + 1.2, sizeMul: SN_COACH.sizeMul, tau: SN_COACH.tau, hFloor: SN_COACH.hFloor,
     minHold: level.minHold || 12,
     coarse: IS_COARSE_POINTER,
     expect: (() => { const e = window.__pendingExpect; return (e && e.phobia === "snakes" && e.level === levelIdx) ? e : null; })(),
@@ -45265,9 +45803,13 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   let snStillMoveT = 0, snCrossT = 0, snRearT = 0, snSlowT = 0, snCrossNear = false, snTonguePrev = -1, snBaskT = 0, snGlideT = 0;
   const _snV = new THREE.Vector3();
 
+  // Never further than the player can follow: the walk stops 1 m short of
+  // the snake's start, so a retreat or a crossing that went 2–4 m beyond it
+  // left the player paused ("come back within 3 m") with no way to obey.
+  const SNAKE_REACH_MINZ = (-distance + 1.0) - Math.max(1.0, (B.inZoneDist ?? 3.2) - 0.9);
   function snakeClampToBounds(p) {
     p.x = Math.max(SNAKE_BOUNDS.minX, Math.min(SNAKE_BOUNDS.maxX, p.x));
-    p.z = Math.max(SNAKE_BOUNDS.minZ, Math.min(SNAKE_BOUNDS.maxZ, p.z));
+    p.z = Math.max(Math.max(SNAKE_BOUNDS.minZ, SNAKE_REACH_MINZ), Math.min(SNAKE_BOUNDS.maxZ, p.z));
     return p;
   }
   // Set pieces are noCollide for the player's sake, but the snake has to go
@@ -45453,8 +45995,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     const watchAt = snakeCtl._ignoreT > 0 ? 1.6 : (B.watchDist ?? 3.2);
     if (snakeCtl.state === "bask") {
       if (controls && playerDist < watchAt) snakeEnter("watch", controls);
-      else if (stillness > (B.retreatStill ?? 0.3) && controls && playerDist < 5 && !(snakeCtl._retreatCooldown > 0)) snakeEnter("retreat", controls);
-      else if (!B.still && snakeCtl.stateT > snakeCtl.baskDur) snakeEnter("wander", controls);
+      else if (!B.still && snakeCtl.stateT > snakeCtl.baskDur && !(stillness > (B.retreatStill ?? 0.3))) snakeEnter("wander", controls);
     } else if (snakeCtl.state === "wander") {
       if (controls && playerDist < (snakeCtl.crossing ? 1.6 : Math.min(watchAt, B.watchDist ?? 2.6))) snakeEnter("watch", controls);
       else if (snakeCtl.target) {
@@ -45464,7 +46005,21 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     } else if (snakeCtl.state === "watch") {
       if (sniffing) {
         // Engaged with the offered hand — hold position, stay reared.
-      } else if (stillness > (B.retreatStill ?? 0.3) && !(snakeCtl._retreatCooldown > 0)) snakeEnter("retreat", controls);
+      } else if (stillness > (B.retreatStill ?? 0.3) && snakeCtl.strikePhase === "none") {
+        // Your stillness tells it you're no threat: it lowers its head and
+        // goes back to sunning itself, right where it is. This used to send
+        // it sliding AWAY — 1 m to 3.6 m in a few seconds — so the alarm
+        // "settled" because the snake had gone, and on rung 1 it never came
+        // back. Calm doesn't make the snake vanish; it makes it stop caring.
+        snakeCtl._watchFor = 0;
+        snakeCtl._ignoreT = 8 + Math.random() * 4;
+        snakeEnter("bask", controls);
+        snCoach.note("stillCalm");
+        if (!snStillTold) {
+          snStillTold = true;
+          if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt(window.t("sc.n.stillCalm", "It lowered its head and went back to the sun. Stillness tells a snake you're no threat."), 4500);
+        }
+      }
       else if (!controls || playerDist > (B.watchDist != null ? B.watchDist + 1 : 4.2)) snakeEnter("bask", controls);
       else if (snakeCtl.strikePhase === "none" && snakeCtl.stateT > (snakeCtl._watchFor || (snakeCtl._watchFor = 7 + Math.random() * 5))) {
         // It doesn't watch you forever. Having decided you're not a problem,
@@ -45855,6 +46410,25 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     scene.add(leaf);
   }
   sceneTimers.push(setTimeout(wireSnakesCmds, 0));
+  // Keys for the two held verbs — they lived only in a command bar that's
+  // collapsed on desktop: H holds still, E extends the hand.
+  function onSnKey(e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+    const down = e.type === "keydown";
+    const bar = document.querySelector('.scene-cmd-bar[data-scene="snakes"]');
+    if (e.code === "KeyH") {
+      stillHeld = down;
+      const b = bar && bar.querySelector('[data-cmd="still"]'); if (b) b.classList.toggle("pressed", down);
+    } else if (e.code === "KeyE") {
+      extendHeld = down; extensionTarget = down ? 1 : 0;
+      const b = bar && bar.querySelector('[data-cmd="extend"]'); if (b) b.classList.toggle("pressed", down);
+    } else return;
+    e.preventDefault();
+  }
+  function onSnBlur() { stillHeld = false; extendHeld = false; extensionTarget = 0; }
+  window.addEventListener("keydown", onSnKey); window.addEventListener("keyup", onSnKey);
+  window.addEventListener("blur", onSnBlur);
 
   return {
     controls: {
@@ -45964,7 +46538,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
             snBaskT += dtN;
             if (snBaskT > 5 && Math.random() < dtN * 0.2 && snSignal("bask")) snBaskT = 0;
             const tt = snakeCtl.ctrl ? snakeCtl.ctrl._tongueT : -1;
-            if (tt != null && tt >= 0 && snTonguePrev < 0 && Math.random() < 0.3) snSignal("flick");
+            if (tt != null && tt >= 0 && snTonguePrev < 0 && snLastDist < 4 && Math.random() < 0.3) snSignal("flick");
             snTonguePrev = tt == null ? -1 : tt;
           } else snTonguePrev = -1;
           if (st === "wander" && !snakeCtl.crossing) { snGlideT += dtN; if (snGlideT > 2.5 && Math.random() < dtN * 0.3 && snSignal("glide")) snGlideT = 0; }
@@ -45973,7 +46547,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           if (snRung === 1) { snStillMoveT = (st === "wander" && inZone && snPlayerSpeed < 0.3) ? snStillMoveT + dtN : snStillMoveT; if (snStillMoveT > 2) snCoach.goalDone("stillMove"); }
           if (snRung === 2) { if (snakeCtl.crossing && st === "wander" && inZone) snCrossT += dtN; if (snCrossT > 3) snCoach.goalDone("crossHeld"); }
           if (snRung === 3) { if (st === "watch" && distS < (B.rearDist ?? 2.6) + 0.3) snRearT += dtN; if (snRearT > 4) snCoach.goalDone("rearHeld"); }
-          if (snRung === 4) { if (distS < (B.strikeDist ?? 1.45) + 0.8) snSlowT += dtN; if (snSlowT > 8) snCoach.goalDone("slowHeld"); }
+          if (snRung === 4) { if (distS < (B.strikeDist ?? 1.45) + 0.8 && snPlayerSpeed < 0.45) snSlowT += dtN; if (snSlowT > 8) snCoach.goalDone("slowHeld"); }
         }
 
         // Diegetic completion beat: once the hold is earned, the snake settles
@@ -46036,8 +46610,8 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
         // (Orientation toward the leaf is handled by the locomotion
         // controller's bask state — the whole body turns lazily, no snap.)
       }
-      // Stillness mechanic: when user holds "still" + isn't moving, the snake
-      // gradually slithers AWAY (it's more afraid of you when you're calm).
+      // Stillness mechanic: when the user holds "still" (button or H) and
+      // isn't moving, a watching snake loses interest and settles.
       const moving = controls && controls.moving;
       if (stillHeld && !moving) {
         stillness = Math.min(1, stillness + dtN * 0.4);
@@ -46109,6 +46683,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       try { window.__holdCelebrationGate = null; window.__rungHoldComplete = false; } catch {}
       try { if (window.PhobiaThreat === _snakeThreatPos) window.PhobiaThreat = null; } catch {}
       try { const bar = document.querySelector('.scene-cmd-bar[data-scene="snakes"]'); if (bar) bar.dataset.wired = ""; } catch {}
+      try { window.removeEventListener("keydown", onSnKey); window.removeEventListener("keyup", onSnKey); window.removeEventListener("blur", onSnBlur); } catch {}
       try { snake.userData.disposed = true; if (snake.userData.parts && snake.userData.parts.mixer) snake.userData.parts.mixer.stopAllAction(); } catch {}
       try { if (snHudEl) { snHudEl.remove(); snHudEl = null; } } catch {}
       // The sky dome shares the cached HDR (never dispose that); its PMREM is
@@ -48392,7 +48967,15 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
     stage: document.getElementById("stage"),
     levelIdx: rung, intensity: rung >= 4 ? "apex" : rung >= 2 ? "alert" : "calm",
     dogName: window.t("coach.d.name", "the dark"), title: window.t(`level.dark.${rung}.title`, level.title),
-    inZoneDist: dZone, nearD: 0.4, farSpan: 3.6,
+    inZoneDist: dZone, nearD: 0.4, farSpan: 3.6, readAfterHold: true,
+    // Paused by the light, say so — "step back into the dark" to someone
+    // standing in it with the torch on read as a riddle.
+    holdText: {
+      begin: () => window.t("dc.d.hBegin", "Walk into the dark to begin — at your pace"),
+      back: () => (flashlightHeld || matchT > 0.05)
+        ? window.t("dc.d.hBackLight", "Paused while the light's on — let it go dark again to carry on")
+        : window.t("dc.d.hBack", "Paused — step back into the dark to carry on"),
+    },
     sizeMul: D_COACH.sizeMul, tau: D_COACH.tau, hFloor: D_COACH.hFloor,
     minHold: level.minHold || 12, coarse: IS_COARSE_POINTER,
     expect: (() => { const e = window.__pendingExpect; return (e && e.phobia === "dark" && e.level === levelIdx) ? e : null; })(),
@@ -48417,6 +49000,7 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
   if (rung === 0 || rung === 2) EVENTS.push("curtain");
   let nextEventAt = 6 + Math.random() * 3, clock = 0, soundsHeard = 0, soundsInDark = 0, noiseHoldT = 0, shapeLookT = 0;
   let figureSeen = false, eyesSeen = false, shadowSaid = false, moved = 0, prevX = null, prevZ = null;
+  let adapt = 0;   // dark adaptation 0..1 (see "Eyes adjusting")
   const _dir = new THREE.Vector3(), _to = new THREE.Vector3();
   const lookingAt = (x, y, z, cos = 0.93) => {
     camera.getWorldDirection(_dir); camera.getWorldPosition(_to);
@@ -48464,9 +49048,13 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
       fb.addEventListener("pointerleave", release); fb.addEventListener("pointercancel", release);
     }
     const nb = bar.querySelector('[data-cmd="name"]');
+    let namedAt = -99;
     if (nb) nb.onclick = (e) => {
       e.stopPropagation();
-      coach.teach("nameIt" + Date.now(), hall
+      // (once per few seconds — repeated taps stacked 7 s callouts in a queue)
+      if (clock - namedAt < 8) return;
+      namedAt = clock;
+      coach.teach("nameIt" + Math.round(clock), hall
         ? window.t("dc.d.tNameHall", "Name what's here: the runner, three doors, the radiator, a coat on a hook, the window at the end. The same landing as in daylight.")
         : window.t("dc.d.tName", "Name what's here: the bed, the wardrobe, the desk and chair, a coat on a hook, the window. The same room as in daylight."), 7000, true);
     };
@@ -48474,11 +49062,18 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
     if (mb) mb.onclick = (e) => { e.stopPropagation(); lightMatch(); };
   }
   const timers = [setTimeout(wireDarkCmds, 0)];
+  // The torch can't stick on: a keyup that lands elsewhere (Cmd/Ctrl+F opens
+  // find, a window switch) used to leave it lit and the hold paused.
   const onKey = (e) => {
     if (e.code !== "KeyF" || e.repeat || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) return;
-    if (e.type === "keydown") { flashlightHeld = true; coach.safety("light"); } else flashlightHeld = false;
+    if (e.type === "keydown") {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      flashlightHeld = true; coach.safety("light");
+    } else flashlightHeld = false;
   };
+  const onLightBlur = () => { flashlightHeld = false; };
   window.addEventListener("keydown", onKey); window.addEventListener("keyup", onKey);
+  window.addEventListener("blur", onLightBlur); document.addEventListener("visibilitychange", onLightBlur);
 
   const spawnZ = hall ? 1.4 : 1.95;
   return {
@@ -48528,14 +49123,28 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
       const eng = coach.engaged;
       if (prevX != null) moved += Math.hypot(px - prevX, pz - prevZ);
       prevX = px; prevZ = pz;
-      // Scheduled happenings (quiet once the trial is complete).
-      if (clock > nextEventAt && !window.__rungHoldComplete) {
+      // Scheduled happenings. Closer together while you're in the dark (10–18 s
+      // gaps left two-thirds of a trial silent, and rung 4's "three sounds"
+      // a coin flip before the hold ended them); after the hold the house
+      // goes quiet — unless a star still needs a sound, then it's gentler.
+      const starsWant = !coach.goalIsDone("read") || (rung === 4 && !coach.goalIsDone("threeSounds")) || (rung === 1 && !coach.goalIsDone("noiseHeld"));
+      if (clock > nextEventAt && (!window.__rungHoldComplete || starsWant)) {
         fireEvent(EVENTS[Math.floor(Math.random() * EVENTS.length)]);
-        nextEventAt = clock + 10 + Math.random() * 8;
+        nextEventAt = clock + (window.__rungHoldComplete ? 9 + Math.random() * 5 : eng ? 6.5 + Math.random() * 5 : 10 + Math.random() * 6);
+      }
+      // Eyes adjusting: the longer the light stays off, the more of the room
+      // comes back (exposure creeps up over about a minute); any light resets
+      // it. The honest cost of the torch, and the promise of the moonlit rung
+      // ("let your eyes adjust") made real.
+      if (r && rung >= 1) {
+        adapt = lightOn ? Math.max(0, adapt - d * 0.8) : Math.min(1, adapt + d / 45);
+        r.toneMappingExposure = 1.15 * (1 + (rung >= 4 ? 0.9 : 0.6) * adapt * adapt * (3 - 2 * adapt));
       }
       // Things you notice by looking.
       const coatY = 0.6;
-      if (!figureSeen && rung >= 1 && clock > 5 && lookingAt(COAT.x, coatY, COAT.z) && Math.hypot(px - COAT.x, pz - COAT.z) < 5) {
+      // (Not in total dark unless a light is on: it described a tall shape
+      // nobody could see.)
+      if (!figureSeen && rung >= 1 && (rung < 4 || lightOn) && clock > 5 && lookingAt(COAT.x, coatY, COAT.z) && Math.hypot(px - COAT.x, pz - COAT.z) < 5) {
         if (sig("figure")) { figureSeen = true; coach.note("figure"); coach.pulse(0.18, "shape", lastDist); }
       }
       if (!eyesSeen && rung >= 3 && clock > 5 && lookingAt(LEDS.x, -0.94, LEDS.z, 0.95)) {
@@ -48557,6 +49166,7 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
       disposed = true;
       timers.forEach((id) => clearTimeout(id));
       try { window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKey); } catch {}
+      try { window.removeEventListener("blur", onLightBlur); document.removeEventListener("visibilitychange", onLightBlur); } catch {}
       try {
         const ev = coach.evidence();
         ev.notes.moved = +moved.toFixed(1);

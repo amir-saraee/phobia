@@ -13,9 +13,9 @@ Six realms, five 3D trials each. Three have animals that read how you move; thre
 | Realm | Fear | The ladder |
 |---|---|---|
 | 🐕 The Meadow Yard | Dogs (cynophobia) | a small dog busy across the room → a big, loud, excited one that bounds over |
-| 🕷 The Old Cellar | Spiders (arachnophobia) | a house spider far off → a huntsman on the wall at eye level (real sizes, 8–26 cm; hold **Z** to look closer) |
-| 🐍 The Sunlit Clearing | Snakes (ophidiophobia) | a grass snake basking far off → close, coiled and alert on the path |
-| 🏙 The Summit | Heights (acrophobia) | a knee-high ledge over a square → a glass skywalk 165 m up at dusk |
+| 🕷 The Old Cellar | Spiders (arachnophobia) | a house spider far off → a huntsman on the wall at eye level (real sizes, 8–26 cm; hold **Z** to look closer; once your alarm has settled, catch it under a glass and carry it out — the last step, never the exit) |
+| 🐍 The Sunlit Clearing | Snakes (ophidiophobia) | a grass snake basking far off → close, coiled and alert on the path (hold **H** to keep still — a watching snake loses interest; **E** offers a hand) |
+| 🏙 The Summit | Heights (acrophobia) | a knee-high ledge over a square → a glass skywalk 165 m up at dusk (**R** takes your hands off the rail) |
 | 🌙 The House at Night | The dark (nyctophobia) | your bedroom with the lamp on → total dark, only the house's sounds (hold **F** for a flashlight — the coach counts what it does) |
 | 🚪 The Narrow Passage | Tight spaces (claustrophobia) | a small room, door closed behind you → a phone booth → a lift → a storage closet → lying in an MRI scanner |
 
@@ -27,7 +27,8 @@ Your custom character walks every scene. In the place realms the coach reads you
 
 Mira is a game shell around genuine CBT graded-exposure mechanics:
 
-- **An alarm that falls while you stay** — the live wave rises as you close in and comes down on its own if you don't leave; a trial ends when it has settled, not on a timer
+- **An alarm that falls while you stay** — the live wave rises as you close in and comes down on its own if you don't leave; a trial ends when it has settled, not on a timer (and only counts as settled with the dog, spider or snake still near — relief because it left isn't learning)
+- **Check-ins** — a few times in a trial the coach asks for your own 0–10, the way a therapist would; the numbers falling while you stay are the lesson in your own words, and the rate page shows them back to you
 - **Predict → face → compare** — name what your fear expects ("it'll run at me", "I'll run out of air", "something is in the room"), then check it against what the scene saw happen (expectancy violation)
 - **Reading the moment** — a dog relaxed / alert / asking for space; a spider resting / going somewhere / startled; a snake at ease / curious / defensive; and in the place realms, telling a body alarm from the building's ordinary noise from a real danger — collected in a field guide per realm
 - **🌍 The Real Path** — every in-game trial unlocks a matching tiny *real-world* step (worth more than any game trial)
