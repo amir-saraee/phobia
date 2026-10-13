@@ -9271,7 +9271,8 @@ const PHOBIAS = {
     // `intensity` (calm/alert/apex) drives credit thresholds + the narrator threat
     // gate; `behavior` re-parameterizes the (preserved) snakeCtl brain per rung so
     // rungs differ by behavior, not raw size. The therapeutic core is kept: calm/
-    // stillness makes the snake LEAVE; rushing the apex snake makes it strike short.
+    // stillness makes a watching snake lose interest (it stays — it just stops
+    // caring); rushing the apex snake makes it strike short.
     levels: [
       { title: "A snake, basking far off", desc: "On a warm rock across the clearing. Coiled, still, sunning itself.", size: 0.20, intensity: "calm", minHold: 12,
         behavior: { still: true, wander: false, cross: false, rear: false, strike: false, homeRadius: 0.6, baskDur: [5.0, 9.0], watchDist: 2.4, retreatStill: 0.35, inZoneDist: 5.0, fearMul: 0.42, tongueEvery: [4.0, 7.0] } },
@@ -9834,10 +9835,12 @@ const DARK_SIGNALS = {
              means: "The fridge compressor switching off. Houses have a whole night-time soundtrack you only hear when it's quiet." },
   curtain: { cls: "house", icon: "🪟", name: "The curtain stirs",     look: "the curtain moves, just slightly",
              means: "A draft through the window frame. Air moves in a room even when nothing else does." },
-  figure:  { cls: "mind",  icon: "🧥", name: "A tall shape",          look: "a tall, dark shape standing against the wall",
+  // (also: the coat and the charger ARE the house — "house" is a fair answer
+  // too; the lesson is in what the mind made of them.)
+  figure:  { cls: "mind", also: ["house"], icon: "🧥", name: "A tall shape",          look: "a tall, dark shape standing against the wall",
              means: "In the dark your brain fills gaps with the shapes it's primed to fear. With a little light: a coat on a hook." },
-  eyes:    { cls: "mind",  icon: "✨", name: "Two points of light",   look: "two small points of light low in the corner",
-             means: "The standby light on a charger, doubled in the mirror. Eyes are one of the first things a frightened brain looks for." },
+  eyes:    { cls: "mind", also: ["house"], icon: "✨", name: "Two points of light",   look: "two small points of light low in the corner",
+             means: "The standby lights of a charger plugged in low in the corner — two small LEDs side by side. Eyes are one of the first things a frightened brain looks for." },
   shadow:  { cls: "mind",  icon: "🌑", name: "Something moved",       look: "at the edge of your vision, something seemed to move",
              means: "Your side vision is built to catch motion and is poor at detail — in low light it 'sees' movement that isn't there. Look straight at it: nothing." },
 };
@@ -9900,7 +9903,7 @@ const ENCLOSED_SIGNALS = {
             means: "That's the scanner's coils switching — loud, harmless, and the sign it's working. Every MRI sounds like this." },
   vent:   { cls: "place", icon: "🌬", name: "A breath of air",      look: "cool air brushes your face",
             means: "The ventilation. Fresh air, moving through the space the whole time." },
-  latch:  { cls: "place", icon: "🔒", name: "The latch clicks",     look: "the door clicks shut behind you",
+  latch:  { cls: "place", icon: "🔒", name: "The latch clicks",     look: "the door clicks shut, and you're in",
             means: "A latch, not a lock. It opens from the inside with one push, the same as it did a minute ago." },
 };
 const ENCLOSED_FEARS = [
@@ -15340,7 +15343,9 @@ const PhobiaExperiments = (() => {
       { id: "slow", minRung: 1, title: "Approach slowly", how: "Close to two metres — slow steps, pause between each.",
         predictions: ["Any approach triggers it", "Slow reads as calm", "I'll rush and spook it"],
         out: "You arrived slowly, and it stayed easy. Your pace was the message.", make: () => slowApproach(2.2, 0.85) },
-      { id: "rear", minRung: 2, title: "Stay through the rear-up", how: "If it rises, hold your distance — don't close, don't bolt.",
+      // (rung 4 up: the crossing rung's snake never rears, so this was an
+      // experiment that could not happen there)
+      { id: "rear", minRung: 3, title: "Stay through the rear-up", how: "If it rises, hold your distance — don't close, don't bolt.",
         predictions: ["Rearing means it will strike", "It's a warning that passes", "I'll run"],
         out: "It rose, held, and settled. A warning is a conversation, not an attack.", make: () => endureThreat(2.5, 4.5) },
       { id: "strike", minRung: 3, title: "Stand at strike distance", how: "Ten seconds inside the range your body says is too close.",
@@ -16030,11 +16035,25 @@ function mountExposure(phobiaKey, levelIdx) {
     // nine seconds in, after the intro hint has had its moment.
     if (!rungReplay && !window.__demoMode && window.Story) {
       const f = window.Story.focusFor(phobiaKey, levelIdx);
-      if (f && f.text) setTimeout(() => {
+      // Never over the first-run tour (it waits its turn), and not at all
+      // while the same line is on screen in the header above the stage —
+      // then it's only the same sentence twice. Fullscreen hides the header,
+      // and there it's the one place the practice appears.
+      const sayFocus = (tries) => {
         const st = document.getElementById("stage");
         if (!st || !st.isConnected || !(window.PhobiaFX && window.PhobiaFX.contextPrompt)) return;
+        if (document.querySelector(".tour-overlay:not(.dismiss), .countdown")) {
+          if (tries < 15) voiceTimers.push(setTimeout(() => sayFocus(tries + 1), 2000));
+          return;
+        }
+        const hdr = document.querySelector(".exp-focus");
+        if (hdr && !(document.fullscreenElement || document.webkitFullscreenElement)) {
+          const r = hdr.getBoundingClientRect();
+          if (r.height > 0 && r.bottom > 0 && r.top < window.innerHeight) return;
+        }
         try { window.PhobiaFX.contextPrompt("🎯 " + f.text, 7000); } catch {}
-      }, 9000);
+      };
+      if (f && f.text) voiceTimers.push(setTimeout(() => sayFocus(0), 9000));
     }
     // The rung's framing line nearly repeats the subtitle printed right above
     // the stage. When that header is actually on screen, the caption would be
@@ -19134,7 +19153,9 @@ class FPControls {
         const dx = this.position.x - this._origin.x;
         const dz = this.position.z - this._origin.z;
         const r = Math.hypot(dx, dz);
-        const RMAX = 0.6;
+        // A seated lean is a short one, and these cabins have no colliders —
+        // at 0.6 m the head went through the car door.
+        const RMAX = 0.28;
         if (r > RMAX) {
           this.position.x = this._origin.x + dx / r * RMAX;
           this.position.z = this._origin.z + dz / r * RMAX;
@@ -19391,8 +19412,10 @@ class FPControls {
     // Roll target for next frame: yaw-velocity lean + strafe lean + footfall.
     const yawVel = dt > 0 ? (this.yaw - (this._prevYawRoll ?? this.yaw)) / dt : 0;
     this._prevYawRoll = this.yaw;
-    const strafe = ((this.keys.KeyD || this.keys.ArrowRight) ? 1 : 0)
-                 - ((this.keys.KeyA || this.keys.ArrowLeft) ? 1 : 0);
+    // (the joystick's sideways push counts too — it got none of this)
+    const strafe = Math.max(-1, Math.min(1, ((this.keys.KeyD || this.keys.ArrowRight) ? 1 : 0)
+                 - ((this.keys.KeyA || this.keys.ArrowLeft) ? 1 : 0)
+                 + (this._moveAxis ? this._moveAxis.x : 0)));
     // The turn-lean only while walking (and gentler): rolling the horizon
     // when a player who is standing still looks around is a textbook
     // simulator-sickness trigger.
@@ -19519,18 +19542,21 @@ class FPControls {
             // traveler's shoulder at the floor ahead. The look target below
             // is unchanged, so a higher camera simply tilts down onto them.
             const shortfall = 1 - safeDist / Math.max(0.001, targetDist);
+            // (0.12 a frame was a 60 Hz constant — twice as fast at 120 Hz,
+            // a crawl at 15 fps. Same feel at 60, now per second.)
+            const liftK = 1 - Math.exp(-7.7 * dt);
             if (shortfall > 0.12) {
               this._tpLift = (this._tpLift || 0)
-                + ((shortfall * tpDist * 0.62) - (this._tpLift || 0)) * 0.12;
+                + ((shortfall * tpDist * 0.62) - (this._tpLift || 0)) * liftK;
               safeTpY += this._tpLift;
             } else if (this._tpLift) {
               // Ease back down when the space opens up, so stepping away from
               // a wall does not snap the camera.
-              this._tpLift += (0 - this._tpLift) * 0.12;
+              this._tpLift += (0 - this._tpLift) * liftK;
               safeTpY += this._tpLift;
             }
           } else if (this._tpLift) {
-            this._tpLift += (0 - this._tpLift) * 0.12;
+            this._tpLift += (0 - this._tpLift) * (1 - Math.exp(-7.7 * dt));
             safeTpY += this._tpLift;
           }
         }
@@ -19780,7 +19806,11 @@ class FPControls {
       let dyaw = wantYaw - this.yaw;
       while (dyaw > Math.PI) dyaw -= Math.PI * 2;
       while (dyaw < -Math.PI) dyaw += Math.PI * 2;
-      const g = (this._snapLookT / 0.6) * lb.k * fpw;
+      // A quick turn of the head, then control eases back: ~0.12 s attack,
+      // then the decay. It used to start at full strength — a 90°-off lunge
+      // jumped the view ~60° in a single frame.
+      const u = 1 - this._snapLookT / 0.6;
+      const g = Math.min(1, u / 0.2) * (1 - u) * 1.25 * lb.k * fpw * (this._reduceMotion ? 0.4 : 1);
       this.camera.rotation.y += dyaw * g;
       this.camera.rotation.x += (wantPitch - this.pitch) * g;
       this._snapLookT -= dt;
@@ -24220,19 +24250,26 @@ class Body {
     // Reach wins over calm watch; both fade with committed walking.
     {
       let tipPitch = 0, tipYaw = 0;
+      // Reach > threat > calm watch. A frightened person turns their HEAD to
+      // keep the thing in view, not just their eyes — from behind (where the
+      // camera always is) the eyes never showed, so the avatar looked
+      // unbothered by a dog bounding at it. Kept up, partly, while walking.
+      const nowH = (typeof performance !== "undefined" ? performance.now() : Date.now()) * 0.001;
+      const threatOn = fearK > 0.2 && nowH - (this._threatAt || -1e9) < 0.5;
       const tipSrc = (hands && hands._reach && hands._reachStrength > 0.2 && hands._reachWorld)
         ? hands._reachWorld
-        : ((typeof performance !== "undefined" ? performance.now() : Date.now()) * 0.001 - (this._watchAt || -1e9) < 0.5
-            ? this._watchTarget : null);
-      if (tipSrc && this.head && idleFactor > 0.25) {
+        : threatOn ? this._threatTarget
+        : (nowH - (this._watchAt || -1e9) < 0.5 ? this._watchTarget : null);
+      const tipK = threatOn && tipSrc === this._threatTarget ? Math.max(idleFactor, 0.55) * Math.min(1, fearK * 1.6) : idleFactor;
+      if (tipSrc && this.head && tipK > 0.25) {
         this.head.updateMatrixWorld(true);
         _bV1.copy(tipSrc);
         this.head.worldToLocal(_bV1);
         const dd = Math.max(0.2, _bV1.length());
         tipYaw = Math.max(-0.55, Math.min(0.55, Math.atan2(_bV1.x, Math.max(0.08, _bV1.z))));
         tipPitch = Math.max(-0.55, Math.min(0.35, -Math.asin(Math.max(-1, Math.min(1, _bV1.y / dd)))));
-        tipPitch *= idleFactor;
-        tipYaw *= idleFactor;
+        tipPitch *= tipK;
+        tipYaw *= tipK;
       }
       this._tipPitchSm = (this._tipPitchSm || 0)
         + (tipPitch - (this._tipPitchSm || 0)) * Math.min(1, dtB * 5);
@@ -24752,6 +24789,34 @@ class Body {
               : this._motionBlend + (want - this._motionBlend) * Math.min(1, dtB * 5);
             applyRetarget(this.rig, m, this._motionBlend, mask);
           }
+          }
+        }
+      }
+    }
+
+    // ---- Guarded posture under fear (additive, after the clip) ----
+    // Fear showed in the face (never seen: the camera sits behind) and in
+    // finger curl the walk clip then overwrote. This is the silhouette: weight
+    // back, shoulders rounding forward, chin down, arms drawn in with the
+    // elbows bent — from fear ~35, full by ~85, eased so it breathes with the
+    // alarm. Runs after the clip so it survives walking; a live reach owns
+    // the arms, so it barely touches them then.
+    {
+      const gw = Math.max(0, Math.min(1, (fearK - 0.35) / 0.5));
+      this._guardSm = (this._guardSm || 0) + (gw - (this._guardSm || 0)) * Math.min(1, dtB * 2.5);
+      const G = this._guardSm;
+      if (G > 0.005) {
+        if (this.spine) this.spine.rotation.x -= 0.05 * G;
+        if (this.chest) this.chest.rotation.x += 0.08 * G;
+        if (this.neck) this.neck.rotation.x += 0.03 * G;
+        if (this.head) this.head.rotation.x -= 0.05 * G;
+        const armK = G * ((contact && contact.k > 0.02) ? 0.25 : 1);
+        if (armK > 0.005 && this.arms) {
+          for (const arm of this.arms) {
+            if (!arm || !arm.root || !arm.elbow) continue;
+            arm.root.rotation.z -= arm.side * 0.10 * armK;   // in toward the body
+            arm.root.rotation.x -= 0.12 * armK;               // hands drift forward (−x is forward, see reachShoulder)
+            arm.elbow.rotation.x -= 0.35 * armK;              // elbows bend
           }
         }
       }
@@ -25625,7 +25690,13 @@ class Hands {
     if (this._toss) { this._toss.t += d; if (this._toss.t > this._toss.dur + 0.45) this._toss = null; }
     const busy = !!this._reach || !!this._toss || this.gestureTargetStrength > 0 || this.actionPulse > 0.02 || holding;
     this._restT = busy ? 0 : this._restT + d;
-    const wantShow = (!this.hideAtRest || busy || this._restT < 0.9) ? 1 : 0;
+    // …and while the alarm is high: the tremor below is the anxiety in the
+    // player's OWN hands, and with the hands parked out of frame at rest it
+    // never showed. (Hysteresis, so a wave hovering at the line doesn't
+    // bob them in and out.)
+    const fearNow = (window.PhobiaFear ? window.PhobiaFear.get() : 0) / 100;
+    this._fearUp = fearNow > (this._fearUp ? 0.48 : 0.58);
+    const wantShow = (!this.hideAtRest || busy || this._fearUp || this._restT < 0.9) ? 1 : 0;
     this._showK += (wantShow - this._showK) * Math.min(1, d * (wantShow > this._showK ? 7 : 2.4));
     const hideDrop = (1 - this._showK) * (1 - this._showK) * 0.30;
 
@@ -26659,8 +26730,16 @@ const PhobiaGrab = (() => {
     if (held) { try { PhobiaPhysics.setHeld(held, false); } catch {} }
     held = null;
   }
+  // Put the hand back on the held prop just before the hands pose. update()
+  // runs after them (the physics must step after the hands move), and a
+  // scene's interact() clears reach targets at the start of each frame — so
+  // the grip it set never reached a single rendered frame: the prop floated
+  // ahead of an empty hand.
+  function holdHand(hands) {
+    if (held && hands && hands.setReachTarget && _hold) hands.setReachTarget(_hold, { hand: "right", grip: "wrap", curl: 1.0, maxReach: 1.1 });
+  }
   return {
-    click, update, reset,
+    click, update, reset, holdHand,
     holding() { return !!held; },
     consumedRecently(ms = 150) { return performance.now() - lastConsumedAt < ms; },
   };
@@ -27113,10 +27192,11 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // Movement wording follows IS_COARSE_POINTER (where the on-screen joystick
       // actually appears), NOT IS_TOUCH — a touch-capable laptop has WASD, not a
       // joystick, so it should be told to use the keys.
-      // Intros are ONE calm line: how to move + "at your own pace". Extra
-      // controls (Shift-creep, etc.) live in "Show controls" so the hint never
-      // becomes a wall of text a frightened user has to parse.
-      const move = IS_COARSE_POINTER ? T("intro.move.m", "<b>the joystick</b>") : T("intro.move.d", "<b>W or ↑</b>");
+      // Intros are ONE calm line: how to move + "at your own pace". The one
+      // extra worth its words is the slow walk — "Show controls" only opens
+      // the scene's buttons, so Shift-to-creep was taught nowhere after the
+      // one-time tour, and creeping up on a fear is the whole method.
+      const move = IS_COARSE_POINTER ? T("intro.move.m", "<b>the joystick</b>") : T("intro.move.d2", "<b>W or ↑</b> (hold Shift to go slower)");
       const rung = typeof levelIdx === "number" ? levelIdx : 0;
       const sceneIntros = {
         heights: TF("intro.heights", "Walk toward the railing with {move} when you're ready — at your own pace.", { move }) + escNote,
@@ -27223,23 +27303,39 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         gyroBtn.style.top = "90px";
         let gyroOn = false, gyroLast = null;
         const D2R = Math.PI / 180;
+        // Device attitude → where the back of the phone points, the way
+        // DeviceOrientationControls does it (Euler YXZ from alpha/beta/gamma,
+        // tipped −90° about X so the camera looks out of the back, then
+        // turned by the screen's own rotation). Mapping raw alpha → yaw and
+        // beta → pitch, as this did, holds only for a phone lying nearly
+        // flat: held upright — how anyone looks around a room — beta sits
+        // near 90° and the Euler angles swing wildly, and in landscape the
+        // axes were simply the wrong ones.
+        const gEuler = new THREE.Euler(), gQ = new THREE.Quaternion(), gQz = new THREE.Quaternion();
+        const gQx = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+        const gZee = new THREE.Vector3(0, 0, 1), gF = new THREE.Vector3();
+        const screenAngle = () => {
+          try { if (screen.orientation && Number.isFinite(screen.orientation.angle)) return screen.orientation.angle; } catch {}
+          return Number(window.orientation) || 0;
+        };
         const onGyro = (e) => {
-          if (e.alpha == null || !controls) return;
+          if (e.alpha == null || e.beta == null || e.gamma == null || !controls) return;
+          gEuler.set(e.beta * D2R, e.alpha * D2R, -e.gamma * D2R, "YXZ");
+          gQ.setFromEuler(gEuler).multiply(gQx).multiply(gQz.setFromAxisAngle(gZee, -screenAngle() * D2R));
+          gF.set(0, 0, -1).applyQuaternion(gQ);
+          const yaw = Math.atan2(-gF.x, -gF.z);
+          const pitch = Math.asin(Math.max(-1, Math.min(1, gF.y)));
           if (gyroLast) {
-            let dA = e.alpha - gyroLast.a;
-            if (dA > 180) dA -= 360; else if (dA < -180) dA += 360;
-            const dB = e.beta - gyroLast.b;
-            // Portrait mapping: compass turn → yaw, front-back tilt → pitch.
-            // Pitch sign confirmed on a real device (user-tested 2026-08-15:
-            // the −dB variant looked the wrong way). Deadzone swallows hand
-            // tremor; the clamp swallows sensor glitches.
-            const dy = Math.max(-12, Math.min(12, dA));
-            const dp = Math.max(-12, Math.min(12, dB));
-            if (Math.abs(dy) > 0.02 || Math.abs(dp) > 0.02) {
-              controls.gyroLook(dy * D2R, dp * D2R);
-            }
+            let dy = yaw - gyroLast.y;
+            if (dy > Math.PI) dy -= Math.PI * 2; else if (dy < -Math.PI) dy += Math.PI * 2;
+            // Straight up or down, heading is meaningless — hold it there.
+            if (Math.abs(gF.y) > 0.97) dy = 0;
+            const dp = pitch - gyroLast.p;
+            // Deadzone swallows hand tremor; the clamp swallows sensor glitches.
+            const cy = Math.max(-0.21, Math.min(0.21, dy)), cp = Math.max(-0.21, Math.min(0.21, dp));
+            if (Math.abs(cy) > 0.0004 || Math.abs(cp) > 0.0004) controls.gyroLook(cy, cp);
           }
-          gyroLast = { a: e.alpha, b: e.beta };
+          gyroLast = { y: yaw, p: pitch };
         };
         const setGyro = (on) => {
           gyroOn = on; gyroLast = null;
@@ -27733,6 +27829,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
           }
         }
       } catch (e) { console.warn("scene interact:", e); }
+      try { if (hands && window.PhobiaGrab && PhobiaGrab.holding()) PhobiaGrab.holdHand(hands); } catch {}
       try { if (hands) hands.update(t, dt, controls); }
       catch (e) { console.warn("hands.update:", e); }
       try {
@@ -27766,7 +27863,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
           const th = window.PhobiaThreat;
           if (_beat.creature) {
             _beat.creature.getWorldPosition(_audVec3);
-            cx = _audVec3.x; cy = _audVec3.y; cz = _audVec3.z; hasFocus = true;
+            // (a creature parked far below the world — the spider after it was
+            // carried out — is gone, not at the room's centre)
+            if (_audVec3.y > -10) { cx = _audVec3.x; cy = _audVec3.y; cz = _audVec3.z; hasFocus = true; }
           } else if (th) { cx = th.x; cy = th.y; cz = th.z; hasFocus = true; }
           window.PhobiaExperiments.frame({
             dt: dt || 0.016,
@@ -30791,11 +30890,14 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         const k = Math.max(0, Math.min(1, 1 - walkAnimT));
         // Smoothstep ease: k*k*(3-2k)
         const ease = k * k * (3 - 2 * k);
+        const zWas = controls.position.z;
         controls.position.z = walkAnimFrom + (walkAnimTo - walkAnimFrom) * ease;
-        // Drive the walk cycle so the legs actually move
+        // Drive the walk cycle so the legs actually move — by the distance
+        // covered (~0.62 m a half-step, as FPControls does), not by time: a
+        // fixed cadence on an eased glide slid the feet at both ends.
         if (k < 1) {
           controls._walkAmt = Math.min(1, (controls._walkAmt || 0) + 0.10);
-          controls._walkPhase = (controls._walkPhase || 0) + (dt || 0.016) * Math.PI * 4;
+          controls._walkPhase = (controls._walkPhase || 0) + Math.abs(controls.position.z - zWas) * (Math.PI / 0.62);
         }
       }
 
@@ -30817,20 +30919,25 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         }
         leanT -= (dt || 0.016) * 0.33;            // ~3 s total
         const k = Math.max(0, Math.min(1, 1 - leanT));
+        // In first person the camera is the head, and a head leaning over a
+        // rail is past it. In third person the camera follows the BODY, which
+        // slid 10 cm through the rail — there the body stops at it (the lean
+        // in the posture does the rest).
+        const LEAN_Z = controls.cameraMode === "tp" ? -0.22 : -0.50;
         let p, z;
         if (k < 0.35) {
           // Lean OUT: pitch drops fast, body slides forward past the edge
           const u = k / 0.35;
           p = leanFromPitch + (-1.30 - leanFromPitch) * u;
-          z = leanFromZ + (-0.50 - leanFromZ) * u;
+          z = leanFromZ + (LEAN_Z - leanFromZ) * u;
         } else if (k < 0.65) {
           // Hold: peeked over, can see straight down
-          p = -1.30; z = -0.50;
+          p = -1.30; z = LEAN_Z;
         } else {
           // Lean BACK: pitch and position return
           const u = (k - 0.65) / 0.35;
           p = -1.30 + (leanFromPitch - (-1.30)) * u;
-          z = -0.50 + (leanFromZ - (-0.50)) * u;
+          z = LEAN_Z + (leanFromZ - LEAN_Z) * u;
         }
         controls.pitch = p;
         // Bypass the bounds z-clamp so the slide forward can actually land past
@@ -31011,7 +31118,10 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
           if (lookingHard && !hState.wasLooking && eng && hState.clock - hState.lastLookPulse > 6) {
             hState.lastLookPulse = hState.clock;
             hCoach.pulse(0.16, "look", hLastDist);
-            if (Math.random() < 0.6) hSignal(Math.random() < 0.5 ? "pull" : "swim");
+            // (a "swim" shown here is noted too — the dizzy reality check
+            // counted only the random one, and could tell someone who'd just
+            // read "the view swims" that they stayed steady the whole time)
+            if (Math.random() < 0.6) { const k = Math.random() < 0.5 ? "pull" : "swim"; if (hSignal(k) && k === "swim") hCoach.note("swim"); }
           }
           hState.wasLooking = lookingHard;
           if (vertigo > 0.62 && eng && Math.random() < dtN * 0.12 && hSignal("swim")) hCoach.note("swim");
@@ -35701,7 +35811,8 @@ function makeCreatureCoach(opts) {
     if (!readOpen) return;
     const id = readOpen.id, S = K.signals[id];
     readOpen = null;
-    const right = cls === S.cls;
+    // (a signal may accept a second fair reading — see DARK_SIGNALS)
+    const right = cls === S.cls || (Array.isArray(S.also) && S.also.includes(cls));
     ev.reads++; if (right) ev.readsRight++;
     if (!ev.signals.includes(id)) ev.signals.push(id);
     const isNew = K.recordRead(id, right);
@@ -42694,7 +42805,10 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
         const post = add(mesh(new THREE.BoxGeometry(0.03, L.top + 1, 0.04), std(0x3a3d42, 0.35, 0.7), x0 < 0 ? x0 + 0.015 : x1 - 0.015, (L.top - 1) / 2, 0, false)); void post;
       }
       const head = add(mesh(new THREE.BoxGeometry(iw + 0.12, L.top - (-1 + D.h), 0.04), std(0x3a3d42, 0.35, 0.7), 0, (L.top + (-1 + D.h)) / 2, 0, false)); head.userData.noCollide = true;
-      const desk = add(mesh(rbox(iw - 0.02, 0.03, 0.34, 0.01), new THREE.MeshStandardMaterial({ map: makeWoodTexture(), color: 0xc8a882, roughness: 0.5 }), 0, -0.07, I.z0 + 0.18, false)); desk.userData.noCollide = true;
+      // The shelf is solid now: you stand at it, not in it. (It had no
+      // collision, and the "stand at the back" star needed you halfway
+      // through it.)
+      const desk = add(mesh(rbox(iw - 0.02, 0.03, 0.34, 0.01), new THREE.MeshStandardMaterial({ map: makeWoodTexture(), color: 0xc8a882, roughness: 0.5 }), 0, -0.07, I.z0 + 0.18, false)); void desk;
       const plate = add(mesh(new THREE.BoxGeometry(0.12, 0.012, 0.06), std(0x1c1d20, 0.4), 0.3, -0.05, I.z0 + 0.1, false)); plate.userData.noCollide = true;
       const fan = add(mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.01, 24), std(0x1c1d20, 0.6), 0.25, L.top - 0.006, -0.3, false)); fan.userData.noCollide = true;
       // the office: desks with monitors and chairs, a plant
@@ -43029,6 +43143,9 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
     if (MRI || LIFT) return;
     lightOn = !lightOn;
     coach.setFoot(footText());
+    // The dark is a harder step, so the wave should answer it: a fresh rise
+    // when the light goes off with you inside (it showed nothing at all).
+    if (!lightOn && inside) { coach.pulse(0.2, "dark", lastDist); coach.note("lightOff"); }
     try { A() && A().indicatorClick && A().indicatorClick(); } catch {}
     if (rung === 3 && cordBead) cordBead.userData.pull = 1;
   }
@@ -43283,7 +43400,8 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
           }
         }
         // rung goals
-        if (rung === 1 && inside && shut && pz < -0.6) { backT += d; if (backT > 10) coach.goalDone("back"); } else if (rung === 1) backT = Math.max(0, backT - d * 2);
+        // (at the shelf: its front edge is −0.75 and you're 0.3 m deep)
+        if (rung === 1 && inside && shut && pz < -0.38) { backT += d; if (backT > 10) coach.goalDone("back"); } else if (rung === 1) backT = Math.max(0, backT - d * 2);
         if (rung === 3 && inside && shut && !lightOn) { darkT += d; if (darkT > 5) coach.goalDone("dark"); } else if (rung === 3) darkT = 0;
         // the room's own sounds and air, one at a time, while you're in it
         // (and after the hold too, while the read star still wants a moment)
@@ -43708,6 +43826,10 @@ function setupFlying(scene, camera, level, levelIdx, ctx) {
       pitchMin: -0.6, pitchMax: 0.4,
       cameraModeLocked: "fp",        // sitting in airplane seat — FP only
     },
+    // Seated, first person: the walking body stood up through the seat (a
+    // standing torso and hanging arms when you looked down). The camera
+    // hands are the body here, as in the MRI.
+    body: false,
     hands: { sleeveColor: 0x2c4a6e },
     bloom: { strength: 0.45, threshold: 0.85 },
     interact(controls, hands) {
@@ -44563,6 +44685,7 @@ function setupNeedles(scene, camera, level, levelIdx, ctx) {
       lookSpeed: 0.003,
       cameraModeLocked: "fp",          // looking at your own arm — FP only
     },
+    body: false,                       // seated (see setupFlying)
     // The camera hand pair only exists on the LOW rungs, where the
     // world-anchored injection arm hasn't been built yet. From proximity>0.35
     // the scene owns its own arm+fist — a second floating pair made THREE
@@ -45898,10 +46021,14 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
         const dx = snake.position.x - controls.position.x;
         const dz = snake.position.z - controls.position.z;
         const d = Math.hypot(dx, dz) || 1;
-        tgt = snakeClampToBounds({
-          x: snake.position.x + (dx / d) * 2.6,
-          z: snake.position.z + (dz / d) * 2.6,
-        });
+        // Straight away from you — or the nearest clear angle off it: the
+        // retreat used to slide through the log and the bushes.
+        const a0 = Math.atan2(dx / d, dz / d);
+        for (const off of [0, 0.6, -0.6, 1.1, -1.1]) {
+          const c = snakeClampToBounds({ x: snake.position.x + Math.sin(a0 + off) * 2.6, z: snake.position.z + Math.cos(a0 + off) * 2.6 });
+          if (!tgt) tgt = c;
+          if (snakePathClear(snake.position.x, snake.position.z, c.x, c.z)) { tgt = c; break; }
+        }
       } else {
         tgt = snakeClampToBounds({ x: snake.position.x, z: snake.position.z - 2.5 });
       }
@@ -46303,6 +46430,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   let extensionTarget = 0;
   let sniffT = 0;            // builds while the hand is near the snake's head
   let sniffMet = false;      // becomes true once sniffT reaches threshold
+  let extendFarT = 0, extendFarTold = false;
   let _lastSniffFlick = 0;   // throttles the sniff tongue-flick request
   // Visible procedural hand pinned to the camera. We add it as a child of
   // camera so it follows look direction; extension drives a forward offset.
@@ -46561,7 +46689,11 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           // snake settles with its mouth locked open / striking flag stuck true.
           snakeCtl.strikePhase = "none"; snakeCtl.striking = false; snakeCtl.jawTarget = 0;
           if (snakeCtl.state !== "retreat") snakeEnter(intensity === "apex" && distS < 3 ? "retreat" : "bask", controls);
-          if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt(window.t("sc.n.settled", "It settled. You held your ground and it stood down."), 4500);
+          // "Stood down" only where it had stood up — on the quiet rungs it
+          // never did anything to stand down from.
+          if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt(snRung >= 3
+            ? window.t("sc.n.settled", "It settled. You held your ground and it stood down.")
+            : window.t("sc.n.settledCalm", "You stayed close, and it went on with its day. That's what snakes mostly do."), 4500);
         }
       }
       // ---- Fear grade the daylight (subtle — it stays a sunny clearing) ----
@@ -46646,12 +46778,25 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
         if (snakeCtl.ctrl && t - _lastSniffFlick > 0.6) { _lastSniffFlick = t; snakeCtl.ctrl.requestTongueFlick(true); }
         if (sniffT >= 0.999 && !sniffMet) {
           sniffMet = true;
+          // Said on screen too (it was a voice line only — muted, the offered
+          // hand earned nothing you could see), and kept as evidence.
+          snCoach.note("sniffed");
+          snCoach.teach("sniffed", window.t("dc.sn.tSniffed", "<b>It tasted your hand</b> with its tongue — and went on with its day. To a snake you're a smell to check, not a threat to answer."), 8000);
           if (window.PhobiaVoice) {
             window.PhobiaVoice.speak(window.t("sc.n.hand", "It met your hand. You stayed still. The fear is teachable."));
           }
         }
       } else {
         sniffT = Math.max(0, sniffT - dtN * 0.10);
+        // Hand out but too far to be tasted: say so once, instead of holding
+        // an invisible meter at zero.
+        if (extendHeld && extension > 0.6 && !moving && headWorldDist >= 0.9) {
+          extendFarT += dtN;
+          if (extendFarT > 1.6 && !extendFarTold) {
+            extendFarTold = true;
+            if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt(window.t("sc.n.handFar", "Your hand's out — it can only taste it from within about a metre."), 4000);
+          }
+        } else extendFarT = 0;
       }
 
       // Drive the locomotion controller — behaviour states, root motion,
@@ -47929,6 +48074,7 @@ function setupDriving(scene, camera, level) {
       lookSpeed: 0.0035,
       cameraModeLocked: "fp",          // driver's seat — FP only
     },
+    body: false,                       // seated (see setupFlying)
     hands: { sleeveColor: 0x2c2a2a },
     bloom: { strength: 0.25, threshold: 0.92 },
     interact(controls) {
