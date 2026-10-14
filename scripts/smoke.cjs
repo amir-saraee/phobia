@@ -126,7 +126,10 @@ async function firstRunAndTrial(browser, base) {
   await page.evaluate(() => { const c = document.querySelector('[data-action="pick-fear"][data-fear="bite"]') || document.querySelector('[data-action="pick-fear"]'); c && c.click(); });
   await click(page, "Enter the trial");
   check("trial 1: scene mounts", await waitFor(page, () => !!(window.__active && window.__active.scene && window.__dogCoach), 15000));
-  await sleep(3500);
+  // The tour opens on a timer from the mount; wait for it rather than for a
+  // fixed time, which only held while mounting itself took a few seconds.
+  await waitFor(page, () => !!document.querySelector(".tour-card"), 9000);
+  await sleep(300);
   for (let k = 0; k < 4; k++) { if (!(await click(page, ".tour-actions button:last-child"))) break; await sleep(300); }
   const tourCards = await page.evaluate(() => document.querySelectorAll(".tour-card").length);
   check("trial 1: tour dismissed", tourCards === 0);
@@ -393,6 +396,14 @@ async function phoneTouch(browser, base) {
   await page.evaluate(() => { document.querySelector(".expect-chip").click(); document.querySelector('[data-action="confirm-predict"]').click(); });
   check("phone MRI: scene + coach mount", await waitFor(page, () => !!(window.__active && window.__active.scene && window.__coach), 15000));
   await sleep(2000);
+  // The stage grows and the page scrolls it into view as the scene starts;
+  // tap only once the button has stopped moving (two equal reads 300 ms apart).
+  { let prev = null; const tEnd = Date.now() + 6000;
+    while (Date.now() < tEnd) {
+      const y = await page.evaluate(() => { const b = document.querySelector('.cmd-btn[data-cmd="slide"]'); return b ? Math.round(b.getBoundingClientRect().top) : null; });
+      if (y !== null && y === prev) break;
+      prev = y; await sleep(300);
+    } }
   const at = await page.evaluate(() => {
     const b = document.querySelector('.cmd-btn[data-cmd="slide"]'); if (!b) return null;
     const r = b.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, top = document.elementFromPoint(x, y);

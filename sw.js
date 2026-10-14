@@ -11,7 +11,7 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v26-light";
+const VERSION = "mira-v27-lighter";
 // Installed on the first visit, in the background — so it holds only what the
 // creature realms (dogs, spiders, snakes) need to boot and play offline. The
 // place realms (heights, the dark, tight spaces) are procedural and need nothing
@@ -31,8 +31,8 @@ const SHELL = [
   "./assets/vendor/three/three.module.min.js",
   // Rigged dogs (Quaternius, CC0) + their photo-projected coats (JPEG ship
   // copies — scripts/compress-textures.cjs).
-  "./assets/models/ShibaInu.gltf",
-  "./assets/models/Husky.gltf",
+  "./assets/models/ShibaInu.glb",
+  "./assets/models/Husky.glb",
   "./assets/models/textures/shiba_photo_albedo.jpg",
   "./assets/models/textures/shiba_photo_normal.jpg",
   "./assets/models/textures/shiba_photo_roughness.jpg",

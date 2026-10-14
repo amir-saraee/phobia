@@ -60,6 +60,19 @@ if ("serviceWorker" in navigator) {
   }
 }
 </script>
+<!-- The 3D module sits ~1 MB into this page, so its imports were only
+     discovered once that much HTML had arrived and parsed — three.js (670 KB)
+     and the addons then loaded as a waterfall behind it. Ask for them now. -->
+<link rel="modulepreload" href="./assets/vendor/three/three.module.min.js">
+<link rel="modulepreload" href="./assets/vendor/three/addons/loaders/GLTFLoader.js">
+<link rel="modulepreload" href="./assets/vendor/three/addons/utils/BufferGeometryUtils.js">
+<link rel="modulepreload" href="./assets/vendor/three/addons/utils/SkeletonUtils.js">
+<link rel="modulepreload" href="./assets/vendor/three/addons/postprocessing/EffectComposer.js">
+<link rel="modulepreload" href="./assets/vendor/three/addons/postprocessing/Pass.js">
+<link rel="modulepreload" href="./assets/vendor/three/addons/postprocessing/RenderPass.js">
+<link rel="modulepreload" href="./assets/vendor/three/addons/postprocessing/UnrealBloomPass.js">
+<link rel="modulepreload" href="./assets/vendor/three/addons/postprocessing/OutputPass.js">
+<link rel="modulepreload" href="./assets/vendor/three/addons/environments/RoomEnvironment.js">
 <style>
   :root {
     /* ---- Color palette ---- */
@@ -649,17 +662,22 @@ if ("serviceWorker" in navigator) {
      Kept gentle on purpose: the vignette is a hint, not an alarm. */
   .stage .heart {
     position: absolute; inset: 0; pointer-events: none; z-index: 5;
-    box-shadow: inset 0 0 0 0 rgba(220, 30, 30, 0);
-    animation: heartbeat var(--bpm-dur, 1s) cubic-bezier(.4,.0,.6,1) infinite;
     opacity: var(--heart-opacity, 0);
     transition: opacity 1.5s ease;
   }
+  /* The lub-dub pulses the OPACITY of one fixed glow — a compositor job.
+     Animating the inset box-shadow itself re-rasterised a full-stage 90px
+     blur on every frame of the trial. */
+  .stage .heart::before {
+    content: ""; position: absolute; inset: 0;
+    box-shadow: inset 0 0 90px 30px rgba(220, 30, 30, .32);
+    opacity: 0;
+    animation: heartbeat var(--bpm-dur, 1s) cubic-bezier(.4,.0,.6,1) infinite;
+  }
   @keyframes heartbeat {
-    0%, 70%, 100% { box-shadow: inset 0 0 60px 10px rgba(220, 30, 30, 0); }
-    8%  { box-shadow: inset 0 0 90px 30px rgba(220, 30, 30, .32); }
-    18% { box-shadow: inset 0 0 60px 10px rgba(220, 30, 30, 0); }
-    28% { box-shadow: inset 0 0 70px 22px rgba(220, 30, 30, .18); }
-    40% { box-shadow: inset 0 0 60px 10px rgba(220, 30, 30, 0); }
+    0%, 18%, 40%, 70%, 100% { opacity: 0; }
+    8%  { opacity: 1; }
+    28% { opacity: .56; }
   }
 
   /* Visible notice when the 3D scene fails and the SVG fallback mounts */
@@ -3314,10 +3332,12 @@ if ("serviceWorker" in navigator) {
       rgba(40,90,140,0.10) 60%,
       rgba(20,40,80,0.30) 100%);
     opacity: 0;
-    transition: opacity .8s ease;
-    backdrop-filter: saturate(40%);
+    transition: opacity .8s ease, backdrop-filter .8s ease;
   }
-  .stage .grounding-overlay.active { opacity: 1; }
+  /* Only while grounding is on: Chromium keeps drawing a backdrop-filter at
+     opacity 0, so the idle overlay desaturated the whole stage — an extra
+     full-screen pass on every frame of every trial. */
+  .stage .grounding-overlay.active { opacity: 1; backdrop-filter: saturate(40%); }
   .stage .grounding-text {
     position: absolute; left: 50%; top: 38%; z-index: 8;
     transform: translateX(-50%);
@@ -5081,6 +5101,19 @@ if ("serviceWorker" in navigator) {
     margin: 0 !important;
   }
   body.mob-immersive .app { padding: 0 !important; }
+  /* ---- Lite compositing (below the high graphics tier) ----
+     A backdrop-filter re-reads and re-blurs whatever is behind it each time
+     that changes — over the live 3D stage, every frame — and Chromium keeps
+     drawing one even at opacity 0. A phone trial composited ~17 of them (HUD,
+     coach card, hints, joystick, command bar), the title sheet blurred 18px
+     over the animated room. Their tinted backgrounds (.55–.9 alpha) carry the
+     legibility on their own; below the high tier (html.fx-lite, set from the
+     resolved Graphics tier) the frosted glass goes. The grounding overlay's
+     deliberate desaturation stays. */
+  html.fx-lite *:not(.grounding-overlay) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
 </style>
 </head>
 <body>
@@ -5251,11 +5284,27 @@ const PhobiaAudio = (() => {
   }
   const isMuted = () => muted;
 
+  // White noise is copied from a random offset of one 4 s master: a memcpy
+  // instead of a Math.random() per sample — up to 96k of them per call, and
+  // footsteps and paw plants called this several times a step. A slice of
+  // white noise is white noise, and two calls get different offsets.
+  let _noiseMaster = null;
   function noiseBuffer(seconds = 2) {
     const c = ensureCtx(); if (!c) return null;
     const buf = c.createBuffer(1, c.sampleRate * seconds, c.sampleRate);
     const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    if (!_noiseMaster || _noiseMaster.rate !== c.sampleRate) {
+      const m = new Float32Array(c.sampleRate * 4);
+      for (let i = 0; i < m.length; i++) m[i] = Math.random() * 2 - 1;
+      _noiseMaster = { data: m, rate: c.sampleRate };
+    }
+    const m = _noiseMaster.data;
+    if (data.length <= m.length) {
+      const off = Math.floor(Math.random() * (m.length - data.length + 1));
+      data.set(m.subarray(off, off + data.length));
+    } else {
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    }
     return buf;
   }
   // Pink (1/f) noise — far less harsh than white noise, so natural textures
@@ -13388,6 +13437,19 @@ function charHexes(ch) {
     shirtHex: C.topHex(ch), eyeHex: C.eyeHex(ch),
   });
 }
+// The shell's 3D (title room, camp, realm heroes) mounts a frame after the
+// page paints, the way a trial does (see render()): built inside the route's
+// first render, the heaviest thing on the screen held the whole page blank
+// until it was done — on a first visit, the title screen. A newer route
+// render supersedes a mount still waiting for its frame.
+let _shell3DGen = 0;
+function startShell3DSoon(start) {
+  const gen = ++_shell3DGen;
+  const go = () => requestAnimationFrame(() => setTimeout(() => { if (gen === _shell3DGen) start(); }, 0));
+  if (window.ShellScenes && window.ShellScenes.ready) go();
+  else window.addEventListener("scene3d-ready", go, { once: true });
+}
+
 // ---------- Room stage (arrival + traveler creator) ----------
 // Both immersive views stand in the same room; only the framing differs, so
 // they share one mount. Held in a module-level handle so the chip handlers can
@@ -13412,8 +13474,7 @@ function mountRoomStage(view) {
   // Same readiness handshake mountShell3D uses — the module that defines
   // ShellScenes evaluates after this classic script, so a first paint can beat
   // it and must wait for the event rather than silently rendering no stage.
-  if (window.ShellScenes && window.ShellScenes.ready) start();
-  else window.addEventListener("scene3d-ready", start, { once: true });
+  startShell3DSoon(start);
 }
 
 // Live-rebuild the 3D traveler from the current draft.
@@ -13487,8 +13548,7 @@ function mountShell3D(view, params) {
       }
     } catch { /* 2D fallback stays */ }
   };
-  if (window.ShellScenes && window.ShellScenes.ready) start();
-  else window.addEventListener("scene3d-ready", start, { once: true });
+  startShell3DSoon(start);
 }
 
 // ---------- Traveler ranks (courage levels) ----------
@@ -15695,6 +15755,10 @@ function mountExposure(phobiaKey, levelIdx) {
     window.removeEventListener("keydown", goImmersive);
     document.removeEventListener("fullscreenchange", onFsChange);
     document.removeEventListener("webkitfullscreenchange", onFsChange);
+    // (These two held every finished trial's stage — and this whole scope —
+    // alive for the rest of the session.)
+    document.removeEventListener("fullscreenchange", refreshQuickBar);
+    document.removeEventListener("webkitfullscreenchange", refreshQuickBar);
     if (fsEl() === stage) {
       try {
         const exit = document.exitFullscreen || document.webkitExitFullscreen;
@@ -15726,6 +15790,8 @@ function mountExposure(phobiaKey, levelIdx) {
   heart.className = "heart";
   heart.style.setProperty("--bpm-dur", (60 / bpm) + "s");
   heart.style.setProperty("--heart-opacity", "0");
+  // No pulse on this rung (or switched off): no element animating unseen.
+  if (!heartIntensity) heart.hidden = true;
   stage.appendChild(heart);
 
   // Continuous shake only on the very top rung (unless reduce-motion is on).
@@ -18104,6 +18170,41 @@ function loadGLTF(url) {
   return promise;
 }
 
+// renderer.compileAsync, minus three's "extension not supported" console
+// warning (one per renderer) where KHR_parallel_shader_compile is missing.
+// There compile() still queues every program to the GPU process in one go and
+// a short yield lets it get through them before the first frame asks; with
+// the extension, compileAsync waits until they are actually linked.
+function compileAhead(renderer, scene, camera, target = null) {
+  if (renderer.extensions.has("KHR_parallel_shader_compile")) return renderer.compileAsync(scene, camera, target);
+  renderer.compile(scene, camera, target);
+  return new Promise((res) => setTimeout(res, 50));
+}
+
+// Link a streamed-in object's shader programs before it joins a live trial.
+// A creature arrives seconds after the scene starts, and its first frame used
+// to compile its skinned coat, fur shells and so on synchronously — the dog
+// room's longest freeze (3.4 s under software GL) landing right as the dog
+// appears. Same render-target dance as mount()'s first compile, so these are
+// the variants the composer will ask for. Resolves at once outside a trial
+// (the shell vignettes) and never waits longer than 4 s.
+function compileBeforeAdd(parent, obj) {
+  let root = parent;
+  while (root && root.parent) root = root.parent;
+  const a = active;
+  if (!root || !root.isScene || !a || a.scene !== root || !a.renderer) return Promise.resolve();
+  const r = a.renderer;
+  try {
+    r.setRenderTarget(a.composer ? a.composer.readBuffer : null);
+    const p = compileAhead(r, obj, a.camera, root);
+    r.setRenderTarget(null);
+    return Promise.race([p, new Promise((res) => setTimeout(res, 4000))]).catch(() => {});
+  } catch (e) {
+    try { r.setRenderTarget(null); } catch {}
+    return Promise.resolve();
+  }
+}
+
 // ---------- Dog models (real rigged GLTF — Quaternius "Ultimate Animated
 // Animals", CC0 / public domain) ----------
 // Two breeds drive the cynophobia difficulty ramp: a small friendly Shiba Inu
@@ -18112,8 +18213,10 @@ function loadGLTF(url) {
 // is breed-agnostic. Vendored locally under assets/models/ so the app keeps
 // working offline (it's an installable PWA).
 const DOG_MODELS = {
-  shiba: "assets/models/ShibaInu.gltf",
-  husky: "assets/models/Husky.gltf",
+  // Binary .glb (scripts/pack-glb.cjs): the same model as the old embedded-
+  // base64 .gltf, 40 % smaller, with no 2.9 MB JSON string to parse and decode.
+  shiba: "assets/models/ShibaInu.glb",
+  husky: "assets/models/Husky.glb",
 };
 // Breed PBR coat maps — PHOTO-PROJECTED from assets/refs/dog-*-reference.png
 // via scripts/bake-dog-photo-coats.cjs. Side-projection UVs (applySidePhotoUVs)
@@ -18254,10 +18357,11 @@ function buildCreature(url, opts = {}) {
     parts.height = sz.y * S;
     parts.span = Math.max(sz.x, sz.z) * S;
     parts.footOffset = -box.min.y * S;
-    group.add(model);
     parts.model = model;
     const mixer = new THREE.AnimationMixer(model);
-    parts.mixer = mixer;
+    // parts.mixer is published when the model joins the scene (below): the
+    // controllers start driving the rig on it, and that must not happen to a
+    // model still waiting, parentless, for its shaders.
     const actions = {};
     gltf.animations.forEach((c) => { actions[c.name] = mixer.clipAction(c); });
     parts.actions = actions;
@@ -18275,8 +18379,16 @@ function buildCreature(url, opts = {}) {
       a.fadeIn(fade).play();
       parts.current = a;
     };
-    group.userData.ready = true;
-    if (typeof group.userData.onReady === "function") group.userData.onReady();
+    // Into the scene once its programs are linked (compileBeforeAdd).
+    compileBeforeAdd(group, model).then(() => {
+      if (group.userData.disposed) return;
+      try {
+        group.add(model);
+        parts.mixer = mixer;
+        group.userData.ready = true;
+        if (typeof group.userData.onReady === "function") group.userData.onReady();
+      } catch (e) { console.warn("[creature] ready:", e); }
+    });
   }).catch((err) => {
     console.warn("[creature] model load failed:", url, err);
     // Fallback so the exposure is never a silently EMPTY scene (e.g. a CDN
@@ -18378,6 +18490,13 @@ function demoteAutoTier(current) {
 }
 let QUALITY = resolveQuality();
 let IS_LOW_POWER = QUALITY === "low";
+// CSS backdrop blurs are dropped below the high tier (html.fx-lite — see the
+// end of the main style block). Re-synced whenever a renderer is made, so a
+// changed Graphics setting reaches the page's chrome with the next scene.
+function syncFxLite(tier) {
+  try { document.documentElement.classList.toggle("fx-lite", (tier || resolveQuality()) !== "high"); } catch {}
+}
+syncFxLite(QUALITY);
 // The one scene-facing tier accessor. QUALITY is re-resolved inside
 // makeRenderer, which mount() calls before any scene's setup() runs, so scene
 // code may branch on this safely without re-reading localStorage.
@@ -18387,12 +18506,15 @@ function makeRenderer(container) {
   // Re-evaluate every mount so settings changes apply immediately
   QUALITY = resolveQuality();
   IS_LOW_POWER = QUALITY === "low";
+  syncFxLite(QUALITY);
   const isMedium = QUALITY === "medium";
   const renderer = new THREE.WebGLRenderer({
-    // We do anti-aliasing in a post-process SMAA pass on high quality, so the
-    // built-in MSAA is only requested on low/medium quality where SMAA is
-    // disabled.
-    antialias: !IS_LOW_POWER && isMedium,
+    // No canvas MSAA on any tier. The scene is drawn into the EffectComposer's
+    // own (single-sampled) target, so a multisampled canvas only ever received
+    // the final full-screen copy: medium paid for 4× colour + depth at device
+    // resolution (~24 MB on a DPR-1.5 phone) and got no anti-aliasing for it.
+    // High anti-aliases with SMAA in the post chain.
+    antialias: false,
     powerPreference: IS_LOW_POWER ? "low-power" : "high-performance",
     stencil: false,                    // we don't use stencil; saves bandwidth
   });
@@ -20439,6 +20561,7 @@ function surfaceRibbon(headPoint, path, half, lift, mat, segs = 26) {
 // Caching the vertex arrays turns a ~77 ms hitch into a copy; the colour
 // attribute is still recomputed each time, which is the cheap half.
 const _headGeoCache = new Map();
+const _earSurfCache = new Map();   // head shape → where the ear meets the skull (buildHead)
 function buildHeadShell(headPoint, mat, opts = {}) {
   const NU = opts.nu || 56, NV = opts.nv || 40;
   const off = opts.offset || 0;      // outward thickness (hair / beard shells)
@@ -20995,7 +21118,9 @@ function buildHead(o) {
   // taper put the surface further out than the constant assumed, so the
   // character simply had no visible ears from any angle. Measure it, the same
   // way the eye socket depth is measured.
-  const earSurf = (() => {
+  // (A pure function of the head shape — 4,225 ray-marches, ~100k SDF calls —
+  // so it's measured once per shape, not on every trial's rebuild.)
+  const earSurf = _earSurfCache.get(shape) || (() => {
     let bx = 0.072, bz = -0.012, bd = Infinity;
     for (let i = 0; i <= 64; i++) {
       const th = Math.PI * 0.5 + (i / 64 - 0.5) * 0.9;
@@ -21008,6 +21133,7 @@ function buildHead(o) {
     }
     return { x: bx, z: bz };
   })();
+  _earSurfCache.set(shape, earSurf);
   for (const sx of [-1, 1]) {
     const ear = new THREE.Group();
     // Sunk 3 mm into the surface so the root never shows a seam, and pitched
@@ -21519,7 +21645,11 @@ function buildHand(side, skinM, sleeveM, opts = {}) {
       const bone = new THREE.Mesh(new THREE.CapsuleGeometry(r, spec.len[s] - r * 0.9, 5, 8), skinM);
       bone.position.y = -spec.len[s] / 2;
       bone.scale.z = 0.86;
-      bone.castShadow = true;
+      // No shadow from the 1–2 cm phalanges: at a 1024² map over a room they
+      // are a texel or two, lost in the soft blur — but each was one more
+      // shadow draw per light (14 a hand, 56 with the first-person pair) in
+      // every realm but the dog room, the one scene that prunes tiny casters.
+      // The palm carries the hand's shadow.
       pivot.add(bone);
       seg.push(pivot);
       parent = pivot;
@@ -21547,7 +21677,6 @@ function buildHand(side, skinM, sleeveM, opts = {}) {
       const r = 0.0102 - s * 0.0014;
       const bone = new THREE.Mesh(new THREE.CapsuleGeometry(r, lens[s] - r * 0.8, 5, 8), skinM);
       bone.position.y = -lens[s] / 2;
-      bone.castShadow = true;
       pivot.add(bone);
       thumbSeg.push(pivot);
       parent = pivot;
@@ -25834,8 +25963,8 @@ class Hands {
 // it earlier in the chain would roughly double the perceived strength of the
 // black crush and vignette). CSS filters can approximate the desaturation but
 // cannot do black crush, edge-weighted chromatic pull, or a vignette that
-// throbs with the heartbeat — which is why scenes opt into this pass and the
-// CSS pipeline survives only as the low-tier fallback.
+// throbs with the heartbeat — which is why scenes opt into this pass; the CSS
+// pipeline survives only for scenes that don't (the place realms).
 // The grade itself, shared by the stand-alone pass and the fused output pass
 // below so the two can never drift apart. `col` is display-referred sRGB.
 const FEAR_GRADE_GLSL = `
@@ -26729,6 +26858,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // are still slow: SSAO → bloom → shadows refreshed every 2nd then 3rd frame
   // → sub-1 resolution. `_shed` counts the steps taken.
   let _shed = 0, _shadowEvery = 1, _shadowFrame = 0, _shedNoticeShown = false;
+  // Point-light (cube) shadows on alternate frames — see the render step.
+  const _cubeShadows = [];
+  let _cubeScanT = 0, _cubeFrame = 0;
   // Performance overlay (settings → Performance overlay, or fobia.perfHud=1):
   // reads the same EMA the adaptive-resolution logic trusts, so what it shows
   // is what the engine acts on. Lazily created; pref polled at 2 Hz so the
@@ -27140,8 +27272,13 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       camera.far = result.cameraFar;
       camera.updateProjectionMatrix();
     }
-    // In-render fear grade (opt-in). Low tier keeps the CSS fallback path.
-    if (result && result.fearGradePass && QUALITY !== "low") {
+    // In-render fear grade (opt-in), on every tier. The low tier used to keep
+    // the CSS fallback — a full-stage multiply-blended gradient repainted as
+    // fear moved plus a filter over the whole canvas, two compositor passes a
+    // frame — on exactly the devices least able to pay for them. Without SMAA
+    // the grade is fused into the output pass (wireFinish), so here it costs
+    // a few ALU ops in a pass that runs anyway.
+    if (result && result.fearGradePass) {
       gradePass = new ShaderPass(FearGradeShader);
       composer.addPass(gradePass);
       outGradePass = makeOutputGradePass(gradePass);
@@ -27287,14 +27424,18 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     container.removeChild(loading);
     throw err;
   }
-  if (loading.parentNode) loading.parentNode.removeChild(loading);
-  // Trigger the canvas fade-in on the next frame so the CSS transition
-  // actually runs (browsers skip transitions on freshly added elements).
-  requestAnimationFrame(() => {
-    if (renderer && renderer.domElement) {
-      renderer.domElement.classList.add("scene-ready");
-    }
-  });
+  // Called once the programs are linked and the loop starts (see below): the
+  // loading card holds the stage until then.
+  function reveal() {
+    if (loading.parentNode) loading.parentNode.removeChild(loading);
+    // Trigger the canvas fade-in on the next frame so the CSS transition
+    // actually runs (browsers skip transitions on freshly added elements).
+    requestAnimationFrame(() => {
+      if (renderer && renderer.domElement) {
+        renderer.domElement.classList.add("scene-ready");
+      }
+    });
+  }
 
   // Interaction-zone hint banner — shows above the canvas when something is reachable
   const reachHint = document.createElement("div");
@@ -27338,9 +27479,20 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   renderer.domElement.addEventListener("pointerdown", onPointerDownTrack);
   renderer.domElement.addEventListener("pointerup", onPointerUpInteract);
 
-  const t0 = performance.now();
+  let t0 = performance.now();
   let lastTime = t0;
   let raf;
+  // 120 and 144 Hz phones fire rAF twice as often as a 60 Hz screen, and every
+  // frame ran the whole simulation, the shadow pass and the post chain — twice
+  // the heat for motion nobody can see in a scene this slow. Frames that come
+  // sooner than ~10.5 ms after the last drawn one are skipped: 120 Hz draws at
+  // 60, 144 at 72, while 60 and 90 Hz screens draw every frame (halving 90 to
+  // 45 would read to the frame governor as a device that can't keep up). The
+  // XR compositor sets its own pace.
+  function pacedTick() {
+    if (!renderer.xr.isPresenting && performance.now() - lastTime < 10.5) return;
+    tick();
+  }
   function tick() {
     if (!container.isConnected || !active) return;
     const now = performance.now();
@@ -27600,6 +27752,22 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // Once per frame (see makeRenderer) — or every 2nd/3rd frame once the
       // governor has had to shed effects on a struggling device.
       if (_shadowEvery <= 1 || (++_shadowFrame % _shadowEvery) === 0) renderer.shadowMap.needsUpdate = true;
+      // A point light's shadow is a cube: six renders of every caster around
+      // it (the cellar bulb alone was ~130 of the scene's ~170 draws). Those
+      // refresh on alternate frames — a 30 Hz shadow under a slow spider or a
+      // walking player is not something the eye separates from 60. Lights are
+      // re-collected every 2 s, since some scenes add theirs late.
+      if (t >= _cubeScanT) {
+        _cubeScanT = t + 2;
+        _cubeShadows.length = 0;
+        scene.traverse((o) => {
+          if (o.isPointLight && o.castShadow && o.shadow) {
+            if (o.shadow.autoUpdate) { o.shadow.autoUpdate = false; o.shadow.needsUpdate = true; }
+            _cubeShadows.push(o);
+          }
+        });
+      }
+      if ((++_cubeFrame & 1) === 0) for (const l of _cubeShadows) l.shadow.needsUpdate = true;
       if (renderer.xr.isPresenting) {
         renderer.render(scene, camera);
       } else {
@@ -27896,18 +28064,23 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         fxStyle(fearVignette, "--fv-opacity", "0");
       } else {
         // (This subscriber runs every frame. Values are rounded and written
-        // only when they change — three style writes a frame otherwise.)
-        fxStyle(fearVignette, "--fv-opacity", (fear01 * 0.9 + fxBeatBoost).toFixed(3));
+        // only when they change — three style writes a frame otherwise. The
+        // gradient stop is whole percent: each new value repaints the full-
+        // stage gradient, and a tenth of a percent changed nearly every frame.)
+        fxStyle(fearVignette, "--fv-opacity", (fear01 * 0.9 + fxBeatBoost).toFixed(2));
         // The clear ellipse SHRINKS as fear rises — peripheral vision narrows
-        fxStyle(fearVignette, "--fv-clear", `${Math.max(15, 60 - fear01 * 45).toFixed(1)}%`);
+        fxStyle(fearVignette, "--fv-clear", `${Math.round(Math.max(15, 60 - fear01 * 45))}%`);
         // Canvas-level filter: desaturate + slight red bias as fear rises.
         // Removed outright when there is nothing to show: even an identity
         // filter makes the compositor filter the whole canvas every frame.
         if (renderer && renderer.domElement) {
-          const sat = Math.max(0, 1.0 - fear01 * 0.20);
-          const hue = -fear01 * 6;          // small shift toward red
+          // In 2 % steps of fear, so the filter string (and the compositor's
+          // filter setup) changes a few times a second, not every frame.
+          const fq = Math.round(fear01 * 50) / 50;
+          const sat = Math.max(0, 1.0 - fq * 0.20);
+          const hue = -fq * 6;              // small shift toward red
           const f = fear01 < 0.01 ? ""
-            : `saturate(${(sat * 100).toFixed(1)}%) hue-rotate(${hue.toFixed(2)}deg) brightness(${(1 - fear01 * 0.10).toFixed(3)})`;
+            : `saturate(${(sat * 100).toFixed(1)}%) hue-rotate(${hue.toFixed(2)}deg) brightness(${(1 - fq * 0.10).toFixed(3)})`;
           if (renderer.domElement._fxFilter !== f) {
             renderer.domElement._fxFilter = f;
             renderer.domElement.style.filter = f;
@@ -28267,7 +28440,36 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // (XR sessions require this method instead of requestAnimationFrame).
   // Three.js routes the loop through requestAnimationFrame in non-XR mode
   // and through the XR compositor's frame timing in immersive mode.
-  renderer.setAnimationLoop(tick);
+  //
+  // Shaders first, then the first frame. Every program used to be compiled and
+  // linked synchronously inside the first render: 40–50 of them in a trial,
+  // a main thread frozen for whole seconds on a phone just as the scene
+  // appears (5 s under software GL in the dog room). compileAsync hands them
+  // all to the driver at once (KHR_parallel_shader_compile) and resolves when
+  // they are linked; the loading card holds the stage meanwhile. The composer
+  // renders the scene into its read buffer, which selects other program
+  // variants (no tone mapping, linear output) than the screen would — so that
+  // target is bound while the programs are requested.
+  const mountedActive = active;
+  let looping = false;
+  const startLoop = () => {
+    if (looping || active !== mountedActive || !container.isConnected) return;
+    looping = true;
+    t0 = lastTime = performance.now();
+    reveal();
+    renderer.setAnimationLoop(pacedTick);
+  };
+  try {
+    renderer.setRenderTarget(composer.readBuffer);
+    const ready = compileAhead(renderer, scene, camera);
+    renderer.setRenderTarget(null);
+    ready.then(startLoop, startLoop);
+    // A driver that never reports completion must not hold the scene back.
+    setTimeout(startLoop, 6000);
+  } catch (e) {
+    try { renderer.setRenderTarget(null); } catch {}
+    startLoop();
+  }
 
   // ----- WebGL context-loss handler -----
   // When the browser drops the WebGL context (tab backgrounded too long,
@@ -28288,7 +28490,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         // Force a resize so the renderer + composer rebuild their targets
         if (typeof onResize === "function") onResize();
       } catch {}
-      try { renderer.setAnimationLoop(tick); } catch {}
+      try { renderer.setAnimationLoop(pacedTick); } catch {}
     }, false);
   }
 
@@ -28409,7 +28611,28 @@ function rng(seed) {
   };
 }
 
-function makeWoodTexture() {
+// The procedural bakes below used to be redrawn on every mount — the title
+// room, then the trial, then the next trial — and the ones with a normal map
+// read their height canvas back from the GPU to do it: 1–2.5 s of frozen main
+// thread per scene on a phone-class device (2.5 s of getImageData alone in the
+// dog room under software GL). Each is now baked once per graphics tier and
+// argument set; every call still gets fresh Texture objects (clones over the
+// same image), so callers set their own repeat / wrap, and a mount disposing
+// its textures never touches the cached canvases.
+function bakedOnce(bake) {
+  const cache = new Map();
+  return (...args) => {
+    const key = sceneQuality() + "|" + args.join(",");
+    let tpl = cache.get(key);
+    if (!tpl) { tpl = bake(...args); cache.set(key, tpl); }
+    if (tpl.isTexture) return tpl.clone();
+    const out = {};
+    for (const k in tpl) out[k] = tpl[k] && tpl[k].isTexture ? tpl[k].clone() : tpl[k];
+    return out;
+  };
+}
+
+function bakeWoodTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 256;
   const ctx = c.getContext("2d");
@@ -28427,8 +28650,9 @@ function makeWoodTexture() {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+const makeWoodTexture = bakedOnce(bakeWoodTexture);
 
-function makeTileTexture() {
+function bakeTileTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 256;
   const ctx = c.getContext("2d");
@@ -28452,8 +28676,9 @@ function makeTileTexture() {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+const makeTileTexture = bakedOnce(bakeTileTexture);
 
-function makeWallTexture() {
+function bakeWallTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 256;
   const ctx = c.getContext("2d");
@@ -28480,8 +28705,9 @@ function makeWallTexture() {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+const makeWallTexture = bakedOnce(bakeWallTexture);
 
-function makeAsphaltTexture() {
+function bakeAsphaltTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 256;
   const ctx = c.getContext("2d");
@@ -28499,6 +28725,7 @@ function makeAsphaltTexture() {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   return tex;
 }
+const makeAsphaltTexture = bakedOnce(bakeAsphaltTexture);
 
 // Concrete platform texture for the rooftop / cliff surface. Mottled grey
 // aggregate with weathering streaks so the user has a clear sense of "I am
@@ -28509,14 +28736,14 @@ function makeAsphaltTexture() {
 // Returned as { albedo, normal, roughness, ao }. All four are CanvasTextures
 // sharing the same canvas size + wrap mode. Generated procedurally so they
 // stay in sync without a CDN dependency.
-function makeConcreteMaps() {
+function bakeConcreteMaps() {
   const SIZE = 256;
   const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
   const rough = document.createElement("canvas"); rough.width = rough.height = SIZE;
   const ao = document.createElement("canvas"); ao.width = ao.height = SIZE;
   const aCtx = albedo.getContext("2d");
-  const hCtx = heightC.getContext("2d");
+  const hCtx = heightC.getContext("2d", { willReadFrequently: true });
   const rCtx = rough.getContext("2d");
   const oCtx = ao.getContext("2d");
 
@@ -28622,6 +28849,7 @@ function makeConcreteMaps() {
     ao:        make(ao),
   };
 }
+const makeConcreteMaps = bakedOnce(bakeConcreteMaps);
 
 // Backwards-compatible single-texture helper — anywhere that still calls
 // makeConcreteTexture() gets just the albedo map.
@@ -28676,12 +28904,12 @@ function canvasMapSet(albedoC, normalC, roughC) {
 }
 
 // Warm bare earth: soil grain + organic blotches + pebbles (the dirt path).
-function makeEarthMaps() {
+function bakeEarthMaps() {
   const SIZE = sceneQuality() === "low" ? 128 : 256;
   const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
   const rough = document.createElement("canvas"); rough.width = rough.height = SIZE;
-  const a = albedo.getContext("2d"), h = heightC.getContext("2d"), r = rough.getContext("2d");
+  const a = albedo.getContext("2d"), h = heightC.getContext("2d", { willReadFrequently: true }), r = rough.getContext("2d");
   a.fillStyle = "#6a5a38"; a.fillRect(0, 0, SIZE, SIZE);
   h.fillStyle = "#808080"; h.fillRect(0, 0, SIZE, SIZE);
   r.fillStyle = "rgb(210,210,210)"; r.fillRect(0, 0, SIZE, SIZE);
@@ -28700,14 +28928,15 @@ function makeEarthMaps() {
   for (let i = 0; i < 12; i++) { h.fillStyle = "rgb(98,98,98)"; h.fillRect(Math.random() * SIZE, Math.random() * SIZE, 1, 8 + Math.random() * 20); }
   return canvasMapSet(albedo, heightCanvasToNormal(heightC, 2.0), rough);
 }
+const makeEarthMaps = bakedOnce(bakeEarthMaps);
 
 // Warm olive grass: short blade strokes + macro tone patches.
-function makeGrassMaps() {
+function bakeGrassMaps() {
   const SIZE = sceneQuality() === "low" ? 128 : 256;
   const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
   const rough = document.createElement("canvas"); rough.width = rough.height = SIZE;
-  const a = albedo.getContext("2d"), h = heightC.getContext("2d"), r = rough.getContext("2d");
+  const a = albedo.getContext("2d"), h = heightC.getContext("2d", { willReadFrequently: true }), r = rough.getContext("2d");
   a.fillStyle = "#59702f"; a.fillRect(0, 0, SIZE, SIZE);
   h.fillStyle = "#808080"; h.fillRect(0, 0, SIZE, SIZE);
   r.fillStyle = "rgb(230,230,230)"; r.fillRect(0, 0, SIZE, SIZE);
@@ -28726,17 +28955,18 @@ function makeGrassMaps() {
   }
   return canvasMapSet(albedo, heightCanvasToNormal(heightC, 1.4), rough);
 }
+const makeGrassMaps = bakedOnce(bakeGrassMaps);
 
 // Oak plank floor: one 1.4×1.4 m tile, 4 plank columns with staggered end
 // joints, per-plank hue jitter, grain streaks, knots. Halved resolution on
-// the low tier — these bake once per dog-scene mount.
-function makePlankMaps() {
+// the low tier — baked once per tier (bakedOnce) and shared by every room.
+function bakePlankMaps() {
   const SIZE = sceneQuality() === "low" ? 256 : 512;
   const k = SIZE / 512;                       // scale factor for px constants
   const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
   const rough = document.createElement("canvas"); rough.width = rough.height = SIZE;
-  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d"), rCtx = rough.getContext("2d");
+  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d", { willReadFrequently: true }), rCtx = rough.getContext("2d");
   hCtx.fillStyle = "#808080"; hCtx.fillRect(0, 0, SIZE, SIZE);
   rCtx.fillStyle = "rgb(158,158,158)"; rCtx.fillRect(0, 0, SIZE, SIZE);
   // Eight boards per tile, not four. Callers map this tile to ~1.4 m of floor,
@@ -28812,14 +29042,15 @@ function makePlankMaps() {
   }
   return canvasMapSet(albedo, heightCanvasToNormal(heightC, 1.2), rough);
 }
+const makePlankMaps = bakedOnce(bakePlankMaps);
 
 // Interior plaster: low-frequency mottling + fine speckle. Uniform roughness
 // is set on the material (0.92), so no roughness map.
-function makePlasterMaps() {
+function bakePlasterMaps() {
   const SIZE = sceneQuality() === "low" ? 128 : 256;
   const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
-  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d");
+  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d", { willReadFrequently: true });
   aCtx.fillStyle = "#cbb59a"; aCtx.fillRect(0, 0, SIZE, SIZE);
   hCtx.fillStyle = "#808080"; hCtx.fillRect(0, 0, SIZE, SIZE);
   for (let i = 0; i < 8; i++) {
@@ -28841,26 +29072,30 @@ function makePlasterMaps() {
   }
   return canvasMapSet(albedo, heightCanvasToNormal(heightC, 0.6), null);
 }
+const makePlasterMaps = bakedOnce(bakePlasterMaps);
 
 // Woven rug, non-tiling: field + baked border band (replaces the old
 // full-surface "outline" overlay that darkened the whole rug).
-function makeRugMaps() {
+function bakeRugMaps() {
   const SIZE = sceneQuality() === "low" ? 256 : 512;
   const k = SIZE / 512;
   const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
-  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d");
+  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d", { willReadFrequently: true });
   aCtx.fillStyle = "#b3766f"; aCtx.fillRect(0, 0, SIZE, SIZE);
   hCtx.fillStyle = "#808080"; hCtx.fillRect(0, 0, SIZE, SIZE);
-  // Weave: 2px checker in both albedo value and height
-  for (let y = 0; y < SIZE; y += 2) {
-    for (let x = (y % 4 === 0 ? 0 : 2); x < SIZE; x += 4) {
-      aCtx.fillStyle = "rgba(0,0,0,0.06)";
-      aCtx.fillRect(x, y, 2, 2);
-      hCtx.fillStyle = "rgb(123,123,123)";
-      hCtx.fillRect(x, y, 2, 2);
-    }
-  }
+  // Weave: 2px checker in both albedo value and height — one 4×4 tile filled
+  // as a pattern (it was 65k individual fillRects at 512²).
+  const weave = (style) => {
+    const t = document.createElement("canvas"); t.width = t.height = 4;
+    const c = t.getContext("2d");
+    c.fillStyle = style; c.fillRect(0, 0, 2, 2); c.fillRect(2, 2, 2, 2);
+    return t;
+  };
+  aCtx.fillStyle = aCtx.createPattern(weave("rgba(0,0,0,0.06)"), "repeat");
+  aCtx.fillRect(0, 0, SIZE, SIZE);
+  hCtx.fillStyle = hCtx.createPattern(weave("rgb(123,123,123)"), "repeat");
+  hCtx.fillRect(0, 0, SIZE, SIZE);
   // Border band, drawn in (not overlaid)
   const inset = 10 * k, band = 26 * k;
   aCtx.fillStyle = "#7d4640";
@@ -28880,10 +29115,11 @@ function makeRugMaps() {
   if (set.normal) set.normal.wrapS = set.normal.wrapT = THREE.ClampToEdgeWrapping;
   return set;
 }
+const makeRugMaps = bakedOnce(bakeRugMaps);
 
 // Single leaf silhouette with midrib, alpha-tested — 14 of these fanned at
 // the golden angle replace the old sphere-blob houseplant.
-function makeLeafTexture() {
+function bakeLeafTexture() {
   const c = document.createElement("canvas");
   c.width = 64; c.height = 128;
   const ctx = c.getContext("2d");
@@ -28904,15 +29140,16 @@ function makeLeafTexture() {
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
+const makeLeafTexture = bakedOnce(bakeLeafTexture);
 
 // Cold damp cellar plaster: grey concrete-plaster base + vertical water-stain
 // streaks + pale efflorescence blooms. Same pipeline as makePlasterMaps but a
 // different palette — the opposite of the dog room's warm interior.
-function makeDampPlasterMaps() {
+function bakeDampPlasterMaps() {
   const SIZE = sceneQuality() === "low" ? 128 : 256;
   const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
-  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d");
+  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d", { willReadFrequently: true });
   aCtx.fillStyle = "#5b5f63"; aCtx.fillRect(0, 0, SIZE, SIZE);
   hCtx.fillStyle = "#808080"; hCtx.fillRect(0, 0, SIZE, SIZE);
   // Low-frequency cold mottling
@@ -28958,10 +29195,11 @@ function makeDampPlasterMaps() {
   const nrm = sceneQuality() === "low" ? null : heightCanvasToNormal(heightC, 0.6);
   return canvasMapSet(albedo, nrm, null);
 }
+const makeDampPlasterMaps = bakedOnce(bakeDampPlasterMaps);
 
 // Cobweb alpha texture: radial spokes + concentric catenary arcs from a corner
 // origin. Used as map+alphaMap on a translucent plane tucked in a wall corner.
-function makeWebTexture() {
+function bakeWebTexture() {
   const S = 128;
   const c = document.createElement("canvas");
   c.width = c.height = S;
@@ -29000,11 +29238,12 @@ function makeWebTexture() {
   const t = new THREE.CanvasTexture(c);
   return t;
 }
+const makeWebTexture = bakedOnce(bakeWebTexture);
 
 // Yellow / black hazard stripe along the platform edge. Drawn as a long thin
 // canvas (1024×32) so it reads at any zoom — the bright edge marker tells the
 // user exactly where the drop begins.
-function makeEdgeStripeTexture() {
+function bakeEdgeStripeTexture() {
   const c = document.createElement("canvas");
   c.width = 1024; c.height = 32;
   const ctx = c.getContext("2d");
@@ -29030,13 +29269,14 @@ function makeEdgeStripeTexture() {
   tex.wrapT = THREE.ClampToEdgeWrapping;
   return tex;
 }
+const makeEdgeStripeTexture = bakedOnce(bakeEdgeStripeTexture);
 
 // ---------- Heights ----------
 // Procedural city-street ground: a tiling block+road grid so looking straight
 // down from height reads as a real city (streets, lane markings, sidewalks,
 // block rooftops) instead of a flat sheet of asphalt with floating car-dots.
 // One texture tile == one ~30 m city block; repeated across the ground plane.
-function makeCityGridTexture(tod) {
+function bakeCityGridTexture(tod) {
   const dark = tod === "twilight";
   const dusk = tod === "golden";
   const S = 512;
@@ -29069,6 +29309,7 @@ function makeCityGridTexture(tod) {
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
+const makeCityGridTexture = bakedOnce(bakeCityGridTexture);
 
 function setupHeights(scene, camera, level, levelIdx, ctx) {
   const h = level.height;            // 0..1 (drives time of day, city dressing, wind)
@@ -29381,6 +29622,43 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
     }
     return new THREE.Mesh(geo, [M, M, roofMat, roofMat, M, M]);
   };
+  // The city is ~440 of those boxes. As one Mesh each — six material groups
+  // apiece, every one a shadow caster — it cost ~2,800 draw calls a frame
+  // (colour + shadow passes) before the platform, the traffic or the player:
+  // the heaviest scene in the game by a factor of ten. It never moves, so each
+  // facade style's walls merge into one geometry and every roof into another:
+  // five meshes, the same UVs and materials, the same look. The undersides,
+  // which nothing can see, are dropped.
+  const cityWalls = facadeMats.map(() => []), cityRoofs = [];
+  const mergeCityFaces = (list, faces) => {
+    let nv = 0, ni = 0;
+    for (const { geo } of list) for (const f of faces) { nv += 4; ni += geo.groups[f].count; }
+    const pos = new Float32Array(nv * 3), nrm = new Float32Array(nv * 3), uvs = new Float32Array(nv * 2);
+    const idx = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+    let v = 0, i = 0;
+    for (const { geo, x, y, z } of list) {
+      const P = geo.attributes.position.array, N = geo.attributes.normal.array, U = geo.attributes.uv.array, I = geo.index.array;
+      for (const f of faces) {
+        // BoxGeometry (1×1×1 segments): face f owns vertices 4f..4f+3.
+        for (let k = 0; k < 4; k++) {
+          const src = 4 * f + k;
+          pos[v * 3] = P[src * 3] + x; pos[v * 3 + 1] = P[src * 3 + 1] + y; pos[v * 3 + 2] = P[src * 3 + 2] + z;
+          nrm[v * 3] = N[src * 3]; nrm[v * 3 + 1] = N[src * 3 + 1]; nrm[v * 3 + 2] = N[src * 3 + 2];
+          uvs[v * 2] = U[src * 2]; uvs[v * 2 + 1] = U[src * 2 + 1];
+          v++;
+        }
+        const g = geo.groups[f], base = v - 4 - 4 * f;
+        for (let k = 0; k < g.count; k++) idx[i++] = I[g.start + k] + base;
+      }
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    out.setAttribute("normal", new THREE.BufferAttribute(nrm, 3));
+    out.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+    out.setIndex(new THREE.BufferAttribute(idx, 1));
+    out.computeBoundingSphere();
+    return out;
+  };
   for (let gx = -cityRange; gx <= cityRange; gx++) {
     for (let gz = -cityRange; gz <= cityRange; gz++) {
       const cx = gx * blockSize + (seed() - 0.5) * 4;
@@ -29396,13 +29674,22 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
       const bh = 3.4 * Math.round((12 + seed() * 90) / 3.4);
       const mi = Math.floor(seed() * FACADES.length);
       void seed();
-      const b = cityBox(w, bh, d, mi);
-      b.position.set(cx, bh / 2, cz);
-      b.castShadow = true;
-      b.receiveShadow = true;
-      scene.add(b);
+      const geo = cityBox(w, bh, d, mi).geometry;
+      const part = { geo, x: cx, y: bh / 2, z: cz };
+      cityWalls[mi].push(part);
+      cityRoofs.push(part);
     }
   }
+  // Walls: +x, -x, +z, -z (groups 0, 1, 4, 5); roofs: +y (group 2).
+  // (The source boxes were never drawn, so there is nothing on the GPU to free.)
+  [...cityWalls.map((list, mi) => [list, [0, 1, 4, 5], facadeMats[mi]]), [cityRoofs, [2], roofMat]].forEach(([list, faces, mat]) => {
+    if (!list.length) return;
+    const m = new THREE.Mesh(mergeCityFaces(list, faces), mat);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    m.userData.noCollide = true;
+    scene.add(m);
+  });
 
   // Foreground: long walkable platform + segmented railing.
   // Length scales with rung — higher rungs feel like wider rooftops/cliffs.
@@ -29709,23 +29996,29 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
   const taillightMat = new THREE.MeshBasicMaterial({
     color: isDark ? 0xff3322 : 0xff5544,
   });
+  // Headlights — the glow-ball size scales with rung height: from a rooftop
+  // a car needs an oversized bloom to read at all, but at the low rungs the
+  // same sphere was wider than half the car body and skewered through it.
+  // Slightly larger at dark times so they still pop from far away.
+  // One geometry per kind, shared by every car, and low-poly: each car used
+  // to carry its own default 32×16 spheres — ~130k triangles for 140 dots a
+  // few pixels across.
+  const headR = (0.15 + h * 0.70) * (isDark ? 1.0 : 0.7);
+  const tailR = (0.12 + h * 0.55) * (isDark ? 1.0 : 0.7);
+  const headGeo = new THREE.SphereGeometry(headR, 10, 7);
+  const tailGeo = new THREE.SphereGeometry(tailR, 10, 7);
+  const carBodyGeo = new THREE.BoxGeometry(3.4, 1.3, 1.7);
   for (let i = 0; i < carCount; i++) {
     const car = new THREE.Group();
     const heading = i % 2 === 0 ? 1 : -1;
-    // Headlights — the glow-ball size scales with rung height: from a rooftop
-    // a car needs an oversized bloom to read at all, but at the low rungs the
-    // same sphere was wider than half the car body and skewered through it.
-    // Slightly larger at dark times so they still pop from far away.
-    const headR = (0.15 + h * 0.70) * (isDark ? 1.0 : 0.7);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(headR), headlightMat);
+    const head = new THREE.Mesh(headGeo, headlightMat);
     head.position.set(heading * 1.4, 0.05, 0); car.add(head);
-    const tailR = (0.12 + h * 0.55) * (isDark ? 1.0 : 0.7);
-    const tail = new THREE.Mesh(new THREE.SphereGeometry(tailR), taillightMat);
+    const tail = new THREE.Mesh(tailGeo, taillightMat);
     tail.position.set(-heading * 1.4, 0.05, 0); car.add(tail);
     // Car body — colour varies a bit so the city doesn't look uniform
     const colour = new THREE.Color().setHSL(Math.random(), 0.15, 0.22);
     const carBody = new THREE.Mesh(
-      new THREE.BoxGeometry(3.4, 1.3, 1.7),
+      carBodyGeo,
       new THREE.MeshStandardMaterial({ color: colour, roughness: 0.5, metalness: 0.4 })
     );
     carBody.position.y = -0.25; car.add(carBody);
@@ -30728,12 +31021,14 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
           const edgeDist = Math.max(0, controls.position.z + 0.4);
           hLastDist = _wasOnGlass ? Math.min(edgeDist, 0.15) : edgeDist;
           const lookK = lookProx;
+          // (Renderer size, not clientWidth — no forced reflow per frame.)
+          if (active && active.renderer) active.renderer.getSize(_coachSize); else _coachSize.set(0, 0);
           hCoach.update(dtN, {
             dist: hLastDist, gaze: Math.min(1, lookK * 1.2), dogToward: 0,
             px: controls.position.x, pz: controls.position.z, dogX: controls.position.x, dogZ: -0.45,
             onScreen: true, dogGazing: false, trust: null,
-            anchorX: (active && active.renderer ? active.renderer.domElement.clientWidth / 2 : null), anchorY: 0,
-            stageW: (active && active.renderer ? active.renderer.domElement.clientWidth : 0), stageH: 0,
+            anchorX: (active && active.renderer ? _coachSize.x / 2 : null), anchorY: 0,
+            stageW: _coachSize.x, stageH: 0,
           });
           const eng = hCoach.engaged;
           // Looking straight down is its own habituating spike.
@@ -32143,7 +32438,7 @@ function makeScaleNormal() {
   if (_scaleNormalCache) return _scaleNormalCache;
   const SIZE = 256;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
-  const h = heightC.getContext("2d");
+  const h = heightC.getContext("2d", { willReadFrequently: true });
   h.fillStyle = "#808080"; h.fillRect(0, 0, SIZE, SIZE);
   const cols = 16, rows = 22, cw = SIZE / cols, rh = SIZE / rows;
   for (let ry = 0; ry < rows; ry++) {
@@ -32645,7 +32940,7 @@ function buildDog(opts = {}) {
     // Procedural maps immediately so the dog never flashes plastic while the
     // breed PNGs stream in; then upgrade map slots when ready (no re-darken).
     try { applyCoatMaterials(null, "base"); } catch (e) { console.warn("[dogs] fur maps:", e); }
-    loadDogCoatTextures(breed).then((maps) => {
+    const coatLanded = loadDogCoatTextures(breed).then((maps) => {
       if (dog.userData.disposed || !maps) return;
       try { applyCoatMaterials(maps, "upgrade"); } catch (e) { console.warn("[dogs] coat maps:", e); }
       // Fur shells take their maps from the upgraded coat, so they're built
@@ -32805,11 +33100,22 @@ function buildDog(opts = {}) {
     // Collar + tag: sized from the raw bind height, rides the neck bone.
     try { attachDogCollar(model, parts, rawH); } catch {}
 
-    dog.add(model);
     parts.model = model;
 
-    dog.userData.ready = true;
-    if (typeof dog.userData.onReady === "function") dog.userData.onReady();
+    // Into the room once its programs are linked (compileBeforeAdd) — with the
+    // coat upgrade and fur shells in place when the maps are already here
+    // (they're prefetched), so the dog appears in the variant it keeps; a coat
+    // still downloading gets 1.5 s before the dog goes in without it.
+    Promise.race([coatLanded.catch(() => {}), new Promise((res) => setTimeout(res, 1500))])
+      .then(() => compileBeforeAdd(dog, model))
+      .then(() => {
+        if (dog.userData.disposed) return;
+        try {
+          dog.add(model);
+          dog.userData.ready = true;
+          if (typeof dog.userData.onReady === "function") dog.userData.onReady();
+        } catch (e) { console.warn("[dogs] ready:", e); }
+      });
   }).catch((err) => {
     console.warn("[dogs] model load failed:", url, err);
     // Fallback so the room is never silently empty on a load failure. No
@@ -32914,6 +33220,10 @@ diffuseColor.rgb *= mix(0.84, 1.05, uFurH);`);
       shell.renderOrder = i;
       shell.userData.furShell = true;
       shell.userData.noPick = true;      // clicks land on the coat itself
+      // …and never reach the shell at all: three's raycaster ignores both
+      // `visible` and noPick, and skins every triangle on the CPU to test a
+      // SkinnedMesh — a tap at the dog cost ~5 ms per raycast with 6 shells.
+      shell.raycast = () => {};
       shell.userData.noCoat = true;
       shell.userData.ssaoSkip = true;
       src.parent.add(shell);
@@ -34059,7 +34369,9 @@ class DogController {
 
   update(t, dt) {
     const p = this.parts;
-    if (!p.mixer) return;        // model still streaming in
+    // Model still streaming in — or loaded and waiting for its shaders
+    // (buildDog adds it to the room only once they're linked).
+    if (!p.mixer || !this.dog.userData.ready) return;
     // Zero-dt frames (rAF bursts after a tab switch, double-fired ticks)
     // must be skipped entirely: the mixer may not re-write the clip pose for
     // them, but the additive _bodyLife layer would still stack its deltas —
@@ -41669,8 +41981,10 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           _spV.set(spider.position.x, spider.position.y + sh * 0.5, spider.position.z).project(camera);
           spOnScreen = !spiderReleased && _spV.z < 1 && Math.abs(_spV.x) < 0.92 && Math.abs(_spV.y) < 0.92;
           _spV.set(spider.position.x, spider.position.y + sh * 1.3, spider.position.z).project(camera);
-          const cvs = (typeof active !== "undefined" && active && active.renderer) ? active.renderer.domElement : null;
-          const sw = (cvs && cvs.clientWidth) || 0, shh = (cvs && cvs.clientHeight) || 0;
+          // The renderer's CSS size, not the canvas's clientWidth: reading
+          // layout here forced a synchronous reflow every frame.
+          if (active && active.renderer) active.renderer.getSize(_coachSize); else _coachSize.set(0, 0);
+          const sw = _coachSize.x, shh = _coachSize.y;
           const ax = _spV.z < 1 ? (_spV.x + 1) / 2 * sw : null;
           const ay = _spV.z < 1 ? (1 - _spV.y) / 2 * shh : null;
           // Your gaze on it (yaw toward, pitch toward, like the fear block).
@@ -42758,7 +43072,9 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
         }
       }
       // ---- The coach ----
-      const sw = (active && active.renderer) ? active.renderer.domElement.clientWidth : 0;
+      // (Renderer size, not clientWidth — no forced reflow per frame.)
+      if (active && active.renderer) active.renderer.getSize(_coachSize); else _coachSize.set(0, 0);
+      const sw = _coachSize.x;
       coach.update(d, {
         dist: lastDist, gaze: 1, dogToward: 0,
         px: null, pz: null, dogX: null, dogZ: null,
@@ -45943,8 +46259,10 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           camera.updateMatrixWorld();
           _snV.project(camera);
           snOnScreen = _snV.z < 1 && Math.abs(_snV.x) < 0.92 && Math.abs(_snV.y) < 0.92;
-          const cvs = (typeof active !== "undefined" && active && active.renderer) ? active.renderer.domElement : null;
-          const sw = (cvs && cvs.clientWidth) || 0, shh = (cvs && cvs.clientHeight) || 0;
+          // The renderer's CSS size, not the canvas's clientWidth: reading
+          // layout here forced a synchronous reflow every frame.
+          if (active && active.renderer) active.renderer.getSize(_coachSize); else _coachSize.set(0, 0);
+          const sw = _coachSize.x, shh = _coachSize.y;
           const ax = _snV.z < 1 ? (_snV.x + 1) / 2 * sw : null;
           const ay = _snV.z < 1 ? (1 - _snV.y) / 2 * shh - 30 : null;
           const facing = (Math.sin(snakeCtl.heading) * dxs + Math.cos(snakeCtl.heading) * dzs) / (distS || 1) > 0.8;
@@ -48255,7 +48573,10 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
     add(ns);
     lampLight = new THREE.PointLight(0xffc48a, 0, 7, 2);
     lampLight.position.set(-0.44, -0.12, -2.54);
-    lampLight.castShadow = !IS_LOW_POWER; lampLight.shadow.mapSize.set(512, 512); lampLight.shadow.bias = -0.002;
+    // Only rung 1 switches the lamp on. A shadow-casting point light renders
+    // its cube map — six passes over the room — every frame whether it is lit
+    // or not, so the dark rungs no longer pay for a lamp that stays off.
+    lampLight.castShadow = !IS_LOW_POWER && rung === 0; lampLight.shadow.mapSize.set(512, 512); lampLight.shadow.bias = -0.002;
     add(lampLight);
     // Wardrobe on the right wall.
     const wd = new THREE.Group(); wd.position.set(1.88, -1, -0.55); wd.rotation.y = -Math.PI / 2;
@@ -48358,7 +48679,13 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
   flashlight.position.set(0, -0.05, 0); flashlight.target.position.set(0, -0.15, -1);
   camera.add(flashlight); camera.add(flashlight.target);
   if (!scene.children.includes(camera)) scene.add(camera);
-  let flashlightHeld = false, matchT = 0, matchLight = null, strikeAnim = 0, disposed = false;
+  let flashlightHeld = false, matchT = 0, strikeAnim = 0, disposed = false;
+  // The match's light exists from the start, at 0 — like the flashlight. Adding
+  // a light mid-scene changes the light count, and three then recompiles every
+  // lit program on the next frame: a freeze at the very moment the player
+  // reaches for the match.
+  const matchLight = new THREE.PointLight(0xffb060, 0, 4, 2);
+  matchLight.position.set(0.2, -0.13, -0.27); camera.add(matchLight);
   const matchGroup = new THREE.Group();
   const matchStick = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.0045, 0.10, 8), new THREE.MeshStandardMaterial({ color: 0xb8987a, roughness: 0.95 }));
   matchStick.rotation.z = -0.4; matchGroup.add(matchStick);
@@ -48448,7 +48775,6 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
   // ---- Command bar ----
   function lightMatch() {
     matchT = 1; strikeAnim = 1; matchGroup.visible = true;
-    if (!matchLight) { matchLight = new THREE.PointLight(0xffb060, 0, 4, 2); matchLight.position.set(0.2, -0.13, -0.27); camera.add(matchLight); }
     try { window.PhobiaAudio && window.PhobiaAudio.indicatorClick && window.PhobiaAudio.indicatorClick(); } catch {}
     coach.safety("match");
   }
@@ -48518,7 +48844,9 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
       const dh = Math.hypot(px - HEART.x, pz - HEART.z);
       lastDist = dh + (flashlightHeld ? 2.2 : matchT > 0.05 ? 1.4 : 0);
       const facing = lookingAt(HEART.x, -0.2, HEART.z, 0.5) ? 1 : 0.3;
-      const sw = (active && active.renderer) ? active.renderer.domElement.clientWidth : 0;
+      // (Renderer size, not clientWidth — no forced reflow per frame.)
+      if (active && active.renderer) active.renderer.getSize(_coachSize); else _coachSize.set(0, 0);
+      const sw = _coachSize.x;
       coach.update(d, {
         dist: lastDist, gaze: facing, dogToward: 0,
         px, pz, dogX: HEART.x, dogZ: HEART.z,
@@ -49082,8 +49410,11 @@ const AvatarPreview = (() => {
     unmount();
     const w = container.clientWidth || 220;
     const h = container.clientHeight || 240;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // The shell vignettes' budget (see makeCtx): MSAA and full DPR on the high
+    // tier only. It rendered at DPR 2 with MSAA on every device.
+    const tier = resolveQuality();
+    const renderer = new THREE.WebGLRenderer({ antialias: tier === "high", alpha: true });
+    renderer.setPixelRatio(tier === "low" ? 1 : Math.min(window.devicePixelRatio, tier === "medium" ? 1.5 : 2));
     renderer.setSize(w, h);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     // Match the in-scene look so the avatar in the creator looks the same
@@ -49148,9 +49479,13 @@ const AvatarPreview = (() => {
     let raf = 0;
     let last = performance.now();
     let elapsed = 0;
+    let retired = null;   // the previous figure, freed after the next draw (see update)
+    // A slow turntable: 30 fps below the high tier, nothing while hidden.
+    const minGap = tier === "high" ? 1000 / 61 : 1000 / 31;
     function tick() {
       if (!container.isConnected) { try { renderer.dispose(); } catch {} return; }
       const now = performance.now();
+      if (document.hidden || now - last < minGap) { raf = requestAnimationFrame(tick); return; }
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       elapsed += dt;
@@ -49161,13 +49496,22 @@ const AvatarPreview = (() => {
         try { figure.userData.animate(elapsed); } catch {}
       }
       renderer.render(scene, camera);
+      if (retired) { disposeFigure(retired); retired = null; }
       raf = requestAnimationFrame(tick);
     }
+    const disposeFigure = (f) => f.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) {
+        const ms = Array.isArray(o.material) ? o.material : [o.material];
+        ms.forEach((m) => m.dispose());
+      }
+    });
     tick();
     active = {
       renderer, scene, camera, raf,
       cleanup() {
         cancelAnimationFrame(raf);
+        if (retired) { disposeFigure(retired); retired = null; }
         el.removeEventListener("pointerdown", onDown);
         el.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
@@ -49185,13 +49529,10 @@ const AvatarPreview = (() => {
       update(newChar) {
         const yaw = figure.rotation.y;   // keep the user's chosen angle across edits
         scene.remove(figure);
-        figure.traverse(o => {
-          if (o.geometry) o.geometry.dispose();
-          if (o.material) {
-            const ms = Array.isArray(o.material) ? o.material : [o.material];
-            ms.forEach(m => m.dispose());
-          }
-        });
+        // Freed after the new figure's first draw, so its identical materials
+        // inherit the compiled programs instead of compiling them again.
+        if (retired) disposeFigure(retired);
+        retired = figure;
         figure = buildAvatarFigure(newChar);
         figure.rotation.y = yaw;
         window.__avatarFigure = figure;
@@ -49234,6 +49575,7 @@ const ShellScenes = (() => {
     // when a trial mounts, so a changed Graphics setting used to miss them.
     const tier = resolveQuality();
     const lowTier = tier === "low";
+    syncFxLite(tier);
     let renderer;
     try {
       renderer = new THREE.WebGLRenderer({ antialias: !lowTier, alpha: true, powerPreference: lowTier ? "low-power" : "default" });
@@ -49246,13 +49588,19 @@ const ShellScenes = (() => {
     renderer.toneMappingExposure = opts.exposure || 1.0;
     // Real shadows are what ground the figure/creature in these vignettes —
     // the scenes are tiny (a handful of meshes), so soft maps are cheap.
+    // Nothing in them moves faster than an idle sway, so the maps refresh
+    // every other drawn frame (see tick) rather than on every render.
     renderer.shadowMap.enabled = !lowTier;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = true;
     container.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
     if (opts.fog) scene.fog = new THREE.FogExp2(opts.fog, opts.fogDensity || 0.09);
     const camera = new THREE.PerspectiveCamera(opts.fov || 34, w / h, 0.05, 80);
-    const ctx = { container, renderer, scene, camera, raf: 0, disposed: false, onTick: null, elapsed: 0 };
+    // `retired`: objects swapped out of the scene (a re-dressed figure), freed
+    // after the next draw — see tick.
+    const ctx = { container, renderer, scene, camera, raf: 0, disposed: false, onTick: null, elapsed: 0, retired: [] };
     const ro = ("ResizeObserver" in window) ? new ResizeObserver(() => {
       const nw = container.clientWidth, nh = container.clientHeight;
       if (nw && nh && !ctx.disposed) {
@@ -49271,8 +49619,11 @@ const ShellScenes = (() => {
     }) : null;
     if (io) io.observe(container);
     ctx.io = io;
-    const minGap = lowTier ? 1000 / 31 : 0;
+    // Backdrops, not play: 30 fps below the high tier, and never past 60 —
+    // a 120 Hz phone otherwise drew the title room 120 times a second.
+    const minGap = tier === "high" ? 1000 / 61 : 1000 / 31;
     let last = performance.now();
+    let frame = 0;
     function tick() {
       if (ctx.disposed) return;
       if (!container.isConnected) { disposeCtx(ctx); return; }
@@ -49283,17 +49634,34 @@ const ShellScenes = (() => {
       last = now;
       ctx.elapsed += dt;
       if (ctx.onTick) { try { ctx.onTick(dt, ctx.elapsed); } catch {} }
+      if ((++frame & 1) === 0) renderer.shadowMap.needsUpdate = true;
       renderer.render(scene, camera);
+      // Disposed only once the replacement has drawn: its materials then hold
+      // the shader programs the old ones used. Disposing first let three free
+      // them (a program goes with its last material) and compile them all
+      // again — a hitch on every tap in the traveler creator.
+      if (ctx.retired.length) for (const o of ctx.retired.splice(0)) { try { disposeObject(o); } catch {} }
     }
+    // Programs are linked before the first frame (compileAsync, as in a
+    // trial's mount): the first render used to compile them synchronously —
+    // inside boot for the title room, the page frozen ~4 s under software GL
+    // before anything could be tapped. The canvas stays clear meanwhile.
     ctx.start = () => {
-      if (reduceMotion()) {
-        // One still frame — the vignette becomes a picture, not a motion source.
-        if (ctx.onTick) { try { ctx.onTick(1 / 60, 0.5); } catch {} }
-        renderer.render(scene, camera);
-        return;
-      }
-      last = performance.now();
-      tick();
+      const go = () => {
+        if (ctx.disposed) return;
+        if (reduceMotion()) {
+          // One still frame — the vignette becomes a picture, not a motion source.
+          if (ctx.onTick) { try { ctx.onTick(1 / 60, 0.5); } catch {} }
+          renderer.shadowMap.needsUpdate = true;
+          renderer.render(scene, camera);
+          return;
+        }
+        last = performance.now();
+        tick();
+      };
+      let ready = null;
+      try { ready = compileAhead(renderer, scene, camera); } catch {}
+      if (ready) ready.then(go, go); else go();
     };
     registry.add(ctx);
     return ctx;
@@ -49306,6 +49674,7 @@ const ShellScenes = (() => {
     if (ctx.ro) { try { ctx.ro.disconnect(); } catch {} }
     if (ctx.io) { try { ctx.io.disconnect(); } catch {} }
     if (ctx.cleanupExtra) { try { ctx.cleanupExtra(); } catch {} }
+    for (const o of ctx.retired.splice(0)) { try { disposeObject(o); } catch {} }
     try { disposeObject(ctx.scene); } catch {}
     // Release the GL context now, not at the next GC: going map → realm →
     // map makes a fresh context each time, and browsers cap live contexts.
@@ -49594,7 +49963,9 @@ const ShellScenes = (() => {
         figure = buildAvatarFigure(charHexes, "idle");
         figure.position.set(-0.85, 0, 0.25);
         figure.rotation.y = 0.9;   // half-turned toward the fire, half toward you
-        figure.traverse(o => { if (o.isMesh) o.castShadow = true; });
+        // The rig flags its own casters (body, skull, hair, neck, palms) —
+        // the same set a trial uses. Flagging every mesh added ~40 shadow
+        // draws a frame for eyes, lashes, ear pieces and finger capsules.
         scene.add(figure);
       } catch { figure = null; }
     }
@@ -49871,7 +50242,7 @@ const ShellScenes = (() => {
 
     let figure = null;
     const placeFigure = (hexes) => {
-      if (figure) { scene.remove(figure); disposeObject(figure); figure = null; }
+      if (figure) { scene.remove(figure); ctx.retired.push(figure); figure = null; }
       if (!hexes) return;
       try {
         // ?gait=walk previews the traveler walking instead of standing — the
@@ -49883,7 +50254,7 @@ const ShellScenes = (() => {
         // The rig is built facing +Z and the camera sits at +Z, so facing the
         // player is rotation 0 — a PI turn here showed the traveler's back.
         figure.rotation.y = 0;
-        figure.traverse(o => { if (o.isMesh) o.castShadow = true; });
+        // (Shadow casters: the rig's own set — see the camp.)
         scene.add(figure);
       } catch { figure = null; }
     };
@@ -50500,7 +50871,7 @@ const ShellScenes = (() => {
         figure = buildAvatarFigure(opts.charHexes, "idle");
         figure.position.set(-0.62, 0, 0.85);
         figure.rotation.y = 0.5;
-        figure.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+        // (Shadow casters: the rig's own set — see the camp.)
         scene.add(figure);
         const figFill = new THREE.PointLight(0xffc890, 1.05, 6, 2);
         figFill.position.set(0.55, 1.55, 2.1);
