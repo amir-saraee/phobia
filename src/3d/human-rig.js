@@ -3,7 +3,7 @@
 // soft sunbeam.
 
 import * as THREE from "three";
-import { _hsat, _sstep, SkinGeom, _sweep, BODY_TYPES_3D } from "./human-base.js";
+import { _hsat, _sstep, SkinGeom, _sweep, BODY_TYPES_3D, pbrMat } from "./human-base.js";
 import { _hairReach, getHairStrandTex, HEAD_LIFT, buildHead } from "./human-head.js";
 
 // ---- hands --------------------------------------------------------------
@@ -791,19 +791,19 @@ function buildHumanRig(o = {}) {
   const shirtCol = new THREE.Color(o.shirtColor ?? 0x2c9d96);
   const pantsCol = new THREE.Color(o.pantsColor ?? 0x2c3a52);
   const shoeCol = new THREE.Color(o.shoeColor ?? 0xe9e5de);
-  const mSkin = new THREE.MeshPhysicalMaterial({
+  const mSkin = pbrMat(o.lowDetail, {
     color: skinCol, roughness: 0.60, metalness: 0,
     sheen: 0.30, sheenRoughness: 0.85,
     sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.5),
     envMapIntensity: 0.45,
   });
   // Cloth reads as cloth when it has a little fuzz (sheen) and no metal.
-  const mShirt = new THREE.MeshPhysicalMaterial({
+  const mShirt = pbrMat(o.lowDetail, {
     color: shirtCol, roughness: 0.92, metalness: 0,
     sheen: 0.5, sheenRoughness: 0.9, sheenColor: shirtCol.clone().lerp(new THREE.Color(0xffffff), 0.35),
     envMapIntensity: 0.35,
   });
-  const mPants = new THREE.MeshPhysicalMaterial({
+  const mPants = pbrMat(o.lowDetail, {
     color: pantsCol, roughness: 0.95, metalness: 0,
     // Sheen 0.4 with a 25%-white sheen colour put a broad warm specular wash
     // across the pelvis front under any warm key — on navy trousers it read
@@ -813,7 +813,7 @@ function buildHumanRig(o = {}) {
   });
   // Canvas sneakers (the reference turnaround), not patent leather: the old
   // glossy near-black read as a pair of clogs at every distance.
-  const mShoe = new THREE.MeshPhysicalMaterial({
+  const mShoe = pbrMat(o.lowDetail, {
     color: shoeCol, roughness: 0.78, metalness: 0, sheen: 0.25, sheenRoughness: 0.9,
     sheenColor: shoeCol.clone().lerp(new THREE.Color(0xffffff), 0.3), envMapIntensity: 0.45,
   });
@@ -838,7 +838,7 @@ function buildHumanRig(o = {}) {
   // both were just "long sleeves". These are the details that actually tell
   // the two styles apart in the creator and in scene.
   if (o.topStyle === "hoodie" || o.topStyle === "jacket") {
-    const foldM = new THREE.MeshPhysicalMaterial({
+    const foldM = pbrMat(o.lowDetail, {
       color: shirtCol.clone().multiplyScalar(0.76), roughness: 0.94,
       sheen: 0.4, sheenRoughness: 0.9,
     });
@@ -878,7 +878,7 @@ function buildHumanRig(o = {}) {
         chest.add(cord);
       }
     } else {
-      const zipM = new THREE.MeshPhysicalMaterial({
+      const zipM = pbrMat(o.lowDetail, {
         color: shirtCol.clone().multiplyScalar(1.25), roughness: 0.42, metalness: 0.45,
       });
       // The zip follows the chest's changing depth in short segments; one long

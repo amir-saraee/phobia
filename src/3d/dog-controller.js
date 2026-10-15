@@ -1087,7 +1087,8 @@ class DogController {
         cam.position.y - this.dog.position.y, cam.position.z - this.dog.position.z);
       const f = Math.max(0, Math.min(1, (4.5 - dd) / 1.8));
       p.furFade.value = f;
-      const vis = f > 0.02;
+      // furOff: the frame governor shed them on a struggling device.
+      const vis = f > 0.02 && !p.furOff;
       if (vis !== this._furVis) {
         this._furVis = vis;
         for (const sh of p.furShells) sh.visible = vis;

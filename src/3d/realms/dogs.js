@@ -2,7 +2,7 @@
 
 import * as THREE from "three";
 import { getDogTexLoader } from "../assets.js";
-import { IS_COARSE_POINTER, IS_LOW_POWER, sceneQuality, loadMeadowHDR } from "../renderer.js";
+import { IS_COARSE_POINTER, IS_LOW_POWER, sceneQuality, texAniso, loadMeadowHDR } from "../renderer.js";
 import { _hsat } from "../human-base.js";
 import { angleGap, makeContactShadow, makeSoftSunbeam } from "../human-rig.js";
 import { sceneContext } from "../scene-context.js";
@@ -156,7 +156,12 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   // single cheapest "this is a real furry animal, not a flat prop" cue. The
   // update loop repositions it each frame; intensity rises as you get close.
   const dogRim = new THREE.PointLight(0xfff1e0, 0.0, 9, 2);
-  scene.add(dogRim);
+  // Not on the low tier: forward shading pays for every point light on every
+  // lit pixel, and this one started at intensity 0 — which is exactly what
+  // the low tier's capAccents leaves alone (it reads 0 as a scripted flash),
+  // so it escaped the two-light budget and ran all session. Its position and
+  // intensity are still written each frame; detached, that costs nothing.
+  if (!IS_LOW_POWER) scene.add(dogRim);
   // ---- Fear grade ----
   // Captured "safe" baselines; the update loop lerps the room toward a
   // colder, harder, lower-fill state as fear/aggression climbs (and back as
@@ -518,7 +523,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     if (loader) {
       loader.load("assets/models/textures/meadow_window.jpg", (tex) => {
         tex.colorSpace = THREE.SRGBColorSpace;
-        tex.anisotropy = 8;
+        tex.anisotropy = texAniso();
         tex.needsUpdate = true;
         backdropMat.map = tex;
         backdropMat.emissiveMap = tex;
@@ -789,11 +794,25 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       const m = s.build();
       m.position.set(s.x, -0.17 + (s.half ? s.half.y : s.r), s.z);
       m.userData.noCollide = true;   // movement system ignores them; physics owns them
+      // Invisible to the room's own pickers from the start, as addProp makes
+      // them once physics is up — a tap on a mug before then is not a fetch
+      // throw at the table.
+      m.userData.noPick = true;
       scene.add(m);
       physProps.push({ mesh: m, spec: s });
     }
   }
-  if (window.PhobiaPhysics) {
+  // Rapier is a 2 MB module with its WASM inlined: downloading, parsing and
+  // compiling it at every mount — on every tier, phones included — paid for
+  // three props most visits never touch. It starts when the traveler first
+  // walks within reach range of the side table instead (see the update
+  // loop), early enough to be ready before a prop can be reached (1.9 m),
+  // and on the first visit that does it the module stays loaded for the rest.
+  const physTable = { x: tblX, z: tblZ };
+  let physBegun = false;
+  function beginPhysics() {
+    if (physBegun || !window.PhobiaPhysics) return;
+    physBegun = true;
     PhobiaPhysics.begin({ groundY: -1.0 }).then((w) => {
       if (!w || dog.userData.disposed) return;
       const n = PhobiaPhysics.addStaticFromScene(scene, camera);
@@ -1518,6 +1537,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     { x: tblX,          z: tblZ,          r: 0.55 },   // treat side table
     { x: dogBed.position.x, z: dogBed.position.z, r: 0.72 },   // dog bed
   ];
+  // The player's obstacle list (these + the dog's own circle), refilled per frame.
+  const _obsList = [];
+  const _obsDog = { x: 0, z: 0, r: 0.5, pushX: 0, pushZ: 1 };
   // Grounded locomotion + collision, scaled to the dog's size. strideSpeed is
   // the ground speed the Walk clip implies at timeScale 1 — the controller
   // matches the clip to actual speed so the paws plant (no skating).
@@ -2850,17 +2872,23 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       // Keep the player from walking through the dog + key props. Furniture
       // boxes from mount handle mesh AABBs; these circles cover the same
       // props the dog navigates so player/dog agree on bed/table footprints.
+      // (One list and one dog circle, refilled in place: this rebuilt a
+      // fresh array and object every frame.)
       if (controls && controls.setObstacles) {
-        controls.setObstacles([
-          ...dogObstacles,
-          {
-            x: dog.position.x,
-            z: dog.position.z,
-            r: dogCtrl.radius + 0.12,
-            pushX: Math.sin(dog.rotation.y),
-            pushZ: Math.cos(dog.rotation.y),
-          },
-        ]);
+        _obsList.length = 0;
+        for (let i = 0; i < dogObstacles.length; i++) _obsList.push(dogObstacles[i]);
+        _obsDog.x = dog.position.x;
+        _obsDog.z = dog.position.z;
+        _obsDog.r = dogCtrl.radius + 0.12;
+        _obsDog.pushX = Math.sin(dog.rotation.y);
+        _obsDog.pushZ = Math.cos(dog.rotation.y);
+        _obsList.push(_obsDog);
+        controls.setObstacles(_obsList);
+      }
+      // Physics on approach to the side table (see beginPhysics).
+      if (!physBegun && controls && controls.position
+          && Math.hypot(controls.position.x - physTable.x, controls.position.z - physTable.z) < 3.2) {
+        beginPhysics();
       }
 
       // ---- Feed the coach (the alarm, the trial card, the evidence) ----

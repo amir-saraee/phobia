@@ -270,4 +270,18 @@ const BODY_TYPES_3D = {
   girl:  { h: 0.78, shoulder: 0.76, hip: 1.02, head: 1.18, sway: 1.15, chestZ: 0.96, waist: 0.90, limb: 0.88, seat: 1.02, armOut: 0.105, carry: 0.10 },
 };
 
-export { _hsat, _sstep, _falloff, _wob, _GAIT, _track, _solePitch, _legReach, _legIK, SkinGeom, _sweep, WRIST_REST_FOLD, BODY_TYPES_3D };
+// The figure's skin, cloth, hair and eyes are MeshPhysicalMaterial for the
+// sheen (cloth fuzz, skin warmth) and clearcoat (wet eyes). Both are extra
+// BRDF lobes evaluated per pixel for every light — on a low-tier GPU the
+// avatar alone cost more than the room around it. `lowDetail` builds the
+// plain Standard material from the same parameters, minus those lobes.
+const _PHYS_ONLY = ["sheen", "sheenRoughness", "sheenColor", "clearcoat", "clearcoatRoughness",
+  "transmission", "thickness", "ior", "iridescence", "specularIntensity", "specularColor"];
+function pbrMat(lowDetail, params) {
+  if (!lowDetail) return new THREE.MeshPhysicalMaterial(params);
+  const p = Object.assign({}, params);
+  for (const k of _PHYS_ONLY) delete p[k];
+  return new THREE.MeshStandardMaterial(p);
+}
+
+export { _hsat, _sstep, _falloff, _wob, _GAIT, _track, _solePitch, _legReach, _legIK, SkinGeom, _sweep, WRIST_REST_FOLD, BODY_TYPES_3D, pbrMat };

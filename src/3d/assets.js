@@ -9,6 +9,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { smoothCreaseNormals, applyCoatTint } from "./creature-kit.js";
 import { active } from "./live.js";
+import { texAniso } from "./renderer.js";
 
 // Scratch vectors reused every frame for the spatial audio listener update
 // (avoids per-frame allocation in the render hot path).
@@ -98,6 +99,9 @@ function compileBeforeAdd(parent, obj) {
 const DOG_MODELS = {
   // Binary .glb (scripts/pack-glb.cjs): the same model as the old embedded-
   // base64 .gltf, 40 % smaller, with no 2.9 MB JSON string to parse and decode.
+  // Then scripts/reduce-anim.cjs dropped the animation keys the curves pass
+  // through anyway (≤0.02° / 0.1 mm off, Walk untouched for synthDogTrot):
+  // 1.7–1.8 MB → 0.7 MB each, every clip and duration intact.
   shiba: "assets/models/ShibaInu.glb",
   husky: "assets/models/Husky.glb",
 };
@@ -142,7 +146,7 @@ function loadDogCoatTextures(breed) {
       } else {
         t.wrapS = t.wrapT = THREE.RepeatWrapping;
       }
-      t.anisotropy = 8;
+      t.anisotropy = texAniso();
       t.repeat.set(COAT_REPEAT, COAT_REPEAT);
       if (srgb) t.colorSpace = THREE.SRGBColorSpace;
       t.needsUpdate = true;
@@ -160,11 +164,6 @@ function loadDogCoatTextures(breed) {
   _dogCoatTexCache.set(breed, p);
   return p;
 }
-function prefetchDogModels() {
-  Object.values(DOG_MODELS).forEach((url) => { try { loadGLTF(url); } catch {} });
-  // Warm the coat maps too so the first dog scene doesn't flash plastic.
-  Object.keys(DOG_COAT_MAPS).forEach((b) => { try { loadDogCoatTextures(b); } catch {} });
-}
 
 // (The protagonist's photo face bake — character_face_*.png — is retired: the
 // SDF head is shaded by its own geometry + tint fields. Nothing loads those
@@ -181,9 +180,6 @@ const CREATURE_MODELS = {
   // Walk clips now cover the defensive display, and the extra file never
   // shipped — prefetching it just 404'd on every boot.)
 };
-function prefetchCreatureModels(only) {
-  Object.entries(CREATURE_MODELS).forEach(([k, url]) => { if (!only || k === only) { try { loadGLTF(url); } catch {} } });
-}
 
 // Generic rigged-creature loader. Returns a Group SYNCHRONOUSLY (so scenes can
 // position it immediately) and streams the skinned model in. Once loaded,
@@ -297,4 +293,4 @@ function buildCreature(url, opts = {}) {
   return group;
 }
 
-export { _audVec1, _audVec2, _audVec3, loadGLTF, compileAhead, compileBeforeAdd, DOG_MODELS, DOG_COAT_MAPS, getDogTexLoader, loadDogCoatTextures, prefetchDogModels, CREATURE_MODELS, prefetchCreatureModels, buildCreature };
+export { _audVec1, _audVec2, _audVec3, loadGLTF, compileAhead, compileBeforeAdd, DOG_MODELS, DOG_COAT_MAPS, getDogTexLoader, loadDogCoatTextures, CREATURE_MODELS, buildCreature };

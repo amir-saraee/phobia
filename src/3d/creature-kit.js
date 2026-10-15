@@ -3,6 +3,7 @@
 
 import * as THREE from "three";
 import { heightCanvasToNormal } from "./textures.js";
+import { texAniso } from "./renderer.js";
 
 // ---------- Procedural dog model + state machine ----------
 // Built from primitives — full control over every state (sit, walk, bark, eat).
@@ -41,7 +42,7 @@ function makeScaleNormal() {
     ? new THREE.CanvasTexture(heightCanvasToNormal(heightC, 2.2))
     : new THREE.CanvasTexture(heightC);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 8;
+  t.anisotropy = texAniso();
   _scaleNormalCache = t;
   return t;
 }
@@ -141,7 +142,7 @@ function makeFurMaps(baseColor = 0xd6a06a) {
   const make = (canvas, srgb = false) => {
     const t = new THREE.CanvasTexture(canvas);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.anisotropy = 8;
+    t.anisotropy = texAniso();
     if (srgb) t.colorSpace = THREE.SRGBColorSpace;
     return t;
   };

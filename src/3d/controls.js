@@ -866,8 +866,10 @@ class FPControls {
         if (targetDist > 0.05) {
           rd.set(dx / targetDist, dy / targetDist, dz / targetDist);
           this._tpRay.far = targetDist;
-          const hits = this._tpRay.intersectObjects(this._collisionScene, true);
-          if (hits && hits.length > 0) {
+          const hits = this._tpHits || (this._tpHits = []);
+          hits.length = 0;
+          this._tpRay.intersectObjects(this._collisionScene, true, hits);
+          if (hits.length > 0) {
             let closest = targetDist;
             for (const h of hits) {
               if (h.distance < closest) closest = h.distance;
@@ -951,7 +953,9 @@ class FPControls {
     // tracking is stiffer than vertical (a cameraman keeps pace on XZ, then
     // eases height). Stiffer still while walking so the avatar doesn't skate.
     if (!this._tpSmoothPos || this.tpBlend < 0.05) {
-      this._tpSmoothPos = new THREE.Vector3(safeTpX, safeTpY, safeTpZ);
+      // (In place: in first person this branch runs every frame.)
+      if (!this._tpSmoothPos) this._tpSmoothPos = new THREE.Vector3();
+      this._tpSmoothPos.set(safeTpX, safeTpY, safeTpZ);
     } else {
       const dx = safeTpX - this._tpSmoothPos.x;
       const dy = safeTpY - this._tpSmoothPos.y;
@@ -982,8 +986,10 @@ class FPControls {
         if (dCam > 0.05) {
           rd.set(dx / dCam, dy / dCam, dz / dCam);
           this._tpRay.far = dCam;
-          const hits = this._tpRay.intersectObjects(this._collisionScene, true);
-          if (hits && hits.length > 0) {
+          const hits = this._tpHits || (this._tpHits = []);
+          hits.length = 0;
+          this._tpRay.intersectObjects(this._collisionScene, true, hits);
+          if (hits.length > 0) {
             let closest = dCam;
             for (const h of hits) {
               if (h.distance < closest) closest = h.distance;
@@ -1062,17 +1068,19 @@ class FPControls {
   // phase/amount drive the stride, fwd/side give the travel direction in
   // body-local space (backpedal, strafe, diagonals), shuffle reports
   // turn-in-place stepping.
+  // Called 3–4 times a frame (engine, body, hands), and every caller reads
+  // the fields on the spot — so one object, refilled, not a literal per call.
   getWalkState() {
-    return {
-      phase: this._walkPhase || 0,
-      // Shuffle weight raised: a look-turn is real alternating footwork.
-      amount: Math.max(this._walkAmt || 0, (this._shuffleAmt || 0) * 0.72),
-      fwd: this._moveFwd == null ? 1 : this._moveFwd,
-      side: this._moveSide || 0,
-      shuffle: this._shuffleAmt || 0,
-      speedNorm: this._speedNorm == null ? 1 : this._speedNorm,
-      stride: this._strideLen == null ? 0.62 : this._strideLen,
-    };
+    const w = this._wsOut || (this._wsOut = {});
+    w.phase = this._walkPhase || 0;
+    // Shuffle weight raised: a look-turn is real alternating footwork.
+    w.amount = Math.max(this._walkAmt || 0, (this._shuffleAmt || 0) * 0.72);
+    w.fwd = this._moveFwd == null ? 1 : this._moveFwd;
+    w.side = this._moveSide || 0;
+    w.shuffle = this._shuffleAmt || 0;
+    w.speedNorm = this._speedNorm == null ? 1 : this._speedNorm;
+    w.stride = this._strideLen == null ? 0.62 : this._strideLen;
+    return w;
   }
   // Scene-driven crouch eye-drop in metres (0..0.7). The FP camera dips toward
   // what the player is reaching for (e.g. a low dog) without moving the logical

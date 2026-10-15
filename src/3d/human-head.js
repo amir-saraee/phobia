@@ -2,7 +2,7 @@
 // locks and the strand texture.
 
 import * as THREE from "three";
-import { _hsat, _sstep, _falloff } from "./human-base.js";
+import { _hsat, _sstep, _falloff, pbrMat } from "./human-base.js";
 
 // ---- sculpted head surface ---------------------------------------------
 // Returns a function (theta, phi) -> THREE.Vector3 giving a point on a REAL
@@ -665,7 +665,7 @@ function buildHead(o) {
   const hairCol = new THREE.Color(o.hairColor);
   // Skin: a little translucency-ish warmth in the shadows via sheen instead of
   // a flat diffuse — the cheapest thing that stops skin reading as painted clay.
-  const skinM = new THREE.MeshPhysicalMaterial({
+  const skinM = pbrMat(o.lowDetail, {
     color: skinCol, roughness: 0.58, metalness: 0.0,
     sheen: 0.35, sheenRoughness: 0.85,
     sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.55),
@@ -676,7 +676,7 @@ function buildHead(o) {
   // brown under night lighting instead of collapsing to a black helmet.
   // Sheen lifted every brunette to a dusty tan under the rooms' soft light —
   // the strand texture now carries the fibre read, so the sheen stays low.
-  const hairM = new THREE.MeshPhysicalMaterial({
+  const hairM = pbrMat(o.lowDetail, {
     color: hairCol, roughness: 0.52, metalness: 0.0,
     sheen: 0.28, sheenRoughness: 0.55,
     sheenColor: hairCol.clone().lerp(new THREE.Color(0xfff2e0), 0.28),
@@ -726,7 +726,7 @@ function buildHead(o) {
   // Skin: slightly oilier T-zone (forehead/nose via roughness map) + cheek
   // sheen warmth so the face stops reading as matte clay. Vertex colours still
   // drive lip / socket / blush tinting on top of the baked albedo.
-  const faceM = new THREE.MeshPhysicalMaterial({
+  const faceM = pbrMat(o.lowDetail, {
     color: skinCol, roughness: 0.56, metalness: 0.0,
     sheen: 0.28, sheenRoughness: 0.80,
     sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.58),
@@ -820,11 +820,11 @@ function buildHead(o) {
   // lid's scale.y was the old blink and it looked like a shutter.)
   // Wet cornea + clearer limbal read (face-closeup ref): lower roughness,
   // stronger clearcoat, a touch more iris emissive so eyes catch room light.
-  const scleraM = new THREE.MeshPhysicalMaterial({
+  const scleraM = pbrMat(o.lowDetail, {
     color: 0xf2ebe3, roughness: 0.10, clearcoat: 1.0, clearcoatRoughness: 0.035,
     envMapIntensity: 0.7,
   });
-  const irisM = new THREE.MeshPhysicalMaterial({
+  const irisM = pbrMat(o.lowDetail, {
     color: new THREE.Color(o.eyeColor), roughness: 0.11, metalness: 0.12,
     clearcoat: 1.0, clearcoatRoughness: 0.03,
     // Stronger emissive: at night-scene light levels an unlit iris collapses
@@ -1230,10 +1230,10 @@ function buildHead(o) {
 
   // --- glasses -------------------------------------------------------------
   if (o.glasses === "round" || o.glasses === "square") {
-    const fr = new THREE.MeshPhysicalMaterial({
+    const fr = pbrMat(o.lowDetail, {
       color: 0x14100f, roughness: 0.28, metalness: 0.55, clearcoat: 0.6,
     });
-    const lensM = new THREE.MeshPhysicalMaterial({
+    const lensM = pbrMat(o.lowDetail, {
       color: 0xbfd6e6, roughness: 0.05, metalness: 0.1, transparent: true,
       opacity: 0.15, depthWrite: false, clearcoat: 1.0, clearcoatRoughness: 0.02,
     });

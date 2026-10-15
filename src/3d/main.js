@@ -6,7 +6,8 @@
 // them (ShellScenes), the character creator's turntable (AvatarPreview) and
 // the asset prefetch. The exposure engine (engine.js) and each realm's scene
 // code are fetched on demand — see mount() below.
-import { prefetchDogModels, prefetchCreatureModels } from "./assets.js";
+import { DOG_MODELS, DOG_COAT_MAPS, CREATURE_MODELS } from "./assets.js";
+import { resolveQuality } from "./renderer.js";
 import { REALMS } from "./realms/index.js";
 import "./avatar.js";        // window.AvatarPreview
 import "./shell-scenes.js";  // window.ShellScenes
@@ -70,12 +71,22 @@ function unmount() {
 
 // ---------- Asset prefetch ----------
 // Fetches the exposure engine and the scene code of the realm the traveler is
-// headed for, then warms the GLTFLoader cache for that realm's models (the
-// dogs are ~6 MB of models and coats — no use to someone walking the Summit)
-// so its scene mounts without a hitch. Code first: the models wait until no
-// realm's code is still on its way. Only once the main thread is idle, and
-// nothing at all on a data-saver or 2G connection: the scene loads what it
-// needs when it opens.
+// headed for, then warms the HTTP cache with the files that realm's next
+// trial will load, so its scene mounts without waiting on the network. Code
+// first: the models wait until no realm's code is still on its way. Only once
+// the main thread is idle, and nothing at all on a data-saver or 2G
+// connection: the scene loads what it needs when it opens.
+//
+// Warmed, not parsed. This used to run both dogs' GLTFs through the loader
+// and decode all six coat maps — on the title screen, on a phone — for two
+// breeds when the next trial shows one. Now it is plain fetches for that
+// trial's breed (its coat too, except on the low tier, which never applies
+// it); the scene parses its one model when it mounts.
+function warm(url) {
+  try {
+    fetch(url, { priority: "low" }).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => {});
+  } catch { /* not critical */ }
+}
 function prefetch(opts = {}) {
   try {
     const c = navigator.connection;
@@ -87,8 +98,20 @@ function prefetch(opts = {}) {
     const code = REALMS[realm] ? preload(realm) : loadEngine();
     const settled = code.catch(() => { /* silent — the trial that needs it shows the fallback */ });
     Promise.all([settled, ...codeInFlight]).then(() => {
-      if (realm === "dogs") { try { prefetchDogModels(); } catch { /* not critical */ } }
-      if (realm === "spiders" || realm === "snakes") { try { prefetchCreatureModels(realm === "spiders" ? "spider" : "snake"); } catch { /* not critical */ } }
+      if (realm === "dogs") {
+        // The breed the next trial shows: rungs 1–2 are the small dog, 3–5
+        // the big one (same rule as the realm's setup).
+        let breed = "shiba";
+        try {
+          const lv = (typeof PHOBIAS !== "undefined" && PHOBIAS.dogs && PHOBIAS.dogs.levels[opts.level | 0]) || null;
+          if (lv) breed = lv.breed || ((lv.size || 0) <= 0.5 ? "shiba" : "husky");
+        } catch {}
+        warm(DOG_MODELS[breed] || DOG_MODELS.shiba);
+        const coat = DOG_COAT_MAPS[breed];
+        if (coat && resolveQuality(false) !== "low") { warm(coat.albedo); warm(coat.normal); warm(coat.roughness); }
+      }
+      if (realm === "spiders") warm(CREATURE_MODELS.spider);
+      if (realm === "snakes") warm(CREATURE_MODELS.snake);
     });
   }, { timeout: 4000 });
 }

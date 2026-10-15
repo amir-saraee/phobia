@@ -2,7 +2,7 @@
 // grass, rugs, leaves, webs and friends — each baked once and shared.
 
 import * as THREE from "three";
-import { sceneQuality } from "./renderer.js";
+import { sceneQuality, texAniso } from "./renderer.js";
 
 // ---------- Helpers ----------
 function rng(seed) {
@@ -243,7 +243,7 @@ function bakeConcreteMaps() {
   const make = (canvas, opts = {}) => {
     const t = new THREE.CanvasTexture(canvas);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.anisotropy = 8;
+    t.anisotropy = texAniso();
     if (opts.colorSpace) t.colorSpace = opts.colorSpace;
     return t;
   };
@@ -297,7 +297,7 @@ function canvasMapSet(albedoC, normalC, roughC) {
   const make = (canvas, colorSpace) => {
     const t = new THREE.CanvasTexture(canvas);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.anisotropy = 8;
+    t.anisotropy = texAniso();
     if (colorSpace) t.colorSpace = colorSpace;
     return t;
   };
@@ -710,7 +710,7 @@ function bakeCityGridTexture(tod) {
   x.setLineDash([]);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 8;
+  t.anisotropy = texAniso();
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }

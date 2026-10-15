@@ -3,7 +3,7 @@
 
 import * as THREE from "three";
 import { compileAhead, DOG_MODELS, DOG_COAT_MAPS, loadDogCoatTextures, CREATURE_MODELS, buildCreature } from "./assets.js";
-import { disposeObject, resolveQuality, syncFxLite, getRoomEnvMap } from "./renderer.js";
+import { disposeObject, resolveQuality, syncFxLite, getRoomEnvMap, IS_MOBILE } from "./renderer.js";
 import { makeSoftSunbeam } from "./human-rig.js";
 import { BODY_TYPES_3D } from "./human-base.js";
 import { makeConcreteMaps, makeEarthMaps, makeGrassMaps, makePlankMaps, makePlasterMaps, makeRugMaps } from "./textures.js";
@@ -41,7 +41,9 @@ const ShellScenes = (() => {
     syncFxLite(tier);
     let renderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: !lowTier, alpha: true, powerPreference: lowTier ? "low-power" : "default" });
+      // MSAA on desktops above low only: on a phone's medium tier it was 4×
+      // colour + depth at DPR 1.5 for a backdrop behind the menus.
+      renderer = new THREE.WebGLRenderer({ antialias: !lowTier && !(tier === "medium" && IS_MOBILE), alpha: true, powerPreference: lowTier ? "low-power" : "default" });
     } catch { return null; }
     const w = container.clientWidth || 320, h = container.clientHeight || 220;
     renderer.setPixelRatio(lowTier ? 1 : Math.min(window.devicePixelRatio || 1, tier === "medium" ? 1.5 : 2));
@@ -122,6 +124,26 @@ const ShellScenes = (() => {
         last = performance.now();
         tick();
       };
+      // Low tier: the trial's two-accent-light budget (capAccents) for the
+      // backdrops too. The title camp carried nine point lights — fire, moon
+      // glow, six realm markers, the figure's fill — and forward shading paid
+      // for all nine on every lit pixel. The two strongest stay (in practice
+      // the fire and the figure's fill); the rest go dark, their warmth folded
+      // into the ambient a little.
+      if (lowTier) {
+        try {
+          const pts = [];
+          let amb = null;
+          scene.traverse((o) => {
+            if (o.isPointLight && o.visible && o.intensity > 0) pts.push(o);
+            else if ((o.isAmbientLight || o.isHemisphereLight) && !amb) amb = o;
+          });
+          pts.sort((a, b) => b.intensity - a.intensity);
+          let folded = 0;
+          for (let i = 2; i < pts.length; i++) { pts[i].visible = false; folded += pts[i].intensity; }
+          if (amb && folded) amb.intensity += Math.min(0.25, folded * 0.05);
+        } catch {}
+      }
       let ready = null;
       try { ready = compileAhead(renderer, scene, camera); } catch {}
       if (ready) ready.then(go, go); else go();

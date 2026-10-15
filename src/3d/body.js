@@ -25,6 +25,7 @@ import { HUMAN_CLIPS, _humanMotion, loadHumanMotion, RETARGET_UPPER, RETARGET_TO
 const _bV1 = new THREE.Vector3(), _bV2 = new THREE.Vector3(), _bV3 = new THREE.Vector3();
 const _bV4 = new THREE.Vector3(), _bV5 = new THREE.Vector3(), _bV6 = new THREE.Vector3();
 const _bM1 = new THREE.Matrix4(), _bQ1 = new THREE.Quaternion(), _bQ2 = new THREE.Quaternion();
+const _bV7 = new THREE.Vector3(), _bV8 = new THREE.Vector3(), _bUP = new THREE.Vector3(0, 1, 0);   // arm-IK basis (was two allocations a call)
 
 const _thE = new THREE.Euler(), _thQ = new THREE.Quaternion();
 class Body {
@@ -89,6 +90,11 @@ class Body {
     // body stands dead centre and its meshes swallowed clicks meant for the
     // world (dogs' pickWorld honours noPick up the parent chain).
     this.group.userData.noPick = true;
+    // …and it is not furniture: the physics layer's static sweep (which now
+    // runs when the traveler nears the props, not at mount) would otherwise
+    // freeze the avatar's bounding box into the world as an invisible block
+    // right where they stand.
+    this.group.userData.noCollide = true;
     this._build();
     scene.add(this.group);
     // ---- Character portrait rig (third-person only) ----
@@ -330,9 +336,9 @@ class Body {
     // side the HAND swings toward (i.e. away from the elbow) so a negative
     // elbow rotation is flexion — the same sign the pose code uses.
     const yA = _bV1.copy(upper).multiplyScalar(-1).normalize();
-    const zA = perp.clone().multiplyScalar(-1);
+    const zA = _bV7.copy(perp).multiplyScalar(-1);
     zA.addScaledVector(yA, -zA.dot(yA)).normalize();
-    const xA = new THREE.Vector3().crossVectors(yA, zA).normalize();
+    const xA = _bV8.crossVectors(yA, zA).normalize();
     _bM1.makeBasis(xA, yA, zA);
     _bQ1.setFromRotationMatrix(_bM1);
     arm.root.quaternion.slerp(_bQ1, k);
@@ -1740,7 +1746,7 @@ class Body {
             // palm yaw, and is kept equivalent now the rest yaw is −side·1.15
             // (see buildHumanRig) — the palm still lands on the coat.
             const palmLocal = _bV5.set(0, 0, -1).applyAxisAngle(
-              new THREE.Vector3(0, 1, 0), (arm.hand ? arm.hand.rotation.y : arm.side * 1.15) - arm.side * 1.45);
+              _bUP, (arm.hand ? arm.hand.rotation.y : arm.side * 1.15) - arm.side * 1.45);
             _bQ2.setFromUnitVectors(palmLocal.normalize(), nl.multiplyScalar(-1).normalize());
             arm.wrist.quaternion.slerp(_bQ2, k * 0.8);
           }

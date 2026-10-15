@@ -6,7 +6,7 @@ import * as THREE from "three";
 // animation, so any model we instance from the GLTF cache must use this.
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { loadGLTF, compileBeforeAdd, DOG_MODELS, DOG_COAT_MAPS, loadDogCoatTextures } from "./assets.js";
-import { sceneQuality } from "./renderer.js";
+import { sceneQuality, IS_MOBILE } from "./renderer.js";
 import { makeFurMaps, ensureBoxUV, geometryBox, applySidePhotoUVs, smoothCreaseNormals, applyCoatTint } from "./creature-kit.js";
 import { DogLegRig, correctDogGaitClip, synthDogTrot } from "./dog-rig.js";
 
@@ -202,7 +202,9 @@ function buildDog(opts = {}) {
     // Procedural maps immediately so the dog never flashes plastic while the
     // breed PNGs stream in; then upgrade map slots when ready (no re-darken).
     try { applyCoatMaterials(null, "base"); } catch (e) { console.warn("[dogs] fur maps:", e); }
-    const coatLanded = loadDogCoatTextures(breed).then((maps) => {
+    // The low tier never applies the photo coat (see applyCoatMaterials) nor
+    // grows fur shells, so it doesn't download and decode the three maps.
+    const coatLanded = (sceneQuality() === "low" ? Promise.resolve(null) : loadDogCoatTextures(breed)).then((maps) => {
       if (dog.userData.disposed || !maps) return;
       try { applyCoatMaterials(maps, "upgrade"); } catch (e) { console.warn("[dogs] coat maps:", e); }
       // Fur shells take their maps from the upgraded coat, so they're built
@@ -416,10 +418,14 @@ function buildDog(opts = {}) {
 // The shells share the coat's geometry, skeleton and maps (so they cost one
 // skinned draw each, no extra bone work), cast no shadow, stay out of SSAO,
 // and are hidden beyond a few metres where strands would only shimmer.
-// High tier 6 shells, medium 3, low none.
+// High tier 6 shells, medium 3 (none on phones), low none.
 function addDogFurShells(model, parts) {
   const q = (typeof sceneQuality === "function") ? sceneQuality() : "high";
   if (q === "low" || !model || parts.furShells) return;
+  // Phones on medium: none either. Each shell is a full extra skinned draw of
+  // the coat at the dog's screen size — on a phone GPU three of them cost
+  // more than the rest of the dog, for a halo a 6-inch screen barely shows.
+  if (q === "medium" && IS_MOBILE) return;
   const N = q === "high" ? 6 : 3;
   const S = parts.modelScale || 1;
   const H = parts.height || 0.6;

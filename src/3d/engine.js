@@ -35,6 +35,9 @@ import { active, setActive } from "./live.js";
 // The context of the most recently mounted exposure. Outlives `active` on
 // purpose — the rating happens after the scene is gone.
 let lastSceneCtx = null;
+// Per-frame payloads the loop refills in place (see tick).
+const _xpFrame = { dt: 0, px: null, pz: null, fx: 0, fy: 0, fz: 0, cx: null, cy: null, cz: null, hasFocus: false, fear: 0, threat: false, landed: 0 };
+const _listenerArg = { position: null, forward: null, up: null };
 
 function unmount() {
   if (!active) return;
@@ -49,6 +52,7 @@ function unmount() {
   // Free the physics world (WASM — a dropped world without free() leaks).
   try { window.PhobiaGrab && window.PhobiaGrab.reset(); } catch {}
   try { window.PhobiaPhysics && window.PhobiaPhysics.end(); } catch {}
+  window.__perf = null;
   // Stop both the rAF and the WebXR animation loop drivers
   cancelAnimationFrame(active.raf);
   if (active.renderer) {
@@ -333,6 +337,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // chain measured 9.9 → 7.4 ms at DPR 2 (18.8 → 16.0 with the GPU clocked
   // down); at DPR 1.5, where SMAA stays, 12.6 → 12.0.
   let smaaPass = null;
+  let _smaaShed = false;   // the frame governor turned it off (see shedEffect)
   if (QUALITY === "high") {
     try {
       smaaPass = new SMAAPass(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
@@ -368,8 +373,11 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   let reachRing = null;      // in-world "this is reachable" ground ring (lazy)
   let _cursorPointer = false;
   let _frameEMA = 0.016;     // adaptive-resolution frame-time tracker
+  // How long tick() itself runs (simulation + submitting the frame), so the
+  // governor can tell a CPU-bound device — where a lower resolution buys
+  // nothing and only reallocates every target — from a GPU-bound one.
+  let _workEMA = 0.004;
   let _lastPRDrop = 0;
-  let _prNoticeShown = false;
   // Two-way controller state (see the tick): time spent over / under budget,
   // and the last ratio that proved too heavy (not retried for 30 s, so the
   // controller can't oscillate between two ratios).
@@ -379,10 +387,22 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // Below DPR 1 is allowed only as a last resort on a device that is still
   // struggling with every effect off — a softer image beats a slideshow.
   const _prFloor = 0.75;
-  // Effects shed, in order, once the resolution floor is reached and frames
-  // are still slow: SSAO → bloom → shadows refreshed every 2nd then 3rd frame
-  // → sub-1 resolution. `_shed` counts the steps taken.
-  let _shed = 0, _shadowEvery = 1, _shadowFrame = 0, _shedNoticeShown = false;
+  // Effects shed, in order, once frames stay slow (see shedEffect). `_shed`
+  // counts the steps taken, `_shedLog` names them (perf overlay, __perf).
+  // Medium refreshes its shadow maps every other frame from the start: the
+  // rooms are static and the casters that move (a dog, the traveler) do so
+  // slowly enough that a 30 Hz shadow is invisible.
+  let _shed = 0, _shadowEvery = QUALITY === "medium" ? 2 : 1, _shadowFrame = 0, _shadowsOff = false;
+  const _shedLog = [];
+  // A device whose display or battery saver caps it at a steady 30 (or 40,
+  // 50) fps is not a slow device: iOS Low Power Mode and Android battery
+  // saver both do it, and the governor used to read the cap as a weak GPU,
+  // strip every effect and demote the next fortnight of scenes. The last 64
+  // frame intervals: when ~all of them sit within 10 % of their median, the
+  // CPU has headroom, and that median is a frame rate worth keeping, it is a
+  // cap — the budget becomes the cap itself.
+  const _ivl = new Float32Array(64), _ivlSort = new Float32Array(64);
+  let _ivlN = 0, _ivlI = 0, _capped = 0, _capCheckT = 0;
   // Point-light (cube) shadows on alternate frames — see the render step.
   const _cubeShadows = [];
   let _cubeScanT = 0, _cubeFrame = 0;
@@ -1027,35 +1047,56 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     lastTime = now;
     // ---- Frame governor ----
     // A weak device otherwise stutters until the player finds the Graphics
-    // setting. A slow EMA of the real frame time, aiming at 60 fps:
+    // setting. A slow EMA of the real frame time, aiming at 60 fps (or at
+    // the device's own steady cap, see _capped):
     //   - the first two seconds are ignored (shader compiles, uploads);
     //     frames up to 1.5 s count — a 1–3 fps slideshow is load, not a
     //     stall, and the device that most needs help — but each sample is
     //     clamped, so one hitch barely moves the average;
-    //   - a full second above ~18.5 ms steps the pixel ratio down by 1/8,
-    //     to 1.0;
-    //   - at 1.0 and still slow for two seconds, it sheds an effect instead
-    //     (shedEffect: SSAO → bloom → shadows every 2nd, 3rd frame → down to
-    //     0.75 resolution), and a device that needed two such steps on
-    //     "auto" starts its next scene a tier lower;
-    //   - five seconds below ~12.5 ms steps the ratio back up, never past the
-    //     tier's cap and never straight back onto a ratio that just failed.
+    //   - a full second over budget on a GPU-bound device steps the pixel
+    //     ratio down ~20 % (2 → 1.625 → 1.25 → 1), to 1.0 — three target
+    //     reallocations where 1/8 steps took eight;
+    //   - at 1.0, or on a CPU-bound device straight away (resolution does
+    //     nothing for a slow CPU), 1.5 s over budget sheds an effect instead
+    //     (shedEffect), and a device that had to shed on "auto" starts its
+    //     next scene a tier lower;
+    //   - six seconds well under budget steps the ratio back up, never past
+    //     the tier's cap and never straight back onto a ratio that just failed.
+    // All of it silent: the player is told nothing — on a weak device a
+    // notice was one more thing on the screen, at the worst moment.
     if (rawDt < 1.5 && t > 2.0) {
       _frameEMA += (Math.min(rawDt, 0.1) - _frameEMA) * 0.05;
-      if (_frameEMA > 0.0185) { _prSlowT += rawDt; _prFastT = 0; }
-      else if (_frameEMA < 0.0125) { _prFastT += rawDt; _prSlowT = 0; }
+      _ivl[_ivlI] = rawDt; _ivlI = (_ivlI + 1) & 63; if (_ivlN < 64) _ivlN++;
+      if (t >= _capCheckT && _ivlN >= 48) {
+        _capCheckT = t + 0.5;
+        for (let i = 0; i < _ivlN; i++) _ivlSort[i] = _ivl[i];
+        const iv = _ivlSort.subarray(0, _ivlN).sort();
+        const med = iv[_ivlN >> 1];
+        let steady = 0;
+        for (let i = 0; i < _ivlN; i++) if (Math.abs(iv[i] - med) < med * 0.1) steady++;
+        _capped = (med > 0.0185 && med < 0.036 && steady >= _ivlN * 0.85 && _workEMA < med * 0.6) ? med : 0;
+      }
+      const slowAt = _capped ? _capped * 1.12 : 0.0185;
+      if (_frameEMA > slowAt) { _prSlowT += rawDt; _prFastT = 0; }
+      else if (!_capped && _frameEMA < 0.0125) { _prFastT += rawDt; _prSlowT = 0; }
       else { _prSlowT = 0; _prFastT = 0; }
       const pr = renderer.getPixelRatio();
+      const cpuBound = _workEMA > _frameEMA * 0.7;
       let newPR = pr;
-      if (_prSlowT > 1.0 && pr > 1.0 + 1e-3) {
-        newPR = Math.max(1.0, pr - 0.125);
+      if (_prSlowT > 1.0 && pr > 1.0 + 1e-3 && !cpuBound) {
+        newPR = Math.max(1.0, Math.min(pr - 0.25, Math.round(pr * 0.8 * 8) / 8));
         _prFailed = pr; _prFailedAt = now;
-      } else if (_prSlowT > 2.0 && pr <= 1.0 + 1e-3 && shedEffect()) {
-        // Shed one effect, then give it two seconds to show.
-        _prSlowT = 0; _frameEMA = 0.0167;
-      } else if (_prFastT > 5.0 && pr < _prMax - 1e-3
-          && !(pr + 0.125 >= _prFailed - 1e-3 && now - _prFailedAt < 30000)) {
-        newPR = Math.min(_prMax, pr + 0.125);
+      } else if (_prSlowT > 1.5 && (pr <= 1.0 + 1e-3 || cpuBound) && shedEffect(cpuBound)) {
+        // Shed one effect, then give it a moment to show.
+        _prSlowT = 0; _frameEMA = Math.min(_frameEMA, slowAt * 0.92);
+      } else if (_prSlowT > 1.5 && cpuBound && pr > 1.0 + 1e-3) {
+        // Nothing left to shed and still slow: the CPU read may be a GPU
+        // stall surfacing inside a GL call, so try resolution after all.
+        newPR = Math.max(1.0, Math.min(pr - 0.25, Math.round(pr * 0.8 * 8) / 8));
+        _prFailed = pr; _prFailedAt = now;
+      } else if (_prFastT > 6.0 && pr < _prMax - 1e-3
+          && !(pr + 0.25 >= _prFailed - 1e-3 && now - _prFailedAt < 30000)) {
+        newPR = Math.min(_prMax, pr + 0.25);
       }
       if (newPR !== pr) {
         renderer.setPixelRatio(newPR);
@@ -1063,10 +1104,6 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         _lastPRDrop = now;
         _prSlowT = 0; _prFastT = 0;
         _frameEMA = 0.0167;   // a fresh window for the new ratio
-        if (newPR < pr && !_prNoticeShown && window.PhobiaFX && window.PhobiaFX.contextPrompt) {
-          _prNoticeShown = true;
-          try { window.PhobiaFX.contextPrompt(window.t("perf.lowerRes", "Lowered render resolution to keep things smooth."), 3200); } catch {}
-        }
       }
     }
     if (now >= _perfHudNext) {
@@ -1083,8 +1120,10 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         _perfHudEl.style.display = hudOn ? "block" : "none";
         if (hudOn) {
           const fps = _frameEMA > 0 ? Math.round(1 / _frameEMA) : 0;
-          _perfHudEl.textContent = fps + " fps · " + Math.round(_frameEMA * 1000) + " ms · "
-            + QUALITY + " · " + renderer.getPixelRatio().toFixed(2) + "x";
+          _perfHudEl.textContent = fps + " fps · " + Math.round(_frameEMA * 1000) + " ms (cpu "
+            + Math.round(_workEMA * 1000) + ") · " + QUALITY + " · " + renderer.getPixelRatio().toFixed(2) + "x"
+            + (_capped ? " · cap " + Math.round(1 / _capped) : "")
+            + (_shedLog.length ? " · −" + _shedLog.join(",") : "");
         }
       }
     }
@@ -1240,32 +1279,29 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
           _beat.creature.getWorldPosition(_audVec3);
           cx = _audVec3.x; cy = _audVec3.y; cz = _audVec3.z; hasFocus = true;
         } else if (th) { cx = th.x; cy = th.y; cz = th.z; hasFocus = true; }
-        window.PhobiaExperiments.frame({
-          dt: dt || 0.016,
-          px: controls && controls.position ? controls.position.x : null,
-          pz: controls && controls.position ? controls.position.z : null,
-          fx: fwd.x, fy: fwd.y, fz: fwd.z,
-          cx, cy, cz, hasFocus,
-          fear: window.PhobiaFear ? PhobiaFear.get() : 0,
-          threat: !!window.PhobiaThreat,
-          landed: Math.max((body && body._contactLanded) || 0, (hands && hands.contactK) || 0),
-        });
+        // One payload object, refilled each frame (frame() reads it and
+        // keeps nothing) rather than a fresh literal sixty times a second.
+        const xf = _xpFrame;
+        xf.dt = dt || 0.016;
+        xf.px = controls && controls.position ? controls.position.x : null;
+        xf.pz = controls && controls.position ? controls.position.z : null;
+        xf.fx = fwd.x; xf.fy = fwd.y; xf.fz = fwd.z;
+        xf.cx = cx; xf.cy = cy; xf.cz = cz; xf.hasFocus = hasFocus;
+        xf.fear = window.PhobiaFear ? PhobiaFear.get() : 0;
+        xf.threat = !!window.PhobiaThreat;
+        xf.landed = Math.max((body && body._contactLanded) || 0, (hands && hands.contactK) || 0);
+        window.PhobiaExperiments.frame(xf);
       }
     } catch {}
     // Update the spatial-audio listener so HRTF panning tracks the camera.
     // We sample the camera's forward + up vectors every frame so any sound
-    // played via PhobiaAudio.spatial(pos) is correctly localised.
+    // played via PhobiaAudio.spatial(pos) is correctly localised. (The
+    // listener copies the numbers out; the same three vectors serve.)
     if (window.PhobiaAudio && PhobiaAudio.updateListener) {
-      const p = camera.getWorldPosition(_audVec1);
-      const f = _audVec2.set(0, 0, -1).applyQuaternion(camera.quaternion);
-      const u = _audVec3.set(0, 1, 0).applyQuaternion(camera.quaternion);
-      try {
-        PhobiaAudio.updateListener({
-          position: { x: p.x, y: p.y, z: p.z },
-          forward:  { x: f.x, y: f.y, z: f.z },
-          up:       { x: u.x, y: u.y, z: u.z },
-        });
-      } catch {}
+      _listenerArg.position = camera.getWorldPosition(_audVec1);
+      _listenerArg.forward = _audVec2.set(0, 0, -1).applyQuaternion(camera.quaternion);
+      _listenerArg.up = _audVec3.set(0, 1, 0).applyQuaternion(camera.quaternion);
+      try { PhobiaAudio.updateListener(_listenerArg); } catch {}
     }
     // In VR mode, the post-process composer must NOT be used — XR requires
     // the renderer to render directly into the headset's framebuffer with
@@ -1274,15 +1310,16 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // takes over again automatically. Wrapped in try/catch because WebGL
     // context-loss (tab backgrounded too long) can throw during render.
     try {
-      // Once per frame (see makeRenderer) — or every 2nd/3rd frame once the
-      // governor has had to shed effects on a struggling device.
-      if (_shadowEvery <= 1 || (++_shadowFrame % _shadowEvery) === 0) renderer.shadowMap.needsUpdate = true;
+      // Once per frame (see makeRenderer) — every 2nd frame on medium or once
+      // the governor has had to shed effects, and never again once it has
+      // turned shadows off (shedEffect drew the maps empty one last time).
+      if (!_shadowsOff && (_shadowEvery <= 1 || (++_shadowFrame % _shadowEvery) === 0)) renderer.shadowMap.needsUpdate = true;
       // A point light's shadow is a cube: six renders of every caster around
       // it (the cellar bulb alone was ~130 of the scene's ~170 draws). Those
       // refresh on alternate frames — a 30 Hz shadow under a slow spider or a
       // walking player is not something the eye separates from 60. Lights are
       // re-collected every 2 s, since some scenes add theirs late.
-      if (t >= _cubeScanT) {
+      if (!_shadowsOff && t >= _cubeScanT) {
         _cubeScanT = t + 2;
         _cubeShadows.length = 0;
         scene.traverse((o) => {
@@ -1292,7 +1329,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
           }
         });
       }
-      if ((++_cubeFrame & 1) === 0) for (const l of _cubeShadows) l.shadow.needsUpdate = true;
+      if (!_shadowsOff && (++_cubeFrame & 1) === 0) for (const l of _cubeShadows) l.shadow.needsUpdate = true;
       if (renderer.xr.isPresenting) {
         renderer.render(scene, camera);
       } else {
@@ -1301,6 +1338,8 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     } catch (e) {
       console.warn("render:", e);
     }
+    // CPU time of this whole tick, for the governor's CPU/GPU-bound read.
+    _workEMA += (Math.min(0.1, (performance.now() - now) / 1000) - _workEMA) * 0.05;
   }
 
   // Discrete narration beats, derived from signals the scenes already publish.
@@ -1308,29 +1347,96 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // dedupe), and each needs its condition to HOLD for a beat rather than clip a
   // single frame, so a creature that jitters across a threshold stays quiet.
   const _beat = { threatT: 0, calmT: 0, wasThreat: false, contactT: 0, nearT: 0, prevFear: 0, spikeT: 0, creature: null };
-  // One step down the effects ladder. Returns false when nothing is left.
-  function shedEffect() {
-    let did = false;
-    if (ssaoPass && ssaoPass.enabled) { ssaoPass.enabled = false; did = true; }
-    else if (bloomPass && bloomPass.enabled && composer.passes.includes(bloomPass)) { bloomPass.enabled = false; did = true; }
-    else if (renderer.shadowMap.enabled && _shadowEvery < 3) { _shadowEvery++; did = true; }
-    else if (renderer.getPixelRatio() > _prFloor + 1e-3) {
-      renderer.setPixelRatio(Math.max(_prFloor, renderer.getPixelRatio() - 0.125));
+  // The effects ladder, cheapest-to-lose first. Each step returns true if it
+  // changed anything. `cpu` marks the steps that also take work off the main
+  // thread (fewer draws, no extra scene passes); a CPU-bound device takes
+  // those first, since resolution and full-screen passes cost it nothing.
+  const _shedSteps = [
+    // The page's frosted-glass HUD: every backdrop blur re-runs whenever the
+    // canvas under it changes, i.e. every frame. Invisible in the 3D view.
+    { id: "blur", cpu: false, run: () => {
+      const el = document.documentElement;
+      if (el.classList.contains("fx-lite")) return false;
+      el.classList.add("fx-lite"); return true;
+    } },
+    // SSAO re-renders the whole scene for normals, then a kernel and a blur.
+    { id: "ssao", cpu: true, run: () => {
+      if (!ssaoPass || !ssaoPass.enabled) return false;
+      ssaoPass.enabled = false; return true;
+    } },
+    // SMAA: three full-resolution passes.
+    { id: "smaa", cpu: false, run: () => {
+      if (!smaaPass || _smaaShed) return false;
+      _smaaShed = true; smaaPass.enabled = false; wireFinish(); return true;
+    } },
+    // Dog fur shells: up to six extra skinned draws of each coat mesh.
+    { id: "fur", cpu: true, run: () => {
+      let any = false;
+      scene.traverse((o) => {
+        const p = o.userData && o.userData.parts;
+        if (p && p.furShells && p.furShells.length && !p.furOff) {
+          p.furOff = true;
+          for (const sh of p.furShells) sh.visible = false;
+          any = true;
+        }
+      });
+      return any;
+    } },
+    { id: "shadow2", cpu: true, run: () => {
+      if (_shadowsOff || !renderer.shadowMap.enabled || _shadowEvery >= 2) return false;
+      _shadowEvery = 2; return true;
+    } },
+    { id: "bloom", cpu: false, run: () => {
+      if (!bloomPass.enabled || !composer.passes.includes(bloomPass)) return false;
+      bloomPass.enabled = false; return true;
+    } },
+    // Shadows off, without a recompile: flipping shadowMap.enabled or a
+    // light's castShadow changes every lit program and stalls for seconds on
+    // exactly these devices. Instead nothing casts any more, the maps are
+    // drawn once more (empty — fully lit) and never refreshed again, so the
+    // shadow pass's draws are gone and the shaders stay as they are.
+    { id: "shadows", cpu: true, run: () => {
+      if (_shadowsOff || !renderer.shadowMap.enabled) return false;
+      _shadowsOff = true;
+      scene.traverse((o) => { if (o.isMesh && o.castShadow) o.castShadow = false; });
+      renderer.shadowMap.needsUpdate = true;
+      for (const l of _cubeShadows) l.shadow.needsUpdate = true;
+      return true;
+    } },
+    // Last resort: below 1:1 resolution.
+    { id: "res", cpu: false, run: () => {
+      const pr = renderer.getPixelRatio();
+      if (pr > 1.0 + 1e-3 || pr <= _prFloor + 1e-3) return false;
+      renderer.setPixelRatio(Math.max(_prFloor, pr - 0.25));
       sizePost(container.clientWidth, container.clientHeight);
       _prFailed = Infinity;   // allow the climb back once things are fast
-      did = true;
-    }
-    if (!did) return false;
+      return true;
+    } },
+  ];
+  // One step down the ladder. Returns false when nothing is left.
+  function shedEffect(cpuFirst) {
+    let step = null;
+    if (cpuFirst) step = _shedSteps.find((s) => s.cpu && !s.done && s.run());
+    if (!step) step = _shedSteps.find((s) => !s.done && s.run());
+    if (!step) return false;
+    step.done = true;
     _shed++;
-    // A device that needed this much help on "auto" starts the next scene a
-    // tier lower instead of stuttering through its first seconds again.
-    if (_shed >= 2) demoteAutoTier(QUALITY);
-    if (!_shedNoticeShown && window.PhobiaFX && window.PhobiaFX.contextPrompt) {
-      _shedNoticeShown = true;
-      try { window.PhobiaFX.contextPrompt(window.t("perf.shed", "Simplified a few effects to keep things smooth."), 3200); } catch {}
-    }
+    _shedLog.push(step.id);
+    // A device that had to give up a real effect on "auto" starts the next
+    // scene a tier lower instead of stuttering through its first seconds
+    // again — at once on high (its extras are the expensive ones), after the
+    // second step below that. Hiding the HUD's blur alone doesn't count.
+    const real = _shedLog.filter((id) => id !== "blur").length;
+    if (real >= (QUALITY === "high" ? 1 : 2)) demoteAutoTier(QUALITY);
     return true;
   }
+  // Debug/QA readout of the governor (harness scripts; inert otherwise).
+  window.__perf = () => ({
+    tier: QUALITY, pr: renderer.getPixelRatio(), prMax: _prMax,
+    frameMs: +(_frameEMA * 1000).toFixed(1), workMs: +(_workEMA * 1000).toFixed(1),
+    capped: _capped ? Math.round(1 / _capped) : 0, shed: _shedLog.slice(),
+    shadowEvery: _shadowsOff ? 0 : _shadowEvery,
+  });
   function detectEventBeats(t, dt) {
     const N = window.PhobiaNarrator;
     if (!N || !N.event || !phobiaKey) return;
@@ -1421,23 +1527,40 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     const bs = bloomHalf ? 0.34 : 0.5;
     bloomPass.setSize(Math.max(1, Math.round(w * pr * bs)), Math.max(1, Math.round(h * pr * bs)));
     if (ssaoPass) ssaoPass.setSize(Math.max(1, Math.round(w * pr * 0.5)), Math.max(1, Math.round(h * pr * 0.5)));
-    if (smaaPass) smaaPass.enabled = pr < 1.75;
+    if (smaaPass) smaaPass.enabled = !_smaaShed && pr < 1.75;
     wireFinish();
   }
-  function onResize() {
+  // Resizes are coalesced to one per frame and skipped when the size hasn't
+  // changed: window.resize and the ResizeObserver both fire for the same
+  // change, and a phone's URL bar sliding in and out fires a burst of them —
+  // each one used to reallocate every post-processing target. A direct call
+  // with no argument (context restore) applies at once, unconditionally.
+  // (Seeded with the size makeRenderer/sizePost already used at mount, so the
+  // observer's initial callback doesn't reallocate everything a second time.)
+  let _rsW = container.clientWidth, _rsH = container.clientHeight, _rsQueued = false;
+  function applyResize(force) {
+    _rsQueued = false;
     const w = container.clientWidth, h = container.clientHeight;
     if (!w || !h) return;
+    if (!force && w === _rsW && h === _rsH) return;
+    _rsW = w; _rsH = h;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
     sizePost(w, h);
+  }
+  function onResize(ev) {
+    if (ev === undefined) { applyResize(true); return; }
+    if (_rsQueued) return;
+    _rsQueued = true;
+    requestAnimationFrame(() => applyResize(false));
   }
   window.addEventListener("resize", onResize);
   // Container-only size changes (drawer toggle, keyboard pop, theater mode,
   // orientation lock) never fire window.resize — without an observer the
   // canvas kept rendering at the stale resolution, blurry or letterboxed.
   let resizeObs = null;
-  try { resizeObs = new ResizeObserver(() => onResize()); resizeObs.observe(container); } catch {}
+  try { resizeObs = new ResizeObserver(() => onResize(null)); resizeObs.observe(container); } catch {}
 
   // ----- "Tips" toggle for the collapsed command bar -----
   // Character-driven scenes (heights, dogs, etc.) have their button bar

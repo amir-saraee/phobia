@@ -29,6 +29,9 @@ function buildAvatarFigure(c, mode = "walk") {
     width: SHOULDER_HALF * bt.shoulder,
     headY: L.headY, neckY: L.neckY, chestTopY: L.chestTopY, waistY: L.waistY,
     hipY: L.hipY, kneeY: L.kneeY, ankleY: L.ankleY,
+    // Same budget as the trial's body on a low-tier device (Standard
+    // materials, coarser tessellation) — the menus' figure is no cheaper.
+    lowDetail: resolveQuality(false) === "low",
   });
   group.add(rig.group);
   group.userData.rig = rig;

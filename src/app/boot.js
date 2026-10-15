@@ -117,9 +117,9 @@ function boot() {
   // background. The 3D entry loads async — the title screen no longer waits
   // for three.js — so it may land after boot; prefetch once it has.
   const warm = () => setTimeout(() => {
-    let realm = null;
-    try { realm = window.Character && window.Character.loadCharacter() ? continueTarget().key : null; } catch {}
-    try { window.Scene3D.prefetch({ realm }); } catch {}
+    let realm = null, level = 0;
+    try { if (window.Character && window.Character.loadCharacter()) { const ct = continueTarget(); realm = ct.key; level = ct.level; } } catch {}
+    try { window.Scene3D.prefetch({ realm, level }); } catch {}
   }, 1500);
   if (window.Scene3D && window.Scene3D.prefetch) warm();
   else window.addEventListener("scene3d-ready", warm, { once: true });

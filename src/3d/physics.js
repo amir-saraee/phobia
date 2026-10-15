@@ -152,6 +152,16 @@ const PhobiaPhysics = (() => {
 
   function step(dt) {
     if (!world) return;
+    // Nothing held and every prop asleep (Rapier sleeps a body that has come
+    // to rest): the world has nothing to integrate, so don't step it. That
+    // is nearly all of a scene. A throw wakes its body (launch), a grab turns
+    // it kinematic (held), and sleeping bodies are woken by any contact.
+    let awake = false;
+    for (let i = 0; i < props.length; i++) {
+      const rec = props[i];
+      if (rec.held || !rec.rb.isSleeping()) { awake = true; break; }
+    }
+    if (!awake) return;
     world.timestep = Math.min(0.033, Math.max(0.004, dt || 0.016));
     world.step();
     for (const rec of props) {
