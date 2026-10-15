@@ -42,15 +42,26 @@ function loadGLTF(url) {
   return promise;
 }
 
-// renderer.compileAsync, minus three's "extension not supported" console
-// warning (one per renderer) where KHR_parallel_shader_compile is missing.
-// There compile() still queues every program to the GPU process in one go and
-// a short yield lets it get through them before the first frame asks; with
-// the extension, compileAsync waits until they are actually linked.
+// renderer.compileAsync, minus two of its faults. Where KHR_parallel_shader_
+// compile is missing it logs "extension not supported" (once per renderer);
+// there compile() still queues every program to the GPU process in one go and
+// a short yield lets it get through them before the first frame asks. With the
+// extension, we wait until the programs are actually linked — polling as
+// compileAsync does, but skipping a material compile() gave no program: three
+// 0.160 reads currentProgram.isReady() on it and throws out of its timer.
 function compileAhead(renderer, scene, camera, target = null) {
-  if (renderer.extensions.has("KHR_parallel_shader_compile")) return renderer.compileAsync(scene, camera, target);
-  renderer.compile(scene, camera, target);
-  return new Promise((res) => setTimeout(res, 50));
+  const pending = renderer.compile(scene, camera, target);
+  if (!renderer.extensions.has("KHR_parallel_shader_compile") || !pending) return new Promise((res) => setTimeout(res, 50));
+  return new Promise((res) => {
+    const poll = () => {
+      pending.forEach((m) => {
+        const program = renderer.properties.get(m).currentProgram;
+        if (!program || program.isReady()) pending.delete(m);
+      });
+      if (pending.size) setTimeout(poll, 10); else res();
+    };
+    poll();
+  });
 }
 
 // Link a streamed-in object's shader programs before it joins a live trial.
