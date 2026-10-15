@@ -11,6 +11,7 @@
     "bake-all": "node bake-character-skin.cjs && node bake-dog-coats.cjs && node bake-dog-photo-coats.cjs && node compress-textures.cjs",
     "measure-ref": "node measure-ref.cjs",
     "shoot": "node shoot-scenes.cjs",
+    "og": "node render-og.cjs",
     "face-diagnostic": "node face-diagnostic.cjs",
     "compress-textures": "node compress-textures.cjs",
     "smoke": "node smoke.cjs"
