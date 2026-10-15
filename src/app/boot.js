@@ -113,14 +113,16 @@ function boot() {
   applyTheme();
   applyVoicePreset();
   scheduleReminders();
-  // Warm caches for heavy assets (dog model) in the background
-  if (window.Scene3D && window.Scene3D.prefetch) {
-    setTimeout(() => {
-      let realm = null;
-      try { realm = window.Character && window.Character.loadCharacter() ? continueTarget().key : null; } catch {}
-      window.Scene3D.prefetch({ realm });
-    }, 1500);
-  }
+  // Warm caches for heavy assets (the next realm's code and models) in the
+  // background. The 3D entry loads async — the title screen no longer waits
+  // for three.js — so it may land after boot; prefetch once it has.
+  const warm = () => setTimeout(() => {
+    let realm = null;
+    try { realm = window.Character && window.Character.loadCharacter() ? continueTarget().key : null; } catch {}
+    try { window.Scene3D.prefetch({ realm }); } catch {}
+  }, 1500);
+  if (window.Scene3D && window.Scene3D.prefetch) warm();
+  else window.addEventListener("scene3d-ready", warm, { once: true });
   // Honor the URL on first load so refreshes / shared links land correctly
   const route = location.hash ? parseRoute(location.hash) : { view: "welcome", params: {} };
   render(route.view, route.params);

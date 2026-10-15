@@ -384,13 +384,21 @@ function mountExposure(phobiaKey, levelIdx) {
   }
 
   if (!mount3DIfPossible()) {
-    mountSVGFallback();
     if (!window.Scene3D || !window.Scene3D.ready) {
+      // The 3D layer loads async and simply hasn't arrived yet (a cold deep
+      // link into a trial): keep "Setting the scene…" up rather than flashing
+      // the flat stand-in for a second. Only if it never arrives does the
+      // stand-in take over.
+      let waited = false;
+      const late = setTimeout(() => { waited = true; if (stage.isConnected && !stage.querySelector("canvas")) mountSVGFallback(); }, 15000);
       window.addEventListener("scene3d-ready", () => {
+        clearTimeout(late);
         if (!stage.isConnected) return;
-        [...stage.querySelectorAll(".scene")].forEach(el => el.remove());
-        mount3DIfPossible();
+        if (waited) [...stage.querySelectorAll(".scene")].forEach(el => el.remove());
+        if (!mount3DIfPossible()) mountSVGFallback();
       }, { once: true });
+    } else {
+      mountSVGFallback();
     }
   }
 

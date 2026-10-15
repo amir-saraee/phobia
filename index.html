@@ -65,28 +65,31 @@ if ("serviceWorker" in navigator) {
 <!-- Everything src/3d/main.js imports up front (three.js and its addons'
      own imports included), fetched in parallel rather than as an import
      waterfall. Performance only: a missing entry still loads, just later.
-     The smoke test checks this list against the real import graph. -->
-<link rel="modulepreload" href="src/3d/main.js" />
-<link rel="modulepreload" href="src/3d/assets.js" />
-<link rel="modulepreload" href="src/3d/realms/index.js" />
-<link rel="modulepreload" href="src/3d/avatar.js" />
-<link rel="modulepreload" href="src/3d/shell-scenes.js" />
-<link rel="modulepreload" href="src/3d/creature-kit.js" />
-<link rel="modulepreload" href="src/3d/live.js" />
-<link rel="modulepreload" href="src/3d/renderer.js" />
-<link rel="modulepreload" href="src/3d/human-base.js" />
-<link rel="modulepreload" href="src/3d/human-rig.js" />
-<link rel="modulepreload" href="src/3d/textures.js" />
-<link rel="modulepreload" href="src/3d/human-motion.js" />
-<link rel="modulepreload" href="src/3d/dog-model.js" />
-<link rel="modulepreload" href="src/3d/human-head.js" />
-<link rel="modulepreload" href="src/3d/dog-rig.js" />
-<link rel="modulepreload" href="./assets/vendor/three/three.module.min.js" />
-<link rel="modulepreload" href="./assets/vendor/three/addons/loaders/GLTFLoader.js" />
-<link rel="modulepreload" href="./assets/vendor/three/addons/utils/SkeletonUtils.js" />
-<link rel="modulepreload" href="./assets/vendor/three/addons/utils/BufferGeometryUtils.js" />
-<link rel="modulepreload" href="./assets/vendor/three/addons/environments/RoomEnvironment.js" />
-<link rel="modulepreload" href="./assets/vendor/three/addons/loaders/RGBELoader.js" />
+     The smoke test checks this list against the real import graph.
+     fetchpriority="low": the title screen is SVG and needs none of this, so
+     the app's own scripts get the bandwidth first (a throttled phone showed
+     the title's button ~1.1 s sooner). -->
+<link rel="modulepreload" href="src/3d/main.js" fetchpriority="low" />
+<link rel="modulepreload" href="src/3d/assets.js" fetchpriority="low" />
+<link rel="modulepreload" href="src/3d/realms/index.js" fetchpriority="low" />
+<link rel="modulepreload" href="src/3d/avatar.js" fetchpriority="low" />
+<link rel="modulepreload" href="src/3d/shell-scenes.js" fetchpriority="low" />
+<link rel="modulepreload" href="src/3d/creature-kit.js" fetchpriority="low" />
+<link rel="modulepreload" href="src/3d/live.js" fetchpriority="low" />
+<link rel="modulepreload" href="src/3d/renderer.js" fetchpriority="low" />
+<link rel="modulepreload" href="src/3d/human-base.js" fetchpriority="low" />
+<link rel="modulepreload" href="src/3d/human-rig.js" fetchpriority="low" />
+<link rel="modulepreload" href="src/3d/textures.js" fetchpriority="low" />
+<link rel="modulepreload" href="src/3d/human-motion.js" fetchpriority="low" />
+<link rel="modulepreload" href="src/3d/dog-model.js" fetchpriority="low" />
+<link rel="modulepreload" href="src/3d/human-head.js" fetchpriority="low" />
+<link rel="modulepreload" href="src/3d/dog-rig.js" fetchpriority="low" />
+<link rel="modulepreload" href="./assets/vendor/three/three.module.min.js" fetchpriority="low" />
+<link rel="modulepreload" href="./assets/vendor/three/addons/loaders/GLTFLoader.js" fetchpriority="low" />
+<link rel="modulepreload" href="./assets/vendor/three/addons/utils/SkeletonUtils.js" fetchpriority="low" />
+<link rel="modulepreload" href="./assets/vendor/three/addons/utils/BufferGeometryUtils.js" fetchpriority="low" />
+<link rel="modulepreload" href="./assets/vendor/three/addons/environments/RoomEnvironment.js" fetchpriority="low" />
+<link rel="modulepreload" href="./assets/vendor/three/addons/loaders/RGBELoader.js" fetchpriority="low" />
 </head>
 <body>
 <noscript>
@@ -118,7 +121,10 @@ if ("serviceWorker" in navigator) {
 <script src="src/app/boot.js"></script>
 
 <!-- The 3D layer (ES modules). Menus load only main.js and what it imports;
-     the exposure engine and each realm's scene load when a trial needs them. -->
-<script type="module" src="src/3d/main.js"></script>
+     the exposure engine and each realm's scene load when a trial needs them.
+     async: a deferred module held DOMContentLoaded — and so boot() and the
+     first paint — until all of three.js had arrived. Everything that uses it
+     waits for "scene3d-ready". -->
+<script type="module" async src="src/3d/main.js"></script>
 </body>
 </html>
