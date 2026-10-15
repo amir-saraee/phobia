@@ -5039,3 +5039,152 @@ html.fx-lite *:not(.grounding-overlay) {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
+
+/* ================= LANTERNWALK — brand + title screen =================
+   The wordmark, the header lantern, and the night valley that replaced the
+   empty 3D room behind the title. The valley is a place, so it keeps its
+   own night palette in light mode too. */
+.lw-lamp { width: 1em; height: 1.33em; flex: 0 0 auto; color: #f3d9a4; filter: drop-shadow(0 0 6px rgba(255, 190, 90, .55)); }
+.lw-lamp-flame { transform-origin: 12px 21px; animation: lwFlame 2.6s ease-in-out infinite; }
+@keyframes lwFlame { 0%, 100% { transform: scale(1); opacity: 1; } 40% { transform: scale(.9, 1.06); opacity: .88; } 70% { transform: scale(1.05, .95); } }
+.brand h1.lw-head { gap: 7px; font-size: 18px; }
+.lw-head .lw-lamp { font-size: 17px; }
+.lw-name {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  font-weight: 700; letter-spacing: .2px;
+}
+html[lang="fa"] .lw-name, html[lang="fa"] .lw-mark span, html[lang="fa"] .lw-mark-sm span { font-family: inherit; }
+
+.mob-valley { background: #050816; }
+.mob-valley .valley-hero { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.vh-glass { fill: rgba(18, 22, 38, .85); transition: fill .6s ease; }
+.vh-flame { fill: #ffcf6e; opacity: 0; }
+.vh-glow { opacity: 0; transition: opacity .8s ease; }
+.vh-lantern.on .vh-glass { fill: rgba(255, 214, 140, .32); }
+.vh-lantern.on .vh-flame { opacity: 1; }
+.vh-lantern.on .vh-glow { opacity: .95; }
+.vh-lantern.waiting .vh-glow { animation: vhWait 3.2s ease-in-out infinite; }
+.vh-lantern.waiting .vh-flame { animation: vhWaitFlame 3.2s ease-in-out infinite; }
+@keyframes vhWait { 0%, 100% { opacity: .08; } 50% { opacity: .5; } }
+@keyframes vhWaitFlame { 0%, 100% { opacity: 0; } 50% { opacity: .75; } }
+.vh-tw { animation: vhTwinkle var(--d, 3s) ease-in-out infinite; }
+@keyframes vhTwinkle { 0%, 100% { opacity: .2; } 50% { opacity: .9; } }
+.vh-fly { fill: #ffe7a3; opacity: 0; animation: vhFly var(--d, 7s) ease-in-out infinite; animation-delay: calc(var(--k) * -0.9s); }
+@keyframes vhFly {
+  0% { opacity: 0; transform: translate(0, 0); }
+  30% { opacity: .85; }
+  60% { opacity: .3; transform: translate(14px, -22px); }
+  100% { opacity: 0; transform: translate(-8px, -40px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vh-tw, .vh-fly, .vh-lantern.waiting .vh-glow, .vh-lantern.waiting .vh-flame, .lw-lamp-flame { animation: none; }
+  .vh-lantern.waiting .vh-glow { opacity: .3; }
+}
+/* The valley needs no scrim at mid-height — only where text sits. */
+.mob-valley::after {
+  background:
+    linear-gradient(to bottom, rgba(5,8,22,.55) 0%, rgba(5,8,22,0) 30%),
+    linear-gradient(to top, rgba(5,8,22,.8) 0%, rgba(5,8,22,0) 34%);
+}
+
+.arrive-hero { top: max(70px, calc(9dvh + var(--safe-t, 0px))); transform: none; }
+.arrive-hero.mob-hero-high { top: max(70px, calc(9dvh + var(--safe-t, 0px))); transform: none; }
+.lw-mark {
+  display: inline-flex; align-items: center; gap: .22em;
+  margin: 0 0 14px;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  font-size: clamp(40px, 11.5vw, 76px); font-weight: 700; line-height: 1; letter-spacing: -.01em;
+  color: #fbf1dc;
+  text-shadow: 0 0 34px rgba(255, 186, 92, .35), 0 4px 24px rgba(0, 0, 0, .6);
+}
+.lw-mark .lw-lamp { font-size: .62em; }
+.lw-mark-sm {
+  display: inline-flex; align-items: center; gap: 6px; margin: 0 0 14px;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-weight: 700; font-size: 17px; color: #fbf1dc; opacity: .92;
+}
+.lw-tagline {
+  margin: 0 auto; max-width: 15em;
+  font-size: clamp(21px, 5.6vw, 32px); line-height: 1.2; font-weight: 650;
+  color: #eef2ff; text-shadow: 0 3px 20px rgba(0, 0, 0, .75);
+}
+.lw-sub {
+  margin: 12px auto 0; max-width: 24em;
+  font-size: clamp(14px, 3.8vw, 17px); color: #f3d9a4; opacity: .9;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, .7);
+}
+.arrive-sheet { padding-top: 16px; }
+.arrive-sheet > p:first-child { margin-top: 0; }
+.arrive-link {
+  display: block; width: 100%; margin: 10px 0 0; padding: 10px;
+  background: none; border: 0; color: var(--muted); font: inherit; font-size: 14px;
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+  min-height: var(--touch, 44px);
+}
+.arrive-link:hover { color: var(--text); }
+/* Wide screens: the sheet is a card under the valley, not a full-width bar. */
+@media (min-width: 760px) {
+  .arrive-sheet {
+    left: 50%; right: auto; bottom: 28px; transform: translateX(-50%);
+    width: min(540px, calc(100% - 48px));
+    border-radius: 20px; border: 1px solid rgba(255,255,255,.10);
+    animation: none;
+  }
+}
+.consent-crisis { margin: 12px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.consent-crisis a { color: var(--accent); font-weight: 700; }
+.consent-modal .bridge-invite-kicker { display: inline-flex; align-items: center; gap: 6px; }
+.consent-modal .bridge-invite-kicker .lw-lamp { font-size: 12px; }
+.vh-moon-n { display: none; }
+@media (max-aspect-ratio: 1/1) { .vh-moon-w { display: none; } .vh-moon-n { display: inline; } }
+.consent-modal .consent-crisis { margin-top: 16px; }
+/* The one-card orientation in creature/place realms: points, doesn't block. */
+.tour-overlay.soft { background: none; pointer-events: none; }
+.tour-overlay.soft .tour-card { pointer-events: auto; }
+.tour-overlay.soft .tour-spot { box-shadow: 0 0 24px rgba(124, 209, 197, .55); animation: tourPulseSoft 1.6s ease-in-out infinite; }
+@keyframes tourPulseSoft { 0%, 100% { box-shadow: 0 0 18px rgba(124, 209, 197, .45); } 50% { box-shadow: 0 0 34px rgba(124, 209, 197, .9); } }
+/* Theater: stage + the controls row under it fill exactly one screen. The
+   row's height is measured into --stepctl-h (fitTheaterStage). */
+.stage.theater {
+  height: calc(100vh - var(--stepctl-h, 80px));
+  height: calc(100dvh - var(--stepctl-h, 80px));
+  min-height: 260px;
+}
+@media (max-width: 600px) {
+  /* One row on a phone: the two buttons. The in-stage hold pill already
+     shows the hold, so the label and the wall clock don't need rows of
+     their own under it. */
+  .exposure-panel .step-controls { flex-wrap: nowrap; padding-top: 10px; padding-bottom: 10px; }
+  .exposure-panel .step-controls .timer, .exposure-panel .step-controls .hold-label { display: none; }
+  .exposure-panel .step-controls > button { flex: 1 1 0; min-width: 0; white-space: normal; }
+}
+@media (max-width: 600px) {
+  .exposure-panel .step-controls > button { font-size: 14px; padding: 10px 12px; }
+}
+.menu-count {
+  display: inline-block; min-width: 18px; padding: 0 6px; margin-inline-start: 6px;
+  border-radius: 99px; font-size: 11px; font-weight: 800; line-height: 18px; text-align: center;
+  background: linear-gradient(135deg, #f6c76a, #e78a4e); color: #221a08;
+}
+@media (max-width: 520px) {
+  .brand h1.lw-head { font-size: 16px; gap: 5px; }
+}
+img.cast-face { display: block; border-radius: 50%; object-fit: cover; background: radial-gradient(circle at 50% 30%, #4a4360 0%, #1a2036 70%); }
+img.cast-face.baked { animation: castIn .35s ease; }
+@keyframes castIn { from { opacity: .2; } to { opacity: 1; } }
+.menu-avatar img.cast-face { width: 56px; height: 56px; }
+/* The creator's "Walk in" stays in reach at the foot of the sheet while the
+   look options scroll under it. */
+.mob-sheet .tw-cta {
+  position: sticky; bottom: calc(-14px - var(--safe-b, 0px)); z-index: 2;
+  margin: 10px -16px 0; padding: 10px 16px calc(12px + var(--safe-b, 0px));
+  background: linear-gradient(to top, color-mix(in srgb, var(--panel) 96%, transparent) 70%, transparent);
+}
+/* Mira speaks the coach's lessons: her face beside each one. */
+.stage .dc-callout:has(.dc-mira) { display: flex; gap: 10px; align-items: flex-start; }
+.stage .dc-mira {
+  flex: 0 0 30px; width: 30px; height: 30px; border-radius: 50%; overflow: hidden;
+  box-shadow: 0 0 0 1.5px rgba(255, 214, 140, .45);
+}
+.stage .dc-mira > * { width: 30px; height: 30px; display: block; }
+.stage .dc-say { min-width: 0; }

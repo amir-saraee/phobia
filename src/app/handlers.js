@@ -42,6 +42,7 @@ function attachCharacterHandlers(editing) {
 }
 
 function attachHandlers(view, params) {
+  if (view === "welcome") gateTitleScreenOnConsent();
   const home = document.getElementById("home");
   if (home) home.onclick = () => { PhobiaAudio.unlock(); go("select"); };
   const audioBtn = document.getElementById("audioBtn");
@@ -76,7 +77,7 @@ function attachHandlers(view, params) {
     const ch = window.Character && window.Character.loadCharacter();
     const cs = activeCharSlice();
     const payload = {
-      app: "Mira — exposure practice export",
+      app: "Lanternwalk — exposure practice export",
       exportedAt: new Date().toISOString(),
       character: ch ? { name: ch.name || null, primaryPhobia: ch.primaryPhobia || null } : null,
       progress: state.progress,
@@ -247,7 +248,7 @@ function openMenu() {
       <li><button data-go="story">${t("menu.storyBook", "📖 The story — Mira's lanterns")}</button></li>
       <li><button data-go="select">${t("menu.camp", "🏕 Camp — the valley map")}</button></li>
       ${ch ? `<li><button data-go="ladder" data-phobia="${(() => { try { return currentRealmKey(); } catch { return ch.primaryPhobia || ""; } })()}">${t("menu.trials", "Continue your trials")}</button></li>` : ""}
-      <li><button data-go="journal">${t("menu.sparks", "✦ Book of Sparks")}</button></li>
+      <li><button data-go="journal">${t("menu.sparks", "✦ Book of Sparks")}${(() => { const n = ch ? getSparks().length : 0; return n ? ` <span class="menu-count">${n}</span>` : ""; })()}</button></li>
       <li><button data-go="insights">${t("menu.story", "📜 Your story so far")}</button></li>
       <li><button data-go="report">${t("menu.report", "📄 Progress report — print / share")}</button></li>
       ${allRealmsUnlocked() ? `<li><button data-go="custom">${t("menu.forge", "🛠 Forge a custom fear")}</button></li>` : ""}
@@ -256,22 +257,30 @@ function openMenu() {
     <ul class="menu-list">
       <li><button data-go="traveler">${t("menu.editCharacter", "✎ Edit your traveler")}</button></li>
       ${allChars.length > 1 ? `<li><button data-go="profiles">${t("menu.switchCharacter", "⇄ Switch traveler")}</button></li>` : ""}
-      <li><button data-go="about">${t("menu.about", "ℹ️ About Mira")}</button></li>
+      <li><button data-go="about">${t("menu.about", "ℹ️ About Lanternwalk")}</button></li>
       <li><button id="menuFeedback">${t("fb.menu", "💬 Send feedback")}</button></li>
+      <li><button id="menuSound">${PhobiaAudio.isMuted() ? t("menu.soundOff", "🔇 Sound: off") : t("menu.soundOn", "🔊 Sound: on")}</button></li>
       <li><button id="menuOpenSettings">${t("menu.settings", "⚙ Settings")}</button></li>
     </ul>
     <div class="menu-divider"></div>
-    <p class="menu-footer">${t("menu.footer", "Mira · a practice game, not therapy.")}</p>
+    <p class="menu-footer">${t("menu.footer", "Lanternwalk · a practice game, not therapy.")}</p>
   `;
   const backdrop = document.createElement("div");
   backdrop.className = "menu-backdrop";
   document.body.appendChild(backdrop);
   document.body.appendChild(drawer);
   requestAnimationFrame(() => { drawer.classList.add("open"); backdrop.classList.add("show"); });
+  upgradeFaces(drawer);
 
   drawer.querySelector("#closeMenu").onclick = closeMenu;
   backdrop.onclick = closeMenu;
   drawer.querySelector("#menuOpenSettings").onclick = () => { closeMenu(); openSettings(); };
+  drawer.querySelector("#menuSound").onclick = (e) => {
+    PhobiaAudio.unlock();
+    const next = !PhobiaAudio.isMuted();
+    PhobiaAudio.setMuted(next);
+    e.currentTarget.textContent = next ? t("menu.soundOff", "🔇 Sound: off") : t("menu.soundOn", "🔊 Sound: on");
+  };
   drawer.querySelector("#menuFeedback").onclick = () => { closeMenu(); openFeedback(location.hash); };
   drawer.querySelectorAll("[data-go]").forEach(btn => {
     btn.onclick = () => {
@@ -314,7 +323,7 @@ function openSettings() {
   const graphics = (() => { try { return localStorage.getItem("fobia.quality") || "auto"; } catch { return "auto"; } })();
   const lightMode = (() => { try { return localStorage.getItem("fobia.theme") === "light"; } catch { return false; } })();
   const remindersOn = (() => { try { return localStorage.getItem("fobia.reminders") === "1"; } catch { return false; } })();
-  const countdownOn = (() => { try { return localStorage.getItem("fobia.skipCountdown") !== "1"; } catch { return true; } })();
+  const countdownOn = (() => { try { return localStorage.getItem("fobia.countdown") === "1"; } catch { return false; } })();
   const canNotify = "Notification" in window;
 
   drawer.innerHTML = `
@@ -492,7 +501,7 @@ function openSettings() {
     </div>
     <div class="row">
       <div>
-        <label>${t("settings.about", "About Mira")}</label>
+        <label>${t("settings.about", "About Lanternwalk")}</label>
         <div class="small">${t("settings.aboutSub", "What this is, the science, privacy, credits.")}</div>
       </div>
       <button class="btn-ghost" id="aboutBtn" style="padding:6px 12px;font-size:12px;">${t("settings.aboutOpen", "Open")}</button>
@@ -584,10 +593,10 @@ function openSettings() {
     qSel.parentElement.appendChild(note);
     setTimeout(() => note.remove(), 2200);
   };
-  // Pre-scene countdown toggle (stored inverted: "1" = skip the countdown)
+  // Pre-scene countdown toggle — off unless asked for ("1" = on).
   drawer.querySelector("#toggleCountdown").onclick = (e) => {
-    const next = !(localStorage.getItem("fobia.skipCountdown") !== "1"); // next = countdown ON?
-    try { localStorage.setItem("fobia.skipCountdown", next ? "0" : "1"); } catch {}
+    const next = localStorage.getItem("fobia.countdown") !== "1"; // next = countdown ON?
+    try { localStorage.setItem("fobia.countdown", next ? "1" : "0"); } catch {}
     e.currentTarget.classList.toggle("on", next);
   };
   // Light/dark mode toggle
@@ -615,7 +624,7 @@ function openSettings() {
       try { localStorage.setItem("fobia.reminders", "1"); } catch {}
       remindersBtn.classList.add("on");
       try {
-        new Notification("Mira", {
+        new Notification("Lanternwalk", {
           body: t("set.nudgeOn", "Reminders are on. We'll nudge you once a day."),
           icon: "icon.svg",
         });
@@ -1069,10 +1078,10 @@ function openFeedback(context = "") {
     <div class="goal-modal fb-modal" role="dialog" aria-label="${escapeHtml(t("fb.title", "What worked, what didn't?"))}">
       <span class="bridge-invite-kicker">${t("fb.kicker", "💬 Your feedback")}</span>
       <h3 style="margin:6px 0 4px">${t("fb.title", "What worked, what didn't?")}</h3>
-      <p class="small">${t("fb.p", "Mira is new, and what you tell us shapes it. Anything helps — a bug, a moment you got stuck, a moment it helped. Nothing is sent automatically: you copy the note, or send it yourself.")}</p>
+      <p class="small">${t("fb.p", "Lanternwalk is new, and what you tell us shapes it. Anything helps — a bug, a moment you got stuck, a moment it helped. Nothing is sent automatically: you copy the note, or send it yourself.")}</p>
       <textarea id="fbText" rows="6" maxlength="4000" placeholder="${escapeHtml(t("fb.ph", "What happened? Where were you?"))}"></textarea>
       <label class="fb-diag"><input type="checkbox" id="fbDiag" checked> <span>${t("fb.diag", "Include technical details (browser, device, recent errors — nothing personal)")}</span></label>
-      ${FEEDBACK_URL ? "" : `<p class="small fb-where">${t("fb.where", "Copy it and send it to the person who shared Mira with you.")}</p>`}
+      ${FEEDBACK_URL ? "" : `<p class="small fb-where">${t("fb.where", "Copy it and send it to the person who shared Lanternwalk with you.")}</p>`}
       <div class="actions" style="margin-top:12px">
         <button class="btn-ghost" id="fbClose">${t("fb.close", "Close")}</button>
         <button class="${FEEDBACK_URL ? "btn-ghost" : "btn-primary"}" id="fbCopy">${t("fb.copy", "📋 Copy note")}</button>

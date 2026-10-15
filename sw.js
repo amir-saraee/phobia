@@ -11,7 +11,7 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v28-modules";
+const VERSION = "lanternwalk-v29";
 // Installed on the first visit, in the background — so it holds only what the
 // six open realms need to boot and play offline: their code, plus the models
 // and textures of the creature realms (dogs, spiders, snakes; the place realms

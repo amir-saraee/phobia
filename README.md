@@ -1,4 +1,8 @@
-# Mira — The Courage Journey 🏕
+# Lanternwalk 🏮
+
+*Every fear is a path you stopped walking. Light it again — one small step at a time.*
+
+(فانوس‌به‌دست · formerly “Mira — The Courage Journey”; Mira is now the lantern-keeper who walks beside you.)
 
 **A tiny game about big fears.** Free, in your browser, English + فارسی.
 
@@ -25,7 +29,7 @@ Your custom character walks every scene. In the place realms the coach reads you
 
 ## Built on real psychology
 
-Mira is a game shell around genuine CBT graded-exposure mechanics:
+Lanternwalk is a game shell around genuine CBT graded-exposure mechanics:
 
 - **An alarm that falls while you stay** — the live wave rises as you close in and comes down on its own if you don't leave; a trial ends when it has settled, not on a timer
 - **Predict → face → compare** — name what your fear expects ("it'll run at me", "I'll run out of air", "something is in the room"), then check it against what the scene saw happen (expectancy violation)
@@ -35,7 +39,7 @@ Mira is a game shell around genuine CBT graded-exposure mechanics:
 - **📄 Progress report** — a printable, clinician-readable record you can hand a therapist
 - **📖 The Story Book** — why fears start (one frightening moment, learning by watching, stories and a brain primed for some fears, a misread body, a normal childhood fear that never got tested, a panic that spread, temperament and genes) and how they unwind (graded exposure, staying until it falls, expectancy violation, safety behaviours, attention, affect labelling, cognitive restructuring, interoceptive exposure, spacing and sleep, acceptance, relapse prevention, when to get help) — earned page by page
 
-> **A practice game, not therapy.** Real exposure work for phobias belongs with a trained clinician. Use Mira for curiosity, education, or as a conversation starter — not treatment.
+> **A practice game, not therapy.** Real exposure work for phobias belongs with a trained clinician. Use Lanternwalk for curiosity, education, or as a conversation starter — not treatment.
 
 ## Tech
 

@@ -34,10 +34,10 @@ window.addEventListener("error", (e) => {
   // Filter out the "ResizeObserver loop limit exceeded" warning that fires
   // benignly when the stage canvas resizes — it's not a real bug.
   if (e && e.message && /ResizeObserver/i.test(e.message)) return;
-  try { console.warn("[Mira] uncaught error:", e.message, e.error || ""); } catch {}
+  try { console.warn("[Lanternwalk] uncaught error:", e.message, e.error || ""); } catch {}
 });
 window.addEventListener("unhandledrejection", (e) => {
-  try { console.warn("[Mira] unhandled promise:", e.reason); } catch {}
+  try { console.warn("[Lanternwalk] unhandled promise:", e.reason); } catch {}
 });
 
 // ---------- Procedural audio engine (Web Audio API) ----------

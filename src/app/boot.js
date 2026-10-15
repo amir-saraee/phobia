@@ -44,21 +44,26 @@ const CONSENT_KEY = "fobia.consent.v1";
 function hasConsented() {
   try { return localStorage.getItem(CONSENT_KEY) === "1"; } catch { return false; }
 }
-function showConsent(rereading) {
+// Three things and a phone number, not five paragraphs: what this is (and
+// isn't), that nothing leaves the device, that every scene can be left. The
+// long form lives on the About page ("Read more").
+function showConsent(rereading, onOk) {
   if (document.querySelector(".consent-overlay")) return;
+  const touch = isCoarsePointer();
   const overlay = document.createElement("div");
   overlay.className = "goal-modal-overlay consent-overlay";
   overlay.innerHTML = `
     <div class="goal-modal consent-modal" role="dialog" aria-modal="true" aria-label="${t("consent.title", "Before you begin")}">
-      <span class="bridge-invite-kicker">🕯 ${t("consent.kicker", "A minute of honesty, then the valley")}</span>
+      <span class="bridge-invite-kicker">${brandLamp()} ${t("consent.kicker2", "Before you walk in")}</span>
       <h3 style="margin:6px 0 10px">${t("consent.title", "Before you begin")}</h3>
       <ul class="consent-list">
-        <li><span>🎮</span>${t("consent.game", "Mira is a practice game about how fear works — built for curiosity and education. It is not therapy and doesn't replace a clinician.")}</li>
-        <li><span>🔒</span>${t("consent.privacy", "Everything you do here stays in this browser, on this device. No account, no tracking, nothing sent anywhere.")}</li>
-        <li><span>🚪</span>${t("consent.control", "You are always in control: leave any scene at any moment, and Esc always grounds you. Stepping out is never a failure.")}</li>
-        <li><span>🤝</span>${t("consent.help", "If a fear is seriously limiting your life, a trained clinician can run real exposure work with you safely — this app can be the conversation starter.")}</li>
-        <li><span>☎️</span>${t("consent.crisis", "If you're in crisis right now, please reach a real person:")} <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a></li>
+        <li><span>🎮</span>${t("consent.game2", "Lanternwalk is a practice game about how fear works — not therapy, and no substitute for a clinician. If a fear is seriously limiting your life, a professional can help; this can start that conversation.")}</li>
+        <li><span>🔒</span>${t("consent.privacy2", "Everything stays on this device. No account, no tracking.")}</li>
+        <li><span>🚪</span>${touch
+          ? t("consent.control2m", "You're in control: leave any scene, any time — 🛟 grounds you. Stepping out is never a failure.")
+          : t("consent.control2d", "You're in control: leave any scene, any time — Esc grounds you. Stepping out is never a failure.")}</li>
       </ul>
+      <p class="consent-crisis">☎️ ${t("consent.crisis", "If you're in crisis right now, please reach a real person:")} <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a></p>
       <div class="actions" style="margin-top:14px">
         ${rereading ? "" : `<button class="btn-ghost" id="consentAbout">${t("consent.more", "Read more")}</button>`}
         <button class="btn-primary" id="consentOk">${rereading ? t("consent.close", "Close") : t("consent.ok", "I understand — begin")}</button>
@@ -68,6 +73,7 @@ function showConsent(rereading) {
   overlay.querySelector("#consentOk").onclick = () => {
     try { localStorage.setItem(CONSENT_KEY, "1"); } catch {}
     overlay.remove();
+    if (typeof onOk === "function") { try { onOk(); } catch (e) { console.warn("[consent]", e); } }
   };
   const aboutBtn = overlay.querySelector("#consentAbout");
   if (aboutBtn) aboutBtn.onclick = () => {
@@ -75,6 +81,24 @@ function showConsent(rereading) {
     overlay.remove();
     go("about");
   };
+}
+
+// The title screen is read before the notice is: the first visit lands on
+// the valley and the name, and the notice comes with the first tap on any of
+// its buttons — which then carries on to where that tap was going. Every
+// other route (a deep link, a shared trial) still shows it at boot.
+function gateTitleScreenOnConsent() {
+  const v = document.getElementById("view");
+  if (!v || hasConsented()) return;
+  const onTap = (e) => {
+    if (hasConsented()) { v.removeEventListener("click", onTap, true); return; }
+    const btn = e.target && e.target.closest && e.target.closest("button[data-action]");
+    if (!btn || btn.dataset.action === "open-settings") return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    showConsent(false, () => { v.removeEventListener("click", onTap, true); btn.click(); });
+  };
+  v.addEventListener("click", onTap, true);
 }
 
 // ---------- Boot ----------
@@ -100,8 +124,10 @@ function boot() {
   // Honor the URL on first load so refreshes / shared links land correctly
   const route = location.hash ? parseRoute(location.hash) : { view: "welcome", params: {} };
   render(route.view, route.params);
-  // First visit: the honest-welcome notice comes before anything else.
-  if (!hasConsented()) showConsent(false);
+  // First visit: the honest-welcome notice comes before anything is played —
+  // on the title screen, with the first tap (gateTitleScreenOnConsent, wired
+  // in attachHandlers); anywhere else, right away.
+  if (!hasConsented() && route.view !== "welcome") showConsent(false);
   // Make sure the URL bar matches what we rendered
   const expected = "#" + serializeRoute(route.view, route.params);
   if (location.hash !== expected) {

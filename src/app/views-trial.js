@@ -1459,6 +1459,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     rankRow = `
       <div class="vc-chips">${chips.join("")}</div>
       ${lastAward.milestones.length ? `<div class="reward-milestone vc-ms">${escapeHtml(tf("reward.milestone", "🏅 Milestone unlocked: {list}", { list: lastAward.milestones.join(t("list.sep", ", ")) }))}</div>` : ""}
+      ${(lastAward.badges || []).length ? `<div class="reward-milestone vc-ms vc-badges">${escapeHtml(lastAward.badges.join(" · "))}</div>` : ""}
       <div class="vc-rank" data-to="${span(rA, after).toFixed(1)}" data-c0="${before}" data-c1="${after}">
         <span class="vc-rank-title">${rA.icon} ${escapeHtml(rA.title)}${rA.idx > rB.idx ? ` <span class="vc-best">${t("vc.rankUp", "rank up!")}</span>` : ""}</span>
         <div class="rank-bar"><div class="rank-fill" style="width:${from.toFixed(1)}%"></div></div>

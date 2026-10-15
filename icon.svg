@@ -1,27 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Lanternwalk: one lit lantern over a night path. -->
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1f2a44"/>
-      <stop offset="1" stop-color="#0f1724"/>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#070b1d"/>
+      <stop offset="1" stop-color="#1d2452"/>
     </linearGradient>
-    <linearGradient id="dot" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#7cd1c5"/>
-      <stop offset="1" stop-color="#a5b4fc"/>
-    </linearGradient>
-    <linearGradient id="step" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#7cd1c5"/>
-      <stop offset="1" stop-color="#a5b4fc"/>
+    <radialGradient id="glow" cx="256" cy="236" r="190" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffd98f" stop-opacity=".75"/>
+      <stop offset=".45" stop-color="#ffaf4d" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#ffaf4d" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="path" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#f3e4c4" stop-opacity=".30"/>
+      <stop offset="1" stop-color="#f3e4c4" stop-opacity=".05"/>
     </linearGradient>
   </defs>
-  <!-- Rounded background -->
-  <rect width="512" height="512" rx="116" ry="116" fill="url(#bg)"/>
-  <!-- Step pattern: 3 ascending bars -->
-  <g transform="translate(76, 96)">
-    <rect x="0"   y="220" width="100" height="100" rx="14" fill="#7cd1c5" opacity=".55"/>
-    <rect x="120" y="140" width="100" height="180" rx="14" fill="#a5b4fc" opacity=".75"/>
-    <rect x="240" y="60"  width="100" height="260" rx="14" fill="url(#step)"/>
-  </g>
-  <!-- Glow dot (matches the brand dot in the app header) -->
-  <circle cx="86" cy="86" r="36" fill="url(#dot)"/>
-  <circle cx="86" cy="86" r="36" fill="none" stroke="rgba(124,209,197,.35)" stroke-width="20"/>
+  <rect width="512" height="512" rx="116" fill="url(#sky)"/>
+  <circle cx="256" cy="236" r="190" fill="url(#glow)"/>
+  <path d="M0 400 C120 362 210 384 300 366 S440 350 512 372 V512 H0z" fill="#0b1029"/>
+  <path d="M196 512 C230 450 214 420 250 384 L262 384 C286 424 300 456 316 512z" fill="url(#path)"/>
+  <!-- the lantern -->
+  <path d="M256 104 v34 M216 138 h80" stroke="#f3d9a4" stroke-width="14" stroke-linecap="round" fill="none"/>
+  <path d="M206 162 h100 l18 28 v108 l-18 28 h-100 l-18 -28 v-108z" fill="#ffd68c" fill-opacity=".22" stroke="#f3d9a4" stroke-width="13" stroke-linejoin="round"/>
+  <path d="M256 196 c30 33 30 63 0 90 c-30 -27 -30 -57 0 -90z" fill="#ffc86b"/>
+  <path d="M256 228 c12 14 12 28 0 40 c-12 -12 -12 -26 0 -40z" fill="#fff4d6"/>
 </svg>

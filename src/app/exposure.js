@@ -40,7 +40,13 @@ function mountExposure(phobiaKey, levelIdx) {
   const minHold = parseInt(stage.dataset.minHold, 10) || 6;
   // The experiment deck for this realm/rung (renders nothing when the realm
   // has no deck). Torn down by unmount() via PhobiaExperiments.end().
-  try { PhobiaExperiments.begin(phobiaKey, levelIdx, stage); } catch {}
+  // Not on a realm's very first trial: that one is for meeting the room and
+  // the alarm, and an "Experiments" chip beside the camera toggle was one more
+  // thing to read before the first step. From the second visit on, it's there.
+  const firstVisitHere = (() => { try { return (getProgress(phobiaKey).highestCompleted ?? -1) < 0 && !state.log.some((l) => l.phobia === phobiaKey); } catch { return false; } })();
+  if (!firstVisitHere || window.__demoMode) {
+    try { PhobiaExperiments.begin(phobiaKey, levelIdx, stage); } catch {}
+  }
   // ---- Instant-demo chrome ----
   // Same scene, different exits: the Continue button leads to the invitation
   // instead of the rate flow (no ladder writes for a visitor with no
@@ -86,6 +92,25 @@ function mountExposure(phobiaKey, levelIdx) {
     setTimeout(() => {
       try { stage.scrollIntoView({ block: "start" }); } catch {}
     }, 180);
+    fitTheaterStage();
+  }
+
+  // The stage and the row under it (Pause & breathe, Step out / Continue,
+  // the hold bar) share exactly one screen. The stage used to be a fixed
+  // 100dvh − 80px, which on a phone (where that row wraps) and on most
+  // laptops left the way out — and the Continue button — below the fold, to
+  // be found by scrolling a page that was otherwise a game screen.
+  function fitTheaterStage() {
+    const row = document.querySelector(".exposure-panel .step-controls");
+    if (!row || typeof ResizeObserver === "undefined") return;
+    const apply = () => {
+      if (!stage.isConnected) { ro.disconnect(); return; }
+      if (fsEl() === stage) return;
+      stage.style.setProperty("--stepctl-h", Math.ceil(row.getBoundingClientRect().height) + "px");
+    };
+    const ro = new ResizeObserver(apply);
+    ro.observe(row);
+    apply();
   }
 
   // Fullscreen hides every sibling of #stage, which includes the hold bar and
@@ -114,25 +139,11 @@ function mountExposure(phobiaKey, levelIdx) {
   document.addEventListener("fullscreenchange", onFsChange);
   document.addEventListener("webkitfullscreenchange", onFsChange);
 
-  // One attempt only. If the user backs out with Esc, clicking in the scene
-  // again must not drag them back in — that is a fight, not a feature.
-  let fsAsked = false;
-  // Not on touch screens. Fullscreen there floated the hold / step-out row
-  // over the bottom of the stage — right on the joystick, Ground me and the
-  // controls toggle (Android; iPhones can't fullscreen an element at all, so
-  // they always had the theater layout, and now every phone does).
-  const goImmersive = () => {
-    if (fsAsked || !immersiveOn || fsEl() || isCoarsePointer()) return;
-    fsAsked = true;
-    try {
-      const req = stage.requestFullscreen || stage.webkitRequestFullscreen;
-      if (req) Promise.resolve(req.call(stage, { navigationUI: "hide" })).catch(() => {});
-    } catch {}
-  };
-  if (immersiveOn) {
-    stage.addEventListener("pointerdown", goImmersive, { once: true });
-    window.addEventListener("keydown", goImmersive, { once: true });
-  }
+  // No longer asked for on the first click or key. The browser spends Esc on
+  // leaving fullscreen, so the first press of the key every trial promises
+  // will ground you did nothing — and a page jumping to fullscreen when you
+  // touch W is a surprise, not immersion. The theater layout already fills
+  // the screen (stage + controls fit the viewport, see fitTheaterStage).
 
   // Chrome auto-hide — the video-player contract: still for a moment and the
   // interface gets out of the way, any input brings it back.
@@ -159,7 +170,6 @@ function mountExposure(phobiaKey, levelIdx) {
     window.removeEventListener("hashchange", releaseImmersion);
     clearTimeout(chromeIdleTimer);
     CHROME_WAKE.forEach(ev => window.removeEventListener(ev, showChrome));
-    window.removeEventListener("keydown", goImmersive);
     document.removeEventListener("fullscreenchange", onFsChange);
     document.removeEventListener("webkitfullscreenchange", onFsChange);
     // (These two held every finished trial's stage — and this whole scope —
@@ -392,11 +402,11 @@ function mountExposure(phobiaKey, levelIdx) {
   }
 
   // ---- Pre-stage countdown ("Get ready · 3 · 2 · 1 · go") ----
-  // The user can tap "Start when you're ready" to skip the wait, OR just
-  // wait for the count to finish — either way the scene starts predictably.
-  // Respecting the user's pace: skipping the count ONCE turns the countdown
-  // off for good (re-enable any time in Settings → "Pre-scene countdown").
-  const countdownOff = (() => { try { return localStorage.getItem("fobia.skipCountdown") === "1"; } catch { return false; } })();
+  // Off unless the player turns it on (Settings → "Pre-scene countdown").
+  // Every trial is already player-paced — the creature starts far away and
+  // nothing happens until you walk — so a count before it was a gate in
+  // front of a gate, and on a first trial it stacked with the tour.
+  const countdownOff = (() => { try { return localStorage.getItem("fobia.countdown") !== "1"; } catch { return true; } })();
   const countdown = document.createElement("div");
   if (!countdownOff) {
     countdown.className = "countdown";
@@ -479,6 +489,10 @@ function mountExposure(phobiaKey, levelIdx) {
       const delay = 1400 + i * (12000 + Math.random() * 6000);
       voiceTimers.push(setTimeout(() => {
         if (!(timer && timer.isConnected)) return;
+        // A realm with a live coach narrates from what actually happens; a
+        // timed follow-up ("Walk in at your own pace…") landing after the
+        // player has already walked in reads as the game not watching.
+        if (i > 0 && (window.__coach || window.__dogCoach)) return;
         if (i === 0 && headerShowing() && (_similar(line0, lv && lv.desc) || _similar(line, lvDesc(phobiaKey, levelIdx)))) return;
         PhobiaVoice.speak(line, { audible: i === 0 });
       }, delay));
@@ -488,7 +502,10 @@ function mountExposure(phobiaKey, levelIdx) {
     // rung's title card. (A no-op in true fullscreen, where it already does.)
     armChromeIdle();
     if (immersiveOn) {
-      try { stage.scrollIntoView({ block: "center", behavior: "smooth" }); } catch {}
+      // "start", not "center": the stage and the controls row under it are
+      // sized to fill the screen together, so the stage's top is the
+      // screen's top (centring it pushed the controls row back off-screen).
+      try { stage.scrollIntoView({ block: "start", behavior: "smooth" }); } catch {}
     }
     // Inactivity watcher — start once the scene is live.
     lastActivity = Date.now();
@@ -545,13 +562,10 @@ function mountExposure(phobiaKey, levelIdx) {
     startNowBtn.onclick = () => {
       if (cdDone || !countdown.isConnected) return;
       cdDone = true;
-      try { localStorage.setItem("fobia.skipCountdown", "1"); } catch {}
+      try { localStorage.setItem("fobia.countdown", "0"); } catch {}
       cdTimers.forEach(id => clearTimeout(id));
       cdTimers = [];
       countdown.style.opacity = "0";
-      // This click is a real user gesture, which is the one thing the
-      // Fullscreen API insists on — the best moment in the whole flow to ask.
-      goImmersive();
       startScene();
       setTimeout(() => countdown.remove(), 600);
     };

@@ -131,6 +131,12 @@ window.addEventListener("popstate", () => {
   // scroll position so Back / Forward feels natural.
 });
 
+// The brand's lantern glyph — header, title screen, wordmarks. Inline SVG so
+// it follows the text colour and needs no request.
+function brandLamp() {
+  return `<svg class="lw-lamp" viewBox="0 0 24 32" aria-hidden="true" focusable="false"><path d="M12 1.5v3.5M7 5h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M6.5 8h11l2 3v12l-2 3h-11l-2-3V11z" fill="rgba(255,200,110,.16)" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path class="lw-lamp-flame" d="M12 12.2c3 3.3 3 6.3 0 8.8c-3-2.5-3-5.5 0-8.8z" fill="#ffc86b"/></svg>`;
+}
+
 function render(view, params) {
   // Tear down any active 3D scene + audio + voice before swapping the DOM
   if (window.Scene3D && typeof window.Scene3D.unmount === "function") {
@@ -174,12 +180,11 @@ function render(view, params) {
   // Any leftover tutorial overlays from a previous mount must be removed,
   // otherwise they linger on body when the view re-renders.
   document.querySelectorAll(".tour-overlay").forEach(el => el.remove());
-  const muted = window.PhobiaAudio && window.PhobiaAudio.isMuted();
+  // The header carries what you check at a glance (courage, who you are,
+  // the language) and the way back to camp. Sparks, progress, sound and
+  // settings each had a header icon AND a place in the ☰ drawer; on a phone
+  // the row ran off the screen. They live in the drawer now.
   const menuBtn = `<button class="audio-btn" id="menuBtn" title="${t("nav.menu", "Menu")}" aria-label="${t("a11y.openMenu", "Open menu")}">☰</button>`;
-  const audioBtn = `<button class="audio-btn" id="audioBtn" title="${t("nav.sound", "Toggle sound")}" aria-label="${t("nav.sound", "Toggle sound")}">${muted ? "🔇" : "🔊"}</button>`;
-  const insightsBtn = (state.log && state.log.length > 0)
-    ? `<button class="audio-btn" id="insightsBtn" title="${t("nav.progress", "Your progress")}" aria-label="${t("nav.progress", "Your progress")}" data-action="open-insights">📊</button>` : "";
-  const settingsBtn = `<button class="audio-btn" id="settingsBtn" title="${t("nav.settings", "Settings")}" aria-label="${t("a11y.openSettings", "Open settings")}">⚙</button>`;
   // Character avatar in header (when one exists). The badge opens the profile
   // picker if the user has more than one character, otherwise the editor.
   const character = window.Character && window.Character.loadCharacter();
@@ -192,26 +197,19 @@ function render(view, params) {
       ${allChars.length > 1 ? `<span class="char-badge-count">${allChars.length}</span>` : ""}
       ${streak >= 2 ? `<span class="char-badge-streak" title="${tf("a11y.streak", "{n}-day streak", { n: streak })}">🔥 ${streak}</span>` : ""}
     </button>` : "";
-  const sparkCount = character ? getSparks().length : 0;
   const isFa = window.I18n && window.I18n.currentLanguage() === "fa";
   const langBtn = `<button class="audio-btn lang-btn" id="langBtn" title="${isFa ? "Switch to English" : "تغییر زبان به فارسی"}" aria-label="${t("a11y.lang", "Change language")}" lang="${isFa ? "en" : "fa"}">${isFa ? "EN" : "فا"}</button>`;
-  const sparksBtn = sparkCount > 0
-    ? `<button class="audio-btn spark-hud" id="sparksBtn" title="${t("hud.sparks", "Book of Sparks — the wisdom you've earned")}" aria-label="${t("a11y.sparks", "Open your Book of Sparks")}">✦<span class="spark-hud-n">${sparkCount}</span></button>` : "";
   const html = `
     <a class="skip-link" href="#view">${t("a11y.skip", "Skip to main content")}</a>
     <header class="brand" role="banner">
       <div class="brand-left">
         ${menuBtn}
-        <h1><span class="dot"></span> Mira <span class="brand-tag">${t("hud.tag", "the courage journey")}</span></h1>
+        <h1 class="lw-head">${brandLamp()}<span class="lw-name">${t("brand.name", "Lanternwalk")}</span> <span class="brand-tag">${t("brand.tag", "small steps, brave paths")}</span></h1>
       </div>
       <nav class="nav-actions" aria-label="${t("a11y.nav", "App navigation")}">
         ${getCourage() > 0 ? `<span class="courage-badge" id="courageBadge" title="${t("hud.courage", "Courage — earned every time you face a trial")}">⚡ ${getCourage()}</span>` : ""}
         ${charBadge}
-        ${sparksBtn}
-        ${insightsBtn}
         ${langBtn}
-        ${audioBtn}
-        ${settingsBtn}
         ${view !== "welcome" && view !== "character" && view !== "threshold" ? `<button class="home-btn" id="home" aria-label="${t("a11y.home", "Back to the journey map")}">${t("hud.camp", "🏕 Camp")}</button>` : ""}
       </nav>
     </header>
@@ -287,10 +285,12 @@ function render(view, params) {
   }
   if (view === "breathe")   runBreathing();
   if (view === "threshold" || view === "select" || view === "ladder") mountShell3D(view, params);
-  if (view === "welcome" || view === "traveler") mountRoomStage(view);
+  // The title screen is the SVG valley now; only the creator stands in the room.
+  if (view === "traveler") mountRoomStage(view);
   if (view === "traveler")  attachTravelerHandlers();
   if (view === "threshold") mountThresholdHUD();
   if (view === "select")    mountJourney();
+  upgradeFaces(root);
 
   // Move focus to the new view's heading so keyboard + screen-reader users
   // don't get stranded on the just-removed element (which drops focus to

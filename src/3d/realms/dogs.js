@@ -2134,7 +2134,12 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       // y is overridden by the groundY+1.62 mount contract; kept correct
       // here to avoid the stale-eye-constant confusion recurring.
       initialPos: [0, 0.62, 4.0],
-      initialYaw: 0,
+      // A portrait phone sees ~30° across, and the dog starts up to 1.9 m
+      // to one side — so phone players opened on an empty corner and had
+      // to hunt for the animal the whole trial is about. Turn toward it
+      // there; a landscape screen keeps the straight-in opening shot.
+      initialYaw: (typeof innerWidth === "number" && innerWidth < innerHeight)
+        ? Math.atan2(0 - dogStartX, 4.0 - dogStartZ) : 0,
       initialPitch: dogPitch * 0.5,    // gentler tilt — looking ahead, not down
       // The barking rung opens the back corridor: retreat must be a real,
       // physical option so the user can always increase distance.

@@ -31,7 +31,7 @@ function scheduleReminders() {
       try {
         const ch = window.Character && window.Character.loadCharacter();
         const name = ch?.name ? `, ${ch.name}` : "";
-        new Notification("Mira", {
+        new Notification("Lanternwalk", {
           body: ch?.name ? tf("remind.bodyName", "A small rung today, {name}? You don't have to climb far.", { name: ch.name }) : t("remind.body", "A small rung today? You don't have to climb far."),
           icon: "icon.svg",
         });
@@ -57,7 +57,7 @@ function importData() {
       const text = await file.text();
       const data = JSON.parse(text);
       if (!data || data.version == null) {
-        alert(t("imp.bad", "This doesn't look like a Mira export. Nothing was changed."));
+        alert(t("imp.bad", "This doesn't look like a Lanternwalk export. Nothing was changed."));
         return;
       }
       if (!confirm(t("imp.confirm", "Import this file? It will replace every character, session, note and setting on this device."))) return;
@@ -82,7 +82,7 @@ function importData() {
       alert(t("imp.done", "Imported. Reloading…"));
       location.reload();
     } catch (err) {
-      alert(t("imp.err", "Couldn't read that file. Make sure it's a Mira export.") + "\n\n" + err.message);
+      alert(t("imp.err", "Couldn't read that file. Make sure it's a Lanternwalk export.") + "\n\n" + err.message);
     }
   };
   input.click();
@@ -249,10 +249,10 @@ function generateProgressCard() {
   // Brand
   ctx.fillStyle = "#7cd1c5";
   ctx.font = `600 30px ${FONT}`;
-  ctx.fillText(t("card.brand", "● MIRA"), X(80), 90);
+  ctx.fillText(t("card.brand", "● LANTERNWALK"), X(80), 90);
   ctx.fillStyle = "#94a3b8";
   ctx.font = `20px ${FONT}`;
-  ctx.fillText(t("card.tag", "The Courage Journey · a practice game"), X(80), 122);
+  ctx.fillText(t("card.tag", "Lanternwalk · small steps, brave paths"), X(80), 122);
 
   // Character name + avatar (rendered through SVG → image)
   const ch = window.Character && window.Character.loadCharacter();
@@ -332,7 +332,7 @@ function generateProgressCard() {
   // Footer
   ctx.fillStyle = "#5a6478";
   ctx.font = `500 20px ${FONT}`;
-  ctx.fillText(t("card.footer", "Mira · a practice game, not therapy"), X(80), H - 60);
+  ctx.fillText(t("card.footer", "Lanternwalk · a practice game, not therapy"), X(80), H - 60);
 
   // Output
   canvas.toBlob((blob) => {
@@ -341,7 +341,7 @@ function generateProgressCard() {
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
       navigator.share({
         files: [file],
-        title: t("card.shareTitle", "My Mira progress"),
+        title: t("card.shareTitle", "My Lanternwalk progress"),
         text: tf("card.shareText", "{s} sessions, {r} rungs climbed.", { s: totalSessions, r: completedRungs }),
       }).catch(() => {/* user cancelled */});
     } else {
@@ -466,44 +466,44 @@ function runTutorialTour(stage, phobiaKey) {
       arrow: "down",
     },
   ];
-  // The dog realm teaches its own loop in two cards: the room (and that
-  // nothing locks), then the coach panel (the alarm line + this trial's
-  // goals). It was four; the other two repeated the consent screen and the
-  // on-screen captions, and stood between the player and the first dog.
-  if (hasCreatureKit(phobiaKey) && stage.querySelector(".dog-coach")) {
-    const isDog = phobiaKey === "dogs", isPlace = isPlaceKit(phobiaKey), noun = kitNoun(phobiaKey);
+  // The creature and place realms teach their own loop — the coach panel says
+  // what to do as it becomes relevant — so the orientation is ONE card, and
+  // it doesn't stop the game: no dimmed screen, input goes straight through,
+  // and the first step you take puts it away. (It was two modal cards on a
+  // timer, after a countdown, between the player and the first dog.)
+  // Decided by the realm, not by whether the coach panel exists yet: on a
+  // cold entry the scene (and its panel) mounts after this runs.
+  let soft = false;
+  if (hasCreatureKit(phobiaKey)) {
+    const isPlace = isPlaceKit(phobiaKey);
+    soft = true;
     steps.length = 0;
-    steps.push(
-      {
-        target: () => stage.querySelector("canvas") || stage,
-        title: t("tour.d1t", "This is the room"),
-        text: isTouch
-          ? t("tour.d1m2", "Swipe to look around; the joystick walks. Go only as close as you choose — 🛟 grounds you, and leaving is never a failure.")
-          : t("tour.d1d2", "Drag to look around; WASD or the arrow keys walk (Shift to creep). Go only as close as you choose — Esc grounds you, and leaving is never a failure."),
-        arrow: "down",
-      },
-      {
-        target: () => stage.querySelector(".dog-coach .dc-wave") || stage.querySelector(".dog-coach"),
-        title: t("tour.d2t2", "Your alarm, and this trial"),
-        text: isDog
-          ? (isTouch
-            ? t("tour.d2m2", "This line is your alarm: it climbs as you get close, then falls on its own if you stay. Get close enough, tap what you think the dog is feeling when asked, and stay until it settles.")
-            : t("tour.d2d2", "This line is your alarm: it climbs as you get close, then falls on its own if you stay. Get close enough, press 1, 2 or 3 for what you think the dog is feeling when asked, and stay until it settles."))
-          : isPlace
-            ? (isTouch
-              ? t("tour.d2m4", "This line is your alarm: it climbs as you go further in, then falls on its own if you stay. When something happens, tap what you think it is — and stay until the alarm settles.")
-              : t("tour.d2d4", "This line is your alarm: it climbs as you go further in, then falls on its own if you stay. When something happens, press 1, 2 or 3 for what you think it is — and stay until the alarm settles."))
-          : (isTouch
-            ? tf("tour.d2m3", "This line is your alarm: it climbs as you get close, then falls on its own if you stay. Get close enough, tap what you think the {noun} is doing when asked, and stay until it settles.", { noun })
-            : tf("tour.d2d3", "This line is your alarm: it climbs as you get close, then falls on its own if you stay. Get close enough, press 1, 2 or 3 for what you think the {noun} is doing when asked, and stay until it settles.", { noun })),
-        arrow: "up",
-      },
-    );
+    steps.push({
+      target: () => stage.querySelector(".dog-coach .dc-wave") || stage.querySelector(".dog-coach") || stage.querySelector("canvas") || stage,
+      title: t("tour.one.t", "Your alarm"),
+      text: isPlace
+        ? (isTouch
+          ? t("tour.one.pm", "Walk in with the joystick, only as far as you choose. This line is your alarm: it climbs as you go in, and falls on its own if you stay. 🛟 grounds you — leaving is never a failure.")
+          : t("tour.one.pd", "Walk in with WASD or the arrows (Shift to creep), only as far as you choose. This line is your alarm: it climbs as you go in, and falls on its own if you stay. Esc grounds you — leaving is never a failure."))
+        : (isTouch
+          ? t("tour.one.cm", "Walk in with the joystick, only as close as you choose. This line is your alarm: it climbs as you get close, and falls on its own if you stay. 🛟 grounds you — leaving is never a failure.")
+          : t("tour.one.cd", "Walk in with WASD or the arrows (Shift to creep), only as close as you choose. This line is your alarm: it climbs as you get close, and falls on its own if you stay. Esc grounds you — leaving is never a failure.")),
+      arrow: "up",
+    });
   }
   let i = 0;
   const overlay = document.createElement("div");
-  overlay.className = "tour-overlay";
+  overlay.className = "tour-overlay" + (soft ? " soft" : "");
   document.body.appendChild(overlay);
+  // A soft card leaves with the first step: a movement key, or a touch on
+  // the joystick.
+  const MOVE_KEYS = ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
+  const onMoveKey = (e) => { if (MOVE_KEYS.includes(e.code)) done(); };
+  const onStick = (e) => { if (e.target && e.target.closest && e.target.closest(".joystick")) done(); };
+  if (soft) {
+    window.addEventListener("keydown", onMoveKey);
+    window.addEventListener("pointerdown", onStick, true);
+  }
   function show(stepIdx) {
     overlay.innerHTML = "";
     const step = steps[stepIdx];
@@ -530,11 +530,11 @@ function runTutorialTour(stage, phobiaKey) {
     card.className = "tour-card tour-arrow-" + step.arrow;
     const remaining = steps.length - stepIdx - 1;
     card.innerHTML = `
-      <div class="tour-step">${tf("tour.of", "{a} of {b}", { a: stepIdx + 1, b: steps.length })}</div>
+      ${steps.length > 1 ? `<div class="tour-step">${tf("tour.of", "{a} of {b}", { a: stepIdx + 1, b: steps.length })}</div>` : ""}
       <h3>${step.title}</h3>
       <p>${step.text}</p>
       <div class="tour-actions">
-        <button class="btn-ghost" id="tourSkip">${t("tour.skip", "Skip")}</button>
+        ${steps.length > 1 ? `<button class="btn-ghost" id="tourSkip">${t("tour.skip", "Skip")}</button>` : ""}
         <button class="btn-primary" id="tourNext">${stepIdx === steps.length - 1 ? t("tour.gotIt", "Got it") : t("tour.next", "Next")}</button>
       </div>
     `;
@@ -554,17 +554,28 @@ function runTutorialTour(stage, phobiaKey) {
     // overlay (and its buttons) may be gone. Bail instead of throwing.
     const skipBtn = document.getElementById("tourSkip");
     const nextBtn = document.getElementById("tourNext");
-    if (!skipBtn || !nextBtn) { done(); return; }
-    skipBtn.onclick = done;
+    if (!nextBtn) { done(); return; }
+    if (skipBtn) skipBtn.onclick = done;
     nextBtn.onclick = () => {
       if (stepIdx + 1 < steps.length) show(stepIdx + 1); else done();
     };
   }
   function done() {
+    window.removeEventListener("keydown", onMoveKey);
+    window.removeEventListener("pointerdown", onStick, true);
     try { localStorage.setItem("fobia.tutorialSeen", "1"); } catch {}
     overlay.classList.add("dismiss");
     setTimeout(() => overlay.remove(), 350);
   }
-  // Wait for the layout to settle (countdown overlay sits on top until ~2.4s)
-  setTimeout(() => show(i), 3000);
+  // A beat for the room to fade in (and the countdown, for players who turned
+  // it on) before the card points at anything.
+  const cdOn = !!document.querySelector(".countdown");
+  const t0 = Date.now();
+  const ready = () => {
+    if (!overlay.isConnected || overlay.classList.contains("dismiss")) return;
+    // A soft card waits (up to ~8 s) for the coach panel it points at.
+    if (soft && !stage.querySelector(".dog-coach") && Date.now() - t0 < 8000) { setTimeout(ready, 300); return; }
+    show(i);
+  };
+  setTimeout(ready, cdOn ? 3000 : 1400);
 }

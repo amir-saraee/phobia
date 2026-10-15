@@ -7,8 +7,9 @@
 //      precache exists (one 404 fails the whole install, so no offline play),
 //      and index.html's modulepreload links match src/3d/main.js's static
 //      import graph (a drift only costs load time, but it's free to catch)
-//   1. first run: consent → Step inside → the prologue → creator → the
-//      chapter's opening page → trial 1's gate
+//   1. first run: the Lanternwalk title (no notice over it) → Begin the walk
+//      → consent → the prologue → creator → the chapter's opening page →
+//      trial 1's gate
 //   2. trial 1: walk to the dog, stay until the alarm settles, rate (tap the
 //      two readings), complete — with its trial stars logged and shown
 //   3. the hardest dog trial mounts and runs; a spider and a snake trial run
@@ -17,7 +18,8 @@
 //   4. launch scope: six realms on the map; a legacy realm shows "coming
 //      soon"; ?all=1 opens it
 //   5. Persian: the realm page renders RTL with translated trial names, and a
-//      scene opens with a translated, right-to-left countdown + intro hint
+//      scene opens with a translated, right-to-left countdown (when turned
+//      on) + intro hint
 //   6. phone viewport: landing + creator render with no sideways scroll, in
 //      English and in Persian (right-to-left); a real tap works the MRI's
 //      controls and never sends the scene fullscreen
@@ -115,10 +117,12 @@ async function storyPage(page, beat, ms = 3000) {
 async function firstRunAndTrial(browser, base) {
   const { ctx, page } = await newPage(browser);
   await page.goto(base + "/", { waitUntil: "load" });
-  check("landing: consent gate shows", await waitFor(page, () => !!document.querySelector(".consent-overlay"), 8000));
+  check("landing: the Lanternwalk title and its button, nothing over them", await waitFor(page, () =>
+    /Lanternwalk/.test((document.querySelector(".lw-mark") || {}).textContent || "") && !!document.querySelector(".valley-hero")
+    && [...document.querySelectorAll("button")].some((b) => /begin the walk/i.test(b.textContent)) && !document.querySelector(".consent-overlay"), 8000));
+  await click(page, "Begin the walk");
+  check("landing: the first tap asks for consent", await waitFor(page, () => !!document.querySelector(".consent-overlay"), 3000));
   await click(page, "I understand");
-  check("landing: 'Step inside' after consent", await waitFor(page, () => [...document.querySelectorAll("button")].some((b) => /step inside/i.test(b.textContent)), 5000));
-  await click(page, "Step inside");
   check("first run: the prologue plays", await storyPage(page, "prologue"));
   check("creator: renders with a 3D stage", await waitFor(page, () => location.hash === "#/traveler" && !!document.querySelector("#travelerStage canvas"), 8000));
   await shot(page, "01-creator");
@@ -133,6 +137,9 @@ async function firstRunAndTrial(browser, base) {
   // The tour opens on a timer from the mount; wait for it rather than for a
   // fixed time, which only held while mounting itself took a few seconds.
   await waitFor(page, () => !!document.querySelector(".tour-card"), 9000);
+  check("trial 1: one orientation card, no countdown, nothing blocking the scene", await page.evaluate(() =>
+    document.querySelectorAll(".tour-card").length === 1 && !!document.querySelector(".tour-overlay.soft")
+    && getComputedStyle(document.querySelector(".tour-overlay")).pointerEvents === "none" && !document.querySelector(".countdown")));
   await sleep(300);
   for (let k = 0; k < 4; k++) { if (!(await click(page, ".tour-actions button:last-child"))) break; await sleep(300); }
   const tourCards = await page.evaluate(() => document.querySelectorAll(".tour-card").length);
@@ -249,6 +256,7 @@ async function hardestTrial(browser, base) {
   await shot(page, "06-fa");
   // Scene entry in Persian: the countdown and the intro hint are translated
   // and read right-to-left (key names like Esc / W stay Latin).
+  await page.evaluate(() => localStorage.setItem("fobia.countdown", "1"));   // opt-in since the launch pass
   await page.goto(base + "/#/heights/predict/0", { waitUntil: "load" }); await sleep(900);
   await page.evaluate(() => { const c = document.querySelector(".expect-chip"); c && c.click(); document.querySelector('[data-action="confirm-predict"]').click(); });
   await waitFor(page, () => !!document.querySelector(".countdown .label"), 8000);
@@ -257,6 +265,7 @@ async function hardestTrial(browser, base) {
   const fh = await page.evaluate(() => { const h = document.querySelector(".controls-hint"); return { text: h.textContent, dir: getComputedStyle(h).direction }; });
   const latin = (s) => /[A-Za-z]{3,}/.test(s.replace(/\b(Esc|WASD|Shift)\b/g, ""));
   check("Persian: countdown + intro hint translated, RTL", /[؀-ۿ]/.test(cd) && !latin(cd) && /[؀-ۿ]/.test(fh.text) && !latin(fh.text) && fh.dir === "rtl", JSON.stringify({ cd, ...fh }));
+  await page.evaluate(() => localStorage.removeItem("fobia.countdown"));
   await shot(page, "06b-fa-scene");
   check("trial 5 + scope + fa: no page errors", page.errors.length === 0, page.errors.slice(0, 5).join(" | "));
   await ctx.close();
@@ -366,8 +375,8 @@ async function places(browser, base) {
 async function phone(browser, base) {
   const { ctx, page } = await newPage(browser, { mobile: true });
   await page.goto(base + "/", { waitUntil: "load" }); await sleep(1500);
-  await click(page, "I understand"); await sleep(400);
-  await click(page, "Step inside"); await storyPage(page); await sleep(2500);
+  await click(page, "Begin the walk"); await sleep(400);
+  await click(page, "I understand"); await storyPage(page); await sleep(2500);
   const m = await page.evaluate(() => ({ route: location.hash, sideways: document.documentElement.scrollWidth - window.innerWidth, stage: !!document.querySelector("#travelerStage canvas") }));
   check("phone: creator renders, no sideways scroll", m.route === "#/traveler" && m.stage && m.sideways <= 1, JSON.stringify(m));
   await shot(page, "07-phone-creator");

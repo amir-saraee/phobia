@@ -1,12 +1,12 @@
 {
-  "name": "Mira — The Courage Journey",
-  "short_name": "Mira",
-  "description": "A tiny game about big fears — dogs, spiders, snakes, heights, the dark and tight spaces — one small, safe step at a time, with a story that teaches why fears start and how they unwind.",
+  "name": "Lanternwalk — face your fears, one small step at a time",
+  "short_name": "Lanternwalk",
+  "description": "Every fear is a path you stopped walking. A cozy game about big fears — dogs, spiders, snakes, heights, the dark and tight spaces — one small, safe step at a time, with a story that teaches why fears start and how they unwind.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#0f1724",
+  "background_color": "#050816",
   "theme_color": "#0f1724",
   "categories": ["health", "lifestyle", "education"],
   "icons": [

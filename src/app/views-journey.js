@@ -374,34 +374,103 @@ function starfieldHTML(n) {
 // one line names it, one button walks in. The honesty copy the app owes the
 // player has not gone anywhere — it is the consent gate that follows, where
 // it is read rather than scrolled past.
+// The title screen's backdrop: the valley at night, drawn in SVG. It used to
+// be the creator's 3D room — empty, no dog in it, and a WebGL context booted
+// on every first visit just to show a window. This is the place the story is
+// about: six dark lanterns up one winding path, one per fear. A lantern burns
+// once its realm is walked, and the next one flickers, waiting.
+//
+// The composition is held to the middle ~460 units so a portrait phone
+// (which slices the 1600-wide view down to that) still sees all six.
+const VALLEY_KEYS = ["dogs", "spiders", "snakes", "heights", "dark", "enclosed"];
+function valleyHeroSVG({ lit = [], next = null } = {}) {
+  let seed = 7;
+  const R = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const stars = Array.from({ length: 90 }, () => {
+    const x = (R() * 1600).toFixed(0), y = (R() * 360).toFixed(0);
+    const r = (R() * 1.6 + 0.5).toFixed(1), o = (R() * 0.55 + 0.25).toFixed(2);
+    return `<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" opacity="${o}"${R() < 0.3 ? ` class="vh-tw" style="--d:${(2 + R() * 4).toFixed(1)}s"` : ""}/>`;
+  }).join("");
+  // Nearest first: the dog lantern is where the path begins.
+  const spots = [[905, 650, 1], [700, 592, .8], [880, 540, .64], [742, 500, .5], [852, 466, .4], [784, 441, .32]];
+  const lanterns = spots.map(([x, y, s], i) => {
+    const key = VALLEY_KEYS[i];
+    const on = lit.includes(key);
+    const waiting = !on && key === next;
+    return `<g class="vh-lantern${on ? " on" : ""}${waiting ? " waiting" : ""}" transform="translate(${x} ${y}) scale(${s})">
+      <circle class="vh-glow" cx="16" cy="-112" r="74" fill="url(#vhGlow)"/>
+      <path d="M0 0 V-150 M-4 -150 H22 M18 -150 V-140" stroke="#151826" stroke-width="5" fill="none" stroke-linecap="round"/>
+      <path class="vh-glass" d="M6 -138 h20 l4 7 v26 l-4 6 h-20 l-4 -6 v-26z" stroke="#262a3b" stroke-width="2.5"/>
+      <path class="vh-flame" d="M16 -128 q8 9 0 18 q-8 -9 0 -18z"/>
+      <ellipse cx="0" cy="2" rx="16" ry="4" fill="#05070f" opacity=".5"/>
+    </g>`;
+  }).join("");
+  const dawn = Math.min(1, lit.length / 6);
+  // Pines on the wide screen's flanks — outside the phone's slice, where a
+  // desktop otherwise sees empty hills.
+  const pine = (x, y, h) => `<path d="M${x} ${y - h} L${x + h * 0.32} ${y} H${x - h * 0.32}z"/>`;
+  const pines = `<g fill="#0a1028">${[[120, 520, 90], [190, 512, 120], [260, 506, 80], [380, 492, 100], [450, 486, 70],
+    [1150, 470, 80], [1230, 478, 120], [1310, 486, 90], [1420, 492, 110], [1500, 488, 76]].map(([x, y, h]) => pine(x, y, h)).join("")}</g>`;
+  const flies = Array.from({ length: 9 }, (_, i) =>
+    `<circle class="vh-fly" cx="${560 + R() * 480}" cy="${470 + R() * 260}" r="${(1.6 + R() * 1.8).toFixed(1)}" style="--d:${(5 + R() * 6).toFixed(1)}s;--k:${i}"/>`).join("");
+  return `<svg class="valley-hero" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="vhSky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#050816"/><stop offset=".55" stop-color="#141c44"/><stop offset="1" stop-color="#2a2550"/>
+      </linearGradient>
+      <radialGradient id="vhGlow"><stop offset="0" stop-color="#ffd98f" stop-opacity=".9"/><stop offset=".4" stop-color="#ffb24d" stop-opacity=".32"/><stop offset="1" stop-color="#ffb24d" stop-opacity="0"/></radialGradient>
+      <radialGradient id="vhDawn" cx=".5" cy="1" r=".75"><stop offset="0" stop-color="#ffb070" stop-opacity="${(0.10 + dawn * 0.35).toFixed(2)}"/><stop offset="1" stop-color="#ffb070" stop-opacity="0"/></radialGradient>
+      <linearGradient id="vhPath" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#e9dcc0" stop-opacity=".16"/><stop offset="1" stop-color="#e9dcc0" stop-opacity=".04"/></linearGradient>
+    </defs>
+    <rect width="1600" height="1000" fill="url(#vhSky)"/>
+    ${stars}
+    <g class="vh-moon-w"><circle cx="1250" cy="168" r="34" fill="#efe6cf" opacity=".9"/><circle cx="1264" cy="160" r="31" fill="#0b1029"/></g>
+    <g class="vh-moon-n"><circle cx="935" cy="300" r="26" fill="#efe6cf" opacity=".9"/><circle cx="946" cy="294" r="24" fill="#0f163a"/></g>
+    <ellipse cx="800" cy="430" rx="900" ry="210" fill="url(#vhDawn)"/>
+    <path d="M0 430 L120 392 L240 420 L380 360 L520 410 L640 372 L760 404 L860 366 L980 400 L1100 352 L1240 404 L1380 370 L1600 410 V1000 H0z" fill="#121935"/>
+    <path d="M0 520 C200 470, 380 500, 560 470 S900 440, 1100 466 S1450 500, 1600 476 V1000 H0z" fill="#0d1330"/>
+    ${pines}
+    <path d="M0 700 C260 640, 520 690, 760 640 S1240 620, 1600 660 V1000 H0z" fill="#0a0f24"/>
+    <path d="M676 1000 C740 860, 640 760, 758 660 S826 520, 806 436 L816 436 C840 520, 860 600, 836 680 S900 860, 940 1000z" fill="url(#vhPath)"/>
+    ${lanterns}
+    ${flies}
+  </svg>`;
+}
+
 function viewArrival() {
   const ch = window.Character && window.Character.loadCharacter();
   const named = ch && ch.name ? escapeHtml(ch.name) : null;
   const S = window.Story;
+  let lit = [], next = "dogs";
+  if (ch) {
+    try {
+      lit = VALLEY_KEYS.filter((k) => PHOBIAS[k] && realmStatus(k).tamed);
+      next = continueTarget().key;
+    } catch {}
+  }
   const top = `
-  <div class="mob-stage" id="arrivalStage" aria-hidden="true"></div>
+  <div class="mob-stage mob-valley" aria-hidden="true">${valleyHeroSVG({ lit, next })}</div>
   <div class="mob-top">
-    <span class="mob-top-title">Mira</span>
     <span class="mob-spacer"></span>
     <button class="mob-icon-btn" data-action="open-settings" aria-label="${t("a11y.settings", "Settings")}">⚙</button>
   </div>`;
-  // First visit: one line of story, one button. The prologue plays on the
+  const wordmark = `
+    <h1 class="lw-mark">${brandLamp()}<span>${t("brand.name", "Lanternwalk")}</span></h1>`;
+  // First visit: the name, the line, one button. The prologue plays on the
   // way to the creator; the self-check stays one tap away for the visitor
   // who came to learn about fear rather than to play.
   if (!named) return `${top}
-  <div class="mob-hero">
-    <p class="mob-hero-kicker">${t("arrive.kicker2", "The Valley of Fears")}</p>
-    <h1 class="mob-hero-title">${t("arrive.title2", "Every fear is a path<br>you stopped walking.")}</h1>
+  <div class="mob-hero arrive-hero">
+    ${wordmark}
+    <p class="lw-tagline">${t("arrive.title2", "Every fear is a path<br>you stopped walking.")}</p>
+    <p class="lw-sub">${t("brand.sub", "Light it again — one small step at a time.")}</p>
   </div>
-  <div class="mob-sheet">
-    <div class="mob-sheet-grab"></div>
-    <p>${t("arrive.copy2", "Six of them cross this valley — dogs, spiders, snakes, heights, the dark and tight spaces. Walk one with Mira, the lantern-keeper, in small steps you choose. You can turn back from any of them, at any moment.")}</p>
+  <div class="mob-sheet arrive-sheet">
+    <p>${t("arrive.copy3", "Six lanterns went dark in this valley — dogs, spiders, snakes, heights, the dark and tight spaces. Mira, the lantern-keeper, walks beside you. You choose every step, and you can turn back any time.")}</p>
     <div class="mob-thumb">
-      <button class="mob-btn mob-btn-primary" data-action="make-traveler">${t("arrive.cta2", "Step inside — begin the story")}</button>
+      <button class="mob-btn mob-btn-primary" data-action="make-traveler">${t("arrive.cta3", "Begin the walk")}</button>
     </div>
-    <div class="mob-thumb">
-      <button class="mob-btn mob-btn-ghost" data-action="open-quiz">${t("arrive.quiz", "🪞 Not sure which fear? A 1-minute self-check")}</button>
-    </div>
+    <button class="arrive-link" data-action="open-quiz">${t("arrive.quiz2", "Not sure which fear? Take the 1-minute check")}</button>
   </div>`;
   // Returning: where the story is, what happened last time, and the one
   // button that picks it up. It used to say "Continue" and always open the
@@ -415,12 +484,12 @@ function viewArrival() {
     ? t("arrive.allWalked", "Every lantern is lit. Come back for a booster walk — or take a real step out there.")
     : tf("arrive.next", "Next: {realm} · trial {n} — {title}", { realm: escapeHtml(realm.realmName), n: tgt.level + 1, title: escapeHtml(lvTitle(tgt.key, tgt.level)) });
   return `${top}
-  <div class="mob-hero mob-hero-high">
+  <div class="mob-hero mob-hero-high arrive-hero">
+    <p class="lw-mark-sm">${brandLamp()}<span>${t("brand.name", "Lanternwalk")}</span></p>
     <p class="mob-hero-kicker">${escapeHtml(chap ? S.chapterLabel(chap) : realm.realmName)}</p>
     <h1 class="mob-hero-title">${tf("arrive.back", "Welcome back,<br>{name}", { name: named })}</h1>
   </div>
-  <div class="mob-sheet">
-    <div class="mob-sheet-grab"></div>
+  <div class="mob-sheet arrive-sheet">
     ${note}
     ${recap && !note ? `<p class="arrive-recap"><span>${t("arrive.prev", "Previously")}</span> ${escapeHtml(recap)}</p>` : ""}
     <p class="arrive-next">${nextLine}</p>
@@ -466,6 +535,17 @@ function viewTraveler() {
       <div class="mob-chips">${inner}</div>
     </div>`;
 
+  // Which fear brings them comes first — it's the choice that decides where
+  // "Walk in" goes. The look below it can be left as it is.
+  // Only realms that are open; the choice can be changed any time from camp.
+  const fearRow = (() => {
+    const open = FEATURED.filter((k) => PHOBIAS[k] && realmOpen(k));
+    if (open.length < 2) return "";
+    const cur = open.includes(c.primaryPhobia) ? c.primaryPhobia : open[0];
+    const icon = { dogs: "🐕", spiders: "🕷", snakes: "🐍", heights: "🏔", dark: "🌙", enclosed: "🚪" };
+    return row(t("tw.fear", "What brings you here?"), open.map((k) => `
+      <button class="mob-chip" data-tw="primaryPhobia" data-val="${k}" aria-pressed="${k === cur}">${icon[k] || ""} ${escapeHtml(t(`phobia.${k}.label`, PHOBIAS[k].label))}</button>`).join(""));
+  })();
   return `
   <div class="mob-stage" id="travelerStage" aria-hidden="true"></div>
   <div class="mob-top">
@@ -476,6 +556,7 @@ function viewTraveler() {
   </div>
   <div class="mob-sheet mob-sheet-compact">
     <div class="mob-sheet-grab"></div>
+    ${fearRow}
     <div class="mob-row">
       <div class="mob-row-label">${t("tw.name", "Name")}</div>
       <input id="twName" class="mob-btn" style="width:100%;text-align:left;font-weight:600"
@@ -490,20 +571,10 @@ function viewTraveler() {
     ${row(t("tw.top", "Top"),     swatches("topColor",  C.TOP_COLORS,  c.topColor))}
     ${row(t("tw.eyes", "Eyes"),   swatches("eyeColor",  C.EYE_COLORS,  c.eyeColor))}
     ${row(t("tw.glasses", "Glasses"), chips("glasses", C.GLASSES, c.glasses))}
-    ${(() => {
-      // Which fear brings them — the realm "Walk in" opens on. Only realms
-      // that are open; the choice can be changed any time from the camp.
-      const open = FEATURED.filter((k) => PHOBIAS[k] && realmOpen(k));
-      if (open.length < 2) return "";
-      const cur = open.includes(c.primaryPhobia) ? c.primaryPhobia : open[0];
-      const icon = { dogs: "🐕", spiders: "🕷", snakes: "🐍", heights: "🏔", dark: "🌙", enclosed: "🚪" };
-      return row(t("tw.fear", "What brings you here?"), open.map((k) => `
-        <button class="mob-chip" data-tw="primaryPhobia" data-val="${k}" aria-pressed="${k === cur}">${icon[k] || ""} ${escapeHtml(t(`phobia.${k}.label`, PHOBIAS[k].label))}</button>`).join(""));
-    })()}
-    <div class="mob-thumb">
+    <p style="margin:4px 0 0;font-size:12px;opacity:.6;text-align:center">${t("tw.hint", "Drag the room to turn them around")}</p>
+    <div class="mob-thumb tw-cta">
       <button class="mob-btn mob-btn-primary" data-action="traveler-save">${t("tw.save", "Walk in →")}</button>
     </div>
-    <p style="margin:10px 0 0;font-size:12px;opacity:.6;text-align:center">${t("tw.hint", "Drag the room to turn them around")}</p>
   </div>`;
 }
 
@@ -745,7 +816,6 @@ function storyCampCard() {
           ${waiting && !tgt.allWalked && !(S.pendingBefore(tgt.key, tgt.level) === waiting)
             ? `<button class="btn-ghost" data-action="story-play" data-beat="${escapeHtml(waiting)}">${t("st.read", "Read the page")}</button>` : ""}
           <button class="${doneToday && !waiting ? "btn-ghost" : "btn-primary"}" data-action="story-continue">${tgt.allWalked ? t("camp.storyCtaAll", "Choose a booster walk ↓") : doneToday ? t("camp.storyCtaDone", "Take another step") : t("camp.storyCta", "Continue the story")}</button>
-          <button class="btn-ghost" data-action="open-story">${t("camp.openStory", "📖 The story")}</button>
         </div>
       </div>`;
 }
@@ -948,7 +1018,7 @@ function viewReport() {
         ${log.length} logged session${log.length === 1 ? "" : "s"}${first ? ` · ${fmtD(first.ts)} – ${fmtD(last.ts)}` : ""}
         · ${worldstepCount()} real-world step${worldstepCount() === 1 ? "" : "s"}
       </p>
-      <p class="report-note">Generated by Mira, a self-guided graded-exposure practice game. Anxiety ratings are self-reported SUDS (0 calm – 10 panic); "predicted" is rated before each exposure, "reported" after — the gap reflects expectancy violation. "Conditions" records the simulated time of day and weather, which the app varies between repetitions to support generalisation. This is a personal practice record, not a clinical assessment.</p>
+      <p class="report-note">Generated by Lanternwalk, a self-guided graded-exposure practice game. Anxiety ratings are self-reported SUDS (0 calm – 10 panic); "predicted" is rated before each exposure, "reported" after — the gap reflects expectancy violation. "Conditions" records the simulated time of day and weather, which the app varies between repetitions to support generalisation. This is a personal practice record, not a clinical assessment.</p>
       ${sections || `<p>No practice recorded yet.</p>`}
     </div>`;
 }
@@ -960,14 +1030,14 @@ function viewAbout() {
   return `
     <div class="panel about-view">
       <span class="badge">${t("about.badge", "About")}</span>
-      <h2 style="margin-top:10px">${t("about.title", "Mira — a tiny game about big fears")}</h2>
-      <p>${t("about.intro4", "Mira is a free practice game about how fear works. You make a traveler and face a fear — dogs, spiders, snakes, heights, the dark or tight spaces — in small, safe, always-optional steps: first in 3D scenes, then through tiny real-world quests.")}</p>
+      <h2 style="margin-top:10px">${t("about.title", "Lanternwalk — a tiny game about big fears")}</h2>
+      <p>${t("about.intro4", "Lanternwalk is a free practice game about how fear works. You make a traveler and face a fear — dogs, spiders, snakes, heights, the dark or tight spaces — in small, safe, always-optional steps: first in 3D scenes, then through tiny real-world quests.")}</p>
 
       <h3>${t("about.scienceH", "The science it leans on")}</h3>
       <p>${t("about.science1", "The whole game is built around graded exposure — the best-studied approach for specific fears. Anxiety rises, peaks, and falls on its own when you stay; avoidance is what keeps a fear alive. Each 'trial' asks you to predict how bad it will be, stay a little, and then compare — that prediction gap is where the brain updates.")}</p>
       <p>${t("about.science2", "Progress is measured, not just played: short fear check-ins (avoidance, intensity, body reaction, interference, belief) tracked over time, and a printable report you could hand to a clinician.")}</p>
 
-      <h3>${t("about.limitsH", "What Mira is not")}</h3>
+      <h3>${t("about.limitsH", "What Lanternwalk is not")}</h3>
       <p>${t("about.limits", "Not therapy, not diagnosis, not a medical device. It was made for curiosity and education. If a fear is seriously limiting your life, a trained clinician can run real exposure work with you safely — bring the report; it makes a good first conversation.")}
       <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a></p>
 
@@ -998,6 +1068,32 @@ function charHexes(ch) {
     shirtHex: C.topHex(ch), eyeHex: C.eyeHex(ch),
   });
 }
+// Faces: the traveler's own (header badge, menu) and the story's cast, drawn
+// by the 3D figure builder rather than the flat avatar — so the person in the
+// corner of the screen is the person walking into the room. Starts flat,
+// swaps when the bake lands; a device without WebGL keeps the flat one.
+function upgradeFaces(root) {
+  if (!root) return;
+  try { if (window.Story && window.Story.upgradeFaces) window.Story.upgradeFaces(root); } catch {}
+  const ch = window.Character && window.Character.loadCharacter();
+  const els = [...root.querySelectorAll(".char-badge-avatar, .menu-avatar")];
+  if (!ch || !els.length) return;
+  const run = () => {
+    if (!window.ShellScenes || !window.ShellScenes.portrait) return;
+    window.ShellScenes.portrait(charHexes(ch), 128).then((url) => {
+      if (!url) return;
+      els.forEach((el) => {
+        if (!el.isConnected) return;
+        const svg = el.querySelector("svg");
+        const size = (svg && +svg.getAttribute("width")) || el.clientWidth || 28;
+        el.innerHTML = `<img class="cast-face baked me" src="${url}" width="${size}" height="${size}" alt="">`;
+      });
+    }).catch(() => {});
+  };
+  if (window.ShellScenes && window.ShellScenes.ready) run();
+  else window.addEventListener("scene3d-ready", run, { once: true });
+}
+
 // The shell's 3D (title room, camp, realm heroes) mounts a frame after the
 // page paints, the way a trial does (see render()): built inside the route's
 // first render, the heaviest thing on the screen held the whole page blank

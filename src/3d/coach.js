@@ -188,7 +188,13 @@ function makeCreatureCoach(opts) {
     if (document.querySelector(".tour-overlay:not(.dismiss), .countdown")) return;
     const c = calloutQueue.shift();
     calloutKey = c.key;
-    callout.innerHTML = c.html;
+    // These are Mira's lessons — the story's lantern-keeper, beside you in
+    // the room — so they carry her face (the baked 3D portrait once it
+    // exists; see Story.upgradeFaces).
+    const S = window.Story;
+    const face = S && S.portrait ? S.portrait("mira", 30) : "";
+    callout.innerHTML = face ? `<span class="dc-mira" aria-hidden="true">${face}</span><span class="dc-say">${c.html}</span>` : c.html;
+    if (face) { try { S.upgradeFaces(callout); } catch {} }
     callout.classList.add("show");
     calloutT = c.ms / 1000;
   }

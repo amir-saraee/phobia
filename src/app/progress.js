@@ -417,7 +417,8 @@ function awardCourage(points, reason) {
   try {
     const rBefore = courageRank(before), rAfter = courageRank(cs.courage);
     if (rAfter.idx > rBefore.idx) {
-      setTimeout(() => showAchievement(tf("ach.rankUp", "Rank up — {title}", { title: rAfter.title }), tf("ach.rankUpP", "The valley knows your name now. ({n} courage)", { n: cs.courage }), rAfter.icon), 900);
+      const show = () => showAchievement(tf("ach.rankUp", "Rank up — {title}", { title: rAfter.title }), tf("ach.rankUpP", "The valley knows your name now. ({n} courage)", { n: cs.courage }), rAfter.icon, "rank");
+      if (window.__achSink) show(); else setTimeout(show, 900);
     }
   } catch {}
   // Re-render the header courage badge if visible
@@ -473,8 +474,22 @@ function starsHTML(n, total = 3, cls = "") {
     Array.from({ length: total }, (_, i) => `<i class="${i < n ? "on" : ""}">★</i>`).join("")}</span>`;
 }
 
-let lastAward = null;   // {points, streakAfter, milestones[], key, ts} — surfaced on the Complete screen
-function markCompleted(phobiaKey, levelIdx, suds, predicted, peak, outcome, extra) {
+let lastAward = null;   // {points, streakAfter, milestones[], badges[], key, ts} — surfaced on the Complete screen
+// Finishing a trial used to fire its achievements as toasts — "First rung
+// climbed", the milestone, a rank-up, "Held the line" — stacked over the
+// Complete screen, covering its buttons, saying what the screen already
+// says. While a trial is being recorded they collect here instead, and the
+// Complete screen shows them in its own reward row.
+function markCompleted(...args) {
+  const sink = [];
+  window.__achSink = sink;
+  try { return recordCompletion(...args); }
+  finally {
+    window.__achSink = null;
+    if (lastAward) lastAward.badges = sink.filter((b) => b.kind === "trial").map((b) => `${b.icon} ${b.title}`);
+  }
+}
+function recordCompletion(phobiaKey, levelIdx, suds, predicted, peak, outcome, extra) {
   const p = getProgress(phobiaKey);
   // Ladder honesty: the marker only advances on a real finish. An early exit
   // is logged (and still earns), but doesn't tick the ladder — otherwise
@@ -548,16 +563,16 @@ function markCompleted(phobiaKey, levelIdx, suds, predicted, peak, outcome, extr
     const phobia = PHOBIAS[phobiaKey];
     const isLast = levelIdx === phobia.levels.length - 1;
     if (isLast) {
-      showAchievement(t("ach.ladder", "Ladder complete"), tf("ach.ladderP", "You walked all 5 rungs of {fear}.", { fear: phLabel(phobiaKey) }), "🪜");
+      showAchievement(t("ach.ladder", "Ladder complete"), tf("ach.ladderP", "You walked all 5 rungs of {fear}.", { fear: phLabel(phobiaKey) }), "🪜", "trial");
     } else if (levelIdx === 0) {
-      showAchievement(t("ach.first", "First rung climbed"), tf("ach.firstP", "You started {fear}.", { fear: phLabel(phobiaKey) }), "🌱");
+      showAchievement(t("ach.first", "First rung climbed"), tf("ach.firstP", "You started {fear}.", { fear: phLabel(phobiaKey) }), "🌱", "trial");
     } else if (levelIdx === Math.floor(phobia.levels.length / 2)) {
-      showAchievement(t("ach.half", "Halfway there"), tf("ach.halfP", "Rung {n} on {fear}.", { n: levelIdx + 1, fear: phLabel(phobiaKey) }), "🚩");
+      showAchievement(t("ach.half", "Halfway there"), tf("ach.halfP", "Rung {n} on {fear}.", { n: levelIdx + 1, fear: phLabel(phobiaKey) }), "🚩", "trial");
     }
   }
   // Award a brave-face if anxiety was high but you stayed (a full hold —
   // the badge would ring false on an early exit)
-  if (finished && suds >= 7) showAchievement(t("ach.held", "Held the line"), tf("ach.heldP", "Anxiety {n}/10 and you stayed.", { n: suds }), "🫁");
+  if (finished && suds >= 7) showAchievement(t("ach.held", "Held the line"), tf("ach.heldP", "Anxiety {n}/10 and you stayed.", { n: suds }), "🫁", "trial");
 }
 
 // ---------- Progress milestones ----------
@@ -639,8 +654,7 @@ function checkMilestones() {
     setUnlockedMilestones(already);
     saveState();
     // Show toasts for each
-    newlyUnlocked.forEach((m, i) => setTimeout(() =>
-      showAchievement(m.title, m.desc, m.icon), i * 1500));
+    newlyUnlocked.forEach((m) => showAchievement(m.title, m.desc, m.icon, "milestone"));
   }
   return newlyUnlocked;
 }
@@ -941,25 +955,34 @@ function thisWeekSessions(phobiaKey) {
 }
 
 // ---------- Achievement toast (game feel) ----------
-function showAchievement(title, desc, icon = "🏆") {
-  const t = document.createElement("div");
-  t.className = "achievement-toast";
-  t.innerHTML = `
-    <span class="ach-icon">${icon}</span>
+// One at a time, never stacked. While a trial is being recorded they go to
+// window.__achSink instead (see markCompleted) — the Complete screen shows
+// them itself.
+const _achQueue = [];
+let _achShowing = false;
+function showAchievement(title, desc, icon = "🏆", kind = "") {
+  if (window.__achSink) { window.__achSink.push({ title, desc, icon, kind }); return; }
+  _achQueue.push({ title, desc, icon });
+  if (!_achShowing) nextAchievement();
+}
+function nextAchievement() {
+  const a = _achQueue.shift();
+  if (!a) { _achShowing = false; return; }
+  _achShowing = true;
+  const el = document.createElement("div");
+  el.className = "achievement-toast";
+  el.setAttribute("role", "status");
+  el.innerHTML = `
+    <span class="ach-icon">${a.icon}</span>
     <div class="ach-text">
-      <strong>${title}</strong>
-      <span>${desc}</span>
+      <strong>${a.title}</strong>
+      <span>${a.desc}</span>
     </div>
   `;
-  document.body.appendChild(t);
-  // Stagger if multiple toasts at once
-  const existing = document.querySelectorAll(".achievement-toast");
-  if (existing.length > 1) {
-    t.style.bottom = (24 + (existing.length - 1) * 78) + "px";
-  }
-  requestAnimationFrame(() => t.classList.add("show"));
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
   setTimeout(() => {
-    t.classList.remove("show");
-    setTimeout(() => t.remove(), 350);
-  }, 4200);
+    el.classList.remove("show");
+    setTimeout(() => { el.remove(); nextAchievement(); }, 350);
+  }, 3600);
 }

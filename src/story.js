@@ -884,13 +884,45 @@
       ${body}
     </svg>`;
   }
+  // A portrait starts as the flat avatar (instant, no WebGL) and is swapped
+  // for a render of the cast member's 3D figure — the same builder the scenes
+  // use — once ShellScenes has baked it (upgradeFaces). Baked faces are kept
+  // for the session, so later pages get the picture straight away.
+  const _faceURL = {};
+  function lookOf(who) {
+    const c = CAST[who];
+    if (!c || !c.look || !window.Character) return null;
+    return Object.assign(window.Character.defaultCharacter(), c.look);
+  }
   function portrait(who, size = 52) {
     const c = CAST[who];
     if (!c || !c.look || !window.Character || !window.Character.avatarSVG) {
       return `<span class="st-lamp" style="width:${size}px;height:${size}px" aria-hidden="true">🏮</span>`;
     }
-    try { return window.Character.avatarSVG(Object.assign(window.Character.defaultCharacter(), c.look), size); }
+    if (_faceURL[who]) return `<img class="cast-face" src="${_faceURL[who]}" width="${size}" height="${size}" alt="">`;
+    try { return `<span class="cast-face" data-face="${who}" data-size="${size}">${window.Character.avatarSVG(lookOf(who), size)}</span>`; }
     catch { return `<span class="st-lamp" aria-hidden="true">🏮</span>`; }
+  }
+  function upgradeFaces(root) {
+    const els = root ? [...root.querySelectorAll("span.cast-face[data-face]")] : [];
+    if (!els.length) return;
+    const run = () => els.forEach((el) => {
+      const who = el.dataset.face, look = lookOf(who);
+      if (!look || typeof window.charHexes !== "function" || !window.ShellScenes || !window.ShellScenes.portrait) return;
+      window.ShellScenes.portrait(window.charHexes(look), 160).then((url) => {
+        if (!url) return;
+        _faceURL[who] = url;
+        if (!el.isConnected) return;
+        const size = +el.dataset.size || 52;
+        const img = new Image(size, size);
+        img.className = "cast-face baked";
+        img.alt = "";
+        img.src = url;
+        el.replaceWith(img);
+      }).catch(() => {});
+    });
+    if (window.ShellScenes && window.ShellScenes.ready) run();
+    else window.addEventListener("scene3d-ready", run, { once: true });
   }
 
   // ---------------------------------------------------------------------------
@@ -992,7 +1024,7 @@
         const isNarr = p.who === "narrator";
         body.innerHTML = `
           <div class="st-panel ${isNarr ? "narr" : "say"}">
-            ${isNarr ? "" : `<div class="st-who"><span class="st-portrait">${portrait(p.who, 48)}</span><span><b>${esc(L(c.name))}</b>${c.role ? `<small>${esc(L(c.role))}</small>` : ""}</span></div>`}
+            ${isNarr ? "" : `<div class="st-who"><span class="st-portrait">${portrait(p.who, 64)}</span><span><b>${esc(L(c.name))}</b>${c.role ? `<small>${esc(L(c.role))}</small>` : ""}</span></div>`}
             <p class="st-text">${esc(L(p.text))}</p>
           </div>`;
         nextBtn.textContent = T("st.next", "Next");
@@ -1015,6 +1047,7 @@
         nextBtn.textContent = opts.cta || T("st.continue", "Continue");
         try { if (window.PhobiaAudio) window.PhobiaAudio.ui("spark", 0.7); } catch {}
       }
+      upgradeFaces(body);
       body.classList.remove("in"); void body.offsetWidth; body.classList.add("in");
       try { nextBtn.focus({ preventScroll: true }); } catch {}
     }
@@ -1283,7 +1316,11 @@
   .st-portrait, .sc-portrait, .sb-portrait, .mn-portrait { border-radius: 50%; overflow: hidden; background: rgba(255,255,255,.07);
     flex: 0 0 auto; display: grid; place-items: center; }
   .st-portrait svg, .sc-portrait svg, .sb-portrait svg, .mn-portrait svg { display: block; }
-  .st-portrait { width: 48px; height: 48px; }
+  .st-portrait { width: 64px; height: 64px; box-shadow: 0 0 0 2px rgba(255, 214, 140, .35), 0 6px 18px rgba(0,0,0,.4); }
+  .cast-face { display: block; width: 100%; height: 100%; }
+  img.cast-face { object-fit: cover; background: radial-gradient(circle at 50% 30%, #4a4360 0%, #1a2036 70%); }
+  img.cast-face.baked { animation: castIn .35s ease; }
+  @keyframes castIn { from { opacity: .2; } to { opacity: 1; } }
   .st-who b { display: block; font-size: 15px; }
   .st-who small { display: block; font-size: 12px; opacity: .65; }
   .st-text { font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif; font-size: 18px; line-height: 1.6; margin: 0; }
@@ -1438,7 +1475,7 @@
     CHAPTERS, LESSONS, CAST, BEATS, ORDER,
     play, isSeen, markSeen, isUnlocked, pendingBefore, pendingAfter, nextUnread, lastRead,
     beatAfterTrial, focusFor, focusHTML, cardHTML, lanternsHTML, recapLine, morningNoteHTML,
-    viewBook, mountBook, chapterOfRealm, chapterLabel, pagesRead, titleOf, sceneSVG, portrait,
+    viewBook, mountBook, chapterOfRealm, chapterLabel, pagesRead, titleOf, sceneSVG, portrait, upgradeFaces,
     get isOpen() { return !!_open; },
   };
 })();

@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { compileAhead, DOG_MODELS, DOG_COAT_MAPS, loadDogCoatTextures, CREATURE_MODELS, buildCreature } from "./assets.js";
 import { disposeObject, resolveQuality, syncFxLite, getRoomEnvMap } from "./renderer.js";
 import { makeSoftSunbeam } from "./human-rig.js";
+import { BODY_TYPES_3D } from "./human-base.js";
 import { makeConcreteMaps, makeEarthMaps, makeGrassMaps, makePlankMaps, makePlasterMaps, makeRugMaps } from "./textures.js";
 import { applySidePhotoUVs } from "./creature-kit.js";
 import { buildDog } from "./dog-model.js";
@@ -1489,6 +1490,77 @@ const ShellScenes = (() => {
 
   function unmountAll() { [...registry].forEach(disposeCtx); landingCtl = null; }
 
-  return { mountCamp, mountRealm, mountLanding, mountRoom, setLandingBeat, unmountAll, ready: true };
+  // ---- Portraits: the story's cast drawn by the game's own figure builder ----
+  // Story pages showed Mira and the residents as the flat header avatar — a
+  // different art style from the people you then meet in 3D. A head-and-
+  // shoulders render of the SAME figure the scenes use, baked once per look
+  // on one small offscreen renderer (released after a quiet spell) and kept
+  // as an image, so a page turn never touches WebGL.
+  const _portraits = new Map();
+  let _pr = null, _prQueue = Promise.resolve(), _prIdle = 0;
+  function portrait(hexes, size = 160) {
+    if (!hexes) return Promise.resolve(null);
+    const key = JSON.stringify([hexes.bodyType, hexes.skinHex, hexes.hairHex, hexes.shirtHex, hexes.eyeHex,
+      hexes.hairStyle, hexes.glasses, hexes.facialHair, hexes.headwear, hexes.topStyle, size]);
+    if (_portraits.has(key)) return _portraits.get(key);
+    const job = (_prQueue = _prQueue.then(() => bakePortrait(hexes, size)).catch(() => null));
+    _portraits.set(key, job);
+    return job;
+  }
+  async function bakePortrait(hexes, size) {
+    if (!_pr) {
+      let renderer;
+      try {
+        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true, powerPreference: "low-power" });
+      } catch { return null; }
+      renderer.setPixelRatio(1);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.05;
+      const scene = new THREE.Scene();
+      const env = getRoomEnvMap(renderer);
+      if (env) scene.environment = env;
+      scene.add(new THREE.HemisphereLight(0xe4ecf8, 0x4a4038, 0.55));
+      // Warm lantern key from the front-left, cool fill, a rim to lift the
+      // hair off the dark card behind it.
+      const key = new THREE.DirectionalLight(0xffe2b8, 2.3); key.position.set(-1.2, 1.6, 2.4);
+      const fill = new THREE.DirectionalLight(0xcfe0f5, 0.7); fill.position.set(1.8, 0.6, 1.6);
+      const rim = new THREE.DirectionalLight(0xfff1dc, 1.5); rim.position.set(0.6, 2.2, -2.4);
+      scene.add(key, fill, rim);
+      _pr = { renderer, scene, camera: new THREE.PerspectiveCamera(22, 1, 0.05, 20) };
+    }
+    clearTimeout(_prIdle);
+    _prIdle = setTimeout(() => {
+      if (!_pr) return;
+      try { _pr.renderer.dispose(); _pr.renderer.forceContextLoss(); } catch {}
+      _pr = null;
+    }, 6000);
+    const { renderer, scene, camera } = _pr;
+    renderer.setSize(size, size, false);
+    let fig = null;
+    try {
+      fig = buildAvatarFigure(hexes, "idle");
+      scene.add(fig);
+      try { if (fig.userData.animate) fig.userData.animate(0.4); } catch {}
+      fig.updateMatrixWorld(true);
+      // Frame on the head: the rig's head height for this body type.
+      const bt = BODY_TYPES_3D[hexes.bodyType] || BODY_TYPES_3D.man;
+      const hy = 1.55 * bt.h;
+      camera.position.set(0.1, hy + 0.03, 0.98);
+      camera.lookAt(0, hy - 0.04, 0);
+      camera.updateProjectionMatrix();
+      // Link the programs off the main thread where the GPU allows, so the
+      // first face doesn't freeze the page turn it appears on.
+      try { await compileAhead(renderer, scene, camera); } catch {}
+      if (!_pr || _pr.renderer !== renderer) return null;
+      renderer.render(scene, camera);
+      return renderer.domElement.toDataURL("image/png");
+    } catch { return null; }
+    finally {
+      if (fig) { scene.remove(fig); try { disposeObject(fig); } catch {} }
+    }
+  }
+
+  return { mountCamp, mountRealm, mountLanding, mountRoom, setLandingBeat, unmountAll, portrait, ready: true };
 })();
 window.ShellScenes = ShellScenes;
