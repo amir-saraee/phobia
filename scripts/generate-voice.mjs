@@ -41,7 +41,14 @@ const REGISTERS = {
   praise: 0.82,                // habituation/credit beats: warm, slow
 };
 
-const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+// The game's source as one string: the page plus every script it runs
+// (src/app/* in load order, then the 3D modules).
+const SOURCES = [
+  "index.html",
+  ...[...fs.readFileSync(path.join(ROOT, "index.html"), "utf8").matchAll(/<script src="(src\/app\/[^"]+)"/g)].map((m) => m[1]),
+  ...fs.readdirSync(path.join(ROOT, "src", "3d"), { recursive: true }).filter((f) => f.endsWith(".js")).sort().map((f) => "src/3d/" + f),
+];
+const html = SOURCES.map((f) => fs.readFileSync(path.join(ROOT, f), "utf8")).join("\n");
 
 // ---- 1. Structured tables (pure literals — safe to eval in isolation) ----
 function extractLiteral(startMarker, openChar, closeChar) {

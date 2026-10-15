@@ -19,7 +19,7 @@ Six realms, five 3D trials each. Three have animals that read how you move; thre
 
 Every trial has **three stars** — its skill (let the dog come to you, stand on the glass…), reading the moment, and staying until the alarm settles — earned live in the scene and kept as your best on the map, so there's always a reason to go back (repetition is the part of exposure that does the work). Stars only ever reward approach and attention, never speed or a low rating. Face all of a dog's trials and it comes to rest by your campfire.
 
-Your custom character walks every scene. In the place realms the coach reads your body and the room instead of an animal: name a tight breath, a creak or a gust as *body*, *place* or *danger*. Nothing in them ever moves toward you — the walls stay put and the door always opens (opening it counts as relief, not learning). The older prototype realms (water, flying…) are still behind `LAUNCH_OPEN` in `index.html`; add `?all=1` to the URL to play them for QA.
+Your custom character walks every scene. In the place realms the coach reads your body and the room instead of an animal: name a tight breath, a creak or a gust as *body*, *place* or *danger*. Nothing in them ever moves toward you — the walls stay put and the door always opens (opening it counts as relief, not learning). The older prototype realms (water, flying…) are still behind `LAUNCH_OPEN` in `src/app/realm-data.js`; add `?all=1` to the URL to play them for QA.
 
 ## Built on real psychology
 
@@ -36,7 +36,18 @@ Mira is a game shell around genuine CBT graded-exposure mechanics:
 
 ## Tech
 
-Single-file vanilla JS + Three.js (no build step), Rapier physics, procedural + recorded audio, rigged CC0 creature models (Quaternius), installable PWA, offline-capable, English/Persian with full RTL. Three.js and Rapier are self-hosted under `assets/vendor/` — no runtime CDN.
+Vanilla JS + Three.js (no build step), Rapier physics, procedural + recorded audio, rigged CC0 creature models (Quaternius), installable PWA, offline-capable, English/Persian with full RTL. Three.js and Rapier are self-hosted under `assets/vendor/` — no runtime CDN.
+
+Where things live:
+
+| Path | What |
+|---|---|
+| `index.html` | the page: meta, import map, and the script tags in load order |
+| `src/styles.css` | every style |
+| `src/app/*.js` | the app shell — router, views, trials, progress, audio. Classic scripts that run in `index.html` order and share one global scope (a file can only use what an earlier file defines while it loads) |
+| `src/3d/main.js` | the 3D entry: menu vignettes, the creator turntable, and `window.Scene3D` |
+| `src/3d/engine.js` | the exposure engine (`mount` / `unmount`) plus the body, hands, controls, physics and post-fx it imports — fetched when the first trial needs it |
+| `src/3d/realms/*.js` | one module per realm's scene, fetched the first time that realm is entered (`realms/index.js` is the registry) |
 
 ## Run locally
 
@@ -59,4 +70,4 @@ After re-baking dog coats, run `npm run compress-textures` — the game loads th
 
 ## Feedback
 
-Players can write feedback from the menu, Settings, About, and after every trial. Nothing is sent automatically. Set `FEEDBACK_URL` in `index.html` to a form link (Google Form, Tally…) to add an "Open the form" button; until then it's copy-only.
+Players can write feedback from the menu, Settings, About, and after every trial. Nothing is sent automatically. Set `FEEDBACK_URL` in `src/app/handlers.js` to a form link (Google Form, Tally…) to add an "Open the form" button; until then it's copy-only.

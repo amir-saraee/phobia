@@ -11,14 +11,14 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v24-stars";
+const VERSION = "mira-v25-modules";
 // Installed on the first visit, in the background — so it holds only what the
-// creature realms (dogs, spiders, snakes) need to boot and play offline. The
-// place realms (heights, the dark, tight spaces) are procedural and need nothing
-// extra; everything else (other
-// creature models, anim clips, voice) is cached at runtime the first time it
-// is actually fetched. Keep this list lean: every byte here is paid by every
-// first-time visitor, on phone data too.
+// six open realms need to boot and play offline: their code, plus the models
+// and textures of the creature realms (dogs, spiders, snakes; the place realms
+// are procedural). Everything else (other creature models, anim clips, voice,
+// the three.js addons) is cached at runtime the first time it is fetched.
+// Keep this list lean: every byte here is paid by every first-time visitor,
+// on phone data too.
 const SHELL = [
   "./",                 // the page (manifest start_url is "./" — one copy, not two)
   "./manifest.json",
@@ -26,6 +26,54 @@ const SHELL = [
   "./src/character.js",
   "./src/phobia-info.js",
   "./src/i18n.js",
+  // The game's code: the stylesheet, the app shell (classic scripts, in load
+  // order) and the 3D modules — the engine and the six open realms. Legacy
+  // realms (?all=1) are cached the first time they are played.
+  "./src/styles.css",
+  "./src/app/boot-guards.js",
+  "./src/app/audio.js",
+  "./src/app/fear-voice.js",
+  "./src/app/scene-art.js",
+  "./src/app/realm-data.js",
+  "./src/app/progress.js",
+  "./src/app/router.js",
+  "./src/app/handlers.js",
+  "./src/app/views-journey.js",
+  "./src/app/views-trial.js",
+  "./src/app/experiments.js",
+  "./src/app/exposure.js",
+  "./src/app/data-tools.js",
+  "./src/app/boot.js",
+  "./src/3d/main.js",
+  "./src/3d/assets.js",
+  "./src/3d/avatar.js",
+  "./src/3d/body.js",
+  "./src/3d/coach.js",
+  "./src/3d/controls.js",
+  "./src/3d/creature-kit.js",
+  "./src/3d/dog-controller.js",
+  "./src/3d/dog-model.js",
+  "./src/3d/dog-rig.js",
+  "./src/3d/engine.js",
+  "./src/3d/hands.js",
+  "./src/3d/human-base.js",
+  "./src/3d/human-head.js",
+  "./src/3d/human-motion.js",
+  "./src/3d/human-rig.js",
+  "./src/3d/physics.js",
+  "./src/3d/postfx.js",
+  "./src/3d/renderer.js",
+  "./src/3d/scene-context.js",
+  "./src/3d/shell-scenes.js",
+  "./src/3d/textures.js",
+  "./src/3d/therapist.js",
+  "./src/3d/realms/dark.js",
+  "./src/3d/realms/dogs.js",
+  "./src/3d/realms/enclosed.js",
+  "./src/3d/realms/heights.js",
+  "./src/3d/realms/index.js",
+  "./src/3d/realms/snakes.js",
+  "./src/3d/realms/spiders.js",
   // Self-hosted three.js (0.160.0). The addons it pulls are runtime-cached.
   "./assets/vendor/three/three.module.min.js",
   // Rigged dogs (Quaternius, CC0) + their photo-projected coats (JPEG ship

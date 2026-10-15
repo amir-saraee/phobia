@@ -13,7 +13,7 @@ const ROOT = path.join(__dirname, "..");
 const OUT = "/tmp/fobia-face";
 const PORT = 8735;
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const MIME = { ".html": "text/html", ".js": "text/javascript", ".png": "image/png", ".glb": "model/gltf-binary", ".gltf": "model/gltf+json", ".m4a": "audio/mp4", ".json": "application/json", ".svg": "image/svg+xml" };
+const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".glb": "model/gltf-binary", ".gltf": "model/gltf+json", ".m4a": "audio/mp4", ".json": "application/json", ".svg": "image/svg+xml" };
 
 function serve() {
   return new Promise((resolve) => {

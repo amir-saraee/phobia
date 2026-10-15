@@ -1,0 +1,304 @@
+// The hash router and render(): parse / serialize routes, go(), and the view
+// switch.
+// Classic script: index.html runs src/app/*.js in order, and they share one
+// global scope — a top-level name here is visible to every later file.
+
+"use strict";
+
+// ---------- Routing ----------
+// Hash-based router. Each view has a stable URL — refresh keeps you on the
+// same page, browser back/forward works, and you can deep-link friends to a
+// specific phobia ladder or your insights page.
+const root = document.getElementById("app");
+let _suppressHashSync = false;
+
+function serializeRoute(view, params = {}) {
+  switch (view) {
+    case "welcome":   return "/";
+    case "select":    return "/fears";
+    case "threshold": return "/begin";
+    case "traveler":  return "/traveler";
+    case "demo":      return "/try";
+    case "quiz":      return "/check";
+    case "about":     return "/about";
+    case "journal":   return "/journal";
+    case "report":    return "/report";
+    case "insights":  return "/insights";
+    case "profiles":  return "/profiles";
+    case "character": return params.editing ? "/me/edit" : "/me";
+    case "custom":    return "/custom" + (params.editing ? "/" + encodeURIComponent(params.editing) : "");
+    case "ladder":    return "/" + encodeURIComponent(params.phobia || "");
+    case "phobia-progress": return "/" + encodeURIComponent(params.phobia) + "/progress";
+    case "predict":   return "/" + encodeURIComponent(params.phobia) + "/predict/" + (params.level ?? 0);
+    case "exposure":  return "/" + encodeURIComponent(params.phobia) + "/exposure/" + (params.level ?? 0);
+    case "rate":      return "/" + encodeURIComponent(params.phobia) + "/rate/" + (params.level ?? 0);
+    case "breathe":   return "/" + encodeURIComponent(params.phobia) + "/breathe/" + (params.level ?? 0);
+    case "complete":  return "/" + encodeURIComponent(params.phobia) + "/done/" + (params.level ?? 0);
+    default:          return "/";
+  }
+}
+
+function parseRoute(hash) {
+  const path = (hash || "").replace(/^#/, "");
+  const parts = path.replace(/^\//, "").split("/").filter(Boolean).map(decodeURIComponent);
+  if (parts.length === 0) return { view: "welcome", params: {} };
+  switch (parts[0]) {
+    case "fears":    return { view: "select",    params: {} };
+    case "begin":    return { view: "threshold", params: {} };
+    case "try":      return { view: "demo",      params: {} };
+    case "check":    return { view: "quiz",      params: {} };
+    case "about":    return { view: "about",     params: {} };
+    case "journal":  return { view: "journal",   params: {} };
+    case "report":   return { view: "report",    params: {} };
+    case "insights": return { view: "insights",  params: {} };
+    case "profiles": return { view: "profiles",  params: {} };
+    case "traveler": return { view: "traveler",  params: {} };
+    case "me":       return { view: "character", params: { editing: parts[1] === "edit" } };
+    case "custom":   return { view: "custom",    params: { editing: parts[1] || null } };
+  }
+  // Phobia-scoped routes (built-in or custom)
+  const phobia = parts[0];
+  if (PHOBIAS[phobia]) {
+    // Clamp the level to the ladder's real range — an out-of-range / non-numeric
+    // / negative index (bad deep link, or a custom ladder later trimmed shorter)
+    // used to crash viewExposure/viewComplete on `lv.title` and blank the page.
+    const rawLvl = parts[2] != null ? parseInt(parts[2], 10) : 0;
+    const maxLvl = ((PHOBIAS[phobia].levels && PHOBIAS[phobia].levels.length) || 5) - 1;
+    const lvl = Math.max(0, Math.min(maxLvl, Number.isFinite(rawLvl) ? rawLvl : 0));
+    if (parts[1] === "progress") return { view: "phobia-progress", params: { phobia } };
+    if (parts[1] === "predict")  return { view: "predict",  params: { phobia, level: lvl } };
+    if (parts[1] === "exposure") return { view: "exposure", params: { phobia, level: lvl } };
+    if (parts[1] === "rate")     return { view: "rate",     params: { phobia, level: lvl } };
+    if (parts[1] === "breathe")  return { view: "breathe",  params: { phobia, level: lvl } };
+    if (parts[1] === "done")     return { view: "complete", params: { phobia, level: lvl } };
+    return { view: "ladder", params: { phobia } };
+  }
+  return { view: "welcome", params: {} };
+}
+
+// We control scroll behaviour explicitly: every navigation (in-app click,
+// hash change, initial load) starts the new page at top. The browser's
+// "scroll restoration" feature would interfere — turn it off so it doesn't
+// fight with our scrollToTop().
+if ("scrollRestoration" in history) {
+  try { history.scrollRestoration = "manual"; } catch {}
+}
+
+function go(view, params) {
+  params = params || {};
+  const hash = "#" + serializeRoute(view, params);
+  if (location.hash !== hash) {
+    _suppressHashSync = true;
+    history.pushState({ view, params }, "", hash);
+    _suppressHashSync = false;
+  }
+  render(view, params);
+  // SPA navigation should always start the new page at the top — otherwise
+  // the previous page's scroll position bleeds into the next view (e.g. you
+  // scroll halfway down the home grid, click a phobia, and land mid-ladder
+  // unable to see its title). `instant` skips smooth-scroll so users don't
+  // see a fly-by.
+  scrollToTop();
+}
+
+// popstate (Back / Forward) is handled separately so we DO restore the prior
+// scroll position when the user uses browser navigation. Hashchange + a click
+// on an in-app button always go to the top.
+function scrollToTop() {
+  try {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  } catch {
+    window.scrollTo(0, 0);
+  }
+  // Some mobile browsers track scroll on document.documentElement / body
+  // differently; reset both to be safe.
+  if (document.documentElement) document.documentElement.scrollTop = 0;
+  if (document.body) document.body.scrollTop = 0;
+}
+
+window.addEventListener("hashchange", () => {
+  if (_suppressHashSync) return;
+  const route = parseRoute(location.hash);
+  render(route.view, route.params);
+  scrollToTop();
+});
+window.addEventListener("popstate", () => {
+  const route = parseRoute(location.hash);
+  render(route.view, route.params);
+  // Don't force scroll on popstate — let the browser restore the prior
+  // scroll position so Back / Forward feels natural.
+});
+
+function render(view, params) {
+  // Tear down any active 3D scene + audio + voice before swapping the DOM
+  if (window.Scene3D && typeof window.Scene3D.unmount === "function") {
+    window.Scene3D.unmount();
+  }
+  // Shell vignettes (camp fire, realm heroes) are per-view; drop them too.
+  if (window.ShellScenes && typeof window.ShellScenes.unmountAll === "function") {
+    window.ShellScenes.unmountAll();
+  }
+  // The title-screen avatar turntable — full cleanup (listeners + geometry),
+  // not just the renderer self-dispose. The character creator re-mounts its
+  // own instance after render, so this is always safe.
+  if (window.AvatarPreview && typeof window.AvatarPreview.unmount === "function") {
+    window.AvatarPreview.unmount();
+  }
+  if (window.PhobiaVoice) window.PhobiaVoice.stop();
+  if (window._landingAudio) {
+    try { window._landingAudio.stop(); } catch {}
+    window._landingAudio = null;
+  }
+  // A closed realm (see LAUNCH_OPEN) answers every one of its routes — map
+  // link, deep link, old bookmark — with its "coming soon" page.
+  if (params && params.phobia && PHOBIAS[params.phobia] && !realmOpen(params.phobia) &&
+      ["ladder", "phobia-progress", "predict", "exposure", "rate", "breathe", "complete"].includes(view)) {
+    view = "soon";
+  }
+  // Fetch an open realm's scene code while the player is still on its ladder
+  // or predict page, so the trial itself mounts without a wait.
+  if (params && params.phobia && view !== "soon" && window.Scene3D && window.Scene3D.preload) {
+    window.Scene3D.preload(params.phobia);
+  }
+  const isLanding = view === "welcome" || view === "threshold";
+  document.body.classList.toggle("landing-mode", isLanding);
+  const appEl = document.getElementById("app");
+  if (appEl) appEl.classList.toggle("landing-mode", isLanding);
+  // Immersive views draw their own full-bleed 3D stage and own the whole
+  // screen, so the document behind must not scroll — on iOS a scrollable body
+  // under a fixed stage means every drag fights the address bar.
+  const isImmersive = view === "welcome" || view === "traveler";
+  document.body.classList.toggle("mob-immersive", isImmersive);
+  // Any leftover tutorial overlays from a previous mount must be removed,
+  // otherwise they linger on body when the view re-renders.
+  document.querySelectorAll(".tour-overlay").forEach(el => el.remove());
+  const muted = window.PhobiaAudio && window.PhobiaAudio.isMuted();
+  const menuBtn = `<button class="audio-btn" id="menuBtn" title="${t("nav.menu", "Menu")}" aria-label="${t("a11y.openMenu", "Open menu")}">☰</button>`;
+  const audioBtn = `<button class="audio-btn" id="audioBtn" title="${t("nav.sound", "Toggle sound")}" aria-label="${t("nav.sound", "Toggle sound")}">${muted ? "🔇" : "🔊"}</button>`;
+  const insightsBtn = (state.log && state.log.length > 0)
+    ? `<button class="audio-btn" id="insightsBtn" title="${t("nav.progress", "Your progress")}" aria-label="${t("nav.progress", "Your progress")}" data-action="open-insights">📊</button>` : "";
+  const settingsBtn = `<button class="audio-btn" id="settingsBtn" title="${t("nav.settings", "Settings")}" aria-label="${t("a11y.openSettings", "Open settings")}">⚙</button>`;
+  // Character avatar in header (when one exists). The badge opens the profile
+  // picker if the user has more than one character, otherwise the editor.
+  const character = window.Character && window.Character.loadCharacter();
+  const allChars = window.Character ? window.Character.loadCharacters() : [];
+  const streak = computeStreak();
+  const charBadge = character ? `
+    <button class="char-badge" id="charBadge" title="${allChars.length > 1 ? t("a11y.switchChar", "Switch character") : t("a11y.editChar", "Edit character")}">
+      <span class="char-badge-avatar">${window.Character.avatarSVG(character, 28)}</span>
+      ${character.name ? `<span class="char-badge-name">${character.name}</span>` : ""}
+      ${allChars.length > 1 ? `<span class="char-badge-count">${allChars.length}</span>` : ""}
+      ${streak >= 2 ? `<span class="char-badge-streak" title="${tf("a11y.streak", "{n}-day streak", { n: streak })}">🔥 ${streak}</span>` : ""}
+    </button>` : "";
+  const sparkCount = character ? getSparks().length : 0;
+  const isFa = window.I18n && window.I18n.currentLanguage() === "fa";
+  const langBtn = `<button class="audio-btn lang-btn" id="langBtn" title="${isFa ? "Switch to English" : "تغییر زبان به فارسی"}" aria-label="${t("a11y.lang", "Change language")}" lang="${isFa ? "en" : "fa"}">${isFa ? "EN" : "فا"}</button>`;
+  const sparksBtn = sparkCount > 0
+    ? `<button class="audio-btn spark-hud" id="sparksBtn" title="${t("hud.sparks", "Book of Sparks — the wisdom you've earned")}" aria-label="${t("a11y.sparks", "Open your Book of Sparks")}">✦<span class="spark-hud-n">${sparkCount}</span></button>` : "";
+  const html = `
+    <a class="skip-link" href="#view">${t("a11y.skip", "Skip to main content")}</a>
+    <header class="brand" role="banner">
+      <div class="brand-left">
+        ${menuBtn}
+        <h1><span class="dot"></span> Mira <span class="brand-tag">${t("hud.tag", "the courage journey")}</span></h1>
+      </div>
+      <nav class="nav-actions" aria-label="${t("a11y.nav", "App navigation")}">
+        ${getCourage() > 0 ? `<span class="courage-badge" id="courageBadge" title="${t("hud.courage", "Courage — earned every time you face a trial")}">⚡ ${getCourage()}</span>` : ""}
+        ${charBadge}
+        ${sparksBtn}
+        ${insightsBtn}
+        ${langBtn}
+        ${audioBtn}
+        ${settingsBtn}
+        ${view !== "welcome" && view !== "character" && view !== "threshold" ? `<button class="home-btn" id="home" aria-label="${t("a11y.home", "Back to the journey map")}">${t("hud.camp", "🏕 Camp")}</button>` : ""}
+      </nav>
+    </header>
+    <main id="view" role="main"></main>
+  `;
+  root.innerHTML = html;
+  const v = document.getElementById("view");
+  // Set focus to main content for screen readers when navigating
+  if (v && v.setAttribute) { v.setAttribute("tabindex", "-1"); }
+  if (view === "welcome")     v.innerHTML = viewArrival();
+  if (view === "traveler")    v.innerHTML = viewTraveler();
+  if (view === "threshold")   v.innerHTML = viewThreshold();
+  if (view === "character")   v.innerHTML = viewCharacterPage(params.editing);
+  if (view === "select")      v.innerHTML = viewSelect();
+  if (view === "ladder")      v.innerHTML = viewLadder(params.phobia);
+  if (view === "soon")        v.innerHTML = viewRealmSoon(params.phobia);
+  if (view === "predict")     v.innerHTML = viewPredict(params.phobia, params.level);
+  if (view === "exposure")    v.innerHTML = viewExposure(params.phobia, params.level);
+  // The instant demo IS the dogs first rung — same view, same mount — with a
+  // flag the exposure chrome reads: no character needed (Body falls back to
+  // its defaults), the exit goes to an invitation instead of the rate flow,
+  // and nothing writes ladder progress. Seven screens stood between a new
+  // visitor and the first 3D moment; this is the shortcut past all of them.
+  if (view === "demo")      { window.__demoMode = true; v.innerHTML = viewExposure("dogs", 0); }
+  else if (window.__demoMode) window.__demoMode = false;
+  if (view === "quiz")        v.innerHTML = viewQuiz();
+  // A page found on your own needs no signpost: seeing insights or the report
+  // retires the camp nudge that would have pointed there.
+  if (view === "insights")    markNudgeDone("insights");
+  if (view === "report")      markNudgeDone("report");
+  if (view === "rate")        v.innerHTML = viewRate(params.phobia, params.level);
+  if (view === "breathe")     v.innerHTML = viewBreathe(params.phobia, params.level);
+  if (view === "complete") {
+    // suds/predicted may not be on params (e.g. on URL refresh) — pull them
+    // from the most recent matching log entry instead so the page reads right.
+    let suds = params.suds, predicted = params.predicted, peak = params.peak;
+    if (suds == null && state.log) {
+      const recent = [...state.log].reverse().find(l => l.phobia === params.phobia && l.level === params.level);
+      if (recent) { suds = recent.suds; predicted = recent.predicted; peak = recent.peak; }
+    }
+    v.innerHTML = viewComplete(params.phobia, params.level, suds, predicted, peak);
+  }
+  if (view === "insights")    v.innerHTML = viewInsights();
+  if (view === "journal")     v.innerHTML = viewJournal();
+  if (view === "about")       v.innerHTML = viewAbout();
+  if (view === "report")      v.innerHTML = viewReport();
+  if (view === "profiles")    v.innerHTML = viewProfiles();
+  if (view === "custom")      v.innerHTML = viewCustom(params.editing);
+  if (view === "phobia-progress") v.innerHTML = viewPhobiaProgress(params.phobia);
+
+  // Background ambient pad — runs on non-exposure views when music is enabled
+  ensureAmbient(view);
+
+  attachHandlers(view, params);
+  if (view === "character") attachCharacterHandlers(params.editing);
+  if (view === "custom")    attachCustomHandlers(params.editing);
+  if (view === "exposure")  mountExposure(params.phobia, params.level);
+  if (view === "demo")      mountExposure("dogs", 0);
+  if (view === "breathe")   runBreathing();
+  if (view === "threshold" || view === "select" || view === "ladder") mountShell3D(view, params);
+  if (view === "welcome" || view === "traveler") mountRoomStage(view);
+  if (view === "traveler")  attachTravelerHandlers();
+  if (view === "threshold") mountThresholdHUD();
+  if (view === "select")    mountJourney();
+
+  // Move focus to the new view's heading so keyboard + screen-reader users
+  // don't get stranded on the just-removed element (which drops focus to
+  // <body>, forcing a full re-Tab and announcing nothing). Never focus INTO
+  // the WebGL canvas on exposure — focus the container instead.
+  try {
+    requestAnimationFrame(() => {
+      if (!v || !v.isConnected) return;
+      const h = (view !== "exposure") ? v.querySelector("h1, h2") : null;
+      const target = h || v;
+      if (h && !h.hasAttribute("tabindex")) h.setAttribute("tabindex", "-1");
+      target.focus({ preventScroll: true });
+    });
+  } catch {}
+
+  // ---- View entrance animation ----
+  // Trigger the fade-up animation by toggling the .view-enter class. Strip
+  // it after the animation finishes so future re-renders can re-trigger it.
+  // Skipped for the exposure scene because the canvas already does its own
+  // smooth scene-ready fade — stacking animations looks janky.
+  if (v && view !== "exposure" && view !== "welcome" && view !== "threshold") {
+    v.classList.remove("view-enter");
+    // Force a reflow so removing+adding the class re-runs the animation
+    void v.offsetWidth;
+    v.classList.add("view-enter");
+    setTimeout(() => v && v.classList.remove("view-enter"), 500);
+  }
+}
