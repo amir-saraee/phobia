@@ -3,6 +3,10 @@
 // by hand:  node scripts/smoke.cjs        (SMOKE_SHOTS=1 keeps screenshots)
 //
 // It serves the repo itself on a free port (no dev server needed), then:
+//   0. before Chrome starts, the two hand-kept lists: every file in sw.js's
+//      precache exists (one 404 fails the whole install, so no offline play),
+//      and index.html's modulepreload links match src/3d/main.js's static
+//      import graph (a drift only costs load time, but it's free to catch)
 //   1. first run: consent → Step inside → creator → straight to trial 1's gate
 //   2. trial 1: walk to the dog, stay until the alarm settles, rate (tap the
 //      two readings), complete — with its trial stars logged and shown
@@ -387,7 +391,50 @@ async function phoneTouch(browser, base) {
   await ctx.close();
 }
 
+// ---- 0. static checks: the hand-kept lists in sw.js and index.html ----
+function staticChecks() {
+  const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+  const isFile = (rel) => { try { return fs.statSync(path.join(ROOT, rel)).isFile(); } catch { return false; } };
+
+  const shell = (read("sw.js").match(/const SHELL = \[([\s\S]*?)\];/) || [])[1] || "";
+  const entries = [...shell.matchAll(/"(\.\/[^"]*)"/g)].map((m) => m[1]);
+  const missing = entries.filter((u) => !isFile(u === "./" ? "index.html" : u.slice(2)));
+  check("sw.js: every precached file exists", entries.length > 0 && !missing.length,
+    missing.length ? "missing: " + missing.join(", ") : `${entries.length} entries`);
+
+  // main.js's static graph: our modules it reaches, plus the three.js files
+  // they import directly (resolved through the import map). Dynamic import()
+  // is skipped on purpose: the engine and realms load on demand.
+  const html = read("index.html");
+  const importMap = JSON.parse((html.match(/<script type="importmap">([\s\S]*?)<\/script>/) || [])[1] || "{}").imports || {};
+  const resolve = (spec, from) => {
+    if (/^\.\.?\//.test(spec)) return path.posix.normalize(path.posix.join(path.posix.dirname(from), spec));
+    const key = importMap[spec] ? spec : Object.keys(importMap).filter((k) => k.endsWith("/") && spec.startsWith(k)).sort((a, b) => b.length - a.length)[0];
+    return key ? path.posix.normalize(importMap[key] + spec.slice(key.length)) : null;
+  };
+  const want = new Set(), stack = ["src/3d/main.js"];
+  while (stack.length) {
+    const f = stack.pop();
+    if (want.has(f)) continue;
+    want.add(f);
+    if (!f.startsWith("src/") || !isFile(f)) continue;   // vendor files: listed, not walked
+    for (const m of read(f).matchAll(/^import\s(?:[^;]*?\sfrom\s*)?["']([^"']+)["']/gm)) {
+      const dep = resolve(m[1], f);
+      if (dep) stack.push(dep);
+    }
+  }
+  const have = new Set([...html.matchAll(/<link rel="modulepreload" href="([^"]+)"/g)].map((m) => path.posix.normalize(m[1])));
+  const unlisted = [...want].filter((f) => !have.has(f)), stale = [...have].filter((f) => !want.has(f));
+  check("index.html: modulepreload matches main.js's static imports", !unlisted.length && !stale.length,
+    [unlisted.length && "not preloaded: " + unlisted.join(", "), stale.length && "stale: " + stale.join(", ")].filter(Boolean).join(" · ") || `${want.size} files`);
+}
+
 (async () => {
+  staticChecks();
+  if (failed) {   // no point spending three minutes in Chrome
+    console.log(results.join("\n") + "\n\nSMOKE FAILED (static checks)");
+    process.exit(1);
+  }
   const server = await serve();
   const base = `http://127.0.0.1:${server.address().port}`;
   const browser = await puppeteer.launch({

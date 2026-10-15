@@ -61,7 +61,7 @@ Then open http://localhost:3000.
 
 ```bash
 cd scripts && npm install      # once
-npm run smoke                  # ~3 min: first run + dog trials + a spider, snake, heights, dark and tight-space trial, headless
+npm run smoke                  # ~3 min: the SW precache + modulepreload lists, then first run + dog trials + a spider, snake, heights, dark and tight-space trial, headless
 ```
 
 The same smoke test runs as a git `pre-push` hook (`git config core.hooksPath .githooks`, already set in this clone). Skip it once with `SKIP_SMOKE=1 git push`. `SMOKE_SHOTS=1` keeps screenshots in `.smoke-shots/`.
