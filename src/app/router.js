@@ -22,6 +22,7 @@ function serializeRoute(view, params = {}) {
     case "quiz":      return "/check";
     case "about":     return "/about";
     case "journal":   return "/journal";
+    case "story":     return "/story";
     case "report":    return "/report";
     case "insights":  return "/insights";
     case "profiles":  return "/profiles";
@@ -49,6 +50,7 @@ function parseRoute(hash) {
     case "check":    return { view: "quiz",      params: {} };
     case "about":    return { view: "about",     params: {} };
     case "journal":  return { view: "journal",   params: {} };
+    case "story":    return { view: "story",     params: {} };
     case "report":   return { view: "report",    params: {} };
     case "insights": return { view: "insights",  params: {} };
     case "profiles": return { view: "profiles",  params: {} };
@@ -253,7 +255,13 @@ function render(view, params) {
     v.innerHTML = viewComplete(params.phobia, params.level, suds, predicted, peak);
   }
   if (view === "insights")    v.innerHTML = viewInsights();
-  if (view === "journal")     v.innerHTML = viewJournal();
+  // The Story Book holds the chapters, what you've learned, and the Sparks —
+  // one book instead of two. #/journal opens it on the Sparks tab.
+  if (view === "journal" || view === "story") {
+    v.innerHTML = window.Story
+      ? window.Story.viewBook({ tab: view === "journal" ? "sparks" : "chapters", sparksHTML: sparksGridHTML() })
+      : viewJournal();
+  }
   if (view === "about")       v.innerHTML = viewAbout();
   if (view === "report")      v.innerHTML = viewReport();
   if (view === "profiles")    v.innerHTML = viewProfiles();
@@ -266,8 +274,17 @@ function render(view, params) {
   attachHandlers(view, params);
   if (view === "character") attachCharacterHandlers(params.editing);
   if (view === "custom")    attachCustomHandlers(params.editing);
-  if (view === "exposure")  mountExposure(params.phobia, params.level);
-  if (view === "demo")      mountExposure("dogs", 0);
+  if ((view === "story" || view === "journal") && window.Story) window.Story.mountBook();
+  // A frame for the page (and its loading card) to paint before the scene is
+  // built — then build, unless the player already left.
+  if (view === "exposure" || view === "demo") {
+    const key = view === "demo" ? "dogs" : params.phobia, lvl = view === "demo" ? 0 : params.level;
+    const stageEl = document.getElementById("stage");
+    requestAnimationFrame(() => setTimeout(() => {
+      if (!stageEl || !stageEl.isConnected) return;
+      mountExposure(key, lvl);
+    }, 0));
+  }
   if (view === "breathe")   runBreathing();
   if (view === "threshold" || view === "select" || view === "ladder") mountShell3D(view, params);
   if (view === "welcome" || view === "traveler") mountRoomStage(view);

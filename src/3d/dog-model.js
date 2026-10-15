@@ -5,7 +5,7 @@ import * as THREE from "three";
 // skin bindings). A plain Object3D.clone() shares the skeleton and breaks
 // animation, so any model we instance from the GLTF cache must use this.
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
-import { loadGLTF, DOG_MODELS, DOG_COAT_MAPS, loadDogCoatTextures } from "./assets.js";
+import { loadGLTF, compileBeforeAdd, DOG_MODELS, DOG_COAT_MAPS, loadDogCoatTextures } from "./assets.js";
 import { sceneQuality } from "./renderer.js";
 import { makeFurMaps, ensureBoxUV, geometryBox, applySidePhotoUVs, smoothCreaseNormals, applyCoatTint } from "./creature-kit.js";
 import { DogLegRig, correctDogGaitClip, synthDogTrot } from "./dog-rig.js";
@@ -202,7 +202,7 @@ function buildDog(opts = {}) {
     // Procedural maps immediately so the dog never flashes plastic while the
     // breed PNGs stream in; then upgrade map slots when ready (no re-darken).
     try { applyCoatMaterials(null, "base"); } catch (e) { console.warn("[dogs] fur maps:", e); }
-    loadDogCoatTextures(breed).then((maps) => {
+    const coatLanded = loadDogCoatTextures(breed).then((maps) => {
       if (dog.userData.disposed || !maps) return;
       try { applyCoatMaterials(maps, "upgrade"); } catch (e) { console.warn("[dogs] coat maps:", e); }
       // Fur shells take their maps from the upgraded coat, so they're built
@@ -362,11 +362,22 @@ function buildDog(opts = {}) {
     // Collar + tag: sized from the raw bind height, rides the neck bone.
     try { attachDogCollar(model, parts, rawH); } catch {}
 
-    dog.add(model);
     parts.model = model;
 
-    dog.userData.ready = true;
-    if (typeof dog.userData.onReady === "function") dog.userData.onReady();
+    // Into the room once its programs are linked (compileBeforeAdd) — with the
+    // coat upgrade and fur shells in place when the maps are already here
+    // (they're prefetched), so the dog appears in the variant it keeps; a coat
+    // still downloading gets 1.5 s before the dog goes in without it.
+    Promise.race([coatLanded.catch(() => {}), new Promise((res) => setTimeout(res, 1500))])
+      .then(() => compileBeforeAdd(dog, model))
+      .then(() => {
+        if (dog.userData.disposed) return;
+        try {
+          dog.add(model);
+          dog.userData.ready = true;
+          if (typeof dog.userData.onReady === "function") dog.userData.onReady();
+        } catch (e) { console.warn("[dogs] ready:", e); }
+      });
   }).catch((err) => {
     console.warn("[dogs] model load failed:", url, err);
     // Fallback so the room is never silently empty on a load failure. No
@@ -471,6 +482,10 @@ diffuseColor.rgb *= mix(0.84, 1.05, uFurH);`);
       shell.renderOrder = i;
       shell.userData.furShell = true;
       shell.userData.noPick = true;      // clicks land on the coat itself
+      // …and never reach the shell at all: three's raycaster ignores both
+      // `visible` and noPick, and skins every triangle on the CPU to test a
+      // SkinnedMesh — a tap at the dog cost ~5 ms per raycast with 6 shells.
+      shell.raycast = () => {};
       shell.userData.noCoat = true;
       shell.userData.ssaoSkip = true;
       src.parent.add(shell);

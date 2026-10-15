@@ -244,8 +244,8 @@ function openMenu() {
       </div>
     ` : ""}
     <ul class="menu-list">
-      <li><button data-go="welcome">${t("menu.title", "🌌 Title screen — the story")}</button></li>
-      <li><button data-go="select">${t("menu.valley", "🗺 The Valley of Fears")}</button></li>
+      <li><button data-go="story">${t("menu.storyBook", "📖 The story — Mira's lanterns")}</button></li>
+      <li><button data-go="select">${t("menu.camp", "🏕 Camp — the valley map")}</button></li>
       ${ch ? `<li><button data-go="ladder" data-phobia="${(() => { try { return currentRealmKey(); } catch { return ch.primaryPhobia || ""; } })()}">${t("menu.trials", "Continue your trials")}</button></li>` : ""}
       <li><button data-go="journal">${t("menu.sparks", "✦ Book of Sparks")}</button></li>
       <li><button data-go="insights">${t("menu.story", "📜 Your story so far")}</button></li>
@@ -576,7 +576,7 @@ function openSettings() {
   };
   const qSel = drawer.querySelector("#qualitySelect");
   if (qSel) qSel.onchange = () => {
-    try { localStorage.setItem("fobia.quality", qSel.value); } catch {}
+    try { localStorage.setItem("fobia.quality", qSel.value); localStorage.removeItem("fobia.autoTier"); } catch {}
     // The setting takes effect on the next scene mount — show a small confirmation
     const note = document.createElement("div");
     note.className = "settings-note";
@@ -688,20 +688,68 @@ function closeSettings() {
   }
 }
 
+// ---------- Starting a trial (one door for every button) ----------
+// Where "Continue" goes: the next untried trial of the current realm, or of
+// the next realm whose lantern isn't lit yet.
+function continueTarget() {
+  const keys = journeyKeys();
+  const walked = (k) => (getProgress(k).highestCompleted ?? -1) + 1 >= PHOBIAS[k].levels.length;
+  const nextOf = (k) => Math.min(PHOBIAS[k].levels.length - 1, (getProgress(k).highestCompleted ?? -1) + 1);
+  let k = currentRealmKey();
+  if (walked(k)) { const nk = keys.find((x) => !walked(x)); if (nk) k = nk; }
+  return { key: k, level: nextOf(k), allWalked: keys.length > 0 && keys.every(walked) };
+}
+// A story page that belongs before this trial (the chapter's opening, or the
+// page the last trial turned) plays first; then `then`.
+function storyGate(phobia, lvl, then) {
+  const S = window.Story;
+  let id = null;
+  try { id = S && S.pendingBefore(phobia, lvl); } catch {}
+  if (id) S.play(id, { onDone: then, cta: tf("st.toTrial", "To trial {n} →", { n: lvl + 1 }) });
+  else then();
+}
+// Every "face this trial" button lands here: story page → predict → scene.
+// (The one-minute primer no longer stands in front of trial 2 as well — the
+// story carries the why now; the primer stays one tap away on the realm page
+// and after trial 1.)
+function startTrial(phobia, lvl) {
+  if (!PHOBIAS[phobia]) { go("select"); return; }
+  try { PhobiaAudio.ui("whoosh"); } catch {}
+  const max = PHOBIAS[phobia].levels.length - 1;
+  const level = Math.max(0, Math.min(max, Number.isFinite(lvl) ? lvl : 0));
+  storyGate(phobia, level, () => go("predict", { phobia, level }));
+}
+function continueJourney() {
+  const ch = window.Character && window.Character.loadCharacter();
+  if (!ch) { handleAction({ action: "make-traveler" }, {}); return; }
+  const tgt = continueTarget();
+  if (tgt.allWalked) {
+    const S = window.Story;
+    if (S && S.isUnlocked("epilogue") && !S.isSeen("epilogue")) { S.play("epilogue", { onDone: () => go("select") }); return; }
+    go("select");
+    return;
+  }
+  startTrial(tgt.key, tgt.level);
+}
+
 function handleAction(d, params) {
   switch (d.action) {
     case "begin":           {
-      // First-time visitors go through the character creator; returners go to select.
+      // First-time visitors go through the (3D) traveler creator, the same
+      // door the title screen uses; returners go to camp.
       const existing = window.Character && window.Character.loadCharacter();
-      go(existing ? "select" : "character", existing ? {} : { editing: false });
+      if (existing) go("select");
+      else handleAction({ action: "make-traveler" }, params);
       break;
     }
-    // ---- Mobile arrival flow: room → traveler → the dog ----
+    // ---- Arrival flow: room → prologue → traveler → chapter → trial 1 ----
     case "make-traveler": {
       _travelerDraft = (window.Character && window.Character.loadCharacter())
         || (window.Character && window.Character.defaultCharacter())
         || null;
-      go("traveler");
+      const S = window.Story;
+      if (S && !S.isSeen("prologue")) S.play("prologue", { onDone: () => go("traveler"), cta: t("st.toCreator", "Become a traveler →") });
+      else go("traveler");
       break;
     }
     case "edit-character": {
@@ -736,11 +784,29 @@ function handleAction(d, params) {
       const fk = draft.primaryPhobia;
       const firstRun = (getProgress(fk).highestCompleted ?? -1) < 0 &&
         !(state.log || []).some((l) => l.phobia === fk);
-      if (firstRun) go("predict", { phobia: fk, level: 0 });
+      // The chapter's opening page plays on the way in.
+      if (firstRun) storyGate(fk, 0, () => go("predict", { phobia: fk, level: 0 }));
       else go("ladder", { phobia: fk });
       break;
     }
-    case "go-dogs": go("ladder", { phobia: "dogs" }); break;
+    case "go-dogs": continueJourney(); break;
+    case "story-continue": continueJourney(); break;
+    case "open-story": go("story"); break;
+    case "story-play": {
+      const S = window.Story, id = d.beat;
+      if (!S || !id) break;
+      S.play(id, { onDone: () => {
+        // The card that opened it now reads as read; the book re-renders.
+        document.querySelectorAll(".story-card").forEach((c) => {
+          if (c.dataset.beat !== id) return;
+          c.classList.add("read");
+          const b = c.querySelector(".sc-read");
+          if (b) { b.textContent = t("st.reread", "Read again"); b.classList.replace("btn-primary", "btn-ghost"); }
+        });
+        if (document.getElementById("storyBook")) { const r = parseRoute(location.hash); render(r.view, r.params); }
+      } });
+      break;
+    }
     case "open-settings": try { openSettings(); } catch {} break;
 
     case "try-demo": go("demo"); break;
@@ -764,19 +830,7 @@ function handleAction(d, params) {
       break;
     }
     case "select-phobia":   if (d.nudgeId) markNudgeDone(d.nudgeId); try { PhobiaAudio.ui("whoosh"); } catch {} go("ladder", { phobia: d.phobia }); break;
-    case "start-level": {
-      try { PhobiaAudio.ui("whoosh"); } catch {}
-      const lvl = parseInt(d.level, 10);
-      const toPredict = () => go("predict", { phobia: d.phobia, level: lvl });
-      // One minute on what the fear IS — but after the first dog, not before
-      // it: trial 1's complete screen offers it, and if it was skipped there
-      // it opens in front of trial 2. Before any dog it was just more reading.
-      if (hasCreatureKit(d.phobia) && !primerSeen(d.phobia) && (getProgress(d.phobia).highestCompleted ?? -1) >= 0) {
-        openPrimer(d.phobia, { then: toPredict, skipGoes: true });
-      }
-      else toPredict();
-      break;
-    }
+    case "start-level": startTrial(d.phobia, parseInt(d.level, 10)); break;
     case "open-primer": openPrimer(d.phobia || "dogs"); break;
     case "open-feedback": openFeedback(d.context || ""); break;
     case "scroll-to": {
@@ -825,7 +879,7 @@ function handleAction(d, params) {
       break;
     }
     case "after-breathe":   go("rate", { phobia: d.phobia, level: parseInt(d.level, 10) }); break;
-    case "next-level":      go("predict", { phobia: d.phobia, level: parseInt(d.level, 10) }); break;   // through predict (was straight to exposure, dropping the core "predict vs actual" step)
+    case "next-level":      startTrial(d.phobia, parseInt(d.level, 10)); break;   // story page (if one is waiting) → predict → the trial
     case "back-ladder":     go("ladder", { phobia: d.phobia }); break;
     case "open-insights":   go("insights"); break;
     case "open-profiles":   go("profiles"); break;
@@ -839,7 +893,9 @@ function handleAction(d, params) {
       else go("select");
       break;
     }
-    case "edit-character": {
+    // (Was a second "edit-character" case — unreachable behind the first, so
+    // a profile card's Edit opened whichever traveler happened to be active.)
+    case "edit-character-id": {
       window.Character.setActiveCharacter(d.id);
       activateCharacterState();
       go("character", { editing: true });
@@ -990,7 +1046,7 @@ function openStageBreath(stage) {
 // FEEDBACK_URL: paste a Google Form / Tally link here. Empty = Copy only —
 // for the playtest phase, testers send the note to whoever shared Mira.
 const FEEDBACK_URL = "";
-const APP_BUILD = "2026-09-27 · launch-dogs";
+const APP_BUILD = "2026-10-11 · lanterns";
 function feedbackDiag() {
   const lines = [
     `build: ${APP_BUILD}`,

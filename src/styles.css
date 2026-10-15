@@ -587,17 +587,22 @@ button:active { transform: translateY(1px); }
    Kept gentle on purpose: the vignette is a hint, not an alarm. */
 .stage .heart {
   position: absolute; inset: 0; pointer-events: none; z-index: 5;
-  box-shadow: inset 0 0 0 0 rgba(220, 30, 30, 0);
-  animation: heartbeat var(--bpm-dur, 1s) cubic-bezier(.4,.0,.6,1) infinite;
   opacity: var(--heart-opacity, 0);
   transition: opacity 1.5s ease;
 }
+/* The lub-dub pulses the OPACITY of one fixed glow — a compositor job.
+   Animating the inset box-shadow itself re-rasterised a full-stage 90px
+   blur on every frame of the trial. */
+.stage .heart::before {
+  content: ""; position: absolute; inset: 0;
+  box-shadow: inset 0 0 90px 30px rgba(220, 30, 30, .32);
+  opacity: 0;
+  animation: heartbeat var(--bpm-dur, 1s) cubic-bezier(.4,.0,.6,1) infinite;
+}
 @keyframes heartbeat {
-  0%, 70%, 100% { box-shadow: inset 0 0 60px 10px rgba(220, 30, 30, 0); }
-  8%  { box-shadow: inset 0 0 90px 30px rgba(220, 30, 30, .32); }
-  18% { box-shadow: inset 0 0 60px 10px rgba(220, 30, 30, 0); }
-  28% { box-shadow: inset 0 0 70px 22px rgba(220, 30, 30, .18); }
-  40% { box-shadow: inset 0 0 60px 10px rgba(220, 30, 30, 0); }
+  0%, 18%, 40%, 70%, 100% { opacity: 0; }
+  8%  { opacity: 1; }
+  28% { opacity: .56; }
 }
 
 /* Visible notice when the 3D scene fails and the SVG fallback mounts */
@@ -3252,10 +3257,12 @@ body.light-mode .journal-entry p { color: var(--muted); }
     rgba(40,90,140,0.10) 60%,
     rgba(20,40,80,0.30) 100%);
   opacity: 0;
-  transition: opacity .8s ease;
-  backdrop-filter: saturate(40%);
+  transition: opacity .8s ease, backdrop-filter .8s ease;
 }
-.stage .grounding-overlay.active { opacity: 1; }
+/* Only while grounding is on: Chromium keeps drawing a backdrop-filter at
+   opacity 0, so the idle overlay desaturated the whole stage — an extra
+   full-screen pass on every frame of every trial. */
+.stage .grounding-overlay.active { opacity: 1; backdrop-filter: saturate(40%); }
 .stage .grounding-text {
   position: absolute; left: 50%; top: 38%; z-index: 8;
   transform: translateX(-50%);
@@ -4231,6 +4238,20 @@ body.light-mode .tf { background: #cbd3e0; }
 .quest-card.done .quest-body strong { color: #d9efe7; }
 .quest-body p { margin: 0 0 10px; font-size: 12.5px; color: #b9a98a; }
 .quest-card.done .quest-body p { color: #9dbfb4; }
+/* The camp's story card: the quest card, carrying the six lanterns. */
+.story-quest { max-width: 520px; }
+html[dir="rtl"] .quest-card { text-align: right; }
+.story-quest .lanterns { justify-content: flex-start; margin: 6px 0 10px; }
+.quest-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 0; }
+.realm-view .story-card { margin: 12px 0; }
+.realm-story-line { margin: 10px 0; font-size: 13.5px; color: var(--muted); }
+.exposure-header .exp-focus { margin: 6px 0 0; font-size: 13.5px; color: var(--star); font-weight: 600; }
+.quest-actions > * { flex: 1 1 auto; }
+/* Title screen, returning: previously / next. */
+.arrive-recap { font-size: 13.5px !important; }
+.arrive-recap span { display: inline-block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; opacity: .7; margin-inline-end: 6px; }
+html[dir="rtl"] .arrive-recap span { letter-spacing: 0; font-size: 12px; }
+.arrive-next { font-weight: 650; opacity: .95 !important; }
 
 /* ---- Level-complete hero: stars, numbers, rewards, next step ---- */
 .vc-hero { position: relative; text-align: center; padding-bottom: 6px; }
@@ -4971,6 +4992,9 @@ html[dir="rtl"] .lang-btn, .lang-btn { font-weight: 800; font-size: 13px; }
   padding: 0 calc(24px + var(--safe-l)) 0 calc(24px + var(--safe-r));
   pointer-events: none;
 }
+/* The returning title screen carries a taller sheet (Mira's note, what's
+   next), so its headline sits higher to stay clear of it. */
+.mob-hero-high { top: 25%; transform: translateY(-50%); }
 .mob-hero-kicker {
   font-size: 11px;
   letter-spacing: 0.22em;
@@ -5002,3 +5026,16 @@ body.mob-immersive #view {
   margin: 0 !important;
 }
 body.mob-immersive .app { padding: 0 !important; }
+/* ---- Lite compositing (below the high graphics tier) ----
+   A backdrop-filter re-reads and re-blurs whatever is behind it each time
+   that changes — over the live 3D stage, every frame — and Chromium keeps
+   drawing one even at opacity 0. A phone trial composited ~17 of them (HUD,
+   coach card, hints, joystick, command bar), the title sheet blurred 18px
+   over the animated room. Their tinted backgrounds (.55–.9 alpha) carry the
+   legibility on their own; below the high tier (html.fx-lite, set from the
+   resolved Graphics tier) the frosted glass goes. The grounding overlay's
+   deliberate desaturation stays. */
+html.fx-lite *:not(.grounding-overlay) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}

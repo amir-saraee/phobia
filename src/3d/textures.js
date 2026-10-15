@@ -1,5 +1,5 @@
 // Procedural textures: seeded noise, wood, tile, plaster, concrete, earth,
-// grass, rugs, leaves, webs and friends.
+// grass, rugs, leaves, webs and friends — each baked once and shared.
 
 import * as THREE from "three";
 import { sceneQuality } from "./renderer.js";
@@ -16,7 +16,28 @@ function rng(seed) {
   };
 }
 
-function makeWoodTexture() {
+// The procedural bakes below used to be redrawn on every mount — the title
+// room, then the trial, then the next trial — and the ones with a normal map
+// read their height canvas back from the GPU to do it: 1–2.5 s of frozen main
+// thread per scene on a phone-class device (2.5 s of getImageData alone in the
+// dog room under software GL). Each is now baked once per graphics tier and
+// argument set; every call still gets fresh Texture objects (clones over the
+// same image), so callers set their own repeat / wrap, and a mount disposing
+// its textures never touches the cached canvases.
+function bakedOnce(bake) {
+  const cache = new Map();
+  return (...args) => {
+    const key = sceneQuality() + "|" + args.join(",");
+    let tpl = cache.get(key);
+    if (!tpl) { tpl = bake(...args); cache.set(key, tpl); }
+    if (tpl.isTexture) return tpl.clone();
+    const out = {};
+    for (const k in tpl) out[k] = tpl[k] && tpl[k].isTexture ? tpl[k].clone() : tpl[k];
+    return out;
+  };
+}
+
+function bakeWoodTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 256;
   const ctx = c.getContext("2d");
@@ -34,8 +55,9 @@ function makeWoodTexture() {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+const makeWoodTexture = bakedOnce(bakeWoodTexture);
 
-function makeTileTexture() {
+function bakeTileTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 256;
   const ctx = c.getContext("2d");
@@ -59,8 +81,9 @@ function makeTileTexture() {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+const makeTileTexture = bakedOnce(bakeTileTexture);
 
-function makeWallTexture() {
+function bakeWallTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 256;
   const ctx = c.getContext("2d");
@@ -87,8 +110,9 @@ function makeWallTexture() {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+const makeWallTexture = bakedOnce(bakeWallTexture);
 
-function makeAsphaltTexture() {
+function bakeAsphaltTexture() {
   const c = document.createElement("canvas");
   c.width = c.height = 256;
   const ctx = c.getContext("2d");
@@ -106,6 +130,7 @@ function makeAsphaltTexture() {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   return tex;
 }
+const makeAsphaltTexture = bakedOnce(bakeAsphaltTexture);
 
 // Concrete platform texture for the rooftop / cliff surface. Mottled grey
 // aggregate with weathering streaks so the user has a clear sense of "I am
@@ -116,14 +141,14 @@ function makeAsphaltTexture() {
 // Returned as { albedo, normal, roughness, ao }. All four are CanvasTextures
 // sharing the same canvas size + wrap mode. Generated procedurally so they
 // stay in sync without a CDN dependency.
-function makeConcreteMaps() {
+function bakeConcreteMaps() {
   const SIZE = 256;
   const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
   const rough = document.createElement("canvas"); rough.width = rough.height = SIZE;
   const ao = document.createElement("canvas"); ao.width = ao.height = SIZE;
   const aCtx = albedo.getContext("2d");
-  const hCtx = heightC.getContext("2d");
+  const hCtx = heightC.getContext("2d", { willReadFrequently: true });
   const rCtx = rough.getContext("2d");
   const oCtx = ao.getContext("2d");
 
@@ -229,6 +254,7 @@ function makeConcreteMaps() {
     ao:        make(ao),
   };
 }
+const makeConcreteMaps = bakedOnce(bakeConcreteMaps);
 
 // Backwards-compatible single-texture helper — anywhere that still calls
 // makeConcreteTexture() gets just the albedo map.
@@ -283,12 +309,12 @@ function canvasMapSet(albedoC, normalC, roughC) {
 }
 
 // Warm bare earth: soil grain + organic blotches + pebbles (the dirt path).
-function makeEarthMaps() {
+function bakeEarthMaps() {
   const SIZE = sceneQuality() === "low" ? 128 : 256;
   const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
   const rough = document.createElement("canvas"); rough.width = rough.height = SIZE;
-  const a = albedo.getContext("2d"), h = heightC.getContext("2d"), r = rough.getContext("2d");
+  const a = albedo.getContext("2d"), h = heightC.getContext("2d", { willReadFrequently: true }), r = rough.getContext("2d");
   a.fillStyle = "#6a5a38"; a.fillRect(0, 0, SIZE, SIZE);
   h.fillStyle = "#808080"; h.fillRect(0, 0, SIZE, SIZE);
   r.fillStyle = "rgb(210,210,210)"; r.fillRect(0, 0, SIZE, SIZE);
@@ -307,14 +333,15 @@ function makeEarthMaps() {
   for (let i = 0; i < 12; i++) { h.fillStyle = "rgb(98,98,98)"; h.fillRect(Math.random() * SIZE, Math.random() * SIZE, 1, 8 + Math.random() * 20); }
   return canvasMapSet(albedo, heightCanvasToNormal(heightC, 2.0), rough);
 }
+const makeEarthMaps = bakedOnce(bakeEarthMaps);
 
 // Warm olive grass: short blade strokes + macro tone patches.
-function makeGrassMaps() {
+function bakeGrassMaps() {
   const SIZE = sceneQuality() === "low" ? 128 : 256;
   const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
   const rough = document.createElement("canvas"); rough.width = rough.height = SIZE;
-  const a = albedo.getContext("2d"), h = heightC.getContext("2d"), r = rough.getContext("2d");
+  const a = albedo.getContext("2d"), h = heightC.getContext("2d", { willReadFrequently: true }), r = rough.getContext("2d");
   a.fillStyle = "#59702f"; a.fillRect(0, 0, SIZE, SIZE);
   h.fillStyle = "#808080"; h.fillRect(0, 0, SIZE, SIZE);
   r.fillStyle = "rgb(230,230,230)"; r.fillRect(0, 0, SIZE, SIZE);
@@ -333,17 +360,18 @@ function makeGrassMaps() {
   }
   return canvasMapSet(albedo, heightCanvasToNormal(heightC, 1.4), rough);
 }
+const makeGrassMaps = bakedOnce(bakeGrassMaps);
 
 // Oak plank floor: one 1.4×1.4 m tile, 4 plank columns with staggered end
 // joints, per-plank hue jitter, grain streaks, knots. Halved resolution on
-// the low tier — these bake once per dog-scene mount.
-function makePlankMaps() {
+// the low tier — baked once per tier (bakedOnce) and shared by every room.
+function bakePlankMaps() {
   const SIZE = sceneQuality() === "low" ? 256 : 512;
   const k = SIZE / 512;                       // scale factor for px constants
   const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
   const rough = document.createElement("canvas"); rough.width = rough.height = SIZE;
-  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d"), rCtx = rough.getContext("2d");
+  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d", { willReadFrequently: true }), rCtx = rough.getContext("2d");
   hCtx.fillStyle = "#808080"; hCtx.fillRect(0, 0, SIZE, SIZE);
   rCtx.fillStyle = "rgb(158,158,158)"; rCtx.fillRect(0, 0, SIZE, SIZE);
   // Eight boards per tile, not four. Callers map this tile to ~1.4 m of floor,
@@ -419,14 +447,15 @@ function makePlankMaps() {
   }
   return canvasMapSet(albedo, heightCanvasToNormal(heightC, 1.2), rough);
 }
+const makePlankMaps = bakedOnce(bakePlankMaps);
 
 // Interior plaster: low-frequency mottling + fine speckle. Uniform roughness
 // is set on the material (0.92), so no roughness map.
-function makePlasterMaps() {
+function bakePlasterMaps() {
   const SIZE = sceneQuality() === "low" ? 128 : 256;
   const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
-  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d");
+  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d", { willReadFrequently: true });
   aCtx.fillStyle = "#cbb59a"; aCtx.fillRect(0, 0, SIZE, SIZE);
   hCtx.fillStyle = "#808080"; hCtx.fillRect(0, 0, SIZE, SIZE);
   for (let i = 0; i < 8; i++) {
@@ -448,26 +477,30 @@ function makePlasterMaps() {
   }
   return canvasMapSet(albedo, heightCanvasToNormal(heightC, 0.6), null);
 }
+const makePlasterMaps = bakedOnce(bakePlasterMaps);
 
 // Woven rug, non-tiling: field + baked border band (replaces the old
 // full-surface "outline" overlay that darkened the whole rug).
-function makeRugMaps() {
+function bakeRugMaps() {
   const SIZE = sceneQuality() === "low" ? 256 : 512;
   const k = SIZE / 512;
   const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
-  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d");
+  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d", { willReadFrequently: true });
   aCtx.fillStyle = "#b3766f"; aCtx.fillRect(0, 0, SIZE, SIZE);
   hCtx.fillStyle = "#808080"; hCtx.fillRect(0, 0, SIZE, SIZE);
-  // Weave: 2px checker in both albedo value and height
-  for (let y = 0; y < SIZE; y += 2) {
-    for (let x = (y % 4 === 0 ? 0 : 2); x < SIZE; x += 4) {
-      aCtx.fillStyle = "rgba(0,0,0,0.06)";
-      aCtx.fillRect(x, y, 2, 2);
-      hCtx.fillStyle = "rgb(123,123,123)";
-      hCtx.fillRect(x, y, 2, 2);
-    }
-  }
+  // Weave: 2px checker in both albedo value and height — one 4×4 tile filled
+  // as a pattern (it was 65k individual fillRects at 512²).
+  const weave = (style) => {
+    const t = document.createElement("canvas"); t.width = t.height = 4;
+    const c = t.getContext("2d");
+    c.fillStyle = style; c.fillRect(0, 0, 2, 2); c.fillRect(2, 2, 2, 2);
+    return t;
+  };
+  aCtx.fillStyle = aCtx.createPattern(weave("rgba(0,0,0,0.06)"), "repeat");
+  aCtx.fillRect(0, 0, SIZE, SIZE);
+  hCtx.fillStyle = hCtx.createPattern(weave("rgb(123,123,123)"), "repeat");
+  hCtx.fillRect(0, 0, SIZE, SIZE);
   // Border band, drawn in (not overlaid)
   const inset = 10 * k, band = 26 * k;
   aCtx.fillStyle = "#7d4640";
@@ -487,10 +520,11 @@ function makeRugMaps() {
   if (set.normal) set.normal.wrapS = set.normal.wrapT = THREE.ClampToEdgeWrapping;
   return set;
 }
+const makeRugMaps = bakedOnce(bakeRugMaps);
 
 // Single leaf silhouette with midrib, alpha-tested — 14 of these fanned at
 // the golden angle replace the old sphere-blob houseplant.
-function makeLeafTexture() {
+function bakeLeafTexture() {
   const c = document.createElement("canvas");
   c.width = 64; c.height = 128;
   const ctx = c.getContext("2d");
@@ -511,15 +545,16 @@ function makeLeafTexture() {
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
+const makeLeafTexture = bakedOnce(bakeLeafTexture);
 
 // Cold damp cellar plaster: grey concrete-plaster base + vertical water-stain
 // streaks + pale efflorescence blooms. Same pipeline as makePlasterMaps but a
 // different palette — the opposite of the dog room's warm interior.
-function makeDampPlasterMaps() {
+function bakeDampPlasterMaps() {
   const SIZE = sceneQuality() === "low" ? 128 : 256;
   const albedo = document.createElement("canvas"); albedo.width = albedo.height = SIZE;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
-  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d");
+  const aCtx = albedo.getContext("2d"), hCtx = heightC.getContext("2d", { willReadFrequently: true });
   aCtx.fillStyle = "#5b5f63"; aCtx.fillRect(0, 0, SIZE, SIZE);
   hCtx.fillStyle = "#808080"; hCtx.fillRect(0, 0, SIZE, SIZE);
   // Low-frequency cold mottling
@@ -565,10 +600,11 @@ function makeDampPlasterMaps() {
   const nrm = sceneQuality() === "low" ? null : heightCanvasToNormal(heightC, 0.6);
   return canvasMapSet(albedo, nrm, null);
 }
+const makeDampPlasterMaps = bakedOnce(bakeDampPlasterMaps);
 
 // Cobweb alpha texture: radial spokes + concentric catenary arcs from a corner
 // origin. Used as map+alphaMap on a translucent plane tucked in a wall corner.
-function makeWebTexture() {
+function bakeWebTexture() {
   const S = 128;
   const c = document.createElement("canvas");
   c.width = c.height = S;
@@ -607,11 +643,12 @@ function makeWebTexture() {
   const t = new THREE.CanvasTexture(c);
   return t;
 }
+const makeWebTexture = bakedOnce(bakeWebTexture);
 
 // Yellow / black hazard stripe along the platform edge. Drawn as a long thin
 // canvas (1024×32) so it reads at any zoom — the bright edge marker tells the
 // user exactly where the drop begins.
-function makeEdgeStripeTexture() {
+function bakeEdgeStripeTexture() {
   const c = document.createElement("canvas");
   c.width = 1024; c.height = 32;
   const ctx = c.getContext("2d");
@@ -637,13 +674,14 @@ function makeEdgeStripeTexture() {
   tex.wrapT = THREE.ClampToEdgeWrapping;
   return tex;
 }
+const makeEdgeStripeTexture = bakedOnce(bakeEdgeStripeTexture);
 
 // ---------- Heights ----------
 // Procedural city-street ground: a tiling block+road grid so looking straight
 // down from height reads as a real city (streets, lane markings, sidewalks,
 // block rooftops) instead of a flat sheet of asphalt with floating car-dots.
 // One texture tile == one ~30 m city block; repeated across the ground plane.
-function makeCityGridTexture(tod) {
+function bakeCityGridTexture(tod) {
   const dark = tod === "twilight";
   const dusk = tod === "golden";
   const S = 512;
@@ -676,5 +714,6 @@ function makeCityGridTexture(tod) {
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
+const makeCityGridTexture = bakedOnce(bakeCityGridTexture);
 
 export { rng, makeWoodTexture, makeConcreteMaps, heightCanvasToNormal, makeEarthMaps, makeGrassMaps, makePlankMaps, makePlasterMaps, makeRugMaps, makeLeafTexture, makeDampPlasterMaps, makeWebTexture, makeEdgeStripeTexture, makeCityGridTexture };

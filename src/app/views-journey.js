@@ -1,6 +1,6 @@
-// Journey views: primers, keep-plans, arrival / traveler / welcome / landing,
-// the realm picker and journey map, report, about, the 3D room and camp
-// stages, ranks, journal.
+// Journey views: primers, keep-plans, arrival / traveler / landing, the realm
+// picker and journey map, report, about, the 3D room and camp stages, ranks,
+// journal.
 // Classic script: index.html runs src/app/*.js in order, and they share one
 // global scope — a top-level name here is visible to every later file.
 
@@ -377,33 +377,60 @@ function starfieldHTML(n) {
 function viewArrival() {
   const ch = window.Character && window.Character.loadCharacter();
   const named = ch && ch.name ? escapeHtml(ch.name) : null;
-  return `
+  const S = window.Story;
+  const top = `
   <div class="mob-stage" id="arrivalStage" aria-hidden="true"></div>
   <div class="mob-top">
     <span class="mob-top-title">Mira</span>
     <span class="mob-spacer"></span>
     <button class="mob-icon-btn" data-action="open-settings" aria-label="${t("a11y.settings", "Settings")}">⚙</button>
-  </div>
+  </div>`;
+  // First visit: one line of story, one button. The prologue plays on the
+  // way to the creator; the self-check stays one tap away for the visitor
+  // who came to learn about fear rather than to play.
+  if (!named) return `${top}
   <div class="mob-hero">
-    <p class="mob-hero-kicker">${t("arrive.kicker", "The Meadow Yard")}</p>
-    <h1 class="mob-hero-title">${named
-      ? tf("arrive.back", "Welcome back,<br>{name}", { name: named })
-      : t("arrive.title", "There is a dog<br>in this room.")}</h1>
+    <p class="mob-hero-kicker">${t("arrive.kicker2", "The Valley of Fears")}</p>
+    <h1 class="mob-hero-title">${t("arrive.title2", "Every fear is a path<br>you stopped walking.")}</h1>
   </div>
   <div class="mob-sheet">
     <div class="mob-sheet-grab"></div>
-    <p>${named
-      ? t("arrive.copyBack", "Your traveler is where you left them. Pick up the ladder whenever you're ready.")
-      : t("arrive.copy", "Five small trials, at your pace, with a dog that reads how you move. You can leave any of them at any moment.")}</p>
+    <p>${t("arrive.copy2", "Six of them cross this valley — dogs, spiders, snakes, heights, the dark and tight spaces. Walk one with Mira, the lantern-keeper, in small steps you choose. You can turn back from any of them, at any moment.")}</p>
     <div class="mob-thumb">
-      ${named
-        ? `<button class="mob-btn mob-btn-primary" data-action="go-dogs">${t("arrive.ctaBack", "Continue")}</button>`
-        : `<button class="mob-btn mob-btn-primary" data-action="make-traveler">${t("arrive.cta", "Step inside")}</button>`}
+      <button class="mob-btn mob-btn-primary" data-action="make-traveler">${t("arrive.cta2", "Step inside — begin the story")}</button>
     </div>
-    ${named ? `<div class="mob-thumb">
-      <button class="mob-btn mob-btn-ghost" data-action="edit-character">${t("arrive.edit", "Change traveler")}</button>
-      <button class="mob-btn mob-btn-ghost" data-action="open-quiz">${t("arrive.mirror", "The Mirror")}</button>
-    </div>` : ""}
+    <div class="mob-thumb">
+      <button class="mob-btn mob-btn-ghost" data-action="open-quiz">${t("arrive.quiz", "🪞 Not sure which fear? A 1-minute self-check")}</button>
+    </div>
+  </div>`;
+  // Returning: where the story is, what happened last time, and the one
+  // button that picks it up. It used to say "Continue" and always open the
+  // dog realm, whatever fear the traveler had chosen.
+  const tgt = continueTarget();
+  const realm = realmOf(tgt.key);
+  const chap = S && S.chapterOfRealm(tgt.key);
+  const recap = S ? S.recapLine() : "";
+  const note = S ? S.morningNoteHTML() : "";
+  const nextLine = tgt.allWalked
+    ? t("arrive.allWalked", "Every lantern is lit. Come back for a booster walk — or take a real step out there.")
+    : tf("arrive.next", "Next: {realm} · trial {n} — {title}", { realm: escapeHtml(realm.realmName), n: tgt.level + 1, title: escapeHtml(lvTitle(tgt.key, tgt.level)) });
+  return `${top}
+  <div class="mob-hero mob-hero-high">
+    <p class="mob-hero-kicker">${escapeHtml(chap ? S.chapterLabel(chap) : realm.realmName)}</p>
+    <h1 class="mob-hero-title">${tf("arrive.back", "Welcome back,<br>{name}", { name: named })}</h1>
+  </div>
+  <div class="mob-sheet">
+    <div class="mob-sheet-grab"></div>
+    ${note}
+    ${recap && !note ? `<p class="arrive-recap"><span>${t("arrive.prev", "Previously")}</span> ${escapeHtml(recap)}</p>` : ""}
+    <p class="arrive-next">${nextLine}</p>
+    <div class="mob-thumb">
+      <button class="mob-btn mob-btn-primary" data-action="story-continue">${t("arrive.ctaStory", "Continue the story")}</button>
+    </div>
+    <div class="mob-thumb">
+      <button class="mob-btn mob-btn-ghost" data-action="go-camp">${t("arrive.camp", "🏕 Camp")}</button>
+      <button class="mob-btn mob-btn-ghost" data-action="open-story">${t("arrive.story", "📖 The story")}</button>
+    </div>
   </div>`;
 }
 
@@ -480,122 +507,6 @@ function viewTraveler() {
   </div>`;
 }
 
-function viewWelcome() {
-  const ch = window.Character && window.Character.loadCharacter();
-  const heroLine = ch
-    ? tf("story.welcomeBack", "Welcome back, {name}. The valley kept your place.", { name: `<strong>${escapeHtml(ch.name || "traveler")}</strong>` })
-    : t("story.firstLine", "Everyone carries a fear. This one is yours to face — one small, safe step at a time.");
-  const cta = ch
-    ? `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaBack", "Continue the journey")}</button>`
-    : `<button class="btn-primary btn-xl" data-action="begin">${t("story.ctaNew", "Create your traveler")}</button>
-       <button class="btn-ghost demo-cta" data-action="try-demo">${t("story.tryFirst", "👣 Step inside first — 60 seconds, nothing to set up")}</button>
-       <button class="btn-ghost demo-cta" data-action="open-quiz">${t("story.quizLink", "🪞 Or start with the 60-second self-check")}</button>`;
-  const realmTeasers = FEATURED.filter(k => PHOBIAS[k]).map(k => `
-    <button class="landing-realm" data-action="select-phobia" data-phobia="${k}" ${ch ? "" : `disabled title="${t("story.createFirst", "Create your traveler first")}"`}>
-      <strong>${escapeHtml(realmOf(k).realmName)}</strong>
-      <span>${escapeHtml(PHOBIAS[k].label)}</span>
-    </button>`).join("");
-
-  const beats = [
-    { kicker: t("story.kicker", "a tiny game about big fears"), title: t("story.title", "The Valley of Fears"), copy: heroLine, extra: "" },
-    { kicker: t("story.beat", "the story"), title: t("story.b1h", "Fear starts small."), copy: t("story.b1p", "A bark behind a fence. A spider in the bath. A balcony you didn't step onto. A room that felt too tight to breathe in."), extra: "" },
-    { kicker: t("story.beat", "the story"), title: t("story.b2h", "Avoid it, and it grows."), copy: t("story.b2p", "Every time you cross the street, take the stairs, leave the light on — the relief feels wonderful. And the shadow learns you fear it. That relief is exactly what feeds it."), extra: "" },
-    { kicker: t("story.beat", "the story"), title: t("story.b3h", "But fear has a secret."), copy: t("story.b3p", "Stay near it — gently, on your own terms — and it rises, peaks, and <em>falls by itself</em>. Your body learns what nobody could tell you: it's safe. Face the shadow, and it shrinks."), extra: "" },
-    { kicker: t("story.beat", "the story"), title: t("story.b4h", "That's the whole game."), copy: t("story.b4p", 'Six famous fears live in this valley. Each holds five trials, from "barely a whisper" to "the real thing". Walk them at your own pace — you can leave any trial at any moment, and leaving is never a defeat.'), extra: `<div class="landing-realms" id="landingRealms">${realmTeasers}</div>` },
-    { kicker: t("story.beat", "the story"), title: t("story.b5h", "Your journey starts at the campfire."), copy: t("story.b5p", "Make a traveler — a face, a name, the fears you want to face. They walk every scene with you: their hand on the railing, their feet at the cellar stairs."), extra: `<p class="landing-disclaimer">${t("story.disclaimer", "<strong>A practice game, not therapy.</strong> Real exposure work for phobias belongs with a trained clinician who paces it and supports you. Use Mira for curiosity, education, or as a conversation starter — not treatment.")}</p>` },
-  ];
-
-  const dots = beats.map((_, i) =>
-    `<button type="button" class="landing-beat" data-beat="${i}" aria-label="${t("story.beatN", "Story beat")} ${i + 1}" ${i === 0 ? `aria-current="true"` : ""}></button>`
-  ).join("");
-
-  return `
-  <div class="landing" id="landingRoot">
-    <div class="landing-stage" id="landing3d" aria-hidden="true"></div>
-    <button type="button" class="landing-skip" data-action="begin">${ch ? t("story.skipBack", "Skip to camp") : t("story.skipNew", "Skip to traveler")}</button>
-    <div class="landing-hud">
-      <p class="landing-kicker" id="landingKicker">${beats[0].kicker}</p>
-      <h1 class="landing-title" id="landingTitle">${beats[0].title}</h1>
-      <p class="landing-copy" id="landingCopy">${beats[0].copy}</p>
-      <div id="landingExtra"></div>
-      <div class="landing-actions">${cta}</div>
-      <div class="landing-beats" role="tablist" aria-label="${t("story.beats", "Story chapters")}">${dots}</div>
-      <p class="landing-hint">${t("story.hint3d", "drag to look · click chapters")}</p>
-    </div>
-    <textarea id="landingBeats" hidden>${escapeHtml(JSON.stringify(beats.map(b => ({ kicker: b.kicker, title: b.title, copy: b.copy, extra: b.extra }))))}</textarea>
-  </div>`;
-}
-
-function mountLandingHUD() {
-  const root = document.getElementById("landingRoot");
-  if (!root) return;
-  let beats = [];
-  try {
-    const raw = document.getElementById("landingBeats");
-    const src = raw && (raw.value || raw.textContent || "");
-    if (src) beats = JSON.parse(src);
-  } catch { beats = []; }
-  const kicker = document.getElementById("landingKicker");
-  const title = document.getElementById("landingTitle");
-  const copy = document.getElementById("landingCopy");
-  const extra = document.getElementById("landingExtra");
-  const dots = [...root.querySelectorAll(".landing-beat")];
-  let idx = 0;
-  let paused = false;
-  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  function show(i, fromUser) {
-    if (fromUser) paused = true;
-    idx = Math.max(0, Math.min(beats.length - 1, i));
-    const b = beats[idx] || {};
-    if (kicker) kicker.textContent = b.kicker || "";
-    if (title) title.textContent = b.title || "";
-    if (copy) copy.innerHTML = b.copy || "";
-    if (extra) extra.innerHTML = b.extra || "";
-    dots.forEach((d, n) => d.setAttribute("aria-current", n === idx ? "true" : "false"));
-    if (window.ShellScenes && window.ShellScenes.setLandingBeat) {
-      try { window.ShellScenes.setLandingBeat(idx); } catch {}
-    }
-    // Re-bind data-action on injected realm buttons.
-    if (extra) {
-      extra.querySelectorAll("[data-action]").forEach((el) => {
-        el.addEventListener("click", (e) => {
-          if (el.dataset.stop) e.stopPropagation();
-          try { PhobiaAudio.unlock(); } catch {}
-          handleAction(el.dataset, {});
-        });
-      });
-    }
-  }
-  dots.forEach((d) => d.addEventListener("click", () => show(parseInt(d.dataset.beat, 10) || 0, true)));
-  root.addEventListener("wheel", (e) => {
-    if (Math.abs(e.deltaY) < 18) return;
-    e.preventDefault();
-    show(idx + (e.deltaY > 0 ? 1 : -1), true);
-  }, { passive: false });
-  let touchY = null;
-  root.addEventListener("touchstart", (e) => { touchY = e.touches[0] && e.touches[0].clientY; }, { passive: true });
-  root.addEventListener("touchend", (e) => {
-    if (touchY == null) return;
-    const y = e.changedTouches[0] && e.changedTouches[0].clientY;
-    const dy = touchY - y;
-    touchY = null;
-    if (Math.abs(dy) > 48) show(idx + (dy > 0 ? 1 : -1), true);
-  }, { passive: true });
-  window.addEventListener("keydown", function onKey(e) {
-    if (!root.isConnected) { window.removeEventListener("keydown", onKey); return; }
-    if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); show(idx + 1, true); }
-    if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); show(idx - 1, true); }
-  });
-  if (!reduce && beats.length > 1) {
-    const timer = setInterval(() => {
-      if (!root.isConnected) { clearInterval(timer); return; }
-      if (paused) return;
-      show((idx + 1) % beats.length);
-    }, 7800);
-  }
-  show(0);
-}
-
 function viewThreshold() {
   const ch = window.Character && window.Character.loadCharacter();
   if (!ch) {
@@ -669,14 +580,6 @@ function viewSelect() {
   const needBackup = state.log.length >= 5 &&
     (Date.now() - _lastExport > 14 * 864e5) &&
     (Date.now() - _backupSnooze > 7 * 864e5);
-  // Today's step targets the current realm — unless it's already tamed, in
-  // which case the quest moves the traveler on to the next untamed realm.
-  let questKey = curKey;
-  if ((getProgress(curKey).highestCompleted ?? -1) + 1 >= PHOBIAS[curKey].levels.length) {
-    questKey = keys.find(k => (getProgress(k).highestCompleted ?? -1) + 1 < PHOBIAS[k].levels.length) || curKey;
-  }
-  const questRealm = realmOf(questKey);
-  const questDone = Math.min(PHOBIAS[questKey].levels.length - 1, (getProgress(questKey).highestCompleted ?? -1) + 1);
 
   // Campfire line: the character speaks about where they are on the journey.
   const curRealm = realmOf(curKey);
@@ -756,20 +659,7 @@ function viewSelect() {
         ${streak >= 2 ? `<span class="camp-stat streak" title="${t("camp.streakTip", "Days in a row you've practiced")}">${tf("camp.streak", "🔥 {n}-day flame", { n: streak })}</span>` : ""}
         ${worldstepCount() > 0 ? `<span class="camp-stat worldsteps" title="${t("camp.realTip", "Real-world steps faced outside the game — the ones that count double")}">${tf("camp.realsteps", `🌍 {n} real step${worldstepCount() === 1 ? "" : "s"}`, { n: worldstepCount() })}</span>` : ""}
       </div>
-      ${ch ? `
-      <div class="quest-card ${doneToday ? "done" : ""}">
-        <div class="quest-head">
-          <span class="quest-flag">${t("quest.flag", "🪧 Today's step")}</span>
-          ${doneToday ? `<span class="quest-chip done-chip">${t("quest.earned", "🔥 ember earned")}</span>` : `<span class="quest-chip">${t("quest.bonus", "+15 ember for the first trial today")}</span>`}
-        </div>
-        <div class="quest-body">
-          <strong>${escapeHtml(questRealm.realmName)} · ${tf("quest.trial", "trial {n}", { n: questDone + 1 })}: ${escapeHtml(lvTitle(questKey, questDone))}</strong>
-          <p>${doneToday ? t("quest.doneP", "You showed up today — the flame is lit. Another step is always welcome.") : t("quest.todoP", "One small step a day keeps the flame lit. You can step out at any moment.")}</p>
-        </div>
-        <button class="${doneToday ? "btn-ghost" : "btn-primary"}" data-action="start-level" data-phobia="${questKey}" data-level="${questDone}">
-          ${doneToday ? t("quest.btnDone", "Take another step") : t("quest.btnTodo", "Take today's step")}
-        </button>
-      </div>` : ""}
+      ${ch ? storyCampCard() : ""}
       ${needBackup ? `
       <div class="backup-nudge">
         <span>💾 ${t("camp.backup", "Your whole journey lives only on this device. One browser cleanup could erase it — take a copy?")}</span>
@@ -821,6 +711,43 @@ function viewSelect() {
       </div>
     </section>` : ""}
   </div>`;
+}
+
+// The camp's one obvious next action: where the story is (six lanterns, the
+// current chapter), the trial that turns its next page, and today's ember.
+// It replaces "Today's step", which pointed at the same trial without saying
+// why it mattered.
+function storyCampCard() {
+  const S = window.Story;
+  const tgt = continueTarget();
+  const doneToday = state.log.some(l => l.finished !== false && isSameLocalDay(l.ts));
+  const chap = S && S.chapterOfRealm(tgt.key);
+  const waiting = S && S.nextUnread(tgt.key);
+  const realm = realmOf(tgt.key);
+  const body = tgt.allWalked
+    ? t("camp.storyAll", "All six lanterns are lit. Booster walks and real steps keep them that way.")
+    : waiting
+      ? tf("camp.pageWaiting", "📖 A new page is waiting: “{t}”.", { t: escapeHtml(S.titleOf(waiting)) })
+      : (doneToday ? t("quest.doneP", "You showed up today — the flame is lit. Another step is always welcome.")
+        : t("camp.storyP", "Every finished trial turns a page of the story. You can step out of any trial at any moment."));
+  return `
+      <div class="quest-card story-quest ${doneToday ? "done" : ""}">
+        <div class="quest-head">
+          <span class="quest-flag">${chap ? escapeHtml(S.chapterLabel(chap)) : t("quest.flag", "🪧 Today's step")}</span>
+          ${doneToday ? `<span class="quest-chip done-chip">${t("quest.earned", "🔥 ember earned")}</span>` : `<span class="quest-chip">${t("quest.bonus", "+15 ember for the first trial today")}</span>`}
+        </div>
+        ${S ? S.lanternsHTML({ current: tgt.key }) : ""}
+        <div class="quest-body">
+          ${tgt.allWalked ? "" : `<strong>${tf("camp.storyNext", "{realm} · trial {n}: {title}", { realm: escapeHtml(realm.realmName), n: tgt.level + 1, title: escapeHtml(lvTitle(tgt.key, tgt.level)) })}</strong>`}
+          <p>${body}</p>
+        </div>
+        <div class="actions quest-actions">
+          ${waiting && !tgt.allWalked && !(S.pendingBefore(tgt.key, tgt.level) === waiting)
+            ? `<button class="btn-ghost" data-action="story-play" data-beat="${escapeHtml(waiting)}">${t("st.read", "Read the page")}</button>` : ""}
+          <button class="${doneToday && !waiting ? "btn-ghost" : "btn-primary"}" data-action="story-continue">${tgt.allWalked ? t("camp.storyCtaAll", "Choose a booster walk ↓") : doneToday ? t("camp.storyCtaDone", "Take another step") : t("camp.storyCta", "Continue the story")}</button>
+          <button class="btn-ghost" data-action="open-story">${t("camp.openStory", "📖 The story")}</button>
+        </div>
+      </div>`;
 }
 
 function mountJourney() {
@@ -1071,6 +998,19 @@ function charHexes(ch) {
     shirtHex: C.topHex(ch), eyeHex: C.eyeHex(ch),
   });
 }
+// The shell's 3D (title room, camp, realm heroes) mounts a frame after the
+// page paints, the way a trial does (see render()): built inside the route's
+// first render, the heaviest thing on the screen held the whole page blank
+// until it was done — on a first visit, the title screen. A newer route
+// render supersedes a mount still waiting for its frame.
+let _shell3DGen = 0;
+function startShell3DSoon(start) {
+  const gen = ++_shell3DGen;
+  const go = () => requestAnimationFrame(() => setTimeout(() => { if (gen === _shell3DGen) start(); }, 0));
+  if (window.ShellScenes && window.ShellScenes.ready) go();
+  else window.addEventListener("scene3d-ready", go, { once: true });
+}
+
 // ---------- Room stage (arrival + traveler creator) ----------
 // Both immersive views stand in the same room; only the framing differs, so
 // they share one mount. Held in a module-level handle so the chip handlers can
@@ -1095,8 +1035,7 @@ function mountRoomStage(view) {
   // Same readiness handshake mountShell3D uses — the module that defines
   // ShellScenes evaluates after this classic script, so a first paint can beat
   // it and must wait for the event rather than silently rendering no stage.
-  if (window.ShellScenes && window.ShellScenes.ready) start();
-  else window.addEventListener("scene3d-ready", start, { once: true });
+  startShell3DSoon(start);
 }
 
 // Live-rebuild the 3D traveler from the current draft.
@@ -1170,8 +1109,7 @@ function mountShell3D(view, params) {
       }
     } catch { /* 2D fallback stays */ }
   };
-  if (window.ShellScenes && window.ShellScenes.ready) start();
-  else window.addEventListener("scene3d-ready", start, { once: true });
+  startShell3DSoon(start);
 }
 
 // ---------- Traveler ranks (courage levels) ----------
@@ -1203,6 +1141,23 @@ function isSameLocalDay(ts) {
 // The Book of Sparks — every psychology card earned so far, plus face-down
 // slots for the ones still out there. Psychoeducation as a collection screen:
 // learning reads as loot, not homework.
+// The Sparks, as the Story Book's third tab.
+function sparksGridHTML() {
+  const owned = getSparks();
+  const cards = INSIGHT_CARDS.map((c, i) => {
+    const has = owned.includes(c.id);
+    return `
+      <div class="spark-slot ${has ? "owned" : "readable"}" style="--i:${i}"${has ? "" : ` title="${t("journal.readableTip", "Read ahead — it becomes yours when you live it in a trial")}"`}>
+        <span class="spark-icon">${c.icon}</span>
+        <strong>${escapeHtml(t(`card.${c.id}.title`, c.title))}</strong>
+        <p>${escapeHtml(t(`card.${c.id}.text`, c.text))}</p>
+        ${has ? "" : `<span class="spark-unlived">${t("journal.unlived", "📖 read ahead — not yet lived")}</span>`}
+      </div>`;
+  }).join("");
+  return `
+    <p>${t("journal.p2", "The psychology of fear, one spark at a time — read it all now, or collect each piece by living it in a trial.")} ${owned.length ? tf("journal.have", "You hold <strong>{a} of {b}</strong>.", { a: owned.length, b: INSIGHT_CARDS.length }) : ""}</p>
+    <div class="spark-grid">${cards}</div>`;
+}
 function viewJournal() {
   const owned = getSparks();
   // Unearned sparks used to be "?" boxes — the app's best CBT writing,

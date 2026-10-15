@@ -5,14 +5,14 @@ import { getDogTexLoader } from "../assets.js";
 import { IS_COARSE_POINTER, IS_LOW_POWER, sceneQuality, loadMeadowHDR } from "../renderer.js";
 import { _hsat } from "../human-base.js";
 import { angleGap, makeContactShadow, makeSoftSunbeam } from "../human-rig.js";
-import { active } from "../engine.js";
 import { sceneContext } from "../scene-context.js";
 import { PhobiaPhysics, PhobiaGrab } from "../physics.js";
 import { makePlankMaps, makePlasterMaps, makeRugMaps, makeLeafTexture } from "../textures.js";
 import { DOG_COATS, coatFor, _hexMix } from "../creature-kit.js";
 import { buildDog } from "../dog-model.js";
-import { DogController, DOG_TEMPERAMENTS } from "../dog-controller.js";
+import { DogController, _coachSize, DOG_TEMPERAMENTS } from "../dog-controller.js";
 import { makeDogCoach } from "../coach.js";
+import { active } from "../live.js";
 
 function setupDogs(scene, camera, level, levelIdx, ctx) {
   const size = level.size;
@@ -233,6 +233,19 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   floor.position.y = -1;
   floor.receiveShadow = true;
   scene.add(floor);
+  // The hallway you came in from. The front wall is a one-sided dollhouse
+  // plane, so the third-person camera often sits just outside it — and below
+  // the floor's edge there was nothing: a black wedge in the corner of the
+  // frame. A strip of darker boards beyond the wall reads as the hall. Plain
+  // colour (no maps), not a shadow receiver: it's only ever seen at the edge.
+  const hallFloor = new THREE.Mesh(
+    new THREE.PlaneGeometry(ROOM_W + 8, 7),
+    new THREE.MeshStandardMaterial({ color: 0x9a7a56, roughness: 0.85 })
+  );
+  hallFloor.rotation.x = -Math.PI / 2;
+  hallFloor.position.set(0, -1.002, ROOM.z1 + 3.5);
+  hallFloor.userData.noCollide = true;
+  scene.add(hallFloor);
 
   // Soft area rug between the user and the dog — border is baked into the
   // texture now (the old translucent "outline" overlay darkened the whole rug).
@@ -2886,8 +2899,11 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         // Where the dog's head is on screen, so a question about it can sit
         // just above it instead of on top of it.
         _coachV.set(dog.position.x, dog.position.y + dogHeight * 1.08, dog.position.z).project(camera);
-        const cvs = active.renderer && active.renderer.domElement;
-        const sw = (cvs && cvs.clientWidth) || 0, sh = (cvs && cvs.clientHeight) || 0;
+        // The renderer already knows its CSS size; reading the canvas's
+        // clientWidth here forced a layout every frame (styles were written
+        // earlier in the same frame).
+        if (active.renderer) active.renderer.getSize(_coachSize); else _coachSize.set(0, 0);
+        const sw = _coachSize.x, sh = _coachSize.y;
         const headX = _coachV.z < 1 ? (_coachV.x + 1) / 2 * sw : null;
         const headY = _coachV.z < 1 ? (1 - _coachV.y) / 2 * sh : null;
         // Looking at you? (the snout is +Z at yaw 0)

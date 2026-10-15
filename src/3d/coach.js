@@ -341,6 +341,7 @@ function makeCreatureCoach(opts) {
     }
   }
 
+  const hudCache = { word: null, col: null, legend: null, sig: null };
   // ---------------- settle / hold policy ----------------
   let settledLatched = false, everSettled = false, heldSeen = false;
   let lastHoldSec = 0;       // the hold timer's own credited seconds (wall clock)
@@ -509,11 +510,16 @@ function makeCreatureCoach(opts) {
     waveAcc += d;
     if (waveAcc >= 0.5) { waveAcc -= 0.5; ev.wave.push(Math.round(cur)); if (ev.wave.length > 720) ev.wave.splice(0, 2); }
 
-    // HUD
-    wordEl.textContent = word(cur);
-    root.style.setProperty("--dc-c", colorFor(cur));
-    legendEl.classList.toggle("on", engagedPeak >= 12 && !settledLatched);
-    draw();
+    // HUD — only what changed. The wave gains a sample every 0.25 s, yet it
+    // was cleared and re-stroked (240 segments) every frame, and the word,
+    // colour and legend were rewritten into the DOM 60 times a second.
+    const hw = word(cur), hc = colorFor(Math.round(cur));
+    if (hw !== hudCache.word) { hudCache.word = hw; wordEl.textContent = hw; }
+    if (hc !== hudCache.col) { hudCache.col = hc; root.style.setProperty("--dc-c", hc); }
+    const legendOn = engagedPeak >= 12 && !settledLatched;
+    if (legendOn !== hudCache.legend) { hudCache.legend = legendOn; legendEl.classList.toggle("on", legendOn); }
+    const sig = liveIdx + "|" + liveMarks.length + "|" + (legendOn ? Math.round(settleLine()) : -1);
+    if (sig !== hudCache.sig) { hudCache.sig = sig; draw(); }
 
     // Float the card in the band under the top HUD row, following the dog
     // across (clamped clear of this panel), eased so it doesn't jitter with

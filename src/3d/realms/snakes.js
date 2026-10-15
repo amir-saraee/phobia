@@ -4,11 +4,12 @@ import * as THREE from "three";
 import { CREATURE_MODELS, buildCreature } from "../assets.js";
 import { IS_COARSE_POINTER, IS_LOW_POWER, sceneQuality, loadMeadowHDR } from "../renderer.js";
 import { buildHand, angleGap } from "../human-rig.js";
-import { active } from "../engine.js";
 import { sceneContext } from "../scene-context.js";
 import { makeEarthMaps, makeGrassMaps, makeLeafTexture } from "../textures.js";
 import { makeScaleNormal, makeFurMaps, ensureBoxUV, smoothCreaseNormals, coatFor, SNAKE_COATS } from "../creature-kit.js";
+import { _coachSize } from "../dog-controller.js";
 import { makeCreatureCoach } from "../coach.js";
+import { active } from "../live.js";
 
 // ---------- Procedural snake "alive" layer ----------
 // Runs the additive bone deltas AFTER the mixer writes each clip pose (the
@@ -1750,8 +1751,10 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           camera.updateMatrixWorld();
           _snV.project(camera);
           snOnScreen = _snV.z < 1 && Math.abs(_snV.x) < 0.92 && Math.abs(_snV.y) < 0.92;
-          const cvs = (typeof active !== "undefined" && active && active.renderer) ? active.renderer.domElement : null;
-          const sw = (cvs && cvs.clientWidth) || 0, shh = (cvs && cvs.clientHeight) || 0;
+          // The renderer's CSS size, not the canvas's clientWidth: reading
+          // layout here forced a synchronous reflow every frame.
+          if (active && active.renderer) active.renderer.getSize(_coachSize); else _coachSize.set(0, 0);
+          const sw = _coachSize.x, shh = _coachSize.y;
           const ax = _snV.z < 1 ? (_snV.x + 1) / 2 * sw : null;
           const ay = _snV.z < 1 ? (1 - _snV.y) / 2 * shh - 30 : null;
           const facing = (Math.sin(snakeCtl.heading) * dxs + Math.cos(snakeCtl.heading) * dzs) / (distS || 1) > 0.8;

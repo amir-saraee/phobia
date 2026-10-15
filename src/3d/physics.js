@@ -37,9 +37,15 @@ const PhobiaPhysics = (() => {
     return loadP;
   }
 
+  // Each begin() takes a ticket; end() (scene unmount) invalidates it. If the
+  // scene left while Rapier was still loading, the world it asked for is
+  // never built — it used to be, and then stepped every frame of the NEXT
+  // scene, since that scene's unmount had nothing to free.
+  let gen = 0;
   async function begin(opts = {}) {
+    const ticket = ++gen;
     const mod = await load();
-    if (!mod) return null;
+    if (!mod || ticket !== gen) return null;
     end();
     groundY = opts.groundY ?? 0;
     world = new R.World({ x: 0, y: -9.81, z: 0 });
@@ -49,6 +55,7 @@ const PhobiaPhysics = (() => {
     return world;
   }
   function end() {
+    gen++;
     if (world) { try { world.free(); } catch {} }
     world = null; props = []; onImpact = null; pendingBoxes = null;
   }

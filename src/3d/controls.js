@@ -1188,13 +1188,16 @@ class FPControls {
   // forces the camera mode at mount so the cinematic intro starts at the
   // right blend value (otherwise the first few frames reset _tpSmoothPos
   // and the cinematic dolly-in is lost).
-  setCameraMode(mode, instant = false) {
+  setCameraMode(mode, instant = false, remember = false) {
     if (mode !== "fp" && mode !== "tp") mode = "fp";
     this.cameraMode = mode;
     if (instant) {
       this.tpBlend = mode === "tp" ? 1 : 0;
     }
-    try { localStorage.setItem("fobia.cameraMode", mode); } catch {}
+    // Only a choice the player made is their preference. A scene that locks
+    // or prefers a view (the MRI is first-person) used to overwrite it, so
+    // the next dog visit opened in the wrong view.
+    if (remember) { try { localStorage.setItem("fobia.cameraMode", mode); } catch {} }
     // Keep the avatar coherent with the camera on EVERY mode change: the
     // renderer registers this to sync the body's head visibility and the FP
     // hands. Syncing only in the toggle-button handler left any direct
@@ -1213,7 +1216,7 @@ class FPControls {
     this.obstacles = Array.isArray(list) ? list : null;
   }
   toggleCameraMode() {
-    this.setCameraMode(this.cameraMode === "tp" ? "fp" : "tp");
+    this.setCameraMode(this.cameraMode === "tp" ? "fp" : "tp", false, true);
     return this.cameraMode;
   }
 

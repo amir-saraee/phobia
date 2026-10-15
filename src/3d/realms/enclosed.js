@@ -2,11 +2,12 @@
 
 import * as THREE from "three";
 import { IS_COARSE_POINTER, IS_LOW_POWER } from "../renderer.js";
-import { active } from "../engine.js";
 import { sceneContext } from "../scene-context.js";
 import { makeWoodTexture, makePlankMaps, makePlasterMaps, makeRugMaps, makeLeafTexture } from "../textures.js";
 import { _hexMix } from "../creature-kit.js";
+import { _coachSize } from "../dog-controller.js";
 import { makeCreatureCoach } from "../coach.js";
+import { active } from "../live.js";
 
 // ---------- Enclosed ----------
 function setupEnclosed(scene, camera, level, levelIdx, ctx) {
@@ -946,7 +947,9 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
         }
       }
       // ---- The coach ----
-      const sw = (active && active.renderer) ? active.renderer.domElement.clientWidth : 0;
+      // (Renderer size, not clientWidth — no forced reflow per frame.)
+      if (active && active.renderer) active.renderer.getSize(_coachSize); else _coachSize.set(0, 0);
+      const sw = _coachSize.x;
       coach.update(d, {
         dist: lastDist, gaze: 1, dogToward: 0,
         px: null, pz: null, dogX: null, dogZ: null,

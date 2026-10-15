@@ -2,10 +2,11 @@
 
 import * as THREE from "three";
 import { IS_COARSE_POINTER, IS_LOW_POWER } from "../renderer.js";
-import { active } from "../engine.js";
 import { sceneContext } from "../scene-context.js";
 import { makePlankMaps, makePlasterMaps, makeRugMaps } from "../textures.js";
+import { _coachSize } from "../dog-controller.js";
 import { makeCreatureCoach } from "../coach.js";
+import { active } from "../live.js";
 
 // ---------- The dark (dim room with adjustable light) ----------
 // ---------- The dark: "The House at Night" ----------
@@ -181,7 +182,10 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
     add(ns);
     lampLight = new THREE.PointLight(0xffc48a, 0, 7, 2);
     lampLight.position.set(-0.44, -0.12, -2.54);
-    lampLight.castShadow = !IS_LOW_POWER; lampLight.shadow.mapSize.set(512, 512); lampLight.shadow.bias = -0.002;
+    // Only rung 1 switches the lamp on. A shadow-casting point light renders
+    // its cube map — six passes over the room — every frame whether it is lit
+    // or not, so the dark rungs no longer pay for a lamp that stays off.
+    lampLight.castShadow = !IS_LOW_POWER && rung === 0; lampLight.shadow.mapSize.set(512, 512); lampLight.shadow.bias = -0.002;
     add(lampLight);
     // Wardrobe on the right wall.
     const wd = new THREE.Group(); wd.position.set(1.88, -1, -0.55); wd.rotation.y = -Math.PI / 2;
@@ -284,7 +288,13 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
   flashlight.position.set(0, -0.05, 0); flashlight.target.position.set(0, -0.15, -1);
   camera.add(flashlight); camera.add(flashlight.target);
   if (!scene.children.includes(camera)) scene.add(camera);
-  let flashlightHeld = false, matchT = 0, matchLight = null, strikeAnim = 0, disposed = false;
+  let flashlightHeld = false, matchT = 0, strikeAnim = 0, disposed = false;
+  // The match's light exists from the start, at 0 — like the flashlight. Adding
+  // a light mid-scene changes the light count, and three then recompiles every
+  // lit program on the next frame: a freeze at the very moment the player
+  // reaches for the match.
+  const matchLight = new THREE.PointLight(0xffb060, 0, 4, 2);
+  matchLight.position.set(0.2, -0.13, -0.27); camera.add(matchLight);
   const matchGroup = new THREE.Group();
   const matchStick = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.0045, 0.10, 8), new THREE.MeshStandardMaterial({ color: 0xb8987a, roughness: 0.95 }));
   matchStick.rotation.z = -0.4; matchGroup.add(matchStick);
@@ -374,7 +384,6 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
   // ---- Command bar ----
   function lightMatch() {
     matchT = 1; strikeAnim = 1; matchGroup.visible = true;
-    if (!matchLight) { matchLight = new THREE.PointLight(0xffb060, 0, 4, 2); matchLight.position.set(0.2, -0.13, -0.27); camera.add(matchLight); }
     try { window.PhobiaAudio && window.PhobiaAudio.indicatorClick && window.PhobiaAudio.indicatorClick(); } catch {}
     coach.safety("match");
   }
@@ -444,7 +453,9 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
       const dh = Math.hypot(px - HEART.x, pz - HEART.z);
       lastDist = dh + (flashlightHeld ? 2.2 : matchT > 0.05 ? 1.4 : 0);
       const facing = lookingAt(HEART.x, -0.2, HEART.z, 0.5) ? 1 : 0.3;
-      const sw = (active && active.renderer) ? active.renderer.domElement.clientWidth : 0;
+      // (Renderer size, not clientWidth — no forced reflow per frame.)
+      if (active && active.renderer) active.renderer.getSize(_coachSize); else _coachSize.set(0, 0);
+      const sw = _coachSize.x;
       coach.update(d, {
         dist: lastDist, gaze: facing, dogToward: 0,
         px, pz, dogX: HEART.x, dogZ: HEART.z,

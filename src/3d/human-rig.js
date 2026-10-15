@@ -71,7 +71,11 @@ function buildHand(side, skinM, sleeveM, opts = {}) {
       const bone = new THREE.Mesh(new THREE.CapsuleGeometry(r, spec.len[s] - r * 0.9, 5, 8), skinM);
       bone.position.y = -spec.len[s] / 2;
       bone.scale.z = 0.86;
-      bone.castShadow = true;
+      // No shadow from the 1–2 cm phalanges: at a 1024² map over a room they
+      // are a texel or two, lost in the soft blur — but each was one more
+      // shadow draw per light (14 a hand, 56 with the first-person pair) in
+      // every realm but the dog room, the one scene that prunes tiny casters.
+      // The palm carries the hand's shadow.
       pivot.add(bone);
       seg.push(pivot);
       parent = pivot;
@@ -99,7 +103,6 @@ function buildHand(side, skinM, sleeveM, opts = {}) {
       const r = 0.0102 - s * 0.0014;
       const bone = new THREE.Mesh(new THREE.CapsuleGeometry(r, lens[s] - r * 0.8, 5, 8), skinM);
       bone.position.y = -lens[s] / 2;
-      bone.castShadow = true;
       pivot.add(bone);
       thumbSeg.push(pivot);
       parent = pivot;

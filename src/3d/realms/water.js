@@ -1,7 +1,7 @@
 // Water — a legacy realm, behind LAUNCH_OPEN (?all=1 to play).
 
 import * as THREE from "three";
-import { active } from "../engine.js";
+import { active } from "../live.js";
 
 // ---------- Water ----------
 function setupWater(scene, camera, level) {

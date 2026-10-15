@@ -77,11 +77,27 @@ const PhobiaAudio = (() => {
   }
   const isMuted = () => muted;
 
+  // White noise is copied from a random offset of one 4 s master: a memcpy
+  // instead of a Math.random() per sample — up to 96k of them per call, and
+  // footsteps and paw plants called this several times a step. A slice of
+  // white noise is white noise, and two calls get different offsets.
+  let _noiseMaster = null;
   function noiseBuffer(seconds = 2) {
     const c = ensureCtx(); if (!c) return null;
     const buf = c.createBuffer(1, c.sampleRate * seconds, c.sampleRate);
     const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    if (!_noiseMaster || _noiseMaster.rate !== c.sampleRate) {
+      const m = new Float32Array(c.sampleRate * 4);
+      for (let i = 0; i < m.length; i++) m[i] = Math.random() * 2 - 1;
+      _noiseMaster = { data: m, rate: c.sampleRate };
+    }
+    const m = _noiseMaster.data;
+    if (data.length <= m.length) {
+      const off = Math.floor(Math.random() * (m.length - data.length + 1));
+      data.set(m.subarray(off, off + data.length));
+    } else {
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    }
     return buf;
   }
   // Pink (1/f) noise — far less harsh than white noise, so natural textures

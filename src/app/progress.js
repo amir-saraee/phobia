@@ -321,6 +321,17 @@ function activateCharacterState() {
       progress: state.progress && Object.keys(state.progress).length ? state.progress : {},
       log: state.log && state.log.length ? state.log : [],
     };
+    // What a visitor did before they had a traveler — the self-check's
+    // answers (the Mirror baseline), the story pages read — belongs to the
+    // traveler they become. The quiz promised its answers seed the Mirror;
+    // they used to stay behind in the "default" slot.
+    const pre = id !== "default" && state.byCharacter.default;
+    if (pre) {
+      const mine = state.byCharacter[id];
+      if (pre.checks && Object.keys(pre.checks).length) { mine.checks = pre.checks; delete pre.checks; }
+      if (pre.story) mine.story = JSON.parse(JSON.stringify(pre.story));
+      if (pre.primer) mine.primer = Object.assign({}, pre.primer);
+    }
   }
   state.progress = state.byCharacter[id].progress;
   state.log      = state.byCharacter[id].log;

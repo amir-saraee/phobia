@@ -7,7 +7,8 @@
 //      precache exists (one 404 fails the whole install, so no offline play),
 //      and index.html's modulepreload links match src/3d/main.js's static
 //      import graph (a drift only costs load time, but it's free to catch)
-//   1. first run: consent → Step inside → creator → straight to trial 1's gate
+//   1. first run: consent → Step inside → the prologue → creator → the
+//      chapter's opening page → trial 1's gate
 //   2. trial 1: walk to the dog, stay until the alarm settles, rate (tap the
 //      two readings), complete — with its trial stars logged and shown
 //   3. the hardest dog trial mounts and runs; a spider and a snake trial run
@@ -20,6 +21,11 @@
 //   6. phone viewport: landing + creator render with no sideways scroll, in
 //      English and in Persian (right-to-left); a real tap works the MRI's
 //      controls and never sends the scene fullscreen
+//   7. the story: the book renders every chapter; a returning traveler gets
+//      "Continue the story" and Mira's note; continuing plays the waiting page
+// Without a GPU (software WebGL) the high tier crawls at a few fps — too slow
+// to walk anywhere in time — so off macOS the run uses the low graphics tier.
+// Override with SMOKE_QUALITY=auto|low|medium|high.
 // Needs Google Chrome (override with CHROME=/path/to/chrome) and
 // `npm install` in scripts/ (puppeteer-core).
 "use strict";
@@ -29,8 +35,11 @@ const path = require("path");
 const puppeteer = require("puppeteer-core");
 
 const ROOT = path.join(__dirname, "..");
-const CHROME = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const CHROME = process.env.CHROME || (process.platform === "darwin"
+  ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+  : ["/opt/pw-browsers/chromium", "/usr/bin/google-chrome", "/usr/bin/chromium"].find((p) => fs.existsSync(p)) || "google-chrome");
 const SHOTS = process.env.SMOKE_SHOTS ? path.join(ROOT, ".smoke-shots") : null;
+const QUALITY = process.env.SMOKE_QUALITY || (process.platform === "darwin" ? "" : "low");
 const MIME = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
   ".json": "application/json", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg",
@@ -67,6 +76,7 @@ async function newPage(browser, { mobile = false } = {}) {
   await page.setViewport(mobile
     ? { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true }
     : { width: 1280, height: 800 });
+  if (QUALITY) await page.evaluateOnNewDocument((q) => { try { localStorage.setItem("fobia.quality", q); } catch {} }, QUALITY);
   page.errors = [];
   page.on("pageerror", (e) => page.errors.push("pageerror: " + String(e).slice(0, 300)));
   page.on("console", (m) => { if (m.type() === "error") page.errors.push("console: " + m.text().slice(0, 300)); });
@@ -94,6 +104,13 @@ async function waitFor(page, fn, ms, arg) {
   return false;
 }
 const hash = (page) => page.evaluate(() => location.hash);
+// A story page (src/story.js) is a full-screen overlay; a player in a hurry
+// taps Skip. Returns whether one was showing (optionally a specific page).
+async function storyPage(page, beat, ms = 3000) {
+  const shown = await waitFor(page, (b) => { const o = document.querySelector(".story-ov"); return !!o && (!b || (window.Story && !window.Story.isSeen(b))); }, ms, beat || null);
+  if (shown) { await click(page, ".st-skip"); await sleep(350); }
+  return shown;
+}
 
 async function firstRunAndTrial(browser, base) {
   const { ctx, page } = await newPage(browser);
@@ -102,16 +119,21 @@ async function firstRunAndTrial(browser, base) {
   await click(page, "I understand");
   check("landing: 'Step inside' after consent", await waitFor(page, () => [...document.querySelectorAll("button")].some((b) => /step inside/i.test(b.textContent)), 5000));
   await click(page, "Step inside");
+  check("first run: the prologue plays", await storyPage(page, "prologue"));
   check("creator: renders with a 3D stage", await waitFor(page, () => location.hash === "#/traveler" && !!document.querySelector("#travelerStage canvas"), 8000));
   await shot(page, "01-creator");
   await page.evaluate(() => { const i = document.getElementById("twName"); i.value = "Smoke"; i.dispatchEvent(new Event("input", { bubbles: true })); });
   await click(page, "Walk in");
+  check("first run: the chapter's opening page plays", await storyPage(page, "dogs.open"));
   await sleep(600);
   check("first run: creator goes straight to trial 1's gate", (await hash(page)) === "#/dogs/predict/0", await hash(page));
   await page.evaluate(() => { const c = document.querySelector('[data-action="pick-fear"][data-fear="bite"]') || document.querySelector('[data-action="pick-fear"]'); c && c.click(); });
   await click(page, "Enter the trial");
   check("trial 1: scene mounts", await waitFor(page, () => !!(window.__active && window.__active.scene && window.__dogCoach), 15000));
-  await sleep(3500);
+  // The tour opens on a timer from the mount; wait for it rather than for a
+  // fixed time, which only held while mounting itself took a few seconds.
+  await waitFor(page, () => !!document.querySelector(".tour-card"), 9000);
+  await sleep(300);
   for (let k = 0; k < 4; k++) { if (!(await click(page, ".tour-actions button:last-child"))) break; await sleep(300); }
   const tourCards = await page.evaluate(() => document.querySelectorAll(".tour-card").length);
   check("trial 1: tour dismissed", tourCards === 0);
@@ -179,6 +201,9 @@ async function firstRunAndTrial(browser, base) {
     return { logged: l && l.stars, goals: l && Array.isArray(l.goals) ? l.goals.length : 0, lit: document.querySelectorAll(".vc-stars i.on").length, cta: !!document.querySelector(".vc-cta [data-action='next-level']") };
   });
   check("complete: trial stars logged and shown", typeof starInfo.logged === "number" && starInfo.logged >= 1 && starInfo.goals === 3 && starInfo.lit === starInfo.logged && starInfo.cta, JSON.stringify(starInfo));
+  // A finished trial turns a page of the story (an early exit doesn't).
+  const fin = await page.evaluate(() => { const l = state.log[state.log.length - 1]; return !!(l && l.finished); });
+  if (fin) check("complete: the page trial 1 turned is offered", await page.evaluate(() => !!document.querySelector('.story-card[data-beat="dogs.a0"]')));
   check("complete: feedback link present", await page.evaluate(() => !!document.querySelector(".fb-after [data-action='open-feedback']")));
   await shot(page, "04-complete");
   await page.evaluate(() => document.querySelector(".fb-after [data-action='open-feedback']").click());
@@ -342,7 +367,7 @@ async function phone(browser, base) {
   const { ctx, page } = await newPage(browser, { mobile: true });
   await page.goto(base + "/", { waitUntil: "load" }); await sleep(1500);
   await click(page, "I understand"); await sleep(400);
-  await click(page, "Step inside"); await sleep(2500);
+  await click(page, "Step inside"); await storyPage(page); await sleep(2500);
   const m = await page.evaluate(() => ({ route: location.hash, sideways: document.documentElement.scrollWidth - window.innerWidth, stage: !!document.querySelector("#travelerStage canvas") }));
   check("phone: creator renders, no sideways scroll", m.route === "#/traveler" && m.stage && m.sideways <= 1, JSON.stringify(m));
   await shot(page, "07-phone-creator");
@@ -375,6 +400,14 @@ async function phoneTouch(browser, base) {
   await page.evaluate(() => { document.querySelector(".expect-chip").click(); document.querySelector('[data-action="confirm-predict"]').click(); });
   check("phone MRI: scene + coach mount", await waitFor(page, () => !!(window.__active && window.__active.scene && window.__coach), 15000));
   await sleep(2000);
+  // The stage grows and the page scrolls it into view as the scene starts;
+  // tap only once the button has stopped moving (two equal reads 300 ms apart).
+  { let prev = null; const tEnd = Date.now() + 6000;
+    while (Date.now() < tEnd) {
+      const y = await page.evaluate(() => { const b = document.querySelector('.cmd-btn[data-cmd="slide"]'); return b ? Math.round(b.getBoundingClientRect().top) : null; });
+      if (y !== null && y === prev) break;
+      prev = y; await sleep(300);
+    } }
   const at = await page.evaluate(() => {
     const b = document.querySelector('.cmd-btn[data-cmd="slide"]'); if (!b) return null;
     const r = b.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, top = document.elementFromPoint(x, y);
@@ -391,6 +424,39 @@ async function phoneTouch(browser, base) {
   await ctx.close();
 }
 
+async function story(browser, base) {
+  const { ctx, page } = await newPage(browser);
+  await page.evaluateOnNewDocument(() => {
+    if (localStorage.getItem("fobia.consent.v1")) return;
+    const c = { id: "c-story", name: "Smoke", bodyType: "woman", skinTone: "fair", hairColor: "brown", hairStyle: "long", topColor: "teal", topStyle: "tee", eyeColor: "hazel", glasses: "none", facialHair: "none", headwear: "none", primaryPhobia: "heights", additionalPhobias: [], createdAt: Date.now() };
+    localStorage.setItem("fobia.characters.v2", JSON.stringify([c]));
+    localStorage.setItem("fobia.activeCharacter.v1", c.id);
+    localStorage.setItem("fobia.consent.v1", "1");
+    localStorage.setItem("fobia.tutorialSeen", "1");
+    // Yesterday: heights trials 1–2 finished, the first page unread.
+    const y = Date.now() - 864e5;
+    const st = { byCharacter: { "c-story": {
+      progress: { heights: { highestCompleted: 1 } }, courage: 40, goals: {},
+      log: [{ phobia: "heights", level: 0, suds: 3, predicted: 6, peak: 5, ts: y - 60000, finished: true },
+            { phobia: "heights", level: 1, suds: 2, predicted: 6, peak: 5, ts: y, finished: true }],
+      story: { seen: { prologue: y, "heights.open": y, "heights.a0": y } } } }, _charScoped: true };
+    localStorage.setItem("fobia.state.v1", JSON.stringify(st));
+  });
+  await page.goto(base + "/#/story", { waitUntil: "load" }); await sleep(900);
+  const book = await page.evaluate(() => ({ chapters: document.querySelectorAll(".sb-chapter").length, read: document.querySelectorAll(".sb-page.read").length }));
+  check("story: the book renders every chapter", book.chapters >= 8 && book.read === 3, JSON.stringify(book));
+  await page.goto(base + "/?r=1#/", { waitUntil: "load" }); await sleep(1500);
+  const home = await page.evaluate(() => ({ cont: !!document.querySelector('[data-action="story-continue"]'), note: !!document.querySelector(".mira-note"), kicker: (document.querySelector(".mob-hero-kicker") || {}).textContent }));
+  check("story: returning traveler — continue + Mira's note", home.cont && home.note && /Sahar/.test(home.kicker || ""), JSON.stringify(home));
+  await shot(page, "08-returning");
+  await click(page, '[data-action="story-continue"]');
+  check("story: continuing plays the page trial 2 turned", await storyPage(page, "heights.a1"));
+  check("story: then the next trial's gate", await waitFor(page, () => location.hash === "#/heights/predict/2", 4000), await hash(page));
+  check("story: today's practice on the gate", await page.evaluate(() => !!document.querySelector(".st-focus")));
+  check("story: no page errors", page.errors.length === 0, page.errors.slice(0, 5).join(" | "));
+  await ctx.close();
+}
+
 // ---- 0. static checks: the hand-kept lists in sw.js and index.html ----
 function staticChecks() {
   const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -402,9 +468,9 @@ function staticChecks() {
   check("sw.js: every precached file exists", entries.length > 0 && !missing.length,
     missing.length ? "missing: " + missing.join(", ") : `${entries.length} entries`);
 
-  // main.js's static graph: our modules it reaches, plus the three.js files
-  // they import directly (resolved through the import map). Dynamic import()
-  // is skipped on purpose: the engine and realms load on demand.
+  // main.js's static graph, resolved through the import map: our modules and
+  // the three.js files, following the addons' own imports too. Dynamic
+  // import() is skipped on purpose: the engine and realms load on demand.
   const html = read("index.html");
   const importMap = JSON.parse((html.match(/<script type="importmap">([\s\S]*?)<\/script>/) || [])[1] || "{}").imports || {};
   const resolve = (spec, from) => {
@@ -417,7 +483,7 @@ function staticChecks() {
     const f = stack.pop();
     if (want.has(f)) continue;
     want.add(f);
-    if (!f.startsWith("src/") || !isFile(f)) continue;   // vendor files: listed, not walked
+    if (!isFile(f)) continue;
     for (const m of read(f).matchAll(/^import\s(?:[^;]*?\sfrom\s*)?["']([^"']+)["']/gm)) {
       const dep = resolve(m[1], f);
       if (dep) stack.push(dep);
@@ -431,7 +497,7 @@ function staticChecks() {
 
 (async () => {
   staticChecks();
-  if (failed) {   // no point spending three minutes in Chrome
+  if (failed) {   // no point spending minutes in Chrome
     console.log(results.join("\n") + "\n\nSMOKE FAILED (static checks)");
     process.exit(1);
   }
@@ -439,11 +505,16 @@ function staticChecks() {
   const base = `http://127.0.0.1:${server.address().port}`;
   const browser = await puppeteer.launch({
     executablePath: CHROME, headless: "new",
-    args: ["--use-angle=metal", "--enable-webgl", "--ignore-gpu-blocklist", "--mute-audio", "--autoplay-policy=no-user-gesture-required"],
+    args: [
+      process.platform === "darwin" ? "--use-angle=metal" : "--use-angle=swiftshader",
+      "--enable-webgl", "--ignore-gpu-blocklist", "--mute-audio", "--autoplay-policy=no-user-gesture-required",
+      // Containers and CI run as root, where Chrome refuses to start sandboxed.
+      ...(process.getuid && process.getuid() === 0 ? ["--no-sandbox"] : []),
+    ],
   });
   const t0 = Date.now();
   try {
-    for (const flow of [firstRunAndTrial, hardestTrial, creatures, places, phone, phoneTouch]) {
+    for (const flow of [firstRunAndTrial, hardestTrial, creatures, places, phone, phoneTouch, story]) {
       try { await flow(browser, base); } catch (e) { check(flow.name + " crashed", false, String(e).slice(0, 300)); }
     }
   } finally {

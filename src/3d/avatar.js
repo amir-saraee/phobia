@@ -2,7 +2,7 @@
 // creator's turntable and in the shell vignettes.
 
 import * as THREE from "three";
-import { getRoomEnvMap } from "./renderer.js";
+import { resolveQuality, getRoomEnvMap } from "./renderer.js";
 import { _GAIT, _track, _solePitch, _legIK, WRIST_REST_FOLD, BODY_TYPES_3D } from "./human-base.js";
 import { ANKLE_Y, KNEE_Y, HIP_Y, WAIST_Y, NECK_Y, CHEST_TOP_Y, SHOULDER_HALF, buildHumanRig } from "./human-rig.js";
 import { makeGrassMaps } from "./textures.js";
@@ -55,7 +55,7 @@ function buildAvatarFigure(c, mode = "walk") {
   let idleW = idleSide;
   // Ask for the CC0 motion library the moment a figure exists. It streams in
   // the background; until it lands (or if it fails) the procedural animation
-  // below runs unchanged, so nothing ever waits on a 4 MB download.
+  // below runs unchanged, so nothing ever waits on the download.
   let motion = null;
   try {
     loadHumanMotion().then((m) => { motion = m || null; });
@@ -222,8 +222,11 @@ const AvatarPreview = (() => {
     unmount();
     const w = container.clientWidth || 220;
     const h = container.clientHeight || 240;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // The shell vignettes' budget (see makeCtx): MSAA and full DPR on the high
+    // tier only. It rendered at DPR 2 with MSAA on every device.
+    const tier = resolveQuality();
+    const renderer = new THREE.WebGLRenderer({ antialias: tier === "high", alpha: true });
+    renderer.setPixelRatio(tier === "low" ? 1 : Math.min(window.devicePixelRatio, tier === "medium" ? 1.5 : 2));
     renderer.setSize(w, h);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     // Match the in-scene look so the avatar in the creator looks the same
@@ -288,9 +291,13 @@ const AvatarPreview = (() => {
     let raf = 0;
     let last = performance.now();
     let elapsed = 0;
+    let retired = null;   // the previous figure, freed after the next draw (see update)
+    // A slow turntable: 30 fps below the high tier, nothing while hidden.
+    const minGap = tier === "high" ? 1000 / 61 : 1000 / 31;
     function tick() {
       if (!container.isConnected) { try { renderer.dispose(); } catch {} return; }
       const now = performance.now();
+      if (document.hidden || now - last < minGap) { raf = requestAnimationFrame(tick); return; }
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       elapsed += dt;
@@ -301,13 +308,22 @@ const AvatarPreview = (() => {
         try { figure.userData.animate(elapsed); } catch {}
       }
       renderer.render(scene, camera);
+      if (retired) { disposeFigure(retired); retired = null; }
       raf = requestAnimationFrame(tick);
     }
+    const disposeFigure = (f) => f.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) {
+        const ms = Array.isArray(o.material) ? o.material : [o.material];
+        ms.forEach((m) => m.dispose());
+      }
+    });
     tick();
     active = {
       renderer, scene, camera, raf,
       cleanup() {
         cancelAnimationFrame(raf);
+        if (retired) { disposeFigure(retired); retired = null; }
         el.removeEventListener("pointerdown", onDown);
         el.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
@@ -325,13 +341,10 @@ const AvatarPreview = (() => {
       update(newChar) {
         const yaw = figure.rotation.y;   // keep the user's chosen angle across edits
         scene.remove(figure);
-        figure.traverse(o => {
-          if (o.geometry) o.geometry.dispose();
-          if (o.material) {
-            const ms = Array.isArray(o.material) ? o.material : [o.material];
-            ms.forEach(m => m.dispose());
-          }
-        });
+        // Freed after the new figure's first draw, so its identical materials
+        // inherit the compiled programs instead of compiling them again.
+        if (retired) disposeFigure(retired);
+        retired = figure;
         figure = buildAvatarFigure(newChar);
         figure.rotation.y = yaw;
         window.__avatarFigure = figure;

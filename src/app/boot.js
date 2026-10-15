@@ -91,7 +91,11 @@ function boot() {
   scheduleReminders();
   // Warm caches for heavy assets (dog model) in the background
   if (window.Scene3D && window.Scene3D.prefetch) {
-    setTimeout(() => window.Scene3D.prefetch(), 1500);
+    setTimeout(() => {
+      let realm = null;
+      try { realm = window.Character && window.Character.loadCharacter() ? continueTarget().key : null; } catch {}
+      window.Scene3D.prefetch({ realm });
+    }, 1500);
   }
   // Honor the URL on first load so refreshes / shared links land correctly
   const route = location.hash ? parseRoute(location.hash) : { view: "welcome", params: {} };

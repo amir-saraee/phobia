@@ -459,6 +459,7 @@ function surfaceRibbon(headPoint, path, half, lift, mat, segs = 26) {
 // Caching the vertex arrays turns a ~77 ms hitch into a copy; the colour
 // attribute is still recomputed each time, which is the cheap half.
 const _headGeoCache = new Map();
+const _earSurfCache = new Map();   // head shape → where the ear meets the skull (buildHead)
 function buildHeadShell(headPoint, mat, opts = {}) {
   const NU = opts.nu || 56, NV = opts.nv || 40;
   const off = opts.offset || 0;      // outward thickness (hair / beard shells)
@@ -1015,7 +1016,9 @@ function buildHead(o) {
   // taper put the surface further out than the constant assumed, so the
   // character simply had no visible ears from any angle. Measure it, the same
   // way the eye socket depth is measured.
-  const earSurf = (() => {
+  // (A pure function of the head shape — 4,225 ray-marches, ~100k SDF calls —
+  // so it's measured once per shape, not on every trial's rebuild.)
+  const earSurf = _earSurfCache.get(shape) || (() => {
     let bx = 0.072, bz = -0.012, bd = Infinity;
     for (let i = 0; i <= 64; i++) {
       const th = Math.PI * 0.5 + (i / 64 - 0.5) * 0.9;
@@ -1028,6 +1031,7 @@ function buildHead(o) {
     }
     return { x: bx, z: bz };
   })();
+  _earSurfCache.set(shape, earSurf);
   for (const sx of [-1, 1]) {
     const ear = new THREE.Group();
     // Sunk 3 mm into the surface so the root never shows a seam, and pitched

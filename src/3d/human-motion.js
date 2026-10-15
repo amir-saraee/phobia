@@ -45,7 +45,11 @@ import { loadGLTF } from "./assets.js";
 // it. Bone lengths, rest orientations and axis conventions cancel out. The one
 // thing it cannot carry is twist about the bone's own axis — acceptable here,
 // since this rig has no twist bones and its limbs are near-radially symmetric.
-const HUMAN_ANIM_URL = "assets/anim/human-anim.gltf";
+// The one clip the game plays, stripped out of the 46-clip CC0 library by
+// scripts/strip-anim.cjs (61 KB instead of 4 MB — every traveler figure used to
+// fetch the whole library to swing its arms). Re-run the script if
+// HUMAN_CLIPS starts using another clip; the full library stays as the source.
+const HUMAN_ANIM_URL = "assets/anim/human-walk.gltf";
 
 // target bone → the library bone that drives it, and the library bone whose
 // position defines the direction it points. Parents MUST come before children:
@@ -82,19 +86,12 @@ const RETARGET_TIPS = [
   { t: "R_ankle", s: "DEF-foot.R", c: "DEF-toe.R",         rest: [0, -0.511, 0.86] },
 ];
 
-// Clip names this app actually uses, mapped to intent. The library ships 46;
-// the rest are combat, swimming and spellcasting.
+// Clip names this app plays, mapped to intent. Only these ship: the source
+// library has 46 (others that might suit: Idle_Loop, Walk_Formal_Loop for a
+// warier approach, Jog_Fwd_Loop, Crouch_Idle_Loop, Hit_Chest, Interact) —
+// add a name here AND list it when re-running scripts/strip-anim.cjs.
 const HUMAN_CLIPS = {
-  idle:    "Idle_Loop",
   walk:    "Walk_Loop",
-  wary:    "Walk_Formal_Loop",   // stiffer, shorter stride — the approach walk
-  jog:     "Jog_Fwd_Loop",
-  crouch:  "Crouch_Idle_Loop",
-  sit:     "Sitting_Idle_Loop",
-  sitIn:   "Sitting_Enter",
-  sitOut:  "Sitting_Exit",
-  flinch:  "Hit_Chest",
-  reach:   "Interact",
 };
 
 let _humanMotion = null;        // resolved sampler, or false once known-bad
@@ -187,6 +184,7 @@ const _rtA = new THREE.Vector3(), _rtB = new THREE.Vector3();
 const _rtDir = new THREE.Vector3(), _rtRest = new THREE.Vector3();
 const _rtMat = new THREE.Matrix4();
 const _rtRootQ = new THREE.Quaternion();
+const _rtQ = new THREE.Quaternion();
 // The library clip's frame → this rig's own frame. The sampler's skeleton is
 // never placed in the scene, so its bone directions are in the LIBRARY's
 // frame; they used to be applied as if they were world directions, which is
@@ -292,8 +290,7 @@ function applyRetarget(rig, motion, weight = 1, only = null) {
     if (weight >= 1) {
       tb.quaternion.setFromUnitVectors(_rtRest, _rtDir);
     } else {
-      const q = tb.quaternion.clone().setFromUnitVectors(_rtRest, _rtDir);
-      tb.quaternion.slerp(q, weight);
+      tb.quaternion.slerp(_rtQ.setFromUnitVectors(_rtRest, _rtDir), weight);
     }
     tb.updateMatrixWorld(false);
   };

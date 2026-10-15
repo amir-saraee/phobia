@@ -8,6 +8,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 // animation, so any model we instance from the GLTF cache must use this.
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { smoothCreaseNormals, applyCoatTint } from "./creature-kit.js";
+import { active } from "./live.js";
 
 // Scratch vectors reused every frame for the spatial audio listener update
 // (avoids per-frame allocation in the render hot path).
@@ -41,6 +42,41 @@ function loadGLTF(url) {
   return promise;
 }
 
+// renderer.compileAsync, minus three's "extension not supported" console
+// warning (one per renderer) where KHR_parallel_shader_compile is missing.
+// There compile() still queues every program to the GPU process in one go and
+// a short yield lets it get through them before the first frame asks; with
+// the extension, compileAsync waits until they are actually linked.
+function compileAhead(renderer, scene, camera, target = null) {
+  if (renderer.extensions.has("KHR_parallel_shader_compile")) return renderer.compileAsync(scene, camera, target);
+  renderer.compile(scene, camera, target);
+  return new Promise((res) => setTimeout(res, 50));
+}
+
+// Link a streamed-in object's shader programs before it joins a live trial.
+// A creature arrives seconds after the scene starts, and its first frame used
+// to compile its skinned coat, fur shells and so on synchronously — the dog
+// room's longest freeze (3.4 s under software GL) landing right as the dog
+// appears. Same render-target dance as mount()'s first compile, so these are
+// the variants the composer will ask for. Resolves at once outside a trial
+// (the shell vignettes) and never waits longer than 4 s.
+function compileBeforeAdd(parent, obj) {
+  let root = parent;
+  while (root && root.parent) root = root.parent;
+  const a = active;
+  if (!root || !root.isScene || !a || a.scene !== root || !a.renderer) return Promise.resolve();
+  const r = a.renderer;
+  try {
+    r.setRenderTarget(a.composer ? a.composer.readBuffer : null);
+    const p = compileAhead(r, obj, a.camera, root);
+    r.setRenderTarget(null);
+    return Promise.race([p, new Promise((res) => setTimeout(res, 4000))]).catch(() => {});
+  } catch (e) {
+    try { r.setRenderTarget(null); } catch {}
+    return Promise.resolve();
+  }
+}
+
 // ---------- Dog models (real rigged GLTF — Quaternius "Ultimate Animated
 // Animals", CC0 / public domain) ----------
 // Two breeds drive the cynophobia difficulty ramp: a small friendly Shiba Inu
@@ -49,8 +85,10 @@ function loadGLTF(url) {
 // is breed-agnostic. Vendored locally under assets/models/ so the app keeps
 // working offline (it's an installable PWA).
 const DOG_MODELS = {
-  shiba: "assets/models/ShibaInu.gltf",
-  husky: "assets/models/Husky.gltf",
+  // Binary .glb (scripts/pack-glb.cjs): the same model as the old embedded-
+  // base64 .gltf, 40 % smaller, with no 2.9 MB JSON string to parse and decode.
+  shiba: "assets/models/ShibaInu.glb",
+  husky: "assets/models/Husky.glb",
 };
 // Breed PBR coat maps — PHOTO-PROJECTED from assets/refs/dog-*-reference.png
 // via scripts/bake-dog-photo-coats.cjs. Side-projection UVs (applySidePhotoUVs)
@@ -132,8 +170,8 @@ const CREATURE_MODELS = {
   // Walk clips now cover the defensive display, and the extra file never
   // shipped — prefetching it just 404'd on every boot.)
 };
-function prefetchCreatureModels() {
-  Object.values(CREATURE_MODELS).forEach((url) => { try { loadGLTF(url); } catch {} });
+function prefetchCreatureModels(only) {
+  Object.entries(CREATURE_MODELS).forEach(([k, url]) => { if (!only || k === only) { try { loadGLTF(url); } catch {} } });
 }
 
 // Generic rigged-creature loader. Returns a Group SYNCHRONOUSLY (so scenes can
@@ -191,10 +229,11 @@ function buildCreature(url, opts = {}) {
     parts.height = sz.y * S;
     parts.span = Math.max(sz.x, sz.z) * S;
     parts.footOffset = -box.min.y * S;
-    group.add(model);
     parts.model = model;
     const mixer = new THREE.AnimationMixer(model);
-    parts.mixer = mixer;
+    // parts.mixer is published when the model joins the scene (below): the
+    // controllers start driving the rig on it, and that must not happen to a
+    // model still waiting, parentless, for its shaders.
     const actions = {};
     gltf.animations.forEach((c) => { actions[c.name] = mixer.clipAction(c); });
     parts.actions = actions;
@@ -212,8 +251,16 @@ function buildCreature(url, opts = {}) {
       a.fadeIn(fade).play();
       parts.current = a;
     };
-    group.userData.ready = true;
-    if (typeof group.userData.onReady === "function") group.userData.onReady();
+    // Into the scene once its programs are linked (compileBeforeAdd).
+    compileBeforeAdd(group, model).then(() => {
+      if (group.userData.disposed) return;
+      try {
+        group.add(model);
+        parts.mixer = mixer;
+        group.userData.ready = true;
+        if (typeof group.userData.onReady === "function") group.userData.onReady();
+      } catch (e) { console.warn("[creature] ready:", e); }
+    });
   }).catch((err) => {
     console.warn("[creature] model load failed:", url, err);
     // Fallback so the exposure is never a silently EMPTY scene (e.g. a CDN
@@ -239,4 +286,4 @@ function buildCreature(url, opts = {}) {
   return group;
 }
 
-export { _audVec1, _audVec2, _audVec3, loadGLTF, DOG_MODELS, DOG_COAT_MAPS, getDogTexLoader, loadDogCoatTextures, prefetchDogModels, CREATURE_MODELS, prefetchCreatureModels, buildCreature };
+export { _audVec1, _audVec2, _audVec3, loadGLTF, compileAhead, compileBeforeAdd, DOG_MODELS, DOG_COAT_MAPS, getDogTexLoader, loadDogCoatTextures, prefetchDogModels, CREATURE_MODELS, prefetchCreatureModels, buildCreature };

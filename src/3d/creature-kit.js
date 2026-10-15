@@ -20,7 +20,7 @@ function makeScaleNormal() {
   if (_scaleNormalCache) return _scaleNormalCache;
   const SIZE = 256;
   const heightC = document.createElement("canvas"); heightC.width = heightC.height = SIZE;
-  const h = heightC.getContext("2d");
+  const h = heightC.getContext("2d", { willReadFrequently: true });
   h.fillStyle = "#808080"; h.fillRect(0, 0, SIZE, SIZE);
   const cols = 16, rows = 22, cw = SIZE / cols, rh = SIZE / rows;
   for (let ry = 0; ry < rows; ry++) {
@@ -329,8 +329,6 @@ function applyCoatTint(model, coat) {
     });
   });
 }
-
-// ---------- Dogs scene ----------
 // Small colour lerp on packed hex — used to blend the rung's mood with the
 // visit's hour without allocating a Color per field.
 function _hexMix(a, b, t) {

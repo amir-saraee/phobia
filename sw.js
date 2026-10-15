@@ -11,7 +11,7 @@
 // If you want true offline-only optimised loads, switch back to cache-first
 // later — the version bumping is in place. For now correctness > load speed.
 
-const VERSION = "mira-v25-modules";
+const VERSION = "mira-v28-modules";
 // Installed on the first visit, in the background — so it holds only what the
 // six open realms need to boot and play offline: their code, plus the models
 // and textures of the creature realms (dogs, spiders, snakes; the place realms
@@ -26,6 +26,7 @@ const SHELL = [
   "./src/character.js",
   "./src/phobia-info.js",
   "./src/i18n.js",
+  "./src/story.js",
   // The game's code: the stylesheet, the app shell (classic scripts, in load
   // order) and the 3D modules — the engine and the six open realms. Legacy
   // realms (?all=1) are cached the first time they are played.
@@ -60,6 +61,7 @@ const SHELL = [
   "./src/3d/human-head.js",
   "./src/3d/human-motion.js",
   "./src/3d/human-rig.js",
+  "./src/3d/live.js",
   "./src/3d/physics.js",
   "./src/3d/postfx.js",
   "./src/3d/renderer.js",
@@ -78,8 +80,8 @@ const SHELL = [
   "./assets/vendor/three/three.module.min.js",
   // Rigged dogs (Quaternius, CC0) + their photo-projected coats (JPEG ship
   // copies — scripts/compress-textures.cjs).
-  "./assets/models/ShibaInu.gltf",
-  "./assets/models/Husky.gltf",
+  "./assets/models/ShibaInu.glb",
+  "./assets/models/Husky.glb",
   "./assets/models/textures/shiba_photo_albedo.jpg",
   "./assets/models/textures/shiba_photo_normal.jpg",
   "./assets/models/textures/shiba_photo_roughness.jpg",

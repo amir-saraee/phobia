@@ -3,9 +3,10 @@
 import * as THREE from "three";
 import { IS_COARSE_POINTER, IS_LOW_POWER } from "../renderer.js";
 import { _UP } from "../hands.js";
-import { active } from "../engine.js";
 import { rng, makeConcreteMaps, makeEdgeStripeTexture, makeCityGridTexture } from "../textures.js";
+import { _coachSize } from "../dog-controller.js";
 import { makeCreatureCoach } from "../coach.js";
+import { active } from "../live.js";
 
 function setupHeights(scene, camera, level, levelIdx, ctx) {
   const h = level.height;            // 0..1 (drives time of day, city dressing, wind)
@@ -318,6 +319,43 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
     }
     return new THREE.Mesh(geo, [M, M, roofMat, roofMat, M, M]);
   };
+  // The city is ~440 of those boxes. As one Mesh each — six material groups
+  // apiece, every one a shadow caster — it cost ~2,800 draw calls a frame
+  // (colour + shadow passes) before the platform, the traffic or the player:
+  // the heaviest scene in the game by a factor of ten. It never moves, so each
+  // facade style's walls merge into one geometry and every roof into another:
+  // five meshes, the same UVs and materials, the same look. The undersides,
+  // which nothing can see, are dropped.
+  const cityWalls = facadeMats.map(() => []), cityRoofs = [];
+  const mergeCityFaces = (list, faces) => {
+    let nv = 0, ni = 0;
+    for (const { geo } of list) for (const f of faces) { nv += 4; ni += geo.groups[f].count; }
+    const pos = new Float32Array(nv * 3), nrm = new Float32Array(nv * 3), uvs = new Float32Array(nv * 2);
+    const idx = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+    let v = 0, i = 0;
+    for (const { geo, x, y, z } of list) {
+      const P = geo.attributes.position.array, N = geo.attributes.normal.array, U = geo.attributes.uv.array, I = geo.index.array;
+      for (const f of faces) {
+        // BoxGeometry (1×1×1 segments): face f owns vertices 4f..4f+3.
+        for (let k = 0; k < 4; k++) {
+          const src = 4 * f + k;
+          pos[v * 3] = P[src * 3] + x; pos[v * 3 + 1] = P[src * 3 + 1] + y; pos[v * 3 + 2] = P[src * 3 + 2] + z;
+          nrm[v * 3] = N[src * 3]; nrm[v * 3 + 1] = N[src * 3 + 1]; nrm[v * 3 + 2] = N[src * 3 + 2];
+          uvs[v * 2] = U[src * 2]; uvs[v * 2 + 1] = U[src * 2 + 1];
+          v++;
+        }
+        const g = geo.groups[f], base = v - 4 - 4 * f;
+        for (let k = 0; k < g.count; k++) idx[i++] = I[g.start + k] + base;
+      }
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    out.setAttribute("normal", new THREE.BufferAttribute(nrm, 3));
+    out.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+    out.setIndex(new THREE.BufferAttribute(idx, 1));
+    out.computeBoundingSphere();
+    return out;
+  };
   for (let gx = -cityRange; gx <= cityRange; gx++) {
     for (let gz = -cityRange; gz <= cityRange; gz++) {
       const cx = gx * blockSize + (seed() - 0.5) * 4;
@@ -333,13 +371,22 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
       const bh = 3.4 * Math.round((12 + seed() * 90) / 3.4);
       const mi = Math.floor(seed() * FACADES.length);
       void seed();
-      const b = cityBox(w, bh, d, mi);
-      b.position.set(cx, bh / 2, cz);
-      b.castShadow = true;
-      b.receiveShadow = true;
-      scene.add(b);
+      const geo = cityBox(w, bh, d, mi).geometry;
+      const part = { geo, x: cx, y: bh / 2, z: cz };
+      cityWalls[mi].push(part);
+      cityRoofs.push(part);
     }
   }
+  // Walls: +x, -x, +z, -z (groups 0, 1, 4, 5); roofs: +y (group 2).
+  // (The source boxes were never drawn, so there is nothing on the GPU to free.)
+  [...cityWalls.map((list, mi) => [list, [0, 1, 4, 5], facadeMats[mi]]), [cityRoofs, [2], roofMat]].forEach(([list, faces, mat]) => {
+    if (!list.length) return;
+    const m = new THREE.Mesh(mergeCityFaces(list, faces), mat);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    m.userData.noCollide = true;
+    scene.add(m);
+  });
 
   // Foreground: long walkable platform + segmented railing.
   // Length scales with rung — higher rungs feel like wider rooftops/cliffs.
@@ -646,23 +693,29 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
   const taillightMat = new THREE.MeshBasicMaterial({
     color: isDark ? 0xff3322 : 0xff5544,
   });
+  // Headlights — the glow-ball size scales with rung height: from a rooftop
+  // a car needs an oversized bloom to read at all, but at the low rungs the
+  // same sphere was wider than half the car body and skewered through it.
+  // Slightly larger at dark times so they still pop from far away.
+  // One geometry per kind, shared by every car, and low-poly: each car used
+  // to carry its own default 32×16 spheres — ~130k triangles for 140 dots a
+  // few pixels across.
+  const headR = (0.15 + h * 0.70) * (isDark ? 1.0 : 0.7);
+  const tailR = (0.12 + h * 0.55) * (isDark ? 1.0 : 0.7);
+  const headGeo = new THREE.SphereGeometry(headR, 10, 7);
+  const tailGeo = new THREE.SphereGeometry(tailR, 10, 7);
+  const carBodyGeo = new THREE.BoxGeometry(3.4, 1.3, 1.7);
   for (let i = 0; i < carCount; i++) {
     const car = new THREE.Group();
     const heading = i % 2 === 0 ? 1 : -1;
-    // Headlights — the glow-ball size scales with rung height: from a rooftop
-    // a car needs an oversized bloom to read at all, but at the low rungs the
-    // same sphere was wider than half the car body and skewered through it.
-    // Slightly larger at dark times so they still pop from far away.
-    const headR = (0.15 + h * 0.70) * (isDark ? 1.0 : 0.7);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(headR), headlightMat);
+    const head = new THREE.Mesh(headGeo, headlightMat);
     head.position.set(heading * 1.4, 0.05, 0); car.add(head);
-    const tailR = (0.12 + h * 0.55) * (isDark ? 1.0 : 0.7);
-    const tail = new THREE.Mesh(new THREE.SphereGeometry(tailR), taillightMat);
+    const tail = new THREE.Mesh(tailGeo, taillightMat);
     tail.position.set(-heading * 1.4, 0.05, 0); car.add(tail);
     // Car body — colour varies a bit so the city doesn't look uniform
     const colour = new THREE.Color().setHSL(Math.random(), 0.15, 0.22);
     const carBody = new THREE.Mesh(
-      new THREE.BoxGeometry(3.4, 1.3, 1.7),
+      carBodyGeo,
       new THREE.MeshStandardMaterial({ color: colour, roughness: 0.5, metalness: 0.4 })
     );
     carBody.position.y = -0.25; car.add(carBody);
@@ -1665,12 +1718,14 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
           const edgeDist = Math.max(0, controls.position.z + 0.4);
           hLastDist = _wasOnGlass ? Math.min(edgeDist, 0.15) : edgeDist;
           const lookK = lookProx;
+          // (Renderer size, not clientWidth — no forced reflow per frame.)
+          if (active && active.renderer) active.renderer.getSize(_coachSize); else _coachSize.set(0, 0);
           hCoach.update(dtN, {
             dist: hLastDist, gaze: Math.min(1, lookK * 1.2), dogToward: 0,
             px: controls.position.x, pz: controls.position.z, dogX: controls.position.x, dogZ: -0.45,
             onScreen: true, dogGazing: false, trust: null,
-            anchorX: (active && active.renderer ? active.renderer.domElement.clientWidth / 2 : null), anchorY: 0,
-            stageW: (active && active.renderer ? active.renderer.domElement.clientWidth : 0), stageH: 0,
+            anchorX: (active && active.renderer ? _coachSize.x / 2 : null), anchorY: 0,
+            stageW: _coachSize.x, stageH: 0,
           });
           const eng = hCoach.engaged;
           // Looking straight down is its own habituating spike.

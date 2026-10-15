@@ -2,8 +2,8 @@
 // heroes, the traveler's room).
 
 import * as THREE from "three";
-import { DOG_MODELS, DOG_COAT_MAPS, loadDogCoatTextures, CREATURE_MODELS, buildCreature } from "./assets.js";
-import { disposeObject, getRoomEnvMap } from "./renderer.js";
+import { compileAhead, DOG_MODELS, DOG_COAT_MAPS, loadDogCoatTextures, CREATURE_MODELS, buildCreature } from "./assets.js";
+import { disposeObject, resolveQuality, syncFxLite, getRoomEnvMap } from "./renderer.js";
 import { makeSoftSunbeam } from "./human-rig.js";
 import { makeConcreteMaps, makeEarthMaps, makeGrassMaps, makePlankMaps, makePlasterMaps, makeRugMaps } from "./textures.js";
 import { applySidePhotoUVs } from "./creature-kit.js";
@@ -31,25 +31,38 @@ const ShellScenes = (() => {
     window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   function makeCtx(container, opts = {}) {
+    // These are backdrops (the title room, the camp, a realm's hero), so on a
+    // weak device they get the low tier's budget: no MSAA, DPR 1, no shadow
+    // maps, 30 fps. The tier is read fresh — sceneQuality() only refreshes
+    // when a trial mounts, so a changed Graphics setting used to miss them.
+    const tier = resolveQuality();
+    const lowTier = tier === "low";
+    syncFxLite(tier);
     let renderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer = new THREE.WebGLRenderer({ antialias: !lowTier, alpha: true, powerPreference: lowTier ? "low-power" : "default" });
     } catch { return null; }
     const w = container.clientWidth || 320, h = container.clientHeight || 220;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(lowTier ? 1 : Math.min(window.devicePixelRatio || 1, tier === "medium" ? 1.5 : 2));
     renderer.setSize(w, h);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = opts.exposure || 1.0;
     // Real shadows are what ground the figure/creature in these vignettes —
     // the scenes are tiny (a handful of meshes), so soft maps are cheap.
-    renderer.shadowMap.enabled = true;
+    // Nothing in them moves faster than an idle sway, so the maps refresh
+    // every other drawn frame (see tick) rather than on every render.
+    renderer.shadowMap.enabled = !lowTier;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = true;
     container.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
     if (opts.fog) scene.fog = new THREE.FogExp2(opts.fog, opts.fogDensity || 0.09);
     const camera = new THREE.PerspectiveCamera(opts.fov || 34, w / h, 0.05, 80);
-    const ctx = { container, renderer, scene, camera, raf: 0, disposed: false, onTick: null, elapsed: 0 };
+    // `retired`: objects swapped out of the scene (a re-dressed figure), freed
+    // after the next draw — see tick.
+    const ctx = { container, renderer, scene, camera, raf: 0, disposed: false, onTick: null, elapsed: 0, retired: [] };
     const ro = ("ResizeObserver" in window) ? new ResizeObserver(() => {
       const nw = container.clientWidth, nh = container.clientHeight;
       if (nw && nh && !ctx.disposed) {
@@ -60,27 +73,57 @@ const ShellScenes = (() => {
     }) : null;
     if (ro) ro.observe(container);
     ctx.ro = ro;
+    // Nothing to draw while the vignette is scrolled away (the camp sits
+    // above a long map) or the tab is hidden.
+    ctx.visible = true;
+    const io = ("IntersectionObserver" in window) ? new IntersectionObserver((es) => {
+      ctx.visible = es.some((e) => e.isIntersecting);
+    }) : null;
+    if (io) io.observe(container);
+    ctx.io = io;
+    // Backdrops, not play: 30 fps below the high tier, and never past 60 —
+    // a 120 Hz phone otherwise drew the title room 120 times a second.
+    const minGap = tier === "high" ? 1000 / 61 : 1000 / 31;
     let last = performance.now();
+    let frame = 0;
     function tick() {
       if (ctx.disposed) return;
       if (!container.isConnected) { disposeCtx(ctx); return; }
+      ctx.raf = requestAnimationFrame(tick);
       const now = performance.now();
+      if (!ctx.visible || document.hidden || now - last < minGap) return;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       ctx.elapsed += dt;
       if (ctx.onTick) { try { ctx.onTick(dt, ctx.elapsed); } catch {} }
+      if ((++frame & 1) === 0) renderer.shadowMap.needsUpdate = true;
       renderer.render(scene, camera);
-      ctx.raf = requestAnimationFrame(tick);
+      // Disposed only once the replacement has drawn: its materials then hold
+      // the shader programs the old ones used. Disposing first let three free
+      // them (a program goes with its last material) and compile them all
+      // again — a hitch on every tap in the traveler creator.
+      if (ctx.retired.length) for (const o of ctx.retired.splice(0)) { try { disposeObject(o); } catch {} }
     }
+    // Programs are linked before the first frame (compileAsync, as in a
+    // trial's mount): the first render used to compile them synchronously —
+    // inside boot for the title room, the page frozen ~4 s under software GL
+    // before anything could be tapped. The canvas stays clear meanwhile.
     ctx.start = () => {
-      if (reduceMotion()) {
-        // One still frame — the vignette becomes a picture, not a motion source.
-        if (ctx.onTick) { try { ctx.onTick(1 / 60, 0.5); } catch {} }
-        renderer.render(scene, camera);
-        return;
-      }
-      last = performance.now();
-      tick();
+      const go = () => {
+        if (ctx.disposed) return;
+        if (reduceMotion()) {
+          // One still frame — the vignette becomes a picture, not a motion source.
+          if (ctx.onTick) { try { ctx.onTick(1 / 60, 0.5); } catch {} }
+          renderer.shadowMap.needsUpdate = true;
+          renderer.render(scene, camera);
+          return;
+        }
+        last = performance.now();
+        tick();
+      };
+      let ready = null;
+      try { ready = compileAhead(renderer, scene, camera); } catch {}
+      if (ready) ready.then(go, go); else go();
     };
     registry.add(ctx);
     return ctx;
@@ -91,8 +134,13 @@ const ShellScenes = (() => {
     ctx.disposed = true;
     cancelAnimationFrame(ctx.raf);
     if (ctx.ro) { try { ctx.ro.disconnect(); } catch {} }
+    if (ctx.io) { try { ctx.io.disconnect(); } catch {} }
     if (ctx.cleanupExtra) { try { ctx.cleanupExtra(); } catch {} }
+    for (const o of ctx.retired.splice(0)) { try { disposeObject(o); } catch {} }
     try { disposeObject(ctx.scene); } catch {}
+    // Release the GL context now, not at the next GC: going map → realm →
+    // map makes a fresh context each time, and browsers cap live contexts.
+    try { ctx.renderer.forceContextLoss(); } catch {}
     try { ctx.renderer.dispose(); } catch {}
     const el = ctx.renderer.domElement;
     if (el && el.parentNode) el.parentNode.removeChild(el);
@@ -377,7 +425,9 @@ const ShellScenes = (() => {
         figure = buildAvatarFigure(charHexes, "idle");
         figure.position.set(-0.85, 0, 0.25);
         figure.rotation.y = 0.9;   // half-turned toward the fire, half toward you
-        figure.traverse(o => { if (o.isMesh) o.castShadow = true; });
+        // The rig flags its own casters (body, skull, hair, neck, palms) —
+        // the same set a trial uses. Flagging every mesh added ~40 shadow
+        // draws a frame for eyes, lashes, ear pieces and finger capsules.
         scene.add(figure);
       } catch { figure = null; }
     }
@@ -654,7 +704,7 @@ const ShellScenes = (() => {
 
     let figure = null;
     const placeFigure = (hexes) => {
-      if (figure) { scene.remove(figure); disposeObject(figure); figure = null; }
+      if (figure) { scene.remove(figure); ctx.retired.push(figure); figure = null; }
       if (!hexes) return;
       try {
         // ?gait=walk previews the traveler walking instead of standing — the
@@ -666,7 +716,7 @@ const ShellScenes = (() => {
         // The rig is built facing +Z and the camera sits at +Z, so facing the
         // player is rotation 0 — a PI turn here showed the traveler's back.
         figure.rotation.y = 0;
-        figure.traverse(o => { if (o.isMesh) o.castShadow = true; });
+        // (Shadow casters: the rig's own set — see the camp.)
         scene.add(figure);
       } catch { figure = null; }
     };
@@ -1283,7 +1333,7 @@ const ShellScenes = (() => {
         figure = buildAvatarFigure(opts.charHexes, "idle");
         figure.position.set(-0.62, 0, 0.85);
         figure.rotation.y = 0.5;
-        figure.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+        // (Shadow casters: the rig's own set — see the camp.)
         scene.add(figure);
         const figFill = new THREE.PointLight(0xffc890, 1.05, 6, 2);
         figFill.position.set(0.55, 1.55, 2.1);

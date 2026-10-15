@@ -162,6 +162,10 @@ function mountExposure(phobiaKey, levelIdx) {
     window.removeEventListener("keydown", goImmersive);
     document.removeEventListener("fullscreenchange", onFsChange);
     document.removeEventListener("webkitfullscreenchange", onFsChange);
+    // (These two held every finished trial's stage — and this whole scope —
+    // alive for the rest of the session.)
+    document.removeEventListener("fullscreenchange", refreshQuickBar);
+    document.removeEventListener("webkitfullscreenchange", refreshQuickBar);
     if (fsEl() === stage) {
       try {
         const exit = document.exitFullscreen || document.webkitExitFullscreen;
@@ -193,6 +197,8 @@ function mountExposure(phobiaKey, levelIdx) {
   heart.className = "heart";
   heart.style.setProperty("--bpm-dur", (60 / bpm) + "s");
   heart.style.setProperty("--heart-opacity", "0");
+  // No pulse on this rung (or switched off): no element animating unseen.
+  if (!heartIntensity) heart.hidden = true;
   stage.appendChild(heart);
 
   // Continuous shake only on the very top rung (unless reduce-motion is on).
@@ -298,8 +304,9 @@ function mountExposure(phobiaKey, levelIdx) {
     try {
       const note = document.createElement("div");
       note.className = "scene-fallback-note";
-      note.textContent = "3D scene couldn't load — showing the simple version. Reloading the page usually fixes it.";
+      note.textContent = t("stage.3dFail", "3D scene couldn't load — showing the simple version. Reloading the page usually fixes it.");
       stage.appendChild(note);
+      stage.querySelectorAll(".loading").forEach((n) => n.remove());
       setTimeout(() => { note.style.opacity = "0"; setTimeout(() => note.remove(), 600); }, 9000);
     } catch {}
   }
@@ -434,6 +441,16 @@ function mountExposure(phobiaKey, levelIdx) {
     // nagging. Event-driven cues and the grounding exit still speak.
     const rungReplay = (() => { try { return getProgress(phobiaKey).highestCompleted >= levelIdx; } catch { return false; } })();
     const lines = rungReplay ? [] : ((VOICE_LINES[phobiaKey] || [])[levelIdx] || []);
+    // Today's practice — the idea the story's next page will name — once,
+    // nine seconds in, after the intro hint has had its moment.
+    if (!rungReplay && !window.__demoMode && window.Story) {
+      const f = window.Story.focusFor(phobiaKey, levelIdx);
+      if (f && f.text) setTimeout(() => {
+        const st = document.getElementById("stage");
+        if (!st || !st.isConnected || !(window.PhobiaFX && window.PhobiaFX.contextPrompt)) return;
+        try { window.PhobiaFX.contextPrompt("🎯 " + f.text, 7000); } catch {}
+      }, 9000);
+    }
     // The rung's framing line nearly repeats the subtitle printed right above
     // the stage. When that header is actually on screen, the caption would be
     // the same sentence twice — skip it (fullscreen hides the header, so the
@@ -791,8 +808,14 @@ function mountExposure(phobiaKey, levelIdx) {
     if (inactivityInterval) { clearInterval(inactivityInterval); inactivityInterval = null; }
     INACTIVITY_EVENTS.forEach(ev => window.removeEventListener(ev, onAnyActivity));
   }
-  // Also stop audio when 3D scene tears down (page navigation)
-  window.addEventListener("beforeunload", stopAllAudio);
+  // Also stop audio when the page goes away. One listener for the page's
+  // life, calling whichever trial is current — this used to add a new one
+  // (a new closure) every time a trial opened.
+  window.__stopTrialAudio = stopAllAudio;
+  if (!window.__trialUnloadWired) {
+    window.__trialUnloadWired = true;
+    window.addEventListener("beforeunload", () => { try { window.__stopTrialAudio && window.__stopTrialAudio(); } catch {} });
+  }
 
   // SUDS slider live update. The readout starts blank ("—") and Save stays
   // disabled until the user actually moves the slider, so the rating is a
@@ -975,17 +998,18 @@ document.addEventListener("input", (e) => {
 function runBreathing() {
   const c = document.getElementById("breathCircle");
   if (!c) return;
+  // In 4, out 6 — the same rhythm as the in-scene breath and the Spark card
+  // (this page used to count 4-hold-4-hold, contradicting both).
   const phases = [
     { cls: "inhale", text: t("breath.in", "Inhale…"), ms: 4000 },
-    { cls: "",       text: t("breath.hold", "Hold"),    ms: 2000 },
-    { cls: "exhale", text: t("breath.out", "Exhale…"), ms: 4000 },
-    { cls: "",       text: t("breath.hold", "Hold"),    ms: 2000 }
+    { cls: "exhale", text: t("breath.out", "Exhale…"), ms: 6000 },
   ];
   let i = 0;
   function step() {
     if (!c.isConnected) return;
     c.classList.remove("inhale", "exhale");
     const phase = phases[i % phases.length];
+    c.style.transitionDuration = phase.ms + "ms";
     if (phase.cls) c.classList.add(phase.cls);
     c.textContent = phase.text;
     i++;

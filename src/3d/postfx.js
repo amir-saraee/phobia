@@ -8,8 +8,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 // it earlier in the chain would roughly double the perceived strength of the
 // black crush and vignette). CSS filters can approximate the desaturation but
 // cannot do black crush, edge-weighted chromatic pull, or a vignette that
-// throbs with the heartbeat — which is why scenes opt into this pass and the
-// CSS pipeline survives only as the low-tier fallback.
+// throbs with the heartbeat — which is why scenes opt into this pass; the CSS
+// pipeline survives only for scenes that don't (the place realms).
 // The grade itself, shared by the stand-alone pass and the fused output pass
 // below so the two can never drift apart. `col` is display-referred sRGB.
 const FEAR_GRADE_GLSL = `

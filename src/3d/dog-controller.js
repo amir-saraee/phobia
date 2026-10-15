@@ -582,7 +582,9 @@ class DogController {
 
   update(t, dt) {
     const p = this.parts;
-    if (!p.mixer) return;        // model still streaming in
+    // Model still streaming in — or loaded and waiting for its shaders
+    // (buildDog adds it to the room only once they're linked).
+    if (!p.mixer || !this.dog.userData.ready) return;
     // Zero-dt frames (rAF bursts after a tab switch, double-fired ticks)
     // must be skipped entirely: the mixer may not re-write the clip pose for
     // them, but the additive _bodyLife layer would still stack its deltas —
@@ -1644,6 +1646,9 @@ class DogController {
   }
 }
 
+// ---------- Dogs scene ----------
+const _coachSize = new THREE.Vector2();
+
 // A dog is not the same dog every day. Temperament modulates the CHARACTER of
 // the encounter — how soon it takes an interest, how much it putters, how it
 // paces its barking — without moving the difficulty out of the rung's band.
@@ -1660,4 +1665,4 @@ const DOG_TEMPERAMENTS = [
   { id: "keen",    label: "bright-eyed",interest: 1.10, restless: 0.92, barkMul: 0.86, approachMul: 0.92, settleMul: 1.08 },
 ];
 
-export { DogController, DOG_TEMPERAMENTS };
+export { DogController, _coachSize, DOG_TEMPERAMENTS };

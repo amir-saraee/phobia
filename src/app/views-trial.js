@@ -414,6 +414,18 @@ function viewLadder(phobiaKey) {
         </div>
       </header>
       ${guardian}
+      ${(() => {
+        // This realm's chapter of the story. A page waiting here — before the
+        // first trial, the resident's own account of how their fear began —
+        // is offered in full; otherwise one line says how far the chapter is.
+        const S = window.Story, chap = S && S.chapterOfRealm(phobiaKey);
+        if (!chap) return "";
+        const ids = chap.beats.map((b) => b.id);
+        const waiting = ids.find((id) => S.isUnlocked(id) && !S.isSeen(id));
+        if (waiting) return S.cardHTML(waiting, { kicker: `📖 ${escapeHtml(S.chapterLabel(chap))}` });
+        const read = ids.filter((id) => S.isSeen(id)).length;
+        return `<p class="realm-story-line">📖 ${escapeHtml(S.chapterLabel(chap))} · ${tf("rs.read", "{a} of {b} pages read", { a: read, b: ids.length })} · <button type="button" class="linklike" data-action="open-story">${t("rs.open", "open the story")}</button></p>`;
+      })()}
       ${pathStrip}
       ${ch ? `<div class="realm-bubble"><span class="realm-bubble-avatar" aria-hidden="true">${window.Character.avatarSVG(ch, 40)}</span><span>${tf("camp.sayLine", "“{line}”", { line: escapeHtml(cleared ? realm.clearedLine : realm.line) })}</span></div>` : ""}
       ${tabs}
@@ -627,7 +639,7 @@ function viewProfiles() {
           ${isActive ? `<span class="profile-badge">${t("pr.active", "active")}</span>` : ""}
         </div>
         <div class="profile-actions">
-          <button class="btn-ghost" data-action="edit-character" data-id="${c.id}" data-stop="1">${t("set.edit", "Edit")}</button>
+          <button class="btn-ghost" data-action="edit-character-id" data-id="${c.id}" data-stop="1">${t("set.edit", "Edit")}</button>
           ${all.length > 1 ? `<button class="btn-warn" data-action="delete-character" data-id="${c.id}" data-stop="1">${t("pr.delete", "Delete")}</button>` : ""}
         </div>
       </div>
@@ -802,6 +814,7 @@ function viewPredict(phobiaKey, levelIdx) {
         : `<h2 style="margin-top:10px">${t("predict.h2", "At the gate: name your fear's number")}</h2>
       <p>${t("predict.p", "A traveler's ritual that makes the trial count double: <em>predict</em> how loud the fear will be, then see how it actually goes. Most people over-predict — and catching your own shadow exaggerating is exactly the lesson the brain needs.")}</p>`}
       <p class="hint" style="margin-top:14px">${t("predict.youllBe", "You'll be:")} <strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>${lv.desc ? ` — ${escapeHtml(lvDesc(phobiaKey, levelIdx))}` : ""}</p>
+      ${window.Story ? window.Story.focusHTML(phobiaKey, levelIdx) : ""}
 ${hasCreatureKit(phobiaKey) ? `
       <div class="expect-block">
         <div class="expect-q">${expectQ(phobiaKey)}</div>
@@ -995,9 +1008,17 @@ function viewExposure(phobiaKey, levelIdx) {
         <div class="badge">${tf("exp.stepBadge", "Step {n} of {m}", { n: levelIdx + 1, m: p.levels.length })} · ${escapeHtml(t(`phobia.${phobiaKey}.label`, p.label))}</div>
         <h2>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</h2>
         <p>${escapeHtml(lvDesc(phobiaKey, levelIdx))}</p>
+        ${(() => {
+          // Today's practice stays in view above the stage for the whole
+          // trial (the one-off prompt in the scene can be overtaken by the
+          // scene's own lines). Not on replays, not in the demo.
+          const f = window.Story && !window.__demoMode && (getProgress(phobiaKey).highestCompleted ?? -1) < levelIdx
+            ? window.Story.focusFor(phobiaKey, levelIdx) : null;
+          return f ? `<p class="exp-focus">🎯 ${escapeHtml(f.text)}</p>` : "";
+        })()}
       </div>
       <div class="stage-wrap">
-        <div class="stage ${p.sceneClass}" id="stage" data-min-hold="${minHold}" data-level="${levelIdx}"></div>
+        <div class="stage ${p.sceneClass}" id="stage" data-min-hold="${minHold}" data-level="${levelIdx}"><div class="loading">${t("stage.loading", "Setting the scene…")}</div></div>
         ${cmdBar}
       </div>
       <div class="step-controls">
@@ -1087,7 +1108,7 @@ function viewBreathe(phobiaKey, levelIdx) {
   return `
     <div class="panel">
       <h2>${t("breathe.h2", "The campfire breath")}</h2>
-      <p>${t("breathe.p", "A traveler's tool: follow the circle. In for 4, hold, out for 4 — the long exhale presses your body's brake pedal. Stay as long as you like; the fire isn't going anywhere.")}</p>
+      <p>${t("breathe.p", "A traveler's tool: follow the circle. In for 4, out for 6 — the long exhale presses your body's brake pedal. Stay as long as you like; the fire isn't going anywhere.")}</p>
       <div class="breath-wrap">
         <div class="breath-circle" id="breathCircle">${t("breath.go", "Breathe")}</div>
       </div>
@@ -1485,6 +1506,16 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
         ${rankRow || rewardStrip}
         ${heroCta}
       </div>
+      ${(() => {
+        // The page this trial turned — right under the next step, since the
+        // next step plays it anyway if it's still unread.
+        const S = window.Story;
+        if (!S || early) return "";
+        const id = S.pendingAfter(phobiaKey, levelIdx);
+        const out = id ? [S.cardHTML(id)] : [];
+        if (S.isUnlocked("epilogue") && !S.isSeen("epilogue")) out.push(S.cardHTML("epilogue", { kicker: t("st.cardEpi", "🌅 Every lantern is lit — the last page of the story") }));
+        return out.join("");
+      })()}
       ${companionBlock}
       ${shadowStrip}
       ${realityBlock}

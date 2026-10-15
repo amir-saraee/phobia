@@ -42,16 +42,16 @@ let mountSeq = 0;
 // Synchronous when the engine and the realm's code are already here — the
 // usual case, since render() preloads a realm from its ladder and predict
 // pages. A cold first entry (a deep link straight into a trial) shows the same
-// "Loading scene…" hint, mounts when the code arrives, and returns a promise
-// that rejects if it can't, so the caller falls back to the 2D scene just as
-// it does for a synchronous throw.
+// loading hint, mounts when the code arrives, and returns a promise that
+// rejects if it can't, so the caller falls back to the 2D scene just as it
+// does for a synchronous throw.
 function mount(phobiaKey, container, level, levelIdx, opts) {
   if (!REALMS[phobiaKey]) throw new Error("Unknown phobia: " + phobiaKey);
   const seq = ++mountSeq;
   if (engine && engine.realmReady(phobiaKey)) return engine.mount(phobiaKey, container, level, levelIdx, opts);
   const loading = document.createElement("div");
   loading.className = "loading";
-  loading.textContent = "Loading scene…";
+  loading.textContent = window.t("stage.loading", "Setting the scene…");
   container.appendChild(loading);
   const stale = () => seq !== mountSeq || !container.isConnected;
   return preload(phobiaKey).then(() => {
@@ -69,16 +69,28 @@ function unmount() {
 }
 
 // ---------- Asset prefetch ----------
-// Fetches the exposure engine every trial runs on, then warms the GLTFLoader
-// cache for the dog models (vendored locally, ~3 MB each) so the dogs scene
-// mounts without a hitch the first time the user opens it. Code first: the
-// models wait until no realm's code is still on its way.
-function prefetch() {
-  const engineLoad = loadEngine().catch(() => { /* silent — the trial that needs it shows the fallback */ });
-  Promise.all([engineLoad, ...codeInFlight]).then(() => {
-    try { prefetchDogModels(); } catch { /* silent — not critical */ }
-    try { prefetchCreatureModels(); } catch { /* silent — not critical */ }
-  });
+// Fetches the exposure engine and the scene code of the realm the traveler is
+// headed for, then warms the GLTFLoader cache for that realm's models (the
+// dogs are ~6 MB of models and coats — no use to someone walking the Summit)
+// so its scene mounts without a hitch. Code first: the models wait until no
+// realm's code is still on its way. Only once the main thread is idle, and
+// nothing at all on a data-saver or 2G connection: the scene loads what it
+// needs when it opens.
+function prefetch(opts = {}) {
+  try {
+    const c = navigator.connection;
+    if (c && (c.saveData || /(^|-)2g$/.test(c.effectiveType || ""))) return;
+  } catch {}
+  const realm = opts.realm || "dogs";
+  const idle = window.requestIdleCallback || ((f) => setTimeout(f, 300));
+  idle(() => {
+    const code = REALMS[realm] ? preload(realm) : loadEngine();
+    const settled = code.catch(() => { /* silent — the trial that needs it shows the fallback */ });
+    Promise.all([settled, ...codeInFlight]).then(() => {
+      if (realm === "dogs") { try { prefetchDogModels(); } catch { /* not critical */ } }
+      if (realm === "spiders" || realm === "snakes") { try { prefetchCreatureModels(realm === "spiders" ? "spider" : "snake"); } catch { /* not critical */ } }
+    });
+  }, { timeout: 4000 });
 }
 
 // ---------- Expose to the classic script ----------

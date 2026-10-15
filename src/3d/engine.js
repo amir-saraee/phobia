@@ -21,8 +21,8 @@ import { VRButton } from "three/addons/webxr/VRButton.js";
 // XRControllerModelFactory provides the visible controller mesh that
 // matches the user's actual hardware (Quest Touch, Vision Pro, Index, etc.).
 import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
-import { _audVec1, _audVec2, _audVec3 } from "./assets.js";
-import { disposeObject, IS_TOUCH, IS_COARSE_POINTER, QUALITY, IS_LOW_POWER, makeRenderer, getRoomEnvMap } from "./renderer.js";
+import { _audVec1, _audVec2, _audVec3, compileAhead } from "./assets.js";
+import { disposeObject, IS_COARSE_POINTER, demoteAutoTier, QUALITY, IS_LOW_POWER, makeRenderer, getRoomEnvMap } from "./renderer.js";
 import { TouchJoystick, FPControls } from "./controls.js";
 import { Body } from "./body.js";
 import { Hands } from "./hands.js";
@@ -30,8 +30,8 @@ import { FearGradeShader, makeOutputGradePass } from "./postfx.js";
 import { sceneContext, CTX_WEATHER_AUDIBLE, CTX_DAYLIGHT, applyContextDaylight } from "./scene-context.js";
 import { PhobiaPhysics, PhobiaGrab } from "./physics.js";
 import { REALMS } from "./realms/index.js";
+import { active, setActive } from "./live.js";
 
-let active = null;
 // The context of the most recently mounted exposure. Outlives `active` on
 // purpose — the rating happens after the scene is gone.
 let lastSceneCtx = null;
@@ -138,7 +138,10 @@ function unmount() {
       try { window.removeEventListener(event, fn); } catch {}
     });
   }
-  active = null;
+  setActive(null);
+  // The debug hooks held the dead scene, renderer and composer reachable
+  // until the next trial mounted.
+  window.__active = null; window.__tickNow = null; window.__renderNow = null;
 }
 
 // Each realm's setup lives in its own module (realms/*.js) and is fetched the
@@ -160,11 +163,15 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   const setup = SETUPS[phobiaKey];
   if (!setup) throw new Error("Realm not loaded (loadRealm first): " + phobiaKey);
 
-  // Loading hint while textures/scene set up
-  const loading = document.createElement("div");
-  loading.className = "loading";
-  loading.textContent = "Loading scene…";
-  container.appendChild(loading);
+  // Loading hint while textures/scene set up (the trial view paints its own
+  // first; reuse it).
+  let loading = container.querySelector(".loading");
+  if (!loading) {
+    loading = document.createElement("div");
+    loading.className = "loading";
+    loading.textContent = window.t("stage.loading", "Setting the scene…");
+    container.appendChild(loading);
+  }
 
   const renderer = makeRenderer(container);
   container.appendChild(renderer.domElement);
@@ -369,6 +376,16 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   let _prSlowT = 0, _prFastT = 0;
   let _prFailed = Infinity, _prFailedAt = -1e9;
   const _prMax = renderer.getPixelRatio();
+  // Below DPR 1 is allowed only as a last resort on a device that is still
+  // struggling with every effect off — a softer image beats a slideshow.
+  const _prFloor = 0.75;
+  // Effects shed, in order, once the resolution floor is reached and frames
+  // are still slow: SSAO → bloom → shadows refreshed every 2nd then 3rd frame
+  // → sub-1 resolution. `_shed` counts the steps taken.
+  let _shed = 0, _shadowEvery = 1, _shadowFrame = 0, _shedNoticeShown = false;
+  // Point-light (cube) shadows on alternate frames — see the render step.
+  const _cubeShadows = [];
+  let _cubeScanT = 0, _cubeFrame = 0;
   // Performance overlay (settings → Performance overlay, or fobia.perfHud=1):
   // reads the same EMA the adaptive-resolution logic trusts, so what it shows
   // is what the engine acts on. Lazily created; pref polled at 2 Hz so the
@@ -577,7 +594,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // is the user's ethical exit at any moment. We bake it into every
       // approach scene's intro so users know it's there before they need it.
       const T = window.t, TF = window.tf;
-      const escNote = " &nbsp;·&nbsp; <span style=\"opacity:.75\">" + ((IS_TOUCH || IS_COARSE_POINTER)
+      const escNote = " &nbsp;·&nbsp; <span style=\"opacity:.75\">" + (IS_COARSE_POINTER
         ? T("intro.esc.m", "Tap <b>🛟</b> any time to ground yourself.")
         : T("intro.esc.d", "Press <b>Esc</b> any time to ground yourself.")) + "</span>";
       // Movement wording follows IS_COARSE_POINTER (where the on-screen joystick
@@ -780,8 +797,13 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       camera.far = result.cameraFar;
       camera.updateProjectionMatrix();
     }
-    // In-render fear grade (opt-in). Low tier keeps the CSS fallback path.
-    if (result && result.fearGradePass && QUALITY !== "low") {
+    // In-render fear grade (opt-in), on every tier. The low tier used to keep
+    // the CSS fallback — a full-stage multiply-blended gradient repainted as
+    // fear moved plus a filter over the whole canvas, two compositor passes a
+    // frame — on exactly the devices least able to pay for them. Without SMAA
+    // the grade is fused into the output pass (wireFinish), so here it costs
+    // a few ALU ops in a pass that runs anyway.
+    if (result && result.fearGradePass) {
       gradePass = new ShaderPass(FearGradeShader);
       composer.addPass(gradePass);
       outGradePass = makeOutputGradePass(gradePass);
@@ -927,14 +949,18 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     container.removeChild(loading);
     throw err;
   }
-  if (loading.parentNode) loading.parentNode.removeChild(loading);
-  // Trigger the canvas fade-in on the next frame so the CSS transition
-  // actually runs (browsers skip transitions on freshly added elements).
-  requestAnimationFrame(() => {
-    if (renderer && renderer.domElement) {
-      renderer.domElement.classList.add("scene-ready");
-    }
-  });
+  // Called once the programs are linked and the loop starts (see below): the
+  // loading card holds the stage until then.
+  function reveal() {
+    if (loading.parentNode) loading.parentNode.removeChild(loading);
+    // Trigger the canvas fade-in on the next frame so the CSS transition
+    // actually runs (browsers skip transitions on freshly added elements).
+    requestAnimationFrame(() => {
+      if (renderer && renderer.domElement) {
+        renderer.domElement.classList.add("scene-ready");
+      }
+    });
+  }
 
   // Interaction-zone hint banner — shows above the canvas when something is reachable
   const reachHint = document.createElement("div");
@@ -978,9 +1004,20 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   renderer.domElement.addEventListener("pointerdown", onPointerDownTrack);
   renderer.domElement.addEventListener("pointerup", onPointerUpInteract);
 
-  const t0 = performance.now();
+  let t0 = performance.now();
   let lastTime = t0;
   let raf;
+  // 120 and 144 Hz phones fire rAF twice as often as a 60 Hz screen, and every
+  // frame ran the whole simulation, the shadow pass and the post chain — twice
+  // the heat for motion nobody can see in a scene this slow. Frames that come
+  // sooner than ~10.5 ms after the last drawn one are skipped: 120 Hz draws at
+  // 60, 144 at 72, while 60 and 90 Hz screens draw every frame (halving 90 to
+  // 45 would read to the frame governor as a device that can't keep up). The
+  // XR compositor sets its own pace.
+  function pacedTick() {
+    if (!renderer.xr.isPresenting && performance.now() - lastTime < 10.5) return;
+    tick();
+  }
   function tick() {
     if (!container.isConnected || !active) return;
     const now = performance.now();
@@ -988,24 +1025,23 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     const rawDt = (now - lastTime) / 1000;
     const dt = Math.min(0.05, rawDt);
     lastTime = now;
-    // ---- Adaptive resolution ----
-    // A weak device otherwise stutters until the user finds the Graphics
-    // setting. Track a slow EMA of the real frame time; if we sit above
-    // ~35 ms (sub-30 fps) for a sustained stretch, step the pixel ratio
-    // down 0.25 (floor 1.0). One quiet notice, and never step back up
-    // mid-scene (oscillation looks worse than either state).
-    // Two-way controller aiming at 60 fps. The old one only ever stepped
-    // DOWN, and only past 35 ms (sub-30 fps) — so on most machines it never
-    // acted at all, and one stall (the first-frame shader compile, a model
-    // upload) could drop the resolution for the rest of the scene. Now:
-    //   - frames over 100 ms and the first two seconds are ignored (stalls,
-    //     not load);
-    //   - a full second above ~18.5 ms steps the ratio down by 1/8;
-    //   - five seconds below ~12.5 ms (a high-refresh display with headroom)
-    //     steps it back up, never past the tier's own cap, and never straight
-    //     back onto a ratio that just failed.
-    if (rawDt < 0.1 && t > 2.0) {
-      _frameEMA += (rawDt - _frameEMA) * 0.05;
+    // ---- Frame governor ----
+    // A weak device otherwise stutters until the player finds the Graphics
+    // setting. A slow EMA of the real frame time, aiming at 60 fps:
+    //   - the first two seconds are ignored (shader compiles, uploads);
+    //     frames up to 1.5 s count — a 1–3 fps slideshow is load, not a
+    //     stall, and the device that most needs help — but each sample is
+    //     clamped, so one hitch barely moves the average;
+    //   - a full second above ~18.5 ms steps the pixel ratio down by 1/8,
+    //     to 1.0;
+    //   - at 1.0 and still slow for two seconds, it sheds an effect instead
+    //     (shedEffect: SSAO → bloom → shadows every 2nd, 3rd frame → down to
+    //     0.75 resolution), and a device that needed two such steps on
+    //     "auto" starts its next scene a tier lower;
+    //   - five seconds below ~12.5 ms steps the ratio back up, never past the
+    //     tier's cap and never straight back onto a ratio that just failed.
+    if (rawDt < 1.5 && t > 2.0) {
+      _frameEMA += (Math.min(rawDt, 0.1) - _frameEMA) * 0.05;
       if (_frameEMA > 0.0185) { _prSlowT += rawDt; _prFastT = 0; }
       else if (_frameEMA < 0.0125) { _prFastT += rawDt; _prSlowT = 0; }
       else { _prSlowT = 0; _prFastT = 0; }
@@ -1014,6 +1050,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       if (_prSlowT > 1.0 && pr > 1.0 + 1e-3) {
         newPR = Math.max(1.0, pr - 0.125);
         _prFailed = pr; _prFailedAt = now;
+      } else if (_prSlowT > 2.0 && pr <= 1.0 + 1e-3 && shedEffect()) {
+        // Shed one effect, then give it two seconds to show.
+        _prSlowT = 0; _frameEMA = 0.0167;
       } else if (_prFastT > 5.0 && pr < _prMax - 1e-3
           && !(pr + 0.125 >= _prFailed - 1e-3 && now - _prFailedAt < 30000)) {
         newPR = Math.min(_prMax, pr + 0.125);
@@ -1026,7 +1065,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         _frameEMA = 0.0167;   // a fresh window for the new ratio
         if (newPR < pr && !_prNoticeShown && window.PhobiaFX && window.PhobiaFX.contextPrompt) {
           _prNoticeShown = true;
-          try { window.PhobiaFX.contextPrompt("Lowered render resolution to keep things smooth.", 3200); } catch {}
+          try { window.PhobiaFX.contextPrompt(window.t("perf.lowerRes", "Lowered render resolution to keep things smooth."), 3200); } catch {}
         }
       }
     }
@@ -1235,7 +1274,25 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // takes over again automatically. Wrapped in try/catch because WebGL
     // context-loss (tab backgrounded too long) can throw during render.
     try {
-      renderer.shadowMap.needsUpdate = true;   // once per frame (see makeRenderer)
+      // Once per frame (see makeRenderer) — or every 2nd/3rd frame once the
+      // governor has had to shed effects on a struggling device.
+      if (_shadowEvery <= 1 || (++_shadowFrame % _shadowEvery) === 0) renderer.shadowMap.needsUpdate = true;
+      // A point light's shadow is a cube: six renders of every caster around
+      // it (the cellar bulb alone was ~130 of the scene's ~170 draws). Those
+      // refresh on alternate frames — a 30 Hz shadow under a slow spider or a
+      // walking player is not something the eye separates from 60. Lights are
+      // re-collected every 2 s, since some scenes add theirs late.
+      if (t >= _cubeScanT) {
+        _cubeScanT = t + 2;
+        _cubeShadows.length = 0;
+        scene.traverse((o) => {
+          if (o.isPointLight && o.castShadow && o.shadow) {
+            if (o.shadow.autoUpdate) { o.shadow.autoUpdate = false; o.shadow.needsUpdate = true; }
+            _cubeShadows.push(o);
+          }
+        });
+      }
+      if ((++_cubeFrame & 1) === 0) for (const l of _cubeShadows) l.shadow.needsUpdate = true;
       if (renderer.xr.isPresenting) {
         renderer.render(scene, camera);
       } else {
@@ -1251,6 +1308,29 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // dedupe), and each needs its condition to HOLD for a beat rather than clip a
   // single frame, so a creature that jitters across a threshold stays quiet.
   const _beat = { threatT: 0, calmT: 0, wasThreat: false, contactT: 0, nearT: 0, prevFear: 0, spikeT: 0, creature: null };
+  // One step down the effects ladder. Returns false when nothing is left.
+  function shedEffect() {
+    let did = false;
+    if (ssaoPass && ssaoPass.enabled) { ssaoPass.enabled = false; did = true; }
+    else if (bloomPass && bloomPass.enabled && composer.passes.includes(bloomPass)) { bloomPass.enabled = false; did = true; }
+    else if (renderer.shadowMap.enabled && _shadowEvery < 3) { _shadowEvery++; did = true; }
+    else if (renderer.getPixelRatio() > _prFloor + 1e-3) {
+      renderer.setPixelRatio(Math.max(_prFloor, renderer.getPixelRatio() - 0.125));
+      sizePost(container.clientWidth, container.clientHeight);
+      _prFailed = Infinity;   // allow the climb back once things are fast
+      did = true;
+    }
+    if (!did) return false;
+    _shed++;
+    // A device that needed this much help on "auto" starts the next scene a
+    // tier lower instead of stuttering through its first seconds again.
+    if (_shed >= 2) demoteAutoTier(QUALITY);
+    if (!_shedNoticeShown && window.PhobiaFX && window.PhobiaFX.contextPrompt) {
+      _shedNoticeShown = true;
+      try { window.PhobiaFX.contextPrompt(window.t("perf.shed", "Simplified a few effects to keep things smooth."), 3200); } catch {}
+    }
+    return true;
+  }
   function detectEventBeats(t, dt) {
     const N = window.PhobiaNarrator;
     if (!N || !N.event || !phobiaKey) return;
@@ -1298,8 +1378,12 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // the group carrying userData.parts.mixer. Cached, and re-looked-up only
     // while nothing has been found (creature GLTFs load asynchronously).
     if (controls) {
-      if (!_beat.creature || !_beat.creature.parent) {
+      // Heights, the dark and tight spaces have no creature at all, and this
+      // used to walk the whole scene graph every frame looking for one. Look
+      // twice a second until something turns up (GLTFs stream in), then keep it.
+      if ((!_beat.creature || !_beat.creature.parent) && t >= (_beat.nextSearchT || 0)) {
         _beat.creature = null;
+        _beat.nextSearchT = t + 0.5;
         scene.traverse((o) => {
           if (!_beat.creature && o.userData && o.userData.parts && o.userData.parts.mixer) _beat.creature = o;
         });
@@ -1311,7 +1395,8 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         // It must have closed the gap ITSELF: walking up to it and stopping
         // used to be announced as "it's coming to you".
         const cMoved = _beat.cPrev ? Math.hypot(c.position.x - _beat.cPrev.x, c.position.z - _beat.cPrev.z) / d : 0;
-        _beat.cPrev = { x: c.position.x, z: c.position.z };
+        if (!_beat.cPrev) _beat.cPrev = { x: 0, z: 0 };
+        _beat.cPrev.x = c.position.x; _beat.cPrev.z = c.position.z;
         _beat.cTowardT = (cMoved > 0.25 && dist < (_beat.cPrevDist ?? dist) - 1e-4) ? 1.2 : Math.max(0, (_beat.cTowardT || 0) - d);
         _beat.cPrevDist = dist;
         _beat.nearT = (dist < 2.2 && still && _beat.cTowardT > 0) ? _beat.nearT + d : Math.max(0, _beat.nearT - d);
@@ -1504,18 +1589,23 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         fxStyle(fearVignette, "--fv-opacity", "0");
       } else {
         // (This subscriber runs every frame. Values are rounded and written
-        // only when they change — three style writes a frame otherwise.)
-        fxStyle(fearVignette, "--fv-opacity", (fear01 * 0.9 + fxBeatBoost).toFixed(3));
+        // only when they change — three style writes a frame otherwise. The
+        // gradient stop is whole percent: each new value repaints the full-
+        // stage gradient, and a tenth of a percent changed nearly every frame.)
+        fxStyle(fearVignette, "--fv-opacity", (fear01 * 0.9 + fxBeatBoost).toFixed(2));
         // The clear ellipse SHRINKS as fear rises — peripheral vision narrows
-        fxStyle(fearVignette, "--fv-clear", `${Math.max(15, 60 - fear01 * 45).toFixed(1)}%`);
+        fxStyle(fearVignette, "--fv-clear", `${Math.round(Math.max(15, 60 - fear01 * 45))}%`);
         // Canvas-level filter: desaturate + slight red bias as fear rises.
         // Removed outright when there is nothing to show: even an identity
         // filter makes the compositor filter the whole canvas every frame.
         if (renderer && renderer.domElement) {
-          const sat = Math.max(0, 1.0 - fear01 * 0.20);
-          const hue = -fear01 * 6;          // small shift toward red
+          // In 2 % steps of fear, so the filter string (and the compositor's
+          // filter setup) changes a few times a second, not every frame.
+          const fq = Math.round(fear01 * 50) / 50;
+          const sat = Math.max(0, 1.0 - fq * 0.20);
+          const hue = -fq * 6;              // small shift toward red
           const f = fear01 < 0.01 ? ""
-            : `saturate(${(sat * 100).toFixed(1)}%) hue-rotate(${hue.toFixed(2)}deg) brightness(${(1 - fear01 * 0.10).toFixed(3)})`;
+            : `saturate(${(sat * 100).toFixed(1)}%) hue-rotate(${hue.toFixed(2)}deg) brightness(${(1 - fq * 0.10).toFixed(3)})`;
           if (renderer.domElement._fxFilter !== f) {
             renderer.domElement._fxFilter = f;
             renderer.domElement.style.filter = f;
@@ -1526,7 +1616,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       fxStyle(fearMeter, "opacity", value > 5 ? "1" : "0");
       if (fearMeterFill) fxStyle(fearMeterFill, "width", `${Math.round(value)}%`);
       // Camera shake at high fear (over 80) — adds the visceral panic feel
-      if (value > 80 && camera && !ctx.grounding) {
+      if (value > 80 && camera && !ctx.grounding && !(controls && controls._reduceMotion)) {
         const k = (value - 80) / 20;
         camera.position.x += (Math.random() - 0.5) * 0.015 * k;
         camera.position.y += (Math.random() - 0.5) * 0.012 * k;
@@ -1584,7 +1674,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // "four things you can hear" needs the ambience present but gentle.
     try { if (window.PhobiaAudio) window.PhobiaAudio.duck(true); } catch {}
     groundingOverlay.classList.add("active");
-    if (!IS_TOUCH) groundingExitHint.classList.add("visible");
+    if (!IS_COARSE_POINTER) groundingExitHint.classList.add("visible");
     groundingStep = 0;
     function nextStep() {
       if (!groundingActive || groundingStep >= groundingScript.length) {
@@ -1817,7 +1907,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // don't instantiate it.
   let therapist = null;
 
-  active = {
+  setActive({
     renderer, scene, camera, composer, onResize, resizeObs, raf: 0,
     overlays: [loading, vignette, badge, hint, reachHint, cameraToggle, ctxPrompt,
                fearVignette, fearMeter, groundingOverlay, groundingText, groundingExitHint,
@@ -1838,7 +1928,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // global grounding mode on unmount, or it speaks over — and toggles
     // grounding on — the NEXT scene.
     groundingCleanup: endGrounding,
-  };
+  });
   // DEBUG (preview/dev only): force-render hooks so screenshots show ground
   // truth even when the rAF-driven loop is throttled (backgrounded tab). These
   // are inert in normal use — nothing calls them unless a tool/devtools does.
@@ -1875,7 +1965,36 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // (XR sessions require this method instead of requestAnimationFrame).
   // Three.js routes the loop through requestAnimationFrame in non-XR mode
   // and through the XR compositor's frame timing in immersive mode.
-  renderer.setAnimationLoop(tick);
+  //
+  // Shaders first, then the first frame. Every program used to be compiled and
+  // linked synchronously inside the first render: 40–50 of them in a trial,
+  // a main thread frozen for whole seconds on a phone just as the scene
+  // appears (5 s under software GL in the dog room). compileAsync hands them
+  // all to the driver at once (KHR_parallel_shader_compile) and resolves when
+  // they are linked; the loading card holds the stage meanwhile. The composer
+  // renders the scene into its read buffer, which selects other program
+  // variants (no tone mapping, linear output) than the screen would — so that
+  // target is bound while the programs are requested.
+  const mountedActive = active;
+  let looping = false;
+  const startLoop = () => {
+    if (looping || active !== mountedActive || !container.isConnected) return;
+    looping = true;
+    t0 = lastTime = performance.now();
+    reveal();
+    renderer.setAnimationLoop(pacedTick);
+  };
+  try {
+    renderer.setRenderTarget(composer.readBuffer);
+    const ready = compileAhead(renderer, scene, camera);
+    renderer.setRenderTarget(null);
+    ready.then(startLoop, startLoop);
+    // A driver that never reports completion must not hold the scene back.
+    setTimeout(startLoop, 6000);
+  } catch (e) {
+    try { renderer.setRenderTarget(null); } catch {}
+    startLoop();
+  }
 
   // ----- WebGL context-loss handler -----
   // When the browser drops the WebGL context (tab backgrounded too long,
@@ -1896,7 +2015,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         // Force a resize so the renderer + composer rebuild their targets
         if (typeof onResize === "function") onResize();
       } catch {}
-      try { renderer.setAnimationLoop(tick); } catch {}
+      try { renderer.setAnimationLoop(pacedTick); } catch {}
     }, false);
   }
 
@@ -2005,4 +2124,4 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   }
 }
 
-export { active, lastSceneCtx, unmount, loadRealm, realmReady, mount };
+export { lastSceneCtx, unmount, loadRealm, realmReady, mount };

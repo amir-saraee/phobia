@@ -34,13 +34,18 @@ const IS_COARSE_POINTER = ((typeof window !== "undefined") && window.matchMedia
   // localStorage.setItem("fobia.forceTouch", "1") + reload.
   || (() => { try { return localStorage.getItem("fobia.forceTouch") === "1"; } catch { return false; } })();
 const IS_MOBILE = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent || "");
-// Only genuinely weak hardware auto-drops to "low" (few cores / little RAM;
-// deviceMemory is absent on iOS, but every iPhone that runs this clears the
-// core check). A modern phone GPU handles the medium tier comfortably, and
-// the adaptive-resolution fallback in the render loop catches the stragglers
-// — so "is a phone" alone no longer forces the flat, shadowless low tier.
-const WEAK_DEVICE = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4)
-  || (navigator.deviceMemory && navigator.deviceMemory <= 3);
+// Only genuinely weak hardware auto-drops to "low": 2 threads, 2 GB, or a
+// 4-thread phone / low-memory machine (deviceMemory is absent on iOS, but
+// every iPhone that runs this clears the core check). A modern phone GPU
+// handles medium comfortably — "is a phone" alone doesn't force the flat,
+// shadowless tier. A 4-thread laptop with memory to spare used to land on
+// low too; it starts on medium now, and the frame governor (plus the
+// remembered demotion in resolveQuality) catches any that can't hold it.
+const WEAK_DEVICE = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2)
+  || (navigator.deviceMemory && navigator.deviceMemory <= 2)
+  || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4
+      && (IS_MOBILE || (navigator.deviceMemory && navigator.deviceMemory <= 4)));
+const MODEST_DEVICE = !!(navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4);
 
 // Read the user's chosen graphics tier (settings drawer) and resolve to a tier.
 // We re-evaluate on every mount, so the user's choice takes effect on the next
@@ -48,11 +53,38 @@ const WEAK_DEVICE = (navigator.hardwareConcurrency && navigator.hardwareConcurre
 function resolveQuality() {
   let pref = "auto";
   try { pref = localStorage.getItem("fobia.quality") || "auto"; } catch {}
-  if (pref === "auto") return WEAK_DEVICE ? "low" : IS_MOBILE ? "medium" : "high";
+  if (pref === "auto") {
+    const base = WEAK_DEVICE ? "low" : (IS_MOBILE || MODEST_DEVICE) ? "medium" : "high";
+    // A scene that had to shed effects on "auto" remembers it for two weeks
+    // (or until the player picks a Graphics setting themselves).
+    let demoted = null;
+    try {
+      const d = JSON.parse(localStorage.getItem("fobia.autoTier") || "null");
+      if (d && d.tier && Date.now() - d.at < 14 * 864e5) demoted = d.tier;
+    } catch {}
+    const rank = { low: 0, medium: 1, high: 2 };
+    return demoted && rank[demoted] < rank[base] ? demoted : base;
+  }
   return pref;
+}
+// Called by the frame governor: on "auto", start the next scene one tier down.
+function demoteAutoTier(current) {
+  try {
+    if ((localStorage.getItem("fobia.quality") || "auto") !== "auto") return;
+    const next = current === "high" ? "medium" : "low";
+    if (next === current) return;
+    localStorage.setItem("fobia.autoTier", JSON.stringify({ tier: next, at: Date.now() }));
+  } catch {}
 }
 let QUALITY = resolveQuality();
 let IS_LOW_POWER = QUALITY === "low";
+// CSS backdrop blurs are dropped below the high tier (html.fx-lite — see the
+// end of the main style block). Re-synced whenever a renderer is made, so a
+// changed Graphics setting reaches the page's chrome with the next scene.
+function syncFxLite(tier) {
+  try { document.documentElement.classList.toggle("fx-lite", (tier || resolveQuality()) !== "high"); } catch {}
+}
+syncFxLite(QUALITY);
 // The one scene-facing tier accessor. QUALITY is re-resolved inside
 // makeRenderer, which mount() calls before any scene's setup() runs, so scene
 // code may branch on this safely without re-reading localStorage.
@@ -62,12 +94,15 @@ function makeRenderer(container) {
   // Re-evaluate every mount so settings changes apply immediately
   QUALITY = resolveQuality();
   IS_LOW_POWER = QUALITY === "low";
+  syncFxLite(QUALITY);
   const isMedium = QUALITY === "medium";
   const renderer = new THREE.WebGLRenderer({
-    // We do anti-aliasing in a post-process SMAA pass on high quality, so the
-    // built-in MSAA is only requested on low/medium quality where SMAA is
-    // disabled.
-    antialias: !IS_LOW_POWER && isMedium,
+    // No canvas MSAA on any tier. The scene is drawn into the EffectComposer's
+    // own (single-sampled) target, so a multisampled canvas only ever received
+    // the final full-screen copy: medium paid for 4× colour + depth at device
+    // resolution (~24 MB on a DPR-1.5 phone) and got no anti-aliasing for it.
+    // High anti-aliases with SMAA in the post chain.
+    antialias: false,
     powerPreference: IS_LOW_POWER ? "low-power" : "high-performance",
     stencil: false,                    // we don't use stencil; saves bandwidth
   });
@@ -159,4 +194,4 @@ function loadMeadowHDR() {
   return _meadowHDR;
 }
 
-export { disposeObject, IS_TOUCH, IS_COARSE_POINTER, QUALITY, IS_LOW_POWER, sceneQuality, makeRenderer, getRoomEnvMap, loadMeadowHDR };
+export { disposeObject, IS_COARSE_POINTER, resolveQuality, demoteAutoTier, QUALITY, IS_LOW_POWER, syncFxLite, sceneQuality, makeRenderer, getRoomEnvMap, loadMeadowHDR };

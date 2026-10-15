@@ -4,11 +4,12 @@ import * as THREE from "three";
 import { CREATURE_MODELS, buildCreature } from "../assets.js";
 import { IS_COARSE_POINTER, IS_LOW_POWER, sceneQuality } from "../renderer.js";
 import { angleGap } from "../human-rig.js";
-import { active } from "../engine.js";
 import { sceneContext } from "../scene-context.js";
 import { makeConcreteMaps, makeDampPlasterMaps, makeWebTexture } from "../textures.js";
 import { makeFurMaps, ensureBoxUV, coatFor, _hexMix, SPIDER_COATS } from "../creature-kit.js";
+import { _coachSize } from "../dog-controller.js";
 import { makeCreatureCoach } from "../coach.js";
+import { active } from "../live.js";
 
 // Live threat handoff: while a creature is loaded (spider coil/pounce, snake
 // defensive display) its scene publishes the head position here each frame so
@@ -1570,8 +1571,10 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           _spV.set(spider.position.x, spider.position.y + sh * 0.5, spider.position.z).project(camera);
           spOnScreen = !spiderReleased && _spV.z < 1 && Math.abs(_spV.x) < 0.92 && Math.abs(_spV.y) < 0.92;
           _spV.set(spider.position.x, spider.position.y + sh * 1.3, spider.position.z).project(camera);
-          const cvs = (typeof active !== "undefined" && active && active.renderer) ? active.renderer.domElement : null;
-          const sw = (cvs && cvs.clientWidth) || 0, shh = (cvs && cvs.clientHeight) || 0;
+          // The renderer's CSS size, not the canvas's clientWidth: reading
+          // layout here forced a synchronous reflow every frame.
+          if (active && active.renderer) active.renderer.getSize(_coachSize); else _coachSize.set(0, 0);
+          const sw = _coachSize.x, shh = _coachSize.y;
           const ax = _spV.z < 1 ? (_spV.x + 1) / 2 * sw : null;
           const ay = _spV.z < 1 ? (1 - _spV.y) / 2 * shh : null;
           // Your gaze on it (yaw toward, pitch toward, like the fear block).
