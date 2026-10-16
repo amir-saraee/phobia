@@ -7,11 +7,13 @@
 //      precache exists (one 404 fails the whole install, so no offline play),
 //      and index.html's modulepreload links match src/3d/main.js's static
 //      import graph (a drift only costs load time, but it's free to catch)
-//   1. first run: the Lanternwalk title (no notice over it) → Begin the walk
-//      → consent → the prologue → creator → the chapter's opening page →
-//      trial 1's gate
-//   2. trial 1: walk to the dog, stay until the alarm settles, rate (tap the
-//      two readings), complete — with its trial stars logged and shown
+//   1. first run: the Lanternwalk title asks which fear (six tiles, no notice
+//      over them) → tap Dogs → consent → straight to trial 1's gate, which
+//      tells the chapter's opening as one card (no slideshow, no creator)
+//   2. trial 1: no orientation card and no blinking chrome; walk to the dog,
+//      stay until the alarm settles (never two messages on screen at once),
+//      rate (tap the two readings), complete — with its trial stars logged and
+//      shown, and the creator offered for the traveler made on the way in
 //   3. the hardest dog trial mounts and runs; a spider and a snake trial run
 //      the same coach and complete; so do a heights, a dark and a tight-space
 //      trial (walk in — and close the door behind you)
@@ -20,11 +22,12 @@
 //   5. Persian: the realm page renders RTL with translated trial names, and a
 //      scene opens with a translated, right-to-left countdown (when turned
 //      on) + intro hint
-//   6. phone viewport: landing + creator render with no sideways scroll, in
-//      English and in Persian (right-to-left); a real tap works the MRI's
-//      controls and never sends the scene fullscreen
+//   6. phone viewport: landing + gate + creator render with no sideways
+//      scroll, in English and in Persian (right-to-left); a real tap works
+//      the MRI's controls and never sends the scene fullscreen
 //   7. the story: the book renders every chapter; a returning traveler gets
-//      "Continue the story" and Mira's note; continuing plays the waiting page
+//      "Continue the story" and Mira's note; continuing lands on the next
+//      trial's gate with the waiting page offered on it
 // Without a GPU (software WebGL) the high tier crawls at a few fps — too slow
 // to walk anywhere in time — so off macOS the run uses the low graphics tier.
 // Override with SMOKE_QUALITY=auto|low|medium|high.
@@ -117,33 +120,40 @@ async function storyPage(page, beat, ms = 3000) {
 async function firstRunAndTrial(browser, base) {
   const { ctx, page } = await newPage(browser);
   await page.goto(base + "/", { waitUntil: "load" });
-  check("landing: the Lanternwalk title and its button, nothing over them", await waitFor(page, () =>
+  check("landing: the Lanternwalk title asks which fear, nothing over it", await waitFor(page, () =>
     /Lanternwalk/.test((document.querySelector(".lw-mark") || {}).textContent || "") && !!document.querySelector(".valley-hero")
-    && [...document.querySelectorAll("button")].some((b) => /begin the walk/i.test(b.textContent)) && !document.querySelector(".consent-overlay"), 8000));
-  await click(page, "Begin the walk");
+    && document.querySelectorAll(".fear-tile[data-action='quick-start']").length === 6 && !document.querySelector(".consent-overlay"), 8000));
+  await click(page, ".fear-tile[data-phobia='dogs']");
   check("landing: the first tap asks for consent", await waitFor(page, () => !!document.querySelector(".consent-overlay"), 3000));
   await click(page, "I understand");
-  check("first run: the prologue plays", await storyPage(page, "prologue"));
-  check("creator: renders with a 3D stage", await waitFor(page, () => location.hash === "#/traveler" && !!document.querySelector("#travelerStage canvas"), 8000));
-  await shot(page, "01-creator");
-  await page.evaluate(() => { const i = document.getElementById("twName"); i.value = "Smoke"; i.dispatchEvent(new Event("input", { bubbles: true })); });
-  await click(page, "Walk in");
-  check("first run: the chapter's opening page plays", await storyPage(page, "dogs.open"));
-  await sleep(600);
-  check("first run: creator goes straight to trial 1's gate", (await hash(page)) === "#/dogs/predict/0", await hash(page));
+  check("first run: one tap lands on trial 1's gate — no slideshow, no creator", await waitFor(page, () => location.hash === "#/dogs/predict/0", 4000)
+    && !(await page.evaluate(() => !!document.querySelector(".story-ov"))), await hash(page));
+  check("gate: the chapter's opening told as one card", await page.evaluate(() =>
+    !!document.querySelector('.gate-story [data-action="story-play"][data-beat="dogs.open"]') && !!document.querySelector(".gate-enter")));
+  check("first run: a traveler was made for the chosen fear", await page.evaluate(() => { const c = window.Character.loadCharacter(); return !!c && c.primaryPhobia === "dogs"; }));
+  await shot(page, "01-gate");
   await page.evaluate(() => { const c = document.querySelector('[data-action="pick-fear"][data-fear="bite"]') || document.querySelector('[data-action="pick-fear"]'); c && c.click(); });
   await click(page, "Enter the trial");
   check("trial 1: scene mounts", await waitFor(page, () => !!(window.__active && window.__active.scene && window.__dogCoach), 15000));
-  // The tour opens on a timer from the mount; wait for it rather than for a
-  // fixed time, which only held while mounting itself took a few seconds.
-  await waitFor(page, () => !!document.querySelector(".tour-card"), 9000);
-  check("trial 1: one orientation card, no countdown, nothing blocking the scene", await page.evaluate(() =>
-    document.querySelectorAll(".tour-card").length === 1 && !!document.querySelector(".tour-overlay.soft")
-    && getComputedStyle(document.querySelector(".tour-overlay")).pointerEvents === "none" && !document.querySelector(".countdown")));
-  await sleep(300);
-  for (let k = 0; k < 4; k++) { if (!(await click(page, ".tour-actions button:last-child"))) break; await sleep(300); }
-  const tourCards = await page.evaluate(() => document.querySelectorAll(".tour-card").length);
-  check("trial 1: tour dismissed", tourCards === 0);
+  check("gate: walking in turns the chapter's opening", await page.evaluate(() => window.Story.isSeen("dogs.open")));
+  // Quiet trial: the intro hint is the one orientation line — no tour card,
+  // no countdown, no Show/Hide toggle (the hotbar is simply open), and the
+  // chrome never auto-hides. A watcher counts how many transient messages
+  // are ever on screen at once for the rest of the trial.
+  await sleep(2500);
+  check("trial 1: no orientation card, no countdown, hotbar open without a toggle", await page.evaluate(() =>
+    !document.querySelector(".tour-card") && !document.querySelector(".countdown") && !document.querySelector(".cmd-toggle")
+    && !!document.querySelector(".scene-cmd-bar:not(.collapsed)") && !!document.querySelector(".controls-hint")));
+  await page.evaluate(() => {
+    window.__maxMsgs = 0;
+    const vis = (e) => { if (!e) return false; const cs = getComputedStyle(e); return cs.display !== "none" && cs.visibility !== "hidden" && +cs.opacity > 0.1; };
+    window.__msgWatch = setInterval(() => {
+      const st = document.getElementById("stage"); if (!st) return;
+      const on = [".captions.show", ".ctx-prompt.visible", ".dc-callout.show", ".dc-read.show", ".reach-hint"].filter((q) => vis(st.querySelector(q)) && (q !== ".reach-hint" || (st.querySelector(q).textContent || "").trim()));
+      if (on.length > window.__maxMsgs) { window.__maxMsgs = on.length; window.__overlap = on.join(" + "); }
+      if (st.classList.contains("chrome-hidden")) window.__chromeHid = true;
+    }, 120);
+  });
   await shot(page, "02-trial-start");
   // Walk to the dog like a player: face it, hold W until ~2.4 m.
   await page.keyboard.down("KeyW");
@@ -185,6 +195,8 @@ async function firstRunAndTrial(browser, base) {
     return false;
   })();
   check("trial 1: staying completes it (alarm settles)", met, met ? "" : diag);
+  const quiet = await page.evaluate(() => { clearInterval(window.__msgWatch); return { max: window.__maxMsgs, hid: !!window.__chromeHid, at: window.__overlap }; });
+  check("trial 1: one message at a time, chrome never blinks", quiet.max <= 1 && !quiet.hid, JSON.stringify(quiet));
   await shot(page, "03-trial-met");
   await click(page, "#continueBtn");
   check("rate page renders", await waitFor(page, () => /#\/dogs\/rate\/0/.test(location.hash) && !!document.getElementById("sudsPeak"), 6000), await hash(page));
@@ -202,7 +214,8 @@ async function firstRunAndTrial(browser, base) {
     await sleep(1200);
   }
   check("complete page renders", /#\/dogs\/done\/0/.test(await hash(page)), await hash(page));
-  check("complete: primer + Mirror offered after trial 1", await page.evaluate(() => !!document.querySelector(".first-next [data-action='open-primer']")));
+  check("complete: primer, Mirror and the creator offered after trial 1", await page.evaluate(() =>
+    !!document.querySelector(".first-next [data-action='open-primer']") && !!document.querySelector(".first-next [data-action='edit-character']")));
   const starInfo = await page.evaluate(() => {
     const l = state.log[state.log.length - 1];
     return { logged: l && l.stars, goals: l && Array.isArray(l.goals) ? l.goals.length : 0, lit: document.querySelectorAll(".vc-stars i.on").length, cta: !!document.querySelector(".vc-cta [data-action='next-level']") };
@@ -375,8 +388,14 @@ async function places(browser, base) {
 async function phone(browser, base) {
   const { ctx, page } = await newPage(browser, { mobile: true });
   await page.goto(base + "/", { waitUntil: "load" }); await sleep(1500);
-  await click(page, "Begin the walk"); await sleep(400);
-  await click(page, "I understand"); await storyPage(page); await sleep(2500);
+  const land = await page.evaluate(() => { const ts = [...document.querySelectorAll(".fear-tile")]; return { n: ts.length, onScreen: ts.every((t) => { const r = t.getBoundingClientRect(); return r.bottom <= innerHeight && r.top >= 0; }), sideways: document.documentElement.scrollWidth - window.innerWidth }; });
+  check("phone: all six fears on the first screen, no sideways scroll", land.n === 6 && land.onScreen && land.sideways <= 1, JSON.stringify(land));
+  await click(page, ".fear-tile[data-phobia='spiders']"); await sleep(400);
+  await click(page, "I understand"); await sleep(1500);
+  const g = await page.evaluate(() => { const b = document.querySelector(".gate-enter"); const r = b && b.getBoundingClientRect(); return { route: location.hash, enterVisible: !!r && r.bottom <= innerHeight + 1 && r.top >= 0, sideways: document.documentElement.scrollWidth - window.innerWidth }; });
+  check("phone: a fear tile lands on its gate, Enter in reach, no sideways scroll", g.route === "#/spiders/predict/0" && g.enterVisible && g.sideways <= 1, JSON.stringify(g));
+  await shot(page, "07-phone-gate");
+  await page.goto(base + "/?r=2#/traveler", { waitUntil: "load" }); await sleep(2500);
   const m = await page.evaluate(() => ({ route: location.hash, sideways: document.documentElement.scrollWidth - window.innerWidth, stage: !!document.querySelector("#travelerStage canvas") }));
   check("phone: creator renders, no sideways scroll", m.route === "#/traveler" && m.stage && m.sideways <= 1, JSON.stringify(m));
   await shot(page, "07-phone-creator");
@@ -459,9 +478,12 @@ async function story(browser, base) {
   check("story: returning traveler — continue + Mira's note", home.cont && home.note && /Sahar/.test(home.kicker || ""), JSON.stringify(home));
   await shot(page, "08-returning");
   await click(page, '[data-action="story-continue"]');
-  check("story: continuing plays the page trial 2 turned", await storyPage(page, "heights.a1"));
-  check("story: then the next trial's gate", await waitFor(page, () => location.hash === "#/heights/predict/2", 4000), await hash(page));
-  check("story: today's practice on the gate", await page.evaluate(() => !!document.querySelector(".st-focus")));
+  check("story: continuing lands on the next trial's gate (no slideshow first)", await waitFor(page, () => location.hash === "#/heights/predict/2", 4000)
+    && !(await page.evaluate(() => !!document.querySelector(".story-ov"))), await hash(page));
+  check("story: the page trial 2 turned is offered on the gate", await page.evaluate(() => !!document.querySelector('.gate-panel .story-card[data-beat="heights.a1"]')));
+  check("story: today's practice on the gate", await page.evaluate(() => !!document.querySelector(".gate-focus")));
+  await click(page, '.gate-panel .story-card [data-action="story-play"]');
+  check("story: the waiting page plays from the gate", await storyPage(page, "heights.a1"));
   check("story: no page errors", page.errors.length === 0, page.errors.slice(0, 5).join(" | "));
   await ctx.close();
 }

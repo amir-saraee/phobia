@@ -633,7 +633,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
             || null;
           const inten = (lv && lv.intensity) || "";
           if (inten === "barking") {
-            return T("intro.dogs.bark", "The dog is barking across the room. Soften your gaze, and step back any time — you control the distance.") + escNote;
+            // (It used to say "step back any time" — the opposite of what this
+            // rung teaches and of its own goal: stay, and the noise runs out.)
+            return T("intro.dogs.bark2", "A big, loud, excited dog — not an angry one. Stay where you are and let the noise run out of steam.") + escNote;
           }
           if (inten === "alert") {
             return TF("intro.dogs.alert", "An alert dog is watching. Walk closer with {move} when you're ready — at your own pace.", { move }) + escNote;
@@ -719,14 +721,13 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // stays available and the two compose through the same clamps.
       if (IS_COARSE_POINTER && controls && window.DeviceOrientationEvent) {
         const gyroBtn = document.createElement("button");
-        gyroBtn.className = "ml-toggle gyro-btn";
-        gyroBtn.textContent = window.t("stage.gyro", "📱 Gyro look");
+        gyroBtn.className = "stage-quick-btn gyro-btn";
+        // An icon beside the sound button, not a labelled pill: the pill sat
+        // over the coach card on phones.
+        gyroBtn.textContent = "📱";
         gyroBtn.title = window.t("stage.gyroTip", "Look around by physically moving the phone");
-        // The stage's top-left is already a column (camera toggle, hold pill,
-        // experiments chip) — park this one top-right, under the quick bar.
-        gyroBtn.style.left = "auto";
-        gyroBtn.style.right = "14px";
-        gyroBtn.style.top = "90px";
+        gyroBtn.setAttribute("aria-label", window.t("stage.gyro", "📱 Gyro look"));
+        gyroBtn.setAttribute("aria-pressed", "false");
         let gyroOn = false, gyroLast = null;
         const D2R = Math.PI / 180;
         const onGyro = (e) => {
@@ -749,8 +750,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         };
         const setGyro = (on) => {
           gyroOn = on; gyroLast = null;
-          gyroBtn.textContent = on ? window.t("stage.gyroOn", "📱 Gyro on") : window.t("stage.gyro", "📱 Gyro look");
+          gyroBtn.setAttribute("aria-pressed", on ? "true" : "false");
           gyroBtn.classList.toggle("gyro-on", on);
+          gyroBtn.classList.toggle("active", on);
           if (on) window.addEventListener("deviceorientation", onGyro);
           else window.removeEventListener("deviceorientation", onGyro);
           try { localStorage.setItem("fobia.gyro", on ? "1" : "0"); } catch {}
@@ -1201,10 +1203,17 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
             !window.PhobiaFX || !window.PhobiaFX.promptGate ||
             window.PhobiaFX.promptGate("hint", probe.hint);
         }
-        const showHint = probe.hint && active._reachHintOk;
+        const wantHint = !!(probe.hint && active._reachHintOk);
+        // Hysteresis: a dog pacing at the reach line used to blink the hint
+        // on and off several times a second. It now has to be wanted for a
+        // moment before it shows, and lingers a moment after.
+        active._hintWantT = wantHint ? (active._hintWantT || 0) + dt : 0;
+        active._hintLoseT = wantHint ? 0 : (active._hintLoseT || 0) + dt;
+        const showHint = wantHint ? (active._hintShown || active._hintWantT > 0.35) : (active._hintShown && active._hintLoseT < 0.6);
+        active._hintShown = showHint;
         // Written only on change: rewriting textContent replaced the text node
         // (and invalidated style/layout for the overlay) on every frame.
-        const hintText = showHint ? probe.hint : "";
+        const hintText = showHint ? (probe.hint || reachHint._text || "") : "";
         if (reachHint._text !== hintText) { reachHint._text = hintText; reachHint.textContent = hintText; }
         const hintOp = showHint ? "1" : "0";
         if (reachHint._op !== hintOp) { reachHint._op = hintOp; reachHint.style.opacity = hintOp; }
@@ -1574,6 +1583,21 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     const cmdBarEl = document.querySelector('.scene-cmd-bar');
     if (!cmdBarEl) return;
     const startCollapsed = cmdBarEl.classList.contains("collapsed");
+    // A compact bar (≤4 actions) is the scene's hotbar and starts open on
+    // every device; it stays put, so it needs no Show/Hide toggle — one
+    // less button, and nothing that flips the bar in and out mid-trial.
+    if (!startCollapsed) {
+      container.classList.add("cmds-open");
+      const syncOpenTop = () => {
+        if (!container.isConnected) { try { openRO && openRO.disconnect(); } catch {} return; }
+        const top = container.getBoundingClientRect().bottom - cmdBarEl.getBoundingClientRect().top;
+        if (top > 0) container.style.setProperty("--cmdbar-top", Math.round(top) + "px");
+      };
+      const openRO = window.ResizeObserver ? new ResizeObserver(syncOpenTop) : null;
+      if (openRO) openRO.observe(cmdBarEl);
+      requestAnimationFrame(syncOpenTop);
+      return;
+    }
     cmdToggle = document.createElement("button");
     cmdToggle.className = "cmd-toggle";
     const cmdLabel = (collapsed) => collapsed ? window.t("stage.showCtl", "Show controls") : window.t("stage.hideCtl", "Hide controls");
@@ -1885,6 +1909,13 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     if (earned[id]) return;       // already shown
     earned[id] = Date.now();
     try { localStorage.setItem("fobia.achievements", JSON.stringify(earned)); } catch {}
+    // Inside a trial the milestone waits for the Complete screen's reward
+    // row (markCompleted reads __stageMilestones) — a toast sliding in while
+    // the dog sniffs your hand was one more thing to read at the worst time.
+    if (container.closest(".exposure-panel")) {
+      (window.__stageMilestones = window.__stageMilestones || []).push(`${icon || "🏅"} ${title || "Milestone"}`);
+      return;
+    }
     const toast = document.createElement("div");
     toast.className = "achievement-toast";
     // Below the 38px quick-bar (top:14). If the creature-scene trust-hud is
@@ -1913,6 +1944,55 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   }
   window.PhobiaFX = window.PhobiaFX || {};
   window.PhobiaFX.achievement = showAchievement;
+
+  // ----- One voice at a time -----
+  // Every transient line in the frame — a context beat, a caption, one of
+  // Mira's lessons, a read-the-moment question — asks the lane before it
+  // shows. It goes up only when nothing at least as important is on screen;
+  // a more important line takes the slot and the lesser one is dropped (it
+  // was about a moment that has already passed). Minor lines also wait out a
+  // short breath after the last one, so messages never chain into a ticker.
+  // The reach hint is an affordance, not news: it shows only while the lane
+  // is free (.lane-busy hides it). Players named five text boxes at once —
+  // caption, prompt, lesson, question and hint — as the game's worst noise.
+  const LANE_RANK = { caption: 1, prompt: 2, callout: 3, read: 4 };
+  const LANE_BREATH_MS = 900;
+  const lane = { kind: null, until: 0, quietUntil: 0, drop: null, timer: null };
+  const laneFree = () => {
+    lane.kind = null; lane.drop = null;
+    lane.quietUntil = performance.now() + LANE_BREATH_MS;
+    container.classList.remove("lane-busy");
+  };
+  window.PhobiaFX.lane = {
+    claim(kind, ms, drop) {
+      const now = performance.now();
+      const rank = LANE_RANK[kind] || 1;
+      const held = lane.kind && now < lane.until;
+      if (held && lane.kind !== kind) {
+        if (rank < LANE_RANK[lane.kind]) return false;
+        const d = lane.drop;
+        lane.drop = null;
+        if (typeof d === "function") { try { d(); } catch {} }
+      } else if (!held && rank <= LANE_RANK.prompt && now < lane.quietUntil) {
+        return false;
+      }
+      lane.kind = kind; lane.until = now + Math.max(600, ms || 4000); lane.drop = drop || null;
+      container.classList.add("lane-busy");
+      clearTimeout(lane.timer);
+      lane.timer = setTimeout(() => { if (lane.kind === kind && performance.now() >= lane.until - 20) laneFree(); }, lane.until - now);
+      return true;
+    },
+    release(kind) {
+      if (lane.kind !== kind) return;
+      clearTimeout(lane.timer);
+      laneFree();
+    },
+    busy(minKind) {
+      const held = lane.kind && performance.now() < lane.until;
+      return !!held && LANE_RANK[lane.kind] >= (LANE_RANK[minKind] || 0);
+    },
+    get kind() { return lane.kind && performance.now() < lane.until ? lane.kind : null; },
+  };
 
   // ----- Contextual prompt overlay -----
   // A soft floating message that fades in when the player crosses a
@@ -1945,20 +2025,25 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     m.set(k, { t: now, channel });
     return true;
   };
+  const hideContextPrompt = () => {
+    if (ctxPromptHideT) { clearTimeout(ctxPromptHideT); ctxPromptHideT = null; }
+    ctxPrompt.classList.remove("visible");
+  };
   function showContextPrompt(text, durationMs = 4500) {
     const lastAt = ctxPromptSeen.get(text) || 0;
     if (performance.now() - lastAt < 90000) return;
     if (!window.PhobiaFX.promptGate("ctx", text)) return;
+    const ms = durationMs > 0 ? durationMs : 6000;
+    if (!window.PhobiaFX.lane.claim("prompt", ms, hideContextPrompt)) return;
     ctxPromptSeen.set(text, performance.now());
     if (ctxPromptHideT) { clearTimeout(ctxPromptHideT); ctxPromptHideT = null; }
     ctxPrompt.textContent = text;
     ctxPrompt.classList.add("visible");
-    if (durationMs > 0) {
-      ctxPromptHideT = setTimeout(() => {
-        ctxPrompt.classList.remove("visible");
-        ctxPromptHideT = null;
-      }, durationMs);
-    }
+    ctxPromptHideT = setTimeout(() => {
+      ctxPrompt.classList.remove("visible");
+      ctxPromptHideT = null;
+      window.PhobiaFX.lane.release("prompt");
+    }, ms);
   }
   // Expose globally so scene update() callbacks can fire prompts
   window.PhobiaFX = window.PhobiaFX || {};

@@ -145,31 +145,10 @@ function mountExposure(phobiaKey, levelIdx) {
   // touch W is a surprise, not immersion. The theater layout already fills
   // the screen (stage + controls fit the viewport, see fitTheaterStage).
 
-  // Chrome auto-hide — the video-player contract: still for a moment and the
-  // interface gets out of the way, any input brings it back.
-  let chromeIdleTimer = null;
-  let chromeArmed = false;
-  const CHROME_IDLE_MS = 3500;
-  const showChrome = () => {
-    stage.classList.remove("chrome-hidden");
-    if (!chromeArmed) return;
-    clearTimeout(chromeIdleTimer);
-    chromeIdleTimer = setTimeout(() => stage.classList.add("chrome-hidden"), CHROME_IDLE_MS);
-  };
-  const CHROME_WAKE = ["pointermove", "pointerdown", "keydown", "wheel", "touchstart"];
-  const armChromeIdle = () => {
-    if (chromeArmed || !immersiveOn) return;
-    chromeArmed = true;
-    CHROME_WAKE.forEach(ev => window.addEventListener(ev, showChrome, { passive: true }));
-    showChrome();
-  };
-
   // Leaving the rung must not leave the browser in fullscreen or the listeners
   // on the window.
   const releaseImmersion = () => {
     window.removeEventListener("hashchange", releaseImmersion);
-    clearTimeout(chromeIdleTimer);
-    CHROME_WAKE.forEach(ev => window.removeEventListener(ev, showChrome));
     document.removeEventListener("fullscreenchange", onFsChange);
     document.removeEventListener("webkitfullscreenchange", onFsChange);
     // (These two held every finished trial's stage — and this whole scope —
@@ -283,18 +262,32 @@ function mountExposure(phobiaKey, levelIdx) {
     captions.setAttribute("aria-atomic", "true");
     stage.appendChild(captions);
   }
+  const hideCaption = () => {
+    if (captionsTimer) { clearTimeout(captionsTimer); captionsTimer = null; }
+    if (captions) captions.classList.remove("show");
+  };
   function onVoiceLine(e) {
     if (!captions || !captions.isConnected) return;
-    // Player-spoken lines are attributed and styled apart from the guide —
-    // one caption channel, two clearly different voices.
-    const you = e.detail.speaker === "you";
-    captions.textContent = you ? `You: ${e.detail.text}` : e.detail.text;
-    captions.classList.toggle("you", you);
+    // The player's own commands ("You: Go fetch.") were echoed back as
+    // captions on every press — they did the thing; they don't need to read
+    // it. And during grounding the 5-4-3-2-1 text is already mid-screen.
+    if (e.detail.speaker === "you") return;
+    try { if (window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding()) return; } catch {}
+    // One message at a time: a caption waits its turn behind a lesson, a
+    // question or a beat already on screen (and is simply dropped — it was
+    // about this moment).
+    const ms = e.detail.durationMs || 3000;
+    const L = window.PhobiaFX && window.PhobiaFX.lane;
+    if (L && !L.claim("caption", ms, hideCaption)) return;
+    captions.textContent = e.detail.text;
+    captions.classList.remove("you");
     captions.classList.add("show");
     if (captionsTimer) clearTimeout(captionsTimer);
     captionsTimer = setTimeout(() => {
       captions.classList.remove("show");
-    }, e.detail.durationMs);
+      captionsTimer = null;
+      if (L) L.release("caption");
+    }, ms);
   }
   window.addEventListener("voice-line", onVoiceLine);
 
@@ -405,7 +398,10 @@ function mountExposure(phobiaKey, levelIdx) {
   // ---- First-time tutorial — only shown once per device ----
   // Three steps with animated arrows pointing at the relevant UI element.
   const seenTutorial = (() => { try { return localStorage.getItem("fobia.tutorialSeen") === "1"; } catch { return false; } })();
-  if (!seenTutorial) {
+  // Not in coach realms (all six open ones): the tour's one card said what
+  // the intro hint, the hold label and the coach card already say, in the
+  // same second the room appeared. The intro hint is the one onboarding line.
+  if (!seenTutorial && !hasCreatureKit(phobiaKey)) {
     runTutorialTour(stage, phobiaKey);
   }
 
@@ -459,16 +455,8 @@ function mountExposure(phobiaKey, levelIdx) {
     // nagging. Event-driven cues and the grounding exit still speak.
     const rungReplay = (() => { try { return getProgress(phobiaKey).highestCompleted >= levelIdx; } catch { return false; } })();
     const lines = rungReplay ? [] : ((VOICE_LINES[phobiaKey] || [])[levelIdx] || []);
-    // Today's practice — the idea the story's next page will name — once,
-    // nine seconds in, after the intro hint has had its moment.
-    if (!rungReplay && !window.__demoMode && window.Story) {
-      const f = window.Story.focusFor(phobiaKey, levelIdx);
-      if (f && f.text) setTimeout(() => {
-        const st = document.getElementById("stage");
-        if (!st || !st.isConnected || !(window.PhobiaFX && window.PhobiaFX.contextPrompt)) return;
-        try { window.PhobiaFX.contextPrompt("🎯 " + f.text, 7000); } catch {}
-      }, 9000);
-    }
+    // (Today's practice used to pop up here nine seconds in. It is on the
+    // gate page and in the header; mid-trial it was one more card.)
     // The rung's framing line nearly repeats the subtitle printed right above
     // the stage. When that header is actually on screen, the caption would be
     // the same sentence twice — skip it (fullscreen hides the header, so the
@@ -501,6 +489,9 @@ function mountExposure(phobiaKey, levelIdx) {
         // timed follow-up ("Walk in at your own pace…") landing after the
         // player has already walked in reads as the game not watching.
         if (i > 0 && (window.__coach || window.__dogCoach)) return;
+        // A coach realm's framing line repeats the gate page and the intro
+        // hint landing in the same second.
+        if (i === 0 && hasCreatureKit(phobiaKey)) return;
         if (i === 0 && headerShowing() && (_similar(line0, lv && lv.desc) || _similar(line, lvDesc(phobiaKey, levelIdx)))) return;
         PhobiaVoice.speak(line, { audible: i === 0 });
       }, delay));
@@ -508,12 +499,29 @@ function mountExposure(phobiaKey, levelIdx) {
     // The room is live — let the interface start getting out of the way, and
     // glide the page so the scene is what fills the screen rather than the
     // rung's title card. (A no-op in true fullscreen, where it already does.)
-    armChromeIdle();
+    // (The chrome no longer auto-hides: buttons that faded after 3.5 s and
+    // came back on every key press and mouse move read as buttons constantly
+    // popping up. The HUD is small and stays put instead.)
     if (immersiveOn) {
       // "start", not "center": the stage and the controls row under it are
       // sized to fill the screen together, so the stage's top is the
       // screen's top (centring it pushed the controls row back off-screen).
       try { stage.scrollIntoView({ block: "start", behavior: "smooth" }); } catch {}
+      // A smooth scroll is cancelled by any layout change while it runs (the
+      // canvas, the hotbar and the controls row all settle in the first
+      // second), which left the scene part-way down the page — half the
+      // view and the joystick below the fold. Check it landed, a few times
+      // while the page settles, and snap it there if not. Not once the
+      // player has scrolled the page themselves.
+      let userScrolled = false;
+      const markUser = (e) => { if (!(e.target && e.target.closest && e.target.closest("#stage"))) userScrolled = true; };
+      window.addEventListener("wheel", markUser, { passive: true, once: true });
+      window.addEventListener("touchmove", markUser, { passive: true, once: true });
+      [700, 1500, 3000].forEach((ms) => setTimeout(() => {
+        if (userScrolled || !stage.isConnected) return;
+        const top = stage.getBoundingClientRect().top;
+        if (Math.abs(top) > 4) { try { stage.scrollIntoView({ block: "start" }); } catch {} }
+      }, ms));
     }
     // Inactivity watcher — start once the scene is live.
     lastActivity = Date.now();
@@ -715,20 +723,13 @@ function mountExposure(phobiaKey, levelIdx) {
       let starTxt = "";
       const SC = window.__coach;
       if (holdMet && SC && SC.starsTotal) starTxt = "★".repeat(SC.stars) + "☆".repeat(Math.max(0, SC.starsTotal - SC.stars));
-      if (hpT) hpT.textContent = holdMet
-        ? (starTxt ? tf("hold.pillStars", "{s} · continue →", { s: starTxt }) : t("hold.pillDone", "held ✓ · continue →"))
-        : (polPill || `${facingSec}/${minHold}s`);
+      const pillTxt = holdMet ? (starTxt ? `🏮 ${starTxt}` : t("hold.pillDone3", "🏮 held")) : (polPill || `${facingSec}/${minHold}s`);
+      if (hpT && hpT.textContent !== pillTxt) hpT.textContent = pillTxt;
       holdPill.classList.toggle("in-zone", inZone);
-      if (holdMet && !holdPill.classList.contains("complete")) {
-        holdPill.classList.add("complete");
-        // In theater/fullscreen the real Continue button is below the fold:
-        // the pill — the one progress readout still on screen — becomes it.
-        holdPill.setAttribute("role", "button");
-        holdPill.tabIndex = 0;
-        const go = (e) => { e.stopPropagation(); try { continueBtn.click(); } catch {} };
-        holdPill.addEventListener("click", go);
-        holdPill.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") go(e); });
-      }
+      // Held: the pill shows it (and the stars so far). It is no longer a
+      // second Continue button — the one under the stage is always on screen
+      // (fitTheaterStage), and two exits saying the same thing read as noise.
+      if (holdMet && !holdPill.classList.contains("complete")) holdPill.classList.add("complete");
 
       if (!holdMet) {
         const remain = Math.max(0, minHold - facingSec);
@@ -761,6 +762,9 @@ function mountExposure(phobiaKey, levelIdx) {
           : t("hold.ready", "I'm ready — continue");
         holdLabel.textContent = tf("hold.held", "held {n}s — well done", { n: facingSec });
         window.__rungHoldComplete = true;   // scenes read this for a diegetic beat
+        // The story's spine, in the HUD: holding a trial lights its flame in
+        // the realm's lantern (the coach card's lamp catches).
+        try { stage.querySelectorAll(".dog-coach").forEach((c) => c.classList.add("dc-lit")); } catch {}
         // The held-it moment, made physical: a tiny double pulse in the palm.
         try { if (window.PhobiaFX && window.PhobiaFX.haptic) window.PhobiaFX.haptic([16, 90, 16]); } catch {}
         celebrationDue = Date.now();
@@ -778,7 +782,10 @@ function mountExposure(phobiaKey, levelIdx) {
           // Warm full-screen bloom + reward haptic land WITH the voice line, so
           // the resolution has the same physical weight the fear did.
           if (window.PhobiaFX && window.PhobiaFX.celebrate) window.PhobiaFX.celebrate();
-          if (window.PhobiaVoice) {
+          // Not in a policy scene: its coach says "Settled" in its own words
+          // and the star lands — the same praise as a caption was a third
+          // message on the same second.
+          if (window.PhobiaVoice && !window.__holdPolicy) {
             try {
               // Spoken, in the warm register — the emotional payoff beat.
               window.PhobiaVoice.speak(t("vo.didIt", "You did it. You stayed with it. That is real progress."), { audible: true, praise: true });

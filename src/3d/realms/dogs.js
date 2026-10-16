@@ -1760,7 +1760,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       if (delta > 1e-4) { L.gained += delta; sessionTrustGain += delta; setTrust(trust + delta); }
     }
     popHeart();                       // affection feedback even when capped
-    if (reason && window.PhobiaVoice) window.PhobiaVoice.speak(reason);
+    // (The reason — "Good fetch." — used to follow as a caption on every
+    // throw and treat. The heart says it; the caption was an echo.)
   }
 
   // ---- The coach: the alarm, this trial's card, reading the dog ----
@@ -3397,9 +3398,6 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       if (dogCtrl.state === "sit" && trust > 0.7
           && (dogCtrl._sitTimer || 0) > 8 && !companionHold) {
         dogCtrl.lay();
-        if (window.PhobiaVoice) {
-          window.PhobiaVoice.speak(window.t("sc.d.settling", "Settling in. The dog feels safe with you."));
-        }
       }
       // At ordinary trust the sit ends on its own instead: a dog that parks
       // in a sit forever (every fetch drop ends in one) reads frozen. After
@@ -3444,9 +3442,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           // something (see the companion beat below).
           dogCtrl._companionPending = true;
           dogCtrl._companionDeadline = t + 12;
-          if (window.PhobiaVoice && Math.random() < 0.3) {
-            window.PhobiaVoice.speak(window.t("sc.d.coming", "The dog is coming over to you."));
-          }
+          // (No "The dog is coming over to you." caption: you can see it.)
         }
         nextAutoApproach = t + 18 + Math.random() * 14;   // ~18-32s between attempts
       }
@@ -3964,9 +3960,6 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
               const bar = document.querySelector("#stage .scene-cmd-bar, .scene-cmd-bar");
               const tg = document.querySelector(".cmd-toggle");
               if (bar && bar.classList.contains("collapsed") && tg) tg.click();
-              // A still player has the chrome auto-hidden — bring it back so
-              // the ball and the treat are actually there to see.
-              window.dispatchEvent(new Event("pointermove"));
             } catch {}
           }, 3200));
         }

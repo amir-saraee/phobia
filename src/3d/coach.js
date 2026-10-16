@@ -38,6 +38,16 @@ function makeCreatureCoach(opts) {
   const K = o.kit || creatureKit("dogs");
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const nameH = esc(o.dogName);
+  // The lane (engine.js): one transient line on screen at a time.
+  const lane = () => (window.PhobiaFX && window.PhobiaFX.lane) || null;
+  // A trial the player has already held: the lessons were read last time —
+  // only the moments that matter now (escape, settled) speak.
+  const replay = (() => {
+    try {
+      const m = /#\/(\w+)\/exposure\/(\d+)/.exec(location.hash || "");
+      return !!(m && typeof getProgress === "function" && (getProgress(m[1]).highestCompleted ?? -1) >= +m[2]);
+    } catch { return false; }
+  })();
 
   // ---------------- alarm model ----------------
   let h = 1;                 // sensitivity: 1 = fresh, falls toward hFloor while you stay
@@ -100,7 +110,7 @@ function makeCreatureCoach(opts) {
   function renderGoals() {
     const next = goals.find((g) => !g.done);
     const n = starsDone();
-    goalsEl.innerHTML = `<li class="dc-stars-row"><span>${t("dc.stars", "Trial stars")}</span><span class="dc-stars" aria-label="${esc(tf("dc.starsAria", "{n} of {m} stars", { n, m: goals.length }))}">${starRow(n)}</span></li>` + goals.map((g) => {
+    goalsEl.innerHTML = `<li class="dc-stars-row"><span><span class="dc-lamp" aria-hidden="true" title="${esc(t("dc.lampTip", "This trial's flame — it lights when you've held the trial"))}">🏮</span> <span class="dc-stars-lbl">${t("dc.stars", "Trial stars")}</span></span><span class="dc-stars" aria-label="${esc(tf("dc.starsAria", "{n} of {m} stars", { n, m: goals.length }))}">${starRow(n)}</span></li>` + goals.map((g) => {
       const cnt = g.need > 1 ? ` <span class="dc-n">${Math.min(g.n, g.need)}/${g.need}</span>` : "";
       return `<li class="dc-goal${g.done ? " done" : ""}${g.required ? " req" : ""}${g === next ? " next" : ""}"><i>${g.done ? "✓" : g.icon || "○"}</i><span>${esc(g.text)}${cnt}</span><b class="dc-gs" aria-hidden="true">★</b></li>`;
     }).join("");
@@ -162,31 +172,62 @@ function makeCreatureCoach(opts) {
   // A later beat makes earlier ones stale: "it's coming down" retires a
   // still-queued "that rise…", and "settled" retires both.
   const SUPERSEDES = { fall: ["rise"], settled: ["rise", "fall", "newGround"] };
+  // At most a few lessons a trial. Up to ten could queue back-to-back, so a
+  // text box was on screen for most of a trial; the urgent beats (you just
+  // stepped back, it settled) always get through.
+  const LESSON_CAP = replay ? 0 : 3;
+  let lessons = 0;
   function teach(key, html, ms = 7000, urgent = false) {
     if (said.has(key)) return false;
+    // The play invite is an offer, not a lesson — it isn't counted.
+    const counted = !urgent && key !== "play";
+    if (counted && lessons >= LESSON_CAP) { said.add(key); return false; }
     said.add(key);
+    if (counted) lessons++;
     const stale = SUPERSEDES[key];
     if (stale) {
       for (const k of stale) said.add(k);
       calloutQueue = calloutQueue.filter((c) => !stale.includes(c.key));
     }
     if (urgent) {
-      calloutQueue.unshift({ key, html, ms });
+      calloutQueue.unshift({ key, html, ms, urgent: true });
       if (calloutT > 0.4) calloutT = 0.4;
     } else {
       calloutQueue.push({ key, html, ms });
     }
     return true;
   }
+  // Room to breathe between lessons: back-to-back they kept a text box on
+  // screen for most of a trial. The urgent beats skip the wait.
+  let calloutGap = 0, calloutCur = null, calloutShownAt = 0;
+  const dropCallout = () => {
+    callout.classList.remove("show");
+    // Pushed off by a question in its first seconds: it comes back after.
+    if (calloutCur && clock - calloutShownAt < 2) calloutQueue.unshift(calloutCur);
+    calloutCur = null; calloutT = 0;
+  };
   function pumpCallout(dt) {
+    if (calloutGap > 0) calloutGap -= dt;
     if (calloutT > 0) {
       calloutT -= dt;
-      if (calloutT <= 0) callout.classList.remove("show");
+      if (calloutT <= 0) {
+        callout.classList.remove("show"); calloutCur = null; calloutGap = 5;
+        const L = lane(); if (L) L.release("callout");
+      }
       return;
     }
     if (!calloutQueue.length || readOpen || readResultT > 0) return;
+    if (calloutGap > 0 && !calloutQueue[0].urgent) return;
     if (document.querySelector(".tour-overlay:not(.dismiss), .countdown")) return;
+    // Wait for the lane: a question or another beat on screen goes first;
+    // a lesson outranks a caption or a context beat and takes the slot.
+    const L = lane();
+    const ms = Math.min(7000, calloutQueue[0].ms);
+    // The lesson runs on scene time (slower than the wall clock when frames
+    // drop), so it holds the slot with a margin and releases it itself.
+    if (L && !L.claim("callout", ms + 4000, dropCallout)) return;
     const c = calloutQueue.shift();
+    calloutCur = c; calloutShownAt = clock;
     calloutKey = c.key;
     // These are Mira's lessons — the story's lantern-keeper, beside you in
     // the room — so they carry her face (the baked 3D portrait once it
@@ -196,7 +237,7 @@ function makeCreatureCoach(opts) {
     callout.innerHTML = face ? `<span class="dc-mira" aria-hidden="true">${face}</span><span class="dc-say">${c.html}</span>` : c.html;
     if (face) { try { S.upgradeFaces(callout); } catch {} }
     callout.classList.add("show");
-    calloutT = c.ms / 1000;
+    calloutT = ms / 1000;
   }
 
   // The player's own prediction, named back to them as the trial opens —
@@ -214,10 +255,17 @@ function makeCreatureCoach(opts) {
 
   // ---------------- reading the dog ----------------
   let readOpen = null;       // { id, t0, until }
-  let readCooldown = 3;      // seconds before the first prompt may appear
+  let readCooldown = 6;      // seconds before the first prompt may appear
   let readResultT = 0;
   const readPos = { x: null, y: null };
   const seenThisTrial = new Set();
+  // Reading questions are the game's quiz — and they used to reopen every
+  // 10–25 s for the whole trial, long after their star was earned. Now: none
+  // in the first moments, a real gap between them, never over one of Mira's
+  // lessons, and once the read star has landed only a rare one (a moment
+  // worth naming) for the rest of the trial.
+  let readsOffered = 0;
+  const readStarDone = () => { const g = goals.find((x) => x.id === "read"); return !g || g.done; };
   function signal(id, s = {}) {
     const S = K.signals[id];
     if (!S) return false;
@@ -226,15 +274,23 @@ function makeCreatureCoach(opts) {
     if (s.dist != null && s.dist > 9.5) return false;
     // Variety: a signal already read this trial comes back only rarely.
     if (seenThisTrial.has(id) && Math.random() < 0.7) return false;
-    readOpen = { id, t0: clock, until: clock + (o.coarse ? 11 : 9) };
+    if (readStarDone() && (replay || readsOffered >= 3 || Math.random() < 0.6)) return false;
+    const L = lane();
+    // Until its star lands, reading the animal outranks a lesson on screen
+    // (the lesson steps back and returns); after that a lesson isn't cut.
+    if (L && L.busy("callout") && (readStarDone() || L.kind === "read")) return false;
+    const openFor = o.coarse ? 11 : 9;
+    if (L && !L.claim("read", (openFor + 4) * 1000, null)) return false;
+    readOpen = { id, t0: clock, until: clock + openFor };
+    readsOffered++;
     seenThisTrial.add(id);
-    callout.classList.remove("show"); calloutT = 0;
     readPos.x = null;
     readBox.innerHTML = `
       <div class="dc-read-q"><span class="dc-read-eye">👁</span> ${tf(K.readQKey || "dc.readQ", K.readQ || "<b>{dog}</b>: {look}. How is it feeling?", { dog: esc(o.title || o.dogName), look: esc(K.place ? (() => { const l = K.signalText(id, "look"); return l.charAt(0).toUpperCase() + l.slice(1); })() : K.signalText(id, "look")) })}</div>
       <div class="dc-read-opts">${Object.keys(K.classes).map((c) =>
         `<button type="button" class="dc-opt dc-${K.classes[c].tone || c}" data-c="${c}"><span>${K.classes[c].dot}</span> ${esc(K.classLabel(c))}${o.coarse ? "" : ` <kbd>${K.classes[c].key}</kbd>`}</button>`).join("")}</div>
       <div class="dc-read-timer"><i></i></div>`;
+    readBox._sz = null;
     readBox.querySelectorAll(".dc-opt").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); answer(b.dataset.c); }));
     readBox.classList.remove("result");
     readBox.classList.add("show");
@@ -265,8 +321,10 @@ function makeCreatureCoach(opts) {
         <div class="dc-res-means">${esc(K.signalText(id, "means"))}</div>
       </div>`;
     readBox.classList.add("result");
-    readResultT = 5.5;
-    readCooldown = 7 + Math.random() * 4;
+    readBox._sz = null;
+    readResultT = 4.5;
+    { const L = lane(); if (L) L.claim("read", 8000, null); }
+    readCooldown = readStarDone() ? 30 + Math.random() * 6 : 8 + Math.random() * 3;
     if (right && ev.readsRight === 1) teach("firstRead", K.texts.firstRead(), 7500);
   }
   function onKey(e) {
@@ -533,17 +591,24 @@ function makeCreatureCoach(opts) {
     // dog at your feet or the camera behind you, put it squarely over the dog
     // you were meant to be reading, and over your own character.
     if ((readOpen || readResultT > 0) && s.anchorX != null && s.stageW) {
-      const bw = readBox.offsetWidth || 420, bh = readBox.offsetHeight || 96;
-      const panelW = (root.offsetWidth && s.stageW > 700) ? root.offsetWidth + 16 : 0;
+      // Sizes are measured once per card (content change), not every frame:
+      // reading layout right after this frame's style writes forced a
+      // synchronous reflow 60 times a second while a question was open.
+      if (!readBox._sz) readBox._sz = { bw: readBox.offsetWidth || 420, bh: readBox.offsetHeight || 96, pw: root.offsetWidth || 0, pb: (root.offsetTop || 0) + (root.offsetHeight || 0), ch: (root.parentElement && root.parentElement.clientHeight) || 0 };
+      const { bw, bh } = readBox._sz;
+      const panelW = (readBox._sz.pw && s.stageW > 700) ? readBox._sz.pw + 16 : 0;
       const lo = bw / 2 + 8, hi = s.stageW - bw / 2 - 8 - panelW;
       const tx = hi > lo ? Math.max(lo, Math.min(hi, s.anchorX)) : s.stageW / 2;
       let ty = Math.max(bh + 96, Math.min(bh + 104, s.anchorY - 16));
+      // A narrow stage can't seat the card beside the coach panel — put it
+      // under the panel instead of over it.
+      if (s.stageW <= 700 && readBox._sz.pb) ty = Math.max(ty, readBox._sz.pb + 8 + bh);
       // ...and its bottom edge (ty — the card is translated up by its own
       // height) above an open command bar: on a phone held sideways the bar
       // clipped the answer row.
       const stEl = root.parentElement;
       const barTop = stEl ? parseFloat(stEl.style.getPropertyValue("--cmdbar-top")) : 0;
-      if (barTop > 0 && stEl.clientHeight) ty = Math.max(bh + 8, Math.min(ty, stEl.clientHeight - barTop - 8));
+      if (barTop > 0 && readBox._sz.ch) ty = Math.max(bh + 8, Math.min(ty, readBox._sz.ch - barTop - 8));
       if (readPos.x == null) { readPos.x = tx; readPos.y = ty; }
       readPos.x += (tx - readPos.x) * Math.min(1, d * 6);
       readPos.y += (ty - readPos.y) * Math.min(1, d * 6);
@@ -554,11 +619,11 @@ function makeCreatureCoach(opts) {
     // read prompt lifetime
     if (readOpen) {
       const k = Math.max(0, (readOpen.until - clock) / (readOpen.until - readOpen.t0));
-      const bar = readBox.querySelector(".dc-read-timer i");
-      if (bar) bar.style.width = (k * 100).toFixed(1) + "%";
-      if (clock > readOpen.until) { readOpen = null; readBox.classList.remove("show"); readCooldown = 4; }
+      const bar = readBox._bar && readBox._bar.isConnected ? readBox._bar : (readBox._bar = readBox.querySelector(".dc-read-timer i"));
+      if (bar) bar.style.transform = `scaleX(${k.toFixed(3)})`;
+      if (clock > readOpen.until) { readOpen = null; readBox.classList.remove("show"); readCooldown = readStarDone() ? 30 : 8; const L = lane(); if (L) L.release("read"); }
     }
-    if (readResultT > 0) { readResultT -= d; if (readResultT <= 0) readBox.classList.remove("show", "result"); }
+    if (readResultT > 0) { readResultT -= d; if (readResultT <= 0) { readBox.classList.remove("show", "result"); const L = lane(); if (L) L.release("read"); } }
     pumpCallout(d);
     if (s.trust != null) setTrust(s.trust);
   }
@@ -624,6 +689,7 @@ function makeCreatureCoach(opts) {
   }
   function dispose() {
     window.removeEventListener("keydown", onKey);
+    { const L = lane(); if (L) { L.release("read"); L.release("callout"); } }
     try { root.remove(); callout.remove(); readBox.remove(); } catch {}
   }
   return {

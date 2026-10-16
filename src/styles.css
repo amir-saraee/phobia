@@ -5188,3 +5188,233 @@ img.cast-face.baked { animation: castIn .35s ease; }
 }
 .stage .dc-mira > * { width: 30px; height: 30px; display: block; }
 .stage .dc-say { min-width: 0; }
+
+/* ============ Quiet HUD (v3) — one message, stable buttons ============
+   Players called the trial "notifications and buttons constantly
+   appearing". The rules that answer it:
+   • ONE message slot. Captions, context beats, Mira's lessons and the reach
+     hint all sit in the same bottom-centre spot, and the lane in engine.js
+     lets only one of them be up at a time (the reach hint steps aside
+     whenever anything else is speaking: .lane-busy).
+   • Nothing blinks. The chrome no longer auto-hides and re-appears on every
+     key press; the hotbar is open from the start and has no toggle.
+   • No duplicates. Desktop drops the hold pill (the row under the stage
+     shows the hold); the coach card shows the next goal, not all three.
+   • Phones: actions are a 2×2 thumb cluster bottom-right, opposite the
+     joystick, instead of a band across the bottom third of the view.
+   Late in the sheet on purpose: these override the older positions. */
+
+/* ---- the message slot ---- */
+.stage-wrap .stage .captions,
+.stage-wrap .stage .ctx-prompt,
+.stage-wrap .stage .reach-hint,
+.stage-wrap .stage .dc-callout {
+  left: 50%; right: auto; top: auto;
+  bottom: 64px;
+  max-width: min(480px, calc(100% - 24px));
+  white-space: normal;
+}
+.stage-wrap .stage.cmds-open .captions,
+.stage-wrap .stage.cmds-open .ctx-prompt,
+.stage-wrap .stage.cmds-open .reach-hint,
+.stage-wrap .stage.cmds-open .dc-callout {
+  bottom: calc(var(--cmdbar-top, 58px) + 10px);
+}
+.stage-wrap .stage .captions { transform: translateX(-50%); }
+.stage-wrap .stage .reach-hint { transform: translateX(-50%); }
+.stage-wrap .stage .ctx-prompt { transform: translateX(-50%) translateY(6px); }
+.stage-wrap .stage .ctx-prompt.visible { transform: translateX(-50%); }
+.stage-wrap .stage .dc-callout {
+  width: min(480px, calc(100% - 24px));
+  transform: translateX(-50%) translateY(6px);
+  background: rgba(14, 20, 38, .9);
+}
+.stage-wrap .stage .dc-callout.show { transform: translateX(-50%); }
+.stage-wrap .stage .dc-callout::after { display: none; }
+/* The reach hint is an affordance, not news — it waits while anything else
+   is on screen. (Inline opacity is set per frame by the engine.) */
+.stage.lane-busy .reach-hint { opacity: 0 !important; transition: none !important; }
+.stage .reach-hint { animation: none; }
+
+/* ---- progress: one readout per screen ---- */
+@media (min-width: 601px) {
+  .stage-wrap .stage .hold-pill { display: none; }
+}
+.stage .hold-pill.complete { pointer-events: none; cursor: default; }
+
+/* ---- coach card: the wave, the stars, the next goal ---- */
+@media (min-width: 601px) {
+  .stage .dog-coach { width: 214px; }
+  .dog-coach .dc-goal { display: none; }
+  .dog-coach .dc-goal.next, .dog-coach.dc-open .dc-goal, .dog-coach:hover .dc-goal { display: flex; }
+}
+.dc-read-timer i { transform-origin: left center; transition: none; }
+
+/* ---- intro hint: top-centre on desktop, top-left column on touch ---- */
+.stage-wrap .stage .controls-hint {
+  top: 14px; bottom: auto; left: 50%; transform: translateX(-50%);
+  max-width: min(520px, calc(100% - 340px));
+  text-align: center;
+}
+.stage-wrap .stage:has(.joystick) .controls-hint,
+.stage-wrap .stage.cmds-open:has(.joystick) .controls-hint {
+  display: block;
+  top: 92px; bottom: auto; left: 12px; transform: none;
+  max-width: calc(100% - 188px);
+  text-align: start; font-size: 11px;
+}
+.stage-wrap .stage:has(.joystick):has(.exp-panel) .controls-hint { top: 132px; }
+@media (pointer: coarse) { .stage-wrap .stage.cmds-open .controls-hint { display: block; } }
+
+/* ---- star pop: top of the view, never over the creature ---- */
+@media (max-width: 600px) {
+  .stage .star-pop { top: 96px; bottom: auto; max-width: calc(100% - 24px); }
+}
+
+/* ---- desktop hotbar: small, bottom-centre, with keycaps ---- */
+.stage-wrap .scene-cmd-bar:not(.collapsed) { bottom: 12px; padding: 6px 8px; gap: 6px; border-radius: 16px; }
+.stage-wrap .scene-cmd-bar:not(.collapsed) .cmd-btn {
+  padding: 6px 11px; min-height: 34px; font-size: 12.5px; border-radius: 12px;
+}
+.scene-cmd-bar .cmd-key {
+  display: inline-block; min-width: 16px; margin-inline-start: 5px; padding: 0 4px;
+  border-radius: 4px; border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.06);
+  font: 600 10.5px/16px ui-monospace, monospace; color: var(--muted); text-align: center;
+}
+
+/* ---- touch: a 2×2 thumb cluster, bottom-right, opposite the joystick ---- */
+.stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) {
+  left: auto; right: 8px; bottom: 8px; transform: none;
+  display: grid; grid-template-columns: repeat(2, 74px); gap: 6px;
+  width: auto; max-width: none; padding: 0;
+  background: none; border: none; box-shadow: none; backdrop-filter: none;
+}
+.stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) .cmd-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  width: 74px; height: 62px; min-height: 0; padding: 6px 4px;
+  border-radius: 16px; background: rgba(10, 14, 28, .74);
+  border: 1px solid rgba(124, 209, 197, .38); backdrop-filter: blur(6px);
+  font-size: 10.5px; font-weight: 600; line-height: 1.15; text-align: center; white-space: normal;
+}
+.stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) .cmd-btn .cmd-icon { font-size: 19px; line-height: 1; margin: 0; }
+.stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) .cmd-btn > span:last-child {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%;
+}
+/* The message slot rides above both thumbs (Ground me ends ~152 px up). */
+.stage-wrap .stage:has(.joystick) .captions,
+.stage-wrap .stage:has(.joystick) .ctx-prompt,
+.stage-wrap .stage:has(.joystick) .reach-hint,
+.stage-wrap .stage:has(.joystick) .dc-callout {
+  bottom: max(164px, calc(var(--cmdbar-top, 0px) + 12px));
+  max-width: calc(100% - 20px); width: max-content;
+  font-size: 12.5px;
+}
+.stage-wrap .stage:has(.joystick) .dc-callout { width: calc(100% - 20px); }
+/* Gyro look: a round icon beside the sound button (top-right). */
+.stage-wrap .stage .gyro-btn {
+  position: absolute; top: 14px; right: 60px; left: auto; z-index: 8;
+}
+@media (max-width: 480px) { .stage-wrap .stage .gyro-btn { top: 10px; right: 50px; } }
+.stage-wrap .stage:has(.dog-coach) .gyro-btn { top: 14px !important; right: 60px !important; }
+@media (max-width: 480px) { .stage-wrap .stage:has(.dog-coach) .gyro-btn { top: 10px !important; right: 50px !important; } }
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) { .stage-wrap .stage .gyro-btn { display: none !important; } }
+
+/* ---- Title screen: pick the fear (first visit) ---- */
+.arrive-pick { padding-top: 14px; }
+.arrive-pick .arrive-story { font-size: 13.5px; opacity: .78; margin: 0 0 12px; text-align: center; }
+.arrive-pick .arrive-q { font-size: 18px; margin: 0 0 10px; text-align: center; color: #fbf1dc; }
+.fear-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.fear-tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-height: 78px; padding: 10px 6px 9px; border-radius: 14px;
+  background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 207, 110, .26);
+  color: var(--text); font: inherit; cursor: pointer;
+  transition: transform .12s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.fear-tile:hover, .fear-tile:focus-visible {
+  background: rgba(255, 196, 104, .12); border-color: rgba(255, 207, 110, .75);
+  box-shadow: 0 0 22px rgba(255, 186, 92, .18); transform: translateY(-1px);
+}
+.fear-tile:active { transform: translateY(1px); }
+.ft-icon { font-size: 25px; line-height: 1.1; filter: drop-shadow(0 0 10px rgba(255, 190, 90, .35)); }
+.ft-name { font-weight: 700; font-size: 14.5px; line-height: 1.2; }
+.ft-realm { font-size: 11px; color: var(--muted); line-height: 1.25; text-align: center; }
+.arrive-pick .arrive-promise { font-size: 12.5px; text-align: center; margin: 10px 0 0; opacity: .7; }
+.arrive-pick .arrive-link { margin-top: 0; min-height: 38px; padding: 6px; font-size: 13px; }
+@media (max-height: 720px) {
+  .arrive-pick .arrive-story { display: none; }
+  .fear-tile { min-height: 62px; padding: 8px 4px; }
+  .ft-realm { display: none; }
+}
+/* A fear under the finger lights its lantern in the valley. */
+.app:has(.fear-tile[data-phobia="dogs"]:is(:hover, :focus-visible)) .vh-lantern[data-k="dogs"] .vh-glow,
+.app:has(.fear-tile[data-phobia="spiders"]:is(:hover, :focus-visible)) .vh-lantern[data-k="spiders"] .vh-glow,
+.app:has(.fear-tile[data-phobia="snakes"]:is(:hover, :focus-visible)) .vh-lantern[data-k="snakes"] .vh-glow,
+.app:has(.fear-tile[data-phobia="heights"]:is(:hover, :focus-visible)) .vh-lantern[data-k="heights"] .vh-glow,
+.app:has(.fear-tile[data-phobia="dark"]:is(:hover, :focus-visible)) .vh-lantern[data-k="dark"] .vh-glow,
+.app:has(.fear-tile[data-phobia="enclosed"]:is(:hover, :focus-visible)) .vh-lantern[data-k="enclosed"] .vh-glow { opacity: .9; }
+.app:has(.fear-tile[data-phobia="dogs"]:is(:hover, :focus-visible)) .vh-lantern[data-k="dogs"] .vh-flame,
+.app:has(.fear-tile[data-phobia="spiders"]:is(:hover, :focus-visible)) .vh-lantern[data-k="spiders"] .vh-flame,
+.app:has(.fear-tile[data-phobia="snakes"]:is(:hover, :focus-visible)) .vh-lantern[data-k="snakes"] .vh-flame,
+.app:has(.fear-tile[data-phobia="heights"]:is(:hover, :focus-visible)) .vh-lantern[data-k="heights"] .vh-flame,
+.app:has(.fear-tile[data-phobia="dark"]:is(:hover, :focus-visible)) .vh-lantern[data-k="dark"] .vh-flame,
+.app:has(.fear-tile[data-phobia="enclosed"]:is(:hover, :focus-visible)) .vh-lantern[data-k="enclosed"] .vh-flame { opacity: 1; }
+
+/* ---- The gate (before a trial): the story card, the door, one number ---- */
+.gate-panel { max-width: 720px; margin-inline: auto; }
+.gate-story {
+  margin: 0 0 16px; padding: 14px 16px 10px; border-radius: 16px;
+  background: linear-gradient(160deg, rgba(255, 207, 110, .08), rgba(255, 255, 255, .03));
+  border: 1px solid rgba(255, 207, 110, .28);
+}
+.gs-kicker { display: block; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #f3d9a4; margin-bottom: 8px; }
+html[dir="rtl"] .gs-kicker { letter-spacing: 0; }
+.gs-row { display: flex; gap: 12px; align-items: flex-start; }
+.gs-face { flex: 0 0 56px; width: 56px; height: 56px; border-radius: 50%; overflow: hidden; background: rgba(255,255,255,.07); }
+.gs-face svg, .gs-face img { display: block; width: 56px; height: 56px; }
+.gs-body { min-width: 0; }
+.gs-quote { margin: 0; font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; font-style: italic; font-size: 15.5px; line-height: 1.45; color: #f6efe0; }
+.gs-who { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.gs-mira { display: flex; gap: 8px; align-items: center; margin: 12px 0 2px; font-size: 13.5px; color: #dbe3f0; }
+.gs-mface { flex: 0 0 28px; width: 28px; height: 28px; border-radius: 50%; overflow: hidden; box-shadow: 0 0 0 1.5px rgba(255, 214, 140, .45); }
+.gs-mface svg, .gs-mface img { display: block; width: 28px; height: 28px; }
+.gs-read { margin-top: 2px; font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; }
+.gate-trial h2 { margin: 8px 0 4px; }
+.gate-desc { margin: 0 0 6px; color: var(--muted); }
+.gate-focus { margin: 6px 0 0; font-size: 13px; color: #fcd34d; opacity: .9; }
+.gate-suds { margin-top: 16px; }
+.gate-suds label { font-weight: 650; }
+.gate-expect { margin-top: 14px; }
+.gate-opt { font-weight: 500; font-size: 12px; color: var(--muted); margin-inline-start: 4px; }
+/* "Enter" stays in reach while the page scrolls under it, at every width. */
+.gate-actions {
+  position: sticky; bottom: 0; z-index: 3; margin: 18px -4px 0; padding: 12px 4px calc(12px + var(--safe-b, 0px));
+  background: linear-gradient(to top, var(--panel, #141b2d) 70%, transparent);
+}
+.gate-enter { flex: 1 1 auto; min-width: min(100%, 260px); }
+.gate-note { margin: 12px 0 0; font-size: 12.5px; color: var(--muted); }
+@media (max-width: 600px) {
+  .gate-actions .btn-ghost { display: none; }
+  .gs-quote { font-size: 14.5px; }
+}
+/* The trial's flame: dark until the trial is held, then it catches. */
+.dog-coach .dc-lamp { display: inline-block; filter: grayscale(1) brightness(.55); opacity: .7; transition: filter .6s ease, opacity .6s ease; }
+.dog-coach.dc-lit .dc-lamp { filter: drop-shadow(0 0 6px rgba(255, 186, 92, .9)); opacity: 1; animation: dcLampCatch 1.4s ease-out 1; }
+@keyframes dcLampCatch { 0% { transform: scale(.8); } 35% { transform: scale(1.35); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .dog-coach.dc-lit .dc-lamp { animation: none; } }
+/* Phones: the coach card keeps the lamp + stars on one line (no label), and
+   drops the creature's mood note — the wave and the next goal are the read. */
+@media (max-width: 600px) {
+  .dog-coach .dc-stars-row .dc-stars-lbl { display: none; }
+  .dog-coach .dc-trust.dc-note { display: none; }
+  .dog-coach .dc-stars-row { align-items: center; }
+}
+/* The camera switch is a tool, not a call to action: quiet glass like the
+   other stage buttons (it was a glowing gradient pill — the brightest thing
+   in the frame, competing with the creature). */
+.stage-wrap .stage .camera-toggle {
+  background: rgba(10, 14, 28, .66); color: var(--text);
+  border: 1px solid rgba(255, 255, 255, .22); box-shadow: none;
+  padding: 7px 12px; font-size: 11.5px; font-weight: 600;
+}
+.stage-wrap .stage .camera-toggle:hover { background: rgba(20, 28, 48, .85); box-shadow: none; }

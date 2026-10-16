@@ -811,10 +811,12 @@ class FPControls {
       const ox = sj.x - this.position.x, oz = sj.z - this.position.z;
       const lz = -(ox * sinY + oz * cosY);            // metres ahead of the traveler
       const lx = ox * cosY - oz * sinY;               // metres to their right
-      if (lz > 0.25 && lz < 4.2) {
-        const D = this.tpDistance, clear = 0.5;
+      // (From right at the feet, too: a dog sniffing your shoes sat exactly
+      // behind your legs, and the swing only started 25 cm out.)
+      if (lz > -0.05 && lz < 4.2) {
+        const D = this.tpDistance, clear = 0.5, lzc = Math.max(0.35, lz);
         const side = lx < -0.15 ? -1 : 1;             // swing to the side the subject leans
-        const need = (clear * (D + lz) - Math.abs(lx) * D) / lz - this.tpShoulder * side;
+        const need = (clear * (D + lzc) - Math.abs(lx) * D) / lzc - this.tpShoulder * side;
         subjS = side * Math.max(0, Math.min(1.3, need));
       }
     }
@@ -822,14 +824,18 @@ class FPControls {
     // sits in the frame instead of under its bottom edge.
     // (Also when it's beside you: aim between you and it, so a dog at your
     // hip isn't framed half out of the picture.)
-    let subjW = 0;
+    let subjW = 0, subjH = 0;
     if (sj && this.tpBlend > 0.05) {
       const ox = sj.x - this.position.x, oz = sj.z - this.position.z;
       const lz = -(ox * sinY + oz * cosY);
       const lx = ox * cosY - oz * sinY;
       const dd = Math.hypot(lx, lz);
       if (lz > -0.6 && dd < 3.8 && Math.abs(lx) < 2.6) subjW = 0.4 * (1 - 0.5 * dd / 3.8);
+      // A subject within arm's reach: the boom also rises a little, so the
+      // shot looks down over the shoulder at it rather than into your back.
+      if (lz > -0.4 && dd < 1.8) subjH = 0.5 * (1 - dd / 1.8);
     }
+    this._tpSubjH = (this._tpSubjH || 0) + (subjH - (this._tpSubjH || 0)) * Math.min(1, dt * 1.8);
     this._tpSubjW = (this._tpSubjW || 0) + (subjW - (this._tpSubjW || 0)) * Math.min(1, dt * 2.2);
     this._tpSubjS = (this._tpSubjS || 0) + (subjS - (this._tpSubjS || 0)) * Math.min(1, dt * 1.6);
     const shoulder = this.tpShoulder + this._tpSubjS;
@@ -840,7 +846,7 @@ class FPControls {
     this._bodyDrop = (this._bodyDrop || 0)
       + ((this._bodyDropTarget || 0) - (this._bodyDrop || 0)) * Math.min(1, dt * 3);
     const tpX = this.position.x + sinY * tpDist + sideX;
-    const tpY = this.position.y + tpHeight - this._bodyDrop * 0.55;
+    const tpY = this.position.y + tpHeight - this._bodyDrop * 0.55 + (this._tpSubjH || 0);
     const tpZ = this.position.z + cosY * tpDist + sideZ;
 
     // ---- TP camera collision ----

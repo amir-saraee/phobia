@@ -802,23 +802,30 @@ function viewPredict(phobiaKey, levelIdx) {
   // actual SUDS — that made a repeat prediction just echo what happened, which
   // hollows out the predict-vs-actual signal the whole mechanic depends on.
   const suggested = Math.min(8, 4 + levelIdx);
+  // The gate: the story's beat (one card), what's behind the door, one
+  // number, one big button. It used to open with two paragraphs on how fear
+  // makes predictions, a practice box, seven chips with their own
+  // explanation, and a scale with its own — the longest read in the game,
+  // standing between a visitor and the thing they came to face.
+  const focus = window.Story && !window.__demoMode ? window.Story.focusFor(phobiaKey, levelIdx) : null;
+  const kit = hasCreatureKit(phobiaKey);
   return `
-    <div class="panel">
-      <span class="badge">${tf("predict.badge", "Trial {n} of {m} — {realm}", { n: levelIdx + 1, m: p.levels.length, realm: escapeHtml(realmOf(phobiaKey).realmName) })}</span>
-      ${hasCreatureKit(phobiaKey) && levelIdx === 0 && !(state.log || []).some((l) => l.phobia === phobiaKey)
-        ? `<h2 style="margin-top:10px">${t("predict.h2first", "One guess before you walk in")}</h2>
-      <p>${phobiaKey === "dogs"
-        ? t("predict.pfirst", "Fear makes predictions. Name the one yours is most sure of, and how loud you expect it to get — then walk in and watch what the dog actually does.")
-        : isPlaceKit(phobiaKey) ? t("predict.pfirst3", "Fear makes predictions. Name the one yours is most sure of, and how loud you expect it to get — then walk in and see what actually happens.")
-        : tf("predict.pfirst2", "Fear makes predictions. Name the one yours is most sure of, and how loud you expect it to get — then walk in and watch what the {noun} actually does.", { noun: kitNoun(phobiaKey) })}</p>`
-        : `<h2 style="margin-top:10px">${t("predict.h2", "At the gate: name your fear's number")}</h2>
-      <p>${t("predict.p", "A traveler's ritual that makes the trial count double: <em>predict</em> how loud the fear will be, then see how it actually goes. Most people over-predict — and catching your own shadow exaggerating is exactly the lesson the brain needs.")}</p>`}
-      <p class="hint" style="margin-top:14px">${t("predict.youllBe", "You'll be:")} <strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>${lv.desc ? ` — ${escapeHtml(lvDesc(phobiaKey, levelIdx))}` : ""}</p>
-      ${window.Story ? window.Story.focusHTML(phobiaKey, levelIdx) : ""}
-${hasCreatureKit(phobiaKey) ? `
-      <div class="expect-block">
-        <div class="expect-q">${expectQ(phobiaKey)}</div>
-        <div class="expect-sub">${t("expect.sub", "Pick the one your fear is most sure of. It's a guess, not a fact — this trial is the test.")}</div>
+    <div class="panel gate-panel">
+      ${window.Story ? window.Story.gateHTML(phobiaKey, levelIdx) : ""}
+      <div class="gate-trial">
+        <span class="badge">${tf("predict.badge", "Trial {n} of {m} — {realm}", { n: levelIdx + 1, m: p.levels.length, realm: escapeHtml(realmOf(phobiaKey).realmName) })}</span>
+        <h2>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</h2>
+        ${lv.desc ? `<p class="gate-desc">${escapeHtml(lvDesc(phobiaKey, levelIdx))}</p>` : ""}
+        ${focus && focus.text ? `<p class="gate-focus">${tf("gate.focus", "🎯 Today's practice: {t}", { t: escapeHtml(focus.text) })}</p>` : ""}
+      </div>
+
+      <div class="suds gate-suds">
+        <label id="lbl-predictedSuds">${t("predict.label2", "How scared do you expect to feel in there?")}</label>
+        ${sudsScale("predictedSuds", suggested, { picked: true, valueId: "predictedValue" })}
+      </div>
+${kit ? `
+      <div class="expect-block gate-expect">
+        <div class="expect-q">${expectQ(phobiaKey)} <span class="gate-opt">${t("gate.optional", "optional")}</span></div>
         <div class="expect-chips" role="radiogroup" aria-label="${escapeHtml(expectQ(phobiaKey))}">
           ${CREATURE_KITS[phobiaKey].fears.map((f) => `<button type="button" class="expect-chip" role="radio" aria-checked="false" data-action="pick-fear" data-fear="${f.id}">${escapeHtml(kitFearText(phobiaKey, f.id))}</button>`).join("")}
           <button type="button" class="expect-chip expect-none" role="radio" aria-checked="false" data-action="pick-fear" data-fear="none">${t("expect.none", "Nothing specific — just the feeling")}</button>
@@ -831,22 +838,14 @@ ${hasCreatureKit(phobiaKey) ? `
             <span class="small">${t("expect.hi", "100% certain")}</span>
             <div class="value" id="expectBeliefValue">—</div>
           </div>
-          <div class="hint">${phobiaKey === "dogs" ? t("expect.after", "After the trial we'll check it against what the dog actually did — and ask again.")
-            : isPlaceKit(phobiaKey) ? t("expect.after3", "After the trial we'll check it against what actually happened — and ask again.")
-            : tf("expect.after2", "After the trial we'll check it against what the {noun} actually did — and ask again.", { noun: kitNoun(phobiaKey) })}</div>
         </div>
       </div>` : ""}
 
-      <div class="suds" style="margin-top:18px">
-        <label id="lbl-predictedSuds">${tf("predict.label", "How anxious do you expect to feel during {t}?", { t: `<strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>` })}</label>
-        ${sudsScale("predictedSuds", suggested, { picked: true, valueId: "predictedValue" })}
-        <div class="hint">${t("predict.hint", "After the trial, you'll rate how it actually felt — and we'll compare. The gap is where the learning happens.")}</div>
-      </div>
-
-      <div class="actions">
+      <div class="actions gate-actions">
+        <button class="btn-primary btn-xl gate-enter" data-action="confirm-predict" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("predict.enter2", "Enter the trial →")}</button>
         <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">${t("complete.back", "Back to the realm")}</button>
-        <button class="btn-primary" data-action="confirm-predict" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("predict.enter", "Enter the trial")}</button>
       </div>
+      <p class="gate-note">${t("gate.note", "Afterwards you'll say how it really was. The gap between the guess and the real thing is where fear unlearns.")}</p>
     </div>
   `;
 }
@@ -996,11 +995,16 @@ function viewExposure(phobiaKey, levelIdx) {
   // key-letter suffixes, which read as noise when no keyboard exists.
   if (cmdBar && isCoarsePointer()) {
     cmdBar = cmdBar.replace(/ \((?:E|B|T|C|S|Space)\)<\/span>/g, "</span>");
-    // Only auto-open compact bars: with the phone-size buttons, 4 actions fit
-    // beside the joystick lane; heights' 6-button bar would swallow the stage
-    // (it stays behind "Show controls" — that scene is walk-driven anyway).
-    const nBtns = (cmdBar.match(/cmd-btn/g) || []).length;
-    if (nBtns <= 4) cmdBar = cmdBar.replace('class="scene-cmd-bar collapsed"', 'class="scene-cmd-bar"');
+  } else if (cmdBar) {
+    // Desktop: the key letter becomes a small keycap instead of "(E)".
+    cmdBar = cmdBar.replace(/ \((E|B|T|C|S|Space)\)<\/span>/g, ' <kbd class="cmd-key">$1</kbd></span>');
+  }
+  // A compact bar (≤4 actions) is the scene's hotbar: open from the start on
+  // every device and never toggled, so the verbs are there to find without a
+  // "Show controls" button flipping a panel in and out. Heights' 6-button bar
+  // stays behind its toggle — that scene is walk-driven anyway.
+  if (cmdBar && (cmdBar.match(/cmd-btn/g) || []).length <= 4) {
+    cmdBar = cmdBar.replace('class="scene-cmd-bar collapsed"', 'class="scene-cmd-bar"');
   }
   return `
     <div class="panel exposure-panel">
@@ -1348,7 +1352,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       shadowStrip = `
         <div class="ground-gain" aria-label="${tf("gain.aria", "Trials faced: {a} of {b}", { a: rs.trials, b: rs.totalTrials })}">
           <span class="gg-line">
-            <strong>${rs.trials}</strong>/${rs.totalTrials} ${t("gain.trials", "trials faced here")}
+            🏮 ${tf("gain.flames", "{realm}'s lantern: {n} of {m} flames lit", { realm: escapeHtml(realmOf(phobiaKey).realmName), n: `<strong>${rs.trials}</strong>`, m: rs.totalTrials })}
           </span>
           <span class="gg-meter"><i style="width:${((rs.trials / rs.totalTrials) * 100).toFixed(0)}%"></i></span>
           ${rs.walked
@@ -1528,7 +1532,10 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
         // player has an alarm of their own to refer to. Both optional.
         if (early || !hasCreatureKit(phobiaKey) || levelIdx !== 0) return "";
         const needPrimer = !primerSeen(phobiaKey), needMirror = !getChecks(phobiaKey).length;
-        if (!needPrimer && !needMirror) return "";
+        // A traveler made for them by the title screen's one-tap start gets
+        // the creator offered here — after the first trial, not before it.
+        const needLook = (() => { try { return localStorage.getItem("fobia.travelerMade") !== "1"; } catch { return false; } })();
+        if (!needPrimer && !needMirror && !needLook) return "";
         return `
           <div class="mirror-invite first-next">
             <span class="bridge-invite-kicker">${t("first.kicker", "🧭 Two minutes, whenever you like")}</span>
@@ -1537,6 +1544,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
             <div class="actions" style="margin-top:8px">
               ${needPrimer ? `<button class="btn-ghost" data-action="open-primer" data-phobia="${phobiaKey}">${t("first.primer", "🧭 The one-minute primer")}</button>` : ""}
               ${needMirror ? `<button class="btn-ghost" data-action="fear-check" data-phobia="${phobiaKey}" data-at="baseline">${t("first.mirror", "🪞 Hold up the Mirror")}</button>` : ""}
+              ${needLook ? `<button class="btn-ghost" data-action="edit-character">${t("first.look", "🎨 Make the traveler yours")}</button>` : ""}
             </div>
           </div>`;
       })()}

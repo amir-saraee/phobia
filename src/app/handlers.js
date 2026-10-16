@@ -708,15 +708,12 @@ function continueTarget() {
   if (walked(k)) { const nk = keys.find((x) => !walked(x)); if (nk) k = nk; }
   return { key: k, level: nextOf(k), allWalked: keys.length > 0 && keys.every(walked) };
 }
-// A story page that belongs before this trial (the chapter's opening, or the
-// page the last trial turned) plays first; then `then`.
-function storyGate(phobia, lvl, then) {
-  const S = window.Story;
-  let id = null;
-  try { id = S && S.pendingBefore(phobia, lvl); } catch {}
-  if (id) S.play(id, { onDone: then, cta: tf("st.toTrial", "To trial {n} →", { n: lvl + 1 }) });
-  else then();
-}
+// The story no longer stands in front of a trial as a slideshow. The page
+// that belongs before it (the chapter's opening, or the one the last trial
+// turned) is told on the gate page itself, as a card — the resident's own
+// words and the way to read the whole page (Story.gateHTML). Players read
+// four-panel overlays twice on the way to their first trial, and skipped them.
+function storyGate(phobia, lvl, then) { then(); }
 // Every "face this trial" button lands here: story page → predict → scene.
 // (The one-minute primer no longer stands in front of trial 2 as well — the
 // story carries the why now; the primer stays one tap away on the realm page
@@ -752,6 +749,25 @@ function handleAction(d, params) {
       break;
     }
     // ---- Arrival flow: room → prologue → traveler → chapter → trial 1 ----
+    // One tap from the title screen into the fear they chose: a traveler is
+    // made for them (the creator is offered after the first trial) and they
+    // land at the gate of that realm's first trial.
+    case "quick-start": {
+      const k = d.phobia;
+      if (!PHOBIAS[k] || !realmOpen(k)) { go("select"); break; }
+      const C = window.Character;
+      let ch = C && C.loadCharacter();
+      if (!ch && C) {
+        ch = Object.assign({}, C.defaultCharacter(), { name: t("tw.defaultName", "Traveler"), primaryPhobia: k });
+        try { C.saveCharacter(ch); } catch {}
+        try { activateCharacterState(); } catch {}
+      } else if (ch && C && ch.primaryPhobia !== k) {
+        ch = Object.assign({}, ch, { primaryPhobia: k });
+        try { C.saveCharacter(ch); } catch {}
+      }
+      startTrial(k, Math.max(0, Math.min(PHOBIAS[k].levels.length - 1, (getProgress(k).highestCompleted ?? -1) + 1)));
+      break;
+    }
     case "make-traveler": {
       _travelerDraft = (window.Character && window.Character.loadCharacter())
         || (window.Character && window.Character.defaultCharacter())
@@ -785,6 +801,7 @@ function handleAction(d, params) {
       if (!draft.primaryPhobia || !PHOBIAS[draft.primaryPhobia] || !realmOpen(draft.primaryPhobia)) draft.primaryPhobia = "dogs";
       if (!draft.name) draft.name = "Traveler";
       try { C.saveCharacter(draft); } catch {}
+      try { localStorage.setItem("fobia.travelerMade", "1"); } catch {}
       _travelerDraft = null;
       // A first-timer walks straight to the gate of trial 1. The realm page,
       // primer and Mirror are all still there — after the first dog, when
@@ -873,6 +890,8 @@ function handleAction(d, params) {
         ? { phobia: d.phobia, level: lvl, fear: chip.dataset.fear, belief: (bel && bel.dataset.touched) ? parseInt(bel.value, 10) : null, ts: Date.now() }
         : null;
       window.__pendingExpect = pendingExpect;
+      // The gate page told the chapter's opening; walking in turns it.
+      try { if (window.Story && !window.Story.isSeen(`${d.phobia}.open`)) window.Story.markSeen(`${d.phobia}.open`); } catch {}
       go("exposure", { phobia: d.phobia, level: lvl });
       break;
     }

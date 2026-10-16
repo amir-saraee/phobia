@@ -1111,6 +1111,36 @@
         <button type="button" class="btn-primary sc-read" data-action="story-play" data-beat="${esc(id)}">${opts.cta || T("st.read", "Read the page")}</button>
       </div>`;
   }
+  // The story's beat on a trial's gate page, as one card instead of a
+  // slideshow in front of it. A realm's first trial: the resident in their
+  // own words, and Mira's promise. On the way up the ladder: the page the
+  // last trial turned, if it's still unread. Either way the whole page is
+  // one tap away — reading it is a choice, not a toll on the way in.
+  function gateHTML(k, lvl) {
+    let id = null;
+    try { id = pendingBefore(k, lvl); } catch {}
+    const ch = chapterOfRealm(k);
+    if (!id || !ch || !BEATS[id]) return "";
+    const b = BEATS[id].beat;
+    if (!id.endsWith(".open")) return cardHTML(id, { kicker: TF("st.gatePrev", "📖 Before you go in · {ch}", { ch: chapterShort(ch) }) });
+    const res = b.panels.find((p) => p.who === ch.resident) || b.panels.find((p) => p.who !== "narrator") || b.panels[0];
+    const who = res.who !== "narrator" ? res.who : (ch.resident || "mira");
+    const q = L(res.text);
+    const c = CAST[who] || {};
+    return `
+      <div class="gate-story">
+        <span class="gs-kicker">${esc(chapterLabel(ch))}</span>
+        <div class="gs-row">
+          <span class="gs-face" aria-hidden="true">${portrait(who, 56)}</span>
+          <div class="gs-body">
+            <p class="gs-quote">${lang() === "fa" ? `«${esc(q)}»` : `“${esc(q)}”`}</p>
+            <span class="gs-who">— ${esc(L(c.name))}${c.role ? `, ${esc(L(c.role))}` : ""}</span>
+          </div>
+        </div>
+        <p class="gs-mira"><span class="gs-mface" aria-hidden="true">${portrait("mira", 28)}</span><span>${esc(T("st.gateMira", "Let's light this lantern together — one small step at a time. I'll be right beside you."))}</span></p>
+        <button type="button" class="linklike gs-read" data-action="story-play" data-beat="${esc(id)}">${T("st.readWhole", "Read the whole page")}</button>
+      </div>`;
+  }
   // Six lanterns in a row, each with its five flames.
   function lanternsHTML(opts = {}) {
     const rows = REALM_CHAPTERS.filter((c) => { try { return PHOBIAS[c.realm] && isOpenRealm(c.realm); } catch { return false; } }).map((c) => {
@@ -1474,7 +1504,7 @@
   window.Story = {
     CHAPTERS, LESSONS, CAST, BEATS, ORDER,
     play, isSeen, markSeen, isUnlocked, pendingBefore, pendingAfter, nextUnread, lastRead,
-    beatAfterTrial, focusFor, focusHTML, cardHTML, lanternsHTML, recapLine, morningNoteHTML,
+    beatAfterTrial, focusFor, focusHTML, cardHTML, gateHTML, lanternsHTML, recapLine, morningNoteHTML,
     viewBook, mountBook, chapterOfRealm, chapterLabel, pagesRead, titleOf, sceneSVG, portrait, upgradeFaces,
     get isOpen() { return !!_open; },
   };

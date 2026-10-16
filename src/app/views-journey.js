@@ -397,7 +397,7 @@ function valleyHeroSVG({ lit = [], next = null } = {}) {
     const key = VALLEY_KEYS[i];
     const on = lit.includes(key);
     const waiting = !on && key === next;
-    return `<g class="vh-lantern${on ? " on" : ""}${waiting ? " waiting" : ""}" transform="translate(${x} ${y}) scale(${s})">
+    return `<g class="vh-lantern${on ? " on" : ""}${waiting ? " waiting" : ""}" data-k="${key}" transform="translate(${x} ${y}) scale(${s})">
       <circle class="vh-glow" cx="16" cy="-112" r="74" fill="url(#vhGlow)"/>
       <path d="M0 0 V-150 M-4 -150 H22 M18 -150 V-140" stroke="#151826" stroke-width="5" fill="none" stroke-linecap="round"/>
       <path class="vh-glass" d="M6 -138 h20 l4 7 v26 l-4 6 h-20 l-4 -6 v-26z" stroke="#262a3b" stroke-width="2.5"/>
@@ -441,7 +441,7 @@ function viewArrival() {
   const ch = window.Character && window.Character.loadCharacter();
   const named = ch && ch.name ? escapeHtml(ch.name) : null;
   const S = window.Story;
-  let lit = [], next = "dogs";
+  let lit = [], next = null;
   if (ch) {
     try {
       lit = VALLEY_KEYS.filter((k) => PHOBIAS[k] && realmStatus(k).tamed);
@@ -456,22 +456,36 @@ function viewArrival() {
   </div>`;
   const wordmark = `
     <h1 class="lw-mark">${brandLamp()}<span>${t("brand.name", "Lanternwalk")}</span></h1>`;
-  // First visit: the name, the line, one button. The prologue plays on the
-  // way to the creator; the self-check stays one tap away for the visitor
-  // who came to learn about fear rather than to play.
-  if (!named) return `${top}
+  // First visit: the name, the line — and the choice they came for. Each
+  // lantern is a fear; one tap (and the one-time notice) puts them in that
+  // fear's first trial. It used to be "Begin the walk" → a four-page
+  // prologue → a character creator with the fear buried in its first row
+  // (dogs pre-selected) → a four-page chapter → a long form: twelve taps and
+  // ~700 words before the thing they chose. The prologue and the creator are
+  // still there — after the first trial, when they mean something.
+  if (!named) {
+    const open = VALLEY_KEYS.filter((k) => PHOBIAS[k] && realmOpen(k));
+    const icon = { dogs: "🐕", spiders: "🕷", snakes: "🐍", heights: "🏔", dark: "🌙", enclosed: "🚪" };
+    const tiles = open.map((k) => `
+      <button class="fear-tile" data-action="quick-start" data-phobia="${k}">
+        <span class="ft-icon" aria-hidden="true">${icon[k] || "🏮"}</span>
+        <span class="ft-name">${escapeHtml(t(`phobia.${k}.label`, PHOBIAS[k].label))}</span>
+        <span class="ft-realm">${escapeHtml(realmOf(k).realmName)}</span>
+      </button>`).join("");
+    return `${top}
   <div class="mob-hero arrive-hero">
     ${wordmark}
     <p class="lw-tagline">${t("arrive.title2", "Every fear is a path<br>you stopped walking.")}</p>
     <p class="lw-sub">${t("brand.sub", "Light it again — one small step at a time.")}</p>
   </div>
-  <div class="mob-sheet arrive-sheet">
-    <p>${t("arrive.copy3", "Six lanterns went dark in this valley — dogs, spiders, snakes, heights, the dark and tight spaces. Mira, the lantern-keeper, walks beside you. You choose every step, and you can turn back any time.")}</p>
-    <div class="mob-thumb">
-      <button class="mob-btn mob-btn-primary" data-action="make-traveler">${t("arrive.cta3", "Begin the walk")}</button>
-    </div>
+  <div class="mob-sheet arrive-sheet arrive-pick">
+    <p class="arrive-story">${t("arrive.copy4", "Six lanterns went dark in this valley, one for each fear. Mira, the lantern-keeper, will walk beside you — you choose every step, and you can turn back any time.")}</p>
+    <h2 class="arrive-q">${t("arrive.pickQ", "Which fear do you want to face?")}</h2>
+    <div class="fear-tiles">${tiles}</div>
+    <p class="arrive-promise">${t("arrive.promise", "You'll start where it's small — far away, and only as close as you choose.")}</p>
     <button class="arrive-link" data-action="open-quiz">${t("arrive.quiz2", "Not sure which fear? Take the 1-minute check")}</button>
   </div>`;
+  }
   // Returning: where the story is, what happened last time, and the one
   // button that picks it up. It used to say "Continue" and always open the
   // dog realm, whatever fear the traveler had chosen.

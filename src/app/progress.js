@@ -432,8 +432,9 @@ function awardCourage(points, reason) {
   } catch {}
   if (reason && window.PhobiaFX && window.PhobiaFX.contextPrompt) {
     // Light, non-intrusive notification — only when the courage gain is
-    // big enough to celebrate.
-    if (points >= 20) {
+    // big enough to celebrate, and never over a live trial (the header badge
+    // above already popped; the Complete screen totals it).
+    if (points >= 20 && !document.querySelector(".exposure-panel #stage")) {
       try { window.PhobiaFX.contextPrompt(tf("courage.gain", "+{n} courage · {why}", { n: Math.round(points), why: reason }), 2800); } catch {}
     }
   }
@@ -486,7 +487,11 @@ function markCompleted(...args) {
   try { return recordCompletion(...args); }
   finally {
     window.__achSink = null;
-    if (lastAward) lastAward.badges = sink.filter((b) => b.kind === "trial").map((b) => `${b.icon} ${b.title}`);
+    // Milestones the scene itself noticed ("First pet") were held back during
+    // the trial — and so were page toasts (experiment rank-ups): both join here.
+    const held = (window.__stageMilestones || []).concat((window.__trialToasts || []).map((b) => `${b.icon} ${b.title}`));
+    window.__stageMilestones = null; window.__trialToasts = null;
+    if (lastAward) lastAward.badges = sink.filter((b) => b.kind === "trial").map((b) => `${b.icon} ${b.title}`).concat(held);
   }
 }
 function recordCompletion(phobiaKey, levelIdx, suds, predicted, peak, outcome, extra) {
@@ -872,7 +877,9 @@ function openFearCheckModal(phobiaKey, at, mOpts = {}) {
     res.hidden = false;
     if (mOpts.quiz) {
       const enter = res.querySelector("#quizEnter");
-      if (enter) enter.addEventListener("click", () => { close(); go("ladder", { phobia: phobiaKey }); });
+      // Straight to the realm's next trial gate (making a traveler if there
+      // isn't one) — the same one-tap door the title screen's lanterns use.
+      if (enter) enter.addEventListener("click", () => { close(); if (realmOpen(phobiaKey)) handleAction({ action: "quick-start", phobia: phobiaKey }, {}); else go("ladder", { phobia: phobiaKey }); });
       const valley = res.querySelector("#quizValley");
       if (valley) valley.addEventListener("click", () => { close(); go("select"); });
       // hide the questions so the result reads as its own page
@@ -962,6 +969,9 @@ const _achQueue = [];
 let _achShowing = false;
 function showAchievement(title, desc, icon = "🏆", kind = "") {
   if (window.__achSink) { window.__achSink.push({ title, desc, icon, kind }); return; }
+  // Mid-trial (an experiment's courage tipping a rank): hold it for the
+  // Complete screen rather than sliding a toast over the scene.
+  if (document.querySelector(".exposure-panel #stage")) { (window.__trialToasts = window.__trialToasts || []).push({ title, icon }); return; }
   _achQueue.push({ title, desc, icon });
   if (!_achShowing) nextAchievement();
 }
