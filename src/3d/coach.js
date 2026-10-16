@@ -105,6 +105,25 @@ function makeCreatureCoach(opts) {
   // the part of exposure that does the work.
   const goals = (o.goals || []).map((g) => Object.assign({ n: 0, need: 1, done: false }, g));
   const starsDone = () => goals.filter((g) => g.done).length;
+  // A skill goal that names a hotbar verb (`verb: "treat"`) lights that
+  // button while the goal is open, so "what do I do here?" has an answer on
+  // screen without another line of text; when the star lands the button
+  // ticks. A two-step goal moves the light on with setVerb().
+  const verbBtn = (cmd) => cmd ? document.querySelector(`.scene-cmd-bar .cmd-btn[data-cmd="${cmd}"]`) : null;
+  let litVerb = null;
+  function syncVerb() {
+    const g = goals.find((x) => !x.done && x.verb);
+    const want = g ? g.verb : null;
+    if (want === litVerb && (!want || (verbBtn(want) || {}).classList?.contains("cmd-goal"))) return;
+    const old = verbBtn(litVerb); if (old) old.classList.remove("cmd-goal");
+    litVerb = want;
+    const b = verbBtn(want); if (b) b.classList.add("cmd-goal");
+  }
+  function setVerb(id, cmd) {
+    const g = goals.find((x) => x.id === id);
+    if (!g || g.done || g.verb === cmd) return;
+    g.verb = cmd; syncVerb();
+  }
   const starRow = (n, fresh = -1) => goals.map((_, i) =>
     `<i class="${i < n ? "on" : ""}${i === fresh ? " new" : ""}">★</i>`).join("");
   function renderGoals() {
@@ -114,6 +133,7 @@ function makeCreatureCoach(opts) {
       const cnt = g.need > 1 ? ` <span class="dc-n">${Math.min(g.n, g.need)}/${g.need}</span>` : "";
       return `<li class="dc-goal${g.done ? " done" : ""}${g.required ? " req" : ""}${g === next ? " next" : ""}"><i>${g.done ? "✓" : g.icon || "○"}</i><span>${esc(g.text)}${cnt}</span><b class="dc-gs" aria-hidden="true">★</b></li>`;
     }).join("");
+    syncVerb();
   }
   renderGoals();
   // A star landing: a gold card drops in at the top of the view, one at a
@@ -141,13 +161,18 @@ function makeCreatureCoach(opts) {
     const g = goals.find((x) => x.id === id);
     if (!g || g.done) return;
     g.n = g.need; g.done = true;
+    // The verb's button ticks as its star lands (a brief check, then plain).
+    if (g.verb) {
+      const b = verbBtn(g.verb);
+      if (b) { b.classList.remove("cmd-goal"); b.classList.add("cmd-goal-done"); setTimeout(() => { try { b.classList.remove("cmd-goal-done"); } catch {} }, 1600); }
+    }
     renderGoals();
     // No chime: exposure scenes carry world sound only. A tick in the palm,
     // a glint on the card and the star itself say it instead.
     try { if (window.PhobiaFX && window.PhobiaFX.haptic) window.PhobiaFX.haptic(12); } catch {}
     root.classList.remove("dc-ping"); void root.offsetWidth; root.classList.add("dc-ping");
     starPop(g);
-    if (id === "read") retire("starsLeft");
+    if (id !== "settle") retire("starsLeft");
   }
   function goalCount(id, n) {
     const g = goals.find((x) => x.id === id);
@@ -515,8 +540,10 @@ function makeCreatureCoach(opts) {
       }
       // One star still open, and it's one the animal can still give: say so,
       // once, and leave the choice with the player.
+      // A verb goal is always still on offer — it's the player's move, not
+      // the animal's — so it gets the same one-line nudge.
       const open = goals.filter((x) => !x.done && x.id !== "settle");
-      if (!K.place && open.length === 1 && open[0].id === "read") {
+      if (open.length === 1 && ((!K.place && open[0].id === "read") || open[0].verb)) {
         teach("starsLeft", tf("dc.tStarsLeft",
           "Trial held — continue whenever you like. <b>One star is still open:</b> {g}. Stay a little longer if you want all three.",
           { g: esc(open[0].text) }), 8000);
@@ -689,11 +716,13 @@ function makeCreatureCoach(opts) {
   }
   function dispose() {
     window.removeEventListener("keydown", onKey);
+    { const b = verbBtn(litVerb); if (b) b.classList.remove("cmd-goal"); litVerb = null; }
     { const L = lane(); if (L) { L.release("read"); L.release("callout"); } }
     try { root.remove(); callout.remove(); readBox.remove(); } catch {}
   }
   return {
-    update, pulse, signal, answer, note, teach, goalDone, goalCount, setTrust, setFoot, safety,
+    update, pulse, signal, answer, note, teach, goalDone, goalCount, setVerb, setTrust, setFoot, safety,
+    goalOpen: (id) => { const g = goals.find((x) => x.id === id); return !!g && !g.done; },
     target: () => alarm, holdPolicy, evidence, dispose,
     get engaged() { return engaged; }, get alarm() { return alarm; },
     get readOpen() { return !!readOpen; }, get settled() { return settledLatched; },

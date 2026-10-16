@@ -1202,6 +1202,10 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
   let leanT = 0;
   let leanFromPitch = 0;
   let leanFromZ = 0;
+  // Where the lean comes back to: your spot if you leaned from the rail, the
+  // rail if you pressed "Lean over" from further back — gliding a few metres
+  // back afterwards read (to you and to the coach) as stepping away.
+  let leanBackZ = 0;
   let storedActiveControls = null;
 
   // ---- Character-driven event state machine ----
@@ -1231,9 +1235,11 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
     coin.position.set(x + (Math.random() - 0.5) * 0.05, y, z);
     coin.userData = { vy: -1.5, vx: (Math.random() - 0.5) * 0.6, vz: -1 - Math.random() * 1.5,
                       spinX: (Math.random() - 0.5) * 6, spinZ: (Math.random() - 0.5) * 4,
-                      landed: false };
+                      landed: false, eng: hCoach.engaged, fallT: 0, watchT: 0 };
     scene.add(coin);
     coins.push(coin);
+    // The low ledge's star: at the edge, a coin over it.
+    if (rung === 0 && hCoach.engaged) hCoach.goalDone("coinEdge");
   }
   function dropCoin(controls) {
     // The hand extends past the rail and opens BEFORE the coin exists — the
@@ -1286,6 +1292,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
             leanT = 1.0;
             leanFromPitch = c.pitch;
             leanFromZ = c.position.z;
+            leanBackZ = Math.min(leanFromZ, (c.opts.bounds.minZ ?? -0.2) + 0.45);
             if (window.PhobiaVoice) {
               window.PhobiaVoice.speak(window.t("sc.h.lean", "Leaning over. Hold the rail. Let yourself feel it. You are safe."));
             }
@@ -1342,11 +1349,15 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
     { sizeMul: 0.92, tau: 18, hFloor: 0.38 },
   ][rung];
   const hZone = 1.1;   // within ~1 m of the rail
+  // The skill star is a verb at the edge, on the hotbar: drop a coin over
+  // the low ledge; lean over the railing and look down; drop a coin from ten
+  // floors and watch it all the way to the street; lean out into the wind.
+  // (The skywalk is standing on glass and looking down.)
   const hSkill = [
-    { id: "near",    icon: "→",  text: window.t("dc.h.gNear", "Step up to the edge") },
-    { id: "lookDown",icon: "⤓",  text: window.t("dc.h.gLook", "Look straight down for 5 seconds") },
-    { id: "glass",   icon: "🪟", text: window.t("dc.h.gGlass", "Stand on the glass for 5 seconds") },
-    { id: "gustHeld",icon: "💨", text: window.t("dc.h.gGust", "Stay at the edge through a gust") },
+    { id: "coinEdge",  icon: "🪙", verb: "coin", text: window.t("dc.h.gCoinEdge", "Step up to the edge and drop a coin over") },
+    { id: "leanLook",  icon: "⤴", verb: "lean", text: window.t("dc.h.gLeanLook", "Lean over the railing and look down") },
+    { id: "coinWatch", icon: "🪙", verb: "coin", text: window.t("dc.h.gCoinWatch", "Drop a coin and watch it all the way down") },
+    { id: "leanGust",  icon: "💨", verb: "lean", text: window.t("dc.h.gLeanGust", "Lean over the edge while the wind blows") },
     { id: "glassLook", icon: "⤓", text: window.t("dc.h.gGlassLook", "On the glass, look straight down for 8 seconds") },
   ][rung];
   const hCoach = makeCreatureCoach({
@@ -1372,7 +1383,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
     window.PhobiaFear.setDirect(() => hCoach.target(), (st) => hCoach.pulse(st, "event", hLastDist));
   }
   window.__holdPolicy = hCoach.holdPolicy;
-  const hState = { lookT: 0, glassT: 0, glassLookT: 0, gustEdgeT: 0, lastLookPulse: -99, wasLooking: false,
+  const hState = { leanHoldT: 0, leanGustT: 0, glassLookT: 0, lastLookPulse: -99, wasLooking: false,
                    legsT: 0, movedAtEdge: 0, prevX: null, prevZ: null, clock: 0, lastShakeN: 0 };
   function hSignal(id) {
     if (document.querySelector(".tour-overlay:not(.dismiss), .countdown")) return false;
@@ -1539,6 +1550,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
           // from where they are (no snap to full lean before coming back).
           const u = kNow < 0.35 ? kNow / 0.35 : 1;        // how far out we got
           leanT = 1 - (0.65 + 0.35 * (1 - u));
+          leanBackZ = leanFromZ;   // pulling back means back to where you were
         }
         leanT -= (dt || 0.016) * 0.33;            // ~3 s total
         const k = Math.max(0, Math.min(1, 1 - leanT));
@@ -1551,11 +1563,17 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         } else if (k < 0.65) {
           // Hold: peeked over, can see straight down
           p = -1.30; z = -0.50;
+          // Held out over the drop (at the edge, not a lean cut short):
+          // rung 2's star — and rung 4's, if the wind is blowing as you do.
+          if (hCoach.engaged) {
+            hState.leanHoldT += dt || 0.016;
+            if (_gustT < _gustDur + 1.0) hState.leanGustT += dt || 0.016;
+          }
         } else {
           // Lean BACK: pitch and position return
           const u = (k - 0.65) / 0.35;
           p = -1.30 + (leanFromPitch - (-1.30)) * u;
-          z = -0.50 + (leanFromZ - (-0.50)) * u;
+          z = -0.50 + (leanBackZ - (-0.50)) * u;
         }
         controls.pitch = p;
         // Bypass the bounds z-clamp so the slide forward can actually land past
@@ -1614,7 +1632,6 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         if (_gustPeak > 0.85 && hLastDist < hZone + 0.8) {
           hCoach.pulse(0.18 + 0.12 * (_gustPeak - 0.85), "gust", hLastDist);
           hSignal(rung >= 3 && Math.random() < 0.5 ? "sway" : "gust");
-          if (rung === 3 && hCoach.engaged) hState.gustEdgeT = 4;   // hold the edge for 4 s after it
         }
         // A hard gust up high lands a sharp involuntary head-jolt on top of
         // the smooth shove — the flinch a real edge gust forces out of you.
@@ -1747,17 +1764,18 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
           hState.prevX = controls.position.x; hState.prevZ = controls.position.z;
           if (hState.movedAtEdge > 0.4 && !hState._movedNoted) { hState._movedNoted = true; }
           // Rung goals.
-          if (rung === 0 && eng) hCoach.goalDone("near");
-          if (rung === 1) { hState.lookT = (lookingHard && eng) ? hState.lookT + dtN : Math.max(0, hState.lookT - dtN); if (hState.lookT > 5) hCoach.goalDone("lookDown"); }
-          if (rung === 2) { hState.glassT = _wasOnGlass ? hState.glassT + dtN : hState.glassT; if (hState.glassT > 5) hCoach.goalDone("glass"); }
-          if (rung === 3 && hState.gustEdgeT > 0) { if (eng) { hState.gustEdgeT -= dtN; if (hState.gustEdgeT <= 0) hCoach.goalDone("gustHeld"); } else hState.gustEdgeT = 0; }
+          // (The coin stars land with the coin.)
+          if (rung === 1 && hState.leanHoldT > 0.6) hCoach.goalDone("leanLook");
+          if (rung === 3 && hState.leanGustT > 0.4) hCoach.goalDone("leanGust");
           if (rung === 4) { hState.glassLookT = (_wasOnGlass && controls.pitch < -0.7) ? hState.glassLookT + dtN : hState.glassLookT; if (hState.glassLookT > 8) hCoach.goalDone("glassLook"); }
           // Diegetic completion beat: the wind drops.
           if (window.__rungHoldComplete && !hState.beat) {
             hState.beat = true;
             if (hCoach.everSettled) hCoach.goalDone("settle");
-            _nextGust = 999;
           }
+          // ...and the wind drops — once nothing is left to read in it (an
+          // open read star keeps the gusts coming, so it can still be earned).
+          if (hState.beat && !hState.calm && !hCoach.goalOpen("read")) { hState.calm = true; _nextGust = 999; }
         }
       }
 
@@ -1814,6 +1832,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
             leanT = 1.0;
             leanFromPitch = controls.pitch;
             leanFromZ = controls.position.z;
+            leanBackZ = Math.min(leanFromZ, ((controls.opts && controls.opts.bounds && controls.opts.bounds.minZ) ?? -0.2) + 0.45);
             hCoach.note("lean"); hSignal("pull");
           // (the coach card speaks for this moment now)
             if (window.PhobiaVoice) {
@@ -2133,10 +2152,15 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         coin.position.z += coin.userData.vz * dtCoin;
         coin.rotation.x += coin.userData.spinX * dtCoin;
         coin.rotation.z += coin.userData.spinZ * dtCoin;
+        // Watching it fall = eyes down past the rail while it drops.
+        coin.userData.fallT += dtCoin;
+        if (controls && controls.pitch < -0.55) coin.userData.watchT += dtCoin;
         if (coin.position.y <= groundY + 0.05) {
           coin.position.y = groundY + 0.05;
           coin.userData.landed = true;
           coin.userData.vy = 0;
+          // Ten floors' star: dropped from the edge and watched most of the way.
+          if (rung === 2 && coin.userData.eng && coin.userData.watchT > coin.userData.fallT * 0.65) hCoach.goalDone("coinWatch");
           // Tiny ping on landing — delayed by the real speed of sound over
           // the drop height, spatialised at the landing spot so distance
           // attenuation makes a rooftop drop faint and a balcony drop crisp.

@@ -316,11 +316,16 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
   // away from the door you came in by, is the approach.
   const HEART = hall ? { x: 0, z: -5.2 } : { x: 0.4, z: -1.7 };
   const dZone = 1.9;
+  // The skill star is naming what's really there (🔍): look at a thing in
+  // the dark and say what it is. Reading the shapes is this fear's version
+  // of reading the dog — attention ON the dark, not away from it. With the
+  // lamp on; then by the night-light alone; then the tall shape itself; then
+  // at the far end of the landing. (The last rung is sound only.)
   const dSkill = [
-    { id: "near",       icon: "→",  text: window.t("dc.d.gWindow", "Walk to the window") },
-    { id: "noiseHeld",  icon: "👂", text: window.t("dc.d.gNoise", "Stay put through a noise") },
-    { id: "lookShape",  icon: "🧥", text: window.t("dc.d.gShape", "Look at the tall shape for 5 seconds") },
-    { id: "hallEnd",    icon: "→",  text: window.t("dc.d.gHall", "Walk to the end of the landing") },
+    { id: "name3",      icon: "🔍", verb: "name", need: 3, text: window.t("dc.d.gName3", "Name three things you can see") },
+    { id: "nameDark",   icon: "🔍", verb: "name", need: 3, text: window.t("dc.d.gNameDark", "Name three things by the night-light — no flashlight") },
+    { id: "nameShape",  icon: "🧥", verb: "name", text: window.t("dc.d.gNameShape", "Look at the tall shape and name it") },
+    { id: "nameHall",   icon: "🔍", verb: "name", text: window.t("dc.d.gNameHall", "Walk to the end of the landing and name what's there") },
     { id: "threeSounds",icon: "👂", need: 3, text: window.t("dc.d.gSounds", "Stay through three sounds, no light") },
   ][rung];
   const coach = makeCreatureCoach({
@@ -334,7 +339,7 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
     expect: (() => { const e = window.__pendingExpect; return (e && e.phobia === "dark" && e.level === levelIdx) ? e : null; })(),
     goals: [
       dSkill,
-      { id: "read", icon: "👁", need: 2, text: window.t("dc.d.gRead", "Name what you hear and see") },
+      { id: "read", icon: "👁", need: 2, text: window.t("dc.d.gRead2", "Read each sound and shape for what it is") },
       { id: "settle", icon: "〰", required: true, text: window.t("dc.gSettle", "Stay until your alarm settles") },
     ],
   });
@@ -351,7 +356,7 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
   const EVENTS = ["creak", "hum", "creak"];
   if (!hall) EVENTS.push("tap");
   if (rung === 0 || rung === 2) EVENTS.push("curtain");
-  let nextEventAt = 6 + Math.random() * 3, clock = 0, soundsHeard = 0, soundsInDark = 0, noiseHoldT = 0, shapeLookT = 0;
+  let nextEventAt = 6 + Math.random() * 3, clock = 0, soundsHeard = 0, soundsInDark = 0;
   let figureSeen = false, eyesSeen = false, shadowSaid = false, moved = 0, prevX = null, prevZ = null;
   const _dir = new THREE.Vector3(), _to = new THREE.Vector3();
   const lookingAt = (x, y, z, cos = 0.93) => {
@@ -359,6 +364,69 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
     _to.set(x - _to.x, y - _to.y, z - _to.z).normalize();
     return _dir.dot(_to) > cos;
   };
+  // ---- Naming what's there (the 🔍 button) ----
+  // The thing nearest the middle of your view (within ~25°, a few metres)
+  // gets its name said back — the same room as in daylight — and counts.
+  const NAMEABLE = (hall ? [
+    { k: "door", x: -0.8, y: 0, z: -1.0 }, { k: "door", x: 0.8, y: 0, z: -3.9 }, { k: "door", x: -0.8, y: 0, z: -4.8 },
+    { k: "runner", x: 0, y: -1, z: -2.2 }, { k: "radiator", x: -0.74, y: -0.55, z: -2.8 },
+    { k: "table", x: 0.62, y: -0.2, z: -5.2, end: true }, { k: "window", x: WIN.cx, y: WIN.cy, z: R.z0, end: true },
+    { k: "coat", x: COAT.x, y: 0.6, z: COAT.z }, { k: "leds", x: LEDS.x, y: -0.94, z: LEDS.z, end: true },
+  ] : [
+    { k: "bed", x: -1.45, y: -0.45, z: -1.72 }, { k: "lamp", x: -0.44, y: -0.15, z: -2.54 },
+    { k: "wardrobe", x: 1.88, y: 0, z: -0.55 }, { k: "desk", x: 1.55, y: -0.25, z: -2.45 },
+    { k: "chair", x: 1.35, y: -0.4, z: -1.85 }, { k: "shelf", x: -2.02, y: -0.25, z: 1.25 },
+    { k: "picture", x: -2.17, y: 0.55, z: -0.2 }, { k: "window", x: WIN.cx, y: WIN.cy, z: R.z0 },
+    { k: "coat", x: COAT.x, y: 0.6, z: COAT.z }, { k: "rug", x: 0.1, y: -1, z: -0.35 },
+    { k: "leds", x: LEDS.x, y: -0.94, z: LEDS.z, minRung: 3 },
+  ]).filter((n) => rung >= (n.minRung || 0));
+  const NAME_LABEL = {
+    door: ["dc.d.n.door", "a door"], runner: ["dc.d.n.runner", "the runner"], radiator: ["dc.d.n.radiator", "the radiator"],
+    table: ["dc.d.n.table", "the hall table"], window: ["dc.d.n.window", "the window"], coat: ["dc.d.n.coat", "a coat on a hook"],
+    leds: ["dc.d.n.leds", "two standby lights"], bed: ["dc.d.n.bed", "the bed"], lamp: ["dc.d.n.lamp", "the bedside lamp"],
+    wardrobe: ["dc.d.n.wardrobe", "the wardrobe"], desk: ["dc.d.n.desk", "the desk"], chair: ["dc.d.n.chair", "the chair"],
+    shelf: ["dc.d.n.shelf", "the bookshelf"], picture: ["dc.d.n.picture", "a picture"], rug: ["dc.d.n.rug", "the rug"],
+  };
+  const namedIdx = new Set();
+  let namedDark = 0, nameFlashT = 0;
+  function nameWhatYouSee() {
+    camera.getWorldDirection(_dir);
+    const cp = camera.getWorldPosition(new THREE.Vector3());
+    let best = -1, bestDot = 0.9;
+    NAMEABLE.forEach((n, i) => {
+      _to.set(n.x - cp.x, n.y - cp.y, n.z - cp.z);
+      const dist = _to.length();
+      if (dist > 6 || dist < 0.2) return;
+      const dot = _dir.dot(_to.normalize());
+      if (dot > bestDot) { bestDot = dot; best = i; }
+    });
+    const btnLbl = document.querySelector('.scene-cmd-bar[data-scene="dark"] [data-cmd="name"] > span:last-child');
+    const flash = (txt) => {
+      if (!btnLbl) return;
+      if (!btnLbl.dataset.base) btnLbl.dataset.base = btnLbl.textContent;
+      btnLbl.textContent = txt; nameFlashT = 1.8;
+    };
+    if (best < 0) { flash(window.t("dc.d.lookFirst", "Look at something")); return; }
+    const n = NAMEABLE[best];
+    const L = NAME_LABEL[n.k];
+    const label = window.t(L[0], L[1]);
+    const cap = label.charAt(0).toUpperCase() + label.slice(1);
+    flash("✓ " + cap);
+    const line = n.k === "coat" ? window.t("dc.d.namedCoat", "A coat on a hook — that's the tall shape.")
+      : n.k === "leds" ? window.t("dc.d.namedLeds", "Two standby lights — a charger, not eyes.")
+      : window.tf("dc.d.named", "{thing} — the same as in daylight.", { thing: cap });
+    if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt(line, 2600);
+    const fresh = !namedIdx.has(best);
+    namedIdx.add(best);
+    coach.note("named");
+    const lit = flashlightHeld || matchT > 0.05;
+    if (!fresh) return;
+    if (rung === 0) coach.goalCount("name3", namedIdx.size);
+    if (rung === 1 && !lit) coach.goalCount("nameDark", ++namedDark);
+    if (rung === 2 && n.k === "coat") coach.goalDone("nameShape");
+    if (rung === 3 && n.end && controlsPos.z < -4.2) coach.goalDone("nameHall");
+  }
+  const controlsPos = { x: 0, z: 0 };
   function fireEvent(kind) {
     const A = window.PhobiaAudio;
     if (kind === "creak") {
@@ -375,7 +443,7 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
       curtainSway = 1; coach.note("curtain"); sig("curtain");
     }
     if (kind !== "curtain") {
-      soundsHeard++; noiseHoldT = 4;
+      soundsHeard++;
       if (coach.engaged && !flashlightHeld && matchT <= 0.05) { soundsInDark++; if (rung === 4) coach.goalCount("threeSounds", soundsInDark); }
     }
   }
@@ -399,12 +467,7 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
       fb.addEventListener("pointerleave", release); fb.addEventListener("pointercancel", release);
     }
     const nb = bar.querySelector('[data-cmd="name"]');
-    if (nb) nb.onclick = (e) => {
-      e.stopPropagation();
-      coach.teach("nameIt" + Date.now(), hall
-        ? window.t("dc.d.tNameHall", "Name what's here: the runner, three doors, the radiator, a coat on a hook, the window at the end. The same landing as in daylight.")
-        : window.t("dc.d.tName", "Name what's here: the bed, the wardrobe, the desk and chair, a coat on a hook, the window. The same room as in daylight."), 7000, true);
-    };
+    if (nb) nb.onclick = (e) => { e.stopPropagation(); nameWhatYouSee(); };
     const mb = bar.querySelector('[data-cmd="match"]');
     if (mb) mb.onclick = (e) => { e.stopPropagation(); lightMatch(); };
   }
@@ -450,6 +513,11 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
       }
       // The coach.
       const px = controls.position.x, pz = controls.position.z;
+      controlsPos.x = px; controlsPos.z = pz;
+      if (nameFlashT > 0) {
+        nameFlashT -= d;
+        if (nameFlashT <= 0) { const lb = document.querySelector('.scene-cmd-bar[data-scene="dark"] [data-cmd="name"] > span:last-child'); if (lb && lb.dataset.base) lb.textContent = lb.dataset.base; }
+      }
       const dh = Math.hypot(px - HEART.x, pz - HEART.z);
       lastDist = dh + (flashlightHeld ? 2.2 : matchT > 0.05 ? 1.4 : 0);
       const facing = lookingAt(HEART.x, -0.2, HEART.z, 0.5) ? 1 : 0.3;
@@ -465,8 +533,10 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
       const eng = coach.engaged;
       if (prevX != null) moved += Math.hypot(px - prevX, pz - prevZ);
       prevX = px; prevZ = pz;
-      // Scheduled happenings (quiet once the trial is complete).
-      if (clock > nextEventAt && !window.__rungHoldComplete) {
+      // Scheduled happenings — quiet once the trial is complete, unless its
+      // read star is still open: then the house carries on a little, so the
+      // star you stayed for is still there to earn.
+      if (clock > nextEventAt && (!window.__rungHoldComplete || coach.goalOpen("read"))) {
         fireEvent(EVENTS[Math.floor(Math.random() * EVENTS.length)]);
         nextEventAt = clock + 10 + Math.random() * 8;
       }
@@ -482,10 +552,7 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
         if (sig("shadow")) { shadowSaid = true; coach.note("shadow"); }
       }
       // Rung goals.
-      if (rung === 0 && Math.hypot(px - WIN.cx, pz - R.z0) < 1.1) coach.goalDone("near");
-      if (rung === 1 && noiseHoldT > 0) { if (eng) { noiseHoldT -= d; if (noiseHoldT <= 0) coach.goalDone("noiseHeld"); } else noiseHoldT = 0; }
-      if (rung === 2) { shapeLookT = lookingAt(COAT.x, coatY, COAT.z, 0.9) ? shapeLookT + d : shapeLookT; if (shapeLookT > 5) coach.goalDone("lookShape"); }
-      if (rung === 3 && pz < -4.6) coach.goalDone("hallEnd");
+      // (Rungs 1–4's stars land in nameWhatYouSee.)
       void soundsHeard;
       // Completion beat: the house goes quiet.
       if (window.__rungHoldComplete && coach.everSettled) coach.goalDone("settle");

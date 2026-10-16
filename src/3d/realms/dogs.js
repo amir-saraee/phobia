@@ -1488,6 +1488,83 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     item.state = "flying";
   }
 
+  // ---- A treat from your hand ----
+  // With the dog already near, a treat isn't thrown: you hold it out, low and
+  // still, and the dog comes in and takes it from your fingers. For someone
+  // afraid of dogs that is a very big step — a mouth at your hand, by your
+  // choice — and the dog's soft take is the evidence. If it doesn't come for
+  // it within ten seconds the treat is set down at your feet instead.
+  const _offerPt = new THREE.Vector3();
+  function canOfferTreat() {
+    // Not on the first rung: a far, busy dog gets its treat tossed — the
+    // hand is the next step up the ladder.
+    if (levelIdx < 1 || item || intensity === "barking" || !dog.userData.ready) return false;
+    if (fetchPhase !== "idle" || dogCtrl.mood === "aggressive") return false;
+    return lastPlayerDist < (B.inZoneDist ?? 3.0);
+  }
+  function offerTreat() {
+    clearItem();
+    const mesh = buildTreatMesh();
+    mesh.userData.noPick = true;
+    const tpHold = !!(dogsControls && dogsControls.cameraMode === "tp" && active && active.body && active.body.arms);
+    const hh = active && active.hands;
+    if (tpHold) {
+      const arm = active.body.arms.find(a => a.side > 0);
+      mesh.position.set(0, -0.30, -0.04);
+      arm.elbow.add(mesh);
+    } else if (hh && hh.right && hh.tossHoldOffset && hh.cameraMode !== "tp") {
+      mesh.position.copy(hh.tossHoldOffset(TREAT_R));
+      hh.right.add(mesh);
+    } else {
+      mesh.position.set(0.16, -0.24, -0.46);
+      camera.add(mesh);
+      if (!scene.children.includes(camera)) scene.add(camera);
+    }
+    item = { mesh, kind: "treat", tpHold, inHand: true, state: "offer", offerT: 0, rewalkAt: 1.2, vel: new THREE.Vector3(), bounces: 0 };
+    // Up to your hand, not past it: a closer stand-off than a call.
+    walkToPlayer(0.15);
+    dogCtrl._moveLockT = Math.max(dogCtrl._moveLockT || 0, 8);
+  }
+  function takeFromHand() {
+    clearItem();
+    fetchPhase = "idle";
+    dogCtrl._moveLockT = 0;
+    dogCtrl.stopMove();
+    dogCtrl.eat();
+    dogCtrl.tailWag += 4;
+    if (window.PhobiaAudio?.dogMouthGrab) {
+      try { window.PhobiaAudio.dogMouthGrab({ x: dog.position.x, y: dog.position.y + dogHeight * 0.55, z: dog.position.z }); } catch {}
+    }
+    if (window.PhobiaFX && window.PhobiaFX.haptic) window.PhobiaFX.haptic([10, 40, 10]);
+    bumpTrust("treat", window.t("sc.d.handFed", "Gently, from your hand. That builds the bond."));
+    lifeNextAt = Math.max(lifeNextAt, sceneNow + 5);
+    treatEaten(true);
+  }
+  // Not taken: lay it down at your feet (the ordinary landed-treat path).
+  function setTreatDown() {
+    const world = new THREE.Vector3();
+    item.mesh.getWorldPosition(world);
+    if (item.mesh.parent) item.mesh.parent.remove(item.mesh);
+    item.mesh.position.copy(world);
+    item.mesh.rotation.set(0, 0, 0);
+    item.mesh.scale.setScalar(1);
+    if (item.mesh.userData.baseScale) item.mesh.scale.copy(item.mesh.userData.baseScale);
+    scene.add(item.mesh);
+    item.vel.set(0, 0, 0);
+    item.state = "flying"; item.inHand = false;
+    fetchPhase = "flying";
+  }
+  function tickOffer(d, controls) {
+    item.offerT += d;
+    item.mesh.getWorldPosition(_offerPt);
+    const pp = controls ? controls.position : camera.position;
+    const dHand = Math.hypot(dog.position.x - _offerPt.x, dog.position.z - _offerPt.z);
+    const dPl = Math.hypot(dog.position.x - pp.x, dog.position.z - pp.z);
+    if (dHand < (dogCtrl.radius || 0.35) + 0.34 || (dogCtrl.state === "idle" && dPl < playerStandOffCenter(0.3))) takeFromHand();
+    else if (item.offerT > 10) setTreatDown();
+    else if (dogCtrl.state === "idle" && item.offerT > item.rewalkAt) { item.rewalkAt = item.offerT + 1.5; walkToPlayer(0.15); }
+  }
+
   const dogCtrl = new DogController(dog, scene, camera);
   dog.userData.ctrl = dogCtrl;   // observability for the scene-verification hooks
 
@@ -1782,19 +1859,37 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   const coachRung = COACH_RUNGS[Math.max(0, Math.min(4, levelIdx || 0))];
   const zoneM = B.inZoneDist ?? 3.0;
   const zoneTxt = zoneM.toFixed(1).replace(/\.0$/, "");
+  // The skill star is something to DO with this rung's dog, using the
+  // hotbar's verbs — each one a step toward it, never away: share a treat
+  // from where you stand, then from your hand; call the bigger dog over and
+  // stay while it comes; throw the ball and stay while it runs back at you.
+  // (Rung 5 has no hotbar — your feet are the lever there.)
   const skillGoal = [
-    { id: "near",     icon: "→", text: window.tf("dc.gNear", "Get within {m} m of {dog}", { m: zoneTxt, dog: dogName }) },
-    { id: "arrive",   icon: "↓", text: window.tf("dc.gArrive", "Let {dog} come to you — stay put", { dog: dogName }) },
-    { id: "stood",    icon: "↑", text: window.tf("dc.gStood", "Stay put when {dog} gets up", { dog: dogName }) },
-    { id: "barkHeld", icon: "🔊", text: window.tf("dc.gBark", "Stay close through a bark", { dog: dogName }) },
-    { id: "runHeld",  icon: "»", text: window.tf("dc.gRun", "Hold your ground when {dog} bounds over", { dog: dogName }) },
+    { id: "treatNear", icon: "🦴", verb: "treat", text: window.tf("dc.gTreatNear", "Toss {dog} a treat — stay within {m} m while it's eaten", { m: zoneTxt, dog: dogName }) },
+    { id: "handFed",   icon: "🦴", verb: "treat", text: window.tf("dc.gHandFed", "Let {dog} take a treat from your hand", { dog: dogName }) },
+    { id: "callStay",  icon: "👋", verb: "call",  text: window.tf("dc.gCallStay", "Call {dog} over — stay put while {dog} comes", { dog: dogName }) },
+    { id: "fetchStay", icon: "⚪", verb: "ball",  text: window.tf("dc.gFetchStay", "Throw the ball — stay put while {dog} runs it back", { dog: dogName }) },
+    { id: "runHeld",   icon: "»", text: window.tf("dc.gRun", "Hold your ground when {dog} bounds over", { dog: dogName }) },
   ][Math.max(0, Math.min(4, levelIdx || 0))];
+  // Where you stood when you called, and when the ball came back: "stay put"
+  // means you were still there when the dog arrived.
+  const callFrom = { x: 0, z: 0, d: 0 }, fetchFrom = { x: 0, z: 0 };
+  function armCallStay() {
+    const pp = (storedActiveControls && storedActiveControls.position) || camera.position;
+    callFrom.x = pp.x; callFrom.z = pp.z; callFrom.d = lastPlayerDist;
+  }
+  // A treat eaten — thrown or from your hand — is the rung-1 and rung-2 star.
+  function treatEaten(fromHand) {
+    if (levelIdx === 0 && lastPlayerDist < zoneM + 0.4) coach.goalDone("treatNear");
+    if (levelIdx === 1 && fromHand) coach.goalDone("handFed");
+    if (fromHand) coach.note("handFed");
+    try { window.PhobiaExperiments && window.PhobiaExperiments.signal(fromHand ? "dog.handFed" : "dog.ate"); } catch {}
+  }
   let lastPlayerDist = 99;
   const coachPrev = { dx: 0, dz: 0, px: 0, pz: 0, t: 0 };
   const coachSubj = { x: 0, z: 0 };
   const _coachV = new THREE.Vector3();
   let coachToward = 0, coachPlayerSpeed = 0, coachOnScreen = false;
-  let coachArriveT = 0, coachStoodT = 0;
   let petIntentT = 0;          // seconds of "the player chose contact" left
   let lifeNextAt = 0;          // idle-life director clock (scene time)
   let lastCmdAt = -99;         // scene time of the player's last command
@@ -1999,6 +2094,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         // call like C is: the "Call him over" experiment hears it too.
         lastCmdAt = sceneNow;
         try { window.PhobiaExperiments && window.PhobiaExperiments.signal("dog.call"); } catch {}
+        armCallStay();
         walkToPlayer(0.55, { arc: true });
         callGreetPending = true; callGreetDeadline = 0;
         if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.d.come", "Come here."), { speaker: "you" });
@@ -2099,6 +2195,13 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         break;
       case "treat":
       case "ball": {
+        // A treat with the dog already near isn't thrown: you hold it out,
+        // low, and the dog comes in and takes it from your hand.
+        if (cmd === "treat" && canOfferTreat()) {
+          offerTreat();
+          if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.d.treat", "Treat."), { speaker: "you" });
+          break;
+        }
         // Tossed straight ahead a comfortable distance
         const yaw = (storedActiveControls && storedActiveControls.yaw) || 0;
         const ahead = 2.5 + (cmd === "ball" ? 0.5 : 0);
@@ -2118,6 +2221,14 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         // head-cock "hm?" tilt — and only then commits to the trot; a dog
         // already on its feet just comes. The walk itself approaches along
         // the dog→player vector so it stops in front of you from any angle.
+        armCallStay();
+        // The lying dog of the alert rung gets up because you called it — the
+        // rise is the moment, so it lands now rather than mid-walk later.
+        if (B.startPose === "lay" && startPoseApplied && !esc.stood) {
+          esc.stood = true; esc.stoodAt = sceneNow;
+          dogCtrl.aggression = 0.25;
+          coach.pulse(0.30, "stand", lastPlayerDist);
+        }
         if (dogCtrl.headCock(0.85)) {
           callWalkAt = sceneNow + 0.7;
         } else {
@@ -2221,6 +2332,22 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         // carries what this rung asks; the hint stays quiet.
         if (hands) hands.clearReachTarget();
         return { gesture: "rest", hint: "" };
+      }
+      // A treat held out: the open palm, low, toward the dog — still.
+      if (item && item.state === "offer") {
+        if (hands && hands.setReachTarget) {
+          const ox = dog.position.x - controls.position.x, oz = dog.position.z - controls.position.z;
+          const ol = Math.hypot(ox, oz) || 1;
+          const dogH = (dog.userData.parts && dog.userData.parts.height) || 0.6;
+          // Low, at the dog's muzzle — measured from YOUR eye (controls.y),
+          // never the camera: in third person that floats above your head.
+          _petPt.set(controls.position.x + ox / ol * 0.42,
+            Math.max(controls.position.y - 1.05, dog.position.y + dogH * 0.62),
+            controls.position.z + oz / ol * 0.42);
+          _petN.set(0, 1, 0);
+          hands.setReachTarget(_petPt, { hand: "right", grip: "flat", normal: _petN, maxReach: 0.8 });
+        }
+        return { gesture: "touch", hint: window.tf("dc.hintOffer", "Hold it out and stay still — let {dog} come and take it", { dog: dogName }) };
       }
       // Mid-windup the throw rides IN the hand — wrap the fingers around the
       // item instead of leaving them open beside a floating ball. Both the
@@ -2579,6 +2706,10 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           callGreetPending = false; callGreetDeadline = 0;
           dogCtrl.greet(2.5);
           coachSignal("greet");
+          // Called from a real distance, and you were still where you called
+          // from when it got here: that's the rung-3 star.
+          if (levelIdx === 2 && callFrom.d > 1.6
+              && Math.hypot(controls.position.x - callFrom.x, controls.position.z - callFrom.z) < 0.9) coach.goalDone("callStay");
         }
       }
 
@@ -2953,15 +3084,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           onScreen: coachOnScreen, dogGazing, trust: intensity === "barking" ? null : trust,
           anchorX: headX, anchorY: headY, stageW: sw, stageH: sh,
         });
-        // Rung goals that are about where you stand.
-        if (levelIdx === 0 && playerDist < zoneM) coach.goalDone("near");
-        if (levelIdx === 1 && playerDist < 1.9 && coachToward > 0.25 && coachPlayerSpeed < 0.35) coachArriveT += d;
-        else if (levelIdx === 1) coachArriveT = Math.max(0, coachArriveT - d * 0.5);
-        if (coachArriveT > 0.6) coach.goalDone("arrive");
-        if (levelIdx === 2 && esc.stood) {
-          coachStoodT = playerDist < zoneM + 0.5 ? coachStoodT + d : 0;
-          if (coachStoodT > 5) coach.goalDone("stood");
-        }
+        // (The rung skill stars land where their verb completes: treatEaten,
+        // the call's arrival, the ball's drop.)
         arousalFloor = Math.max(0, arousalFloor - d / 12);
         // Avoidance: stepping back AFTER engaging. The barking rung marks the
         // dog as having noticed you from the first frame and spawns you past
@@ -2984,7 +3108,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         // to be theirs. So the body stays neutral until a click on the dog
         // (pet or invite) opens a short window of intent.
         petIntentT = Math.max(0, petIntentT - d);
-        const wantsContact = petIntentT > 0 || petPulse > 0.05 || petRequestT > 0;
+        // Holding a treat out is reaching for the dog by choice, too.
+        const wantsContact = petIntentT > 0 || petPulse > 0.05 || petRequestT > 0 || !!(item && item.state === "offer");
         if (active.body && active.body.setPosture && ((intensity === "barking" && barkState !== "settling") || !wantsContact)) {
           active.body.setPosture({ crouch: 0, reach: 0, lean: 0 });
           if (controls.setEyeDrop) controls.setEyeDrop(0);
@@ -3640,6 +3765,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       }
 
       // ---- Item physics + fetch state machine ----
+      // A treat held out: the dog comes in and takes it.
+      if (item && item.state === "offer") tickOffer(d, controls);
       // Windup phase: animate the item in the user's hand toward release
       if (item && item.state === "windup") {
         tickWindup(d);
@@ -3774,6 +3901,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           }
           bumpTrust("treat", window.t("sc.d.bond", "Good. That builds the bond."));
           lifeNextAt = Math.max(lifeNextAt, t + 5);
+          treatEaten(false);
         } else if (Math.hypot(dx, dz) < 0.5) {
           // Pick up — re-parent to the HEAD BONE, with an audible chomp.
           scene.remove(item.mesh);
@@ -3802,6 +3930,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
             const pp = (storedActiveControls && storedActiveControls.position) || camera.position;
             returnTgt.x = pp.x; returnTgt.z = pp.z;
             returnT = 0;
+            fetchFrom.x = pp.x; fetchFrom.z = pp.z;
             walkToPlayer(0.55);
             dogCtrl._moveLockT = 20;
             fetchPhase = "returning";
@@ -3875,6 +4004,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           } else {
             // Ball stays; user can throw again
             if (!giveUp) bumpTrust("fetch", window.t("sc.d.goodFetch", "Good fetch."));
+            // It ran the ball straight back at you, and you were still there.
+            if (!giveUp && levelIdx === 3 && Math.hypot(pp.x - fetchFrom.x, pp.z - fetchFrom.z) < 1.0) coach.goalDone("fetchStay");
             dogTimers.push(setTimeout(() => {
               if (item && item === droppedItem && fetchPhase === "dropped") {
                 scene.remove(item.mesh);

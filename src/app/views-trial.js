@@ -879,17 +879,16 @@ function viewExposure(phobiaKey, levelIdx) {
     // interface — and taught retreat as the skill.)
     cmdBar = "";
   } else if (phobiaKey === "heights") {
-    // Heights is character-driven: events fire from where you walk and what
-    // you click on in the world. The button bar is collapsed by default
-    // (a discreet "Tips" toggle in the corner reveals it for users who
-    // prefer explicit controls / accessibility / touch).
+    // Heights is walk-driven, and its hotbar holds the four verbs the
+    // trial's skill stars use — walk to the edge, look down, lean over, drop
+    // a coin — so it opens like every other realm's. Stepping back is your
+    // own feet (it was a button that made retreat look like the skill), and
+    // the railing shakes when you click it in the world.
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="heights">
         <button class="cmd-btn" data-cmd="edge"><span class="cmd-icon">↘</span><span>${t("cmd.h.edge", "Walk to edge")}</span></button>
-        <button class="cmd-btn" data-cmd="back"><span class="cmd-icon">↖</span><span>${t("cmd.h.back", "Step back")}</span></button>
         <button class="cmd-btn" data-cmd="lookdown"><span class="cmd-icon">⤓</span><span>${t("cmd.h.look", "Look down")}</span></button>
         <button class="cmd-btn" data-cmd="lean" title="${t("cmd.h.leanTip", "Lean over the railing")}"><span class="cmd-icon">⤴</span><span>${t("cmd.h.lean", "Lean over")}</span></button>
-        <button class="cmd-btn" data-cmd="shake"><span class="cmd-icon">⇄</span><span>${t("cmd.h.shake", "Shake the railing")}</span></button>
         <button class="cmd-btn" data-cmd="coin"><span class="cmd-icon">🪙</span><span>${t("cmd.h.coin", "Drop a coin")}</span></button>
       </div>
     `;
@@ -1001,8 +1000,7 @@ function viewExposure(phobiaKey, levelIdx) {
   }
   // A compact bar (≤4 actions) is the scene's hotbar: open from the start on
   // every device and never toggled, so the verbs are there to find without a
-  // "Show controls" button flipping a panel in and out. Heights' 6-button bar
-  // stays behind its toggle — that scene is walk-driven anyway.
+  // "Show controls" button flipping a panel in and out.
   if (cmdBar && (cmdBar.match(/cmd-btn/g) || []).length <= 4) {
     cmdBar = cmdBar.replace('class="scene-cmd-bar collapsed"', 'class="scene-cmd-bar"');
   }

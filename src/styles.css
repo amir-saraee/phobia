@@ -5418,3 +5418,33 @@ html[dir="rtl"] .gs-kicker { letter-spacing: 0; }
   padding: 7px 12px; font-size: 11.5px; font-weight: 600;
 }
 .stage-wrap .stage .camera-toggle:hover { background: rgba(20, 28, 48, .85); box-shadow: none; }
+/* The skill star's verb: the hotbar button this trial's skill goal names
+   wears a soft gold ring until the star lands — the answer to "what do I do
+   here?" without another line of text — then ticks once. The selector
+   carries the bar so it outranks the touch cluster's own border. */
+.scene-cmd-bar .cmd-btn.cmd-goal,
+.stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) .cmd-btn.cmd-goal {
+  border-color: rgba(252, 211, 77, .85);
+  box-shadow: 0 0 0 1px rgba(252, 211, 77, .35), 0 0 12px rgba(252, 211, 77, .28);
+  animation: cmdGoalGlow 2.6s ease-in-out infinite;
+}
+.scene-cmd-bar .cmd-btn.cmd-goal-done,
+.stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) .cmd-btn.cmd-goal-done {
+  position: relative; border-color: rgba(52, 211, 153, .9);
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, .45), 0 0 14px rgba(52, 211, 153, .35);
+}
+.scene-cmd-bar .cmd-btn.cmd-goal-done::after {
+  content: "✓"; position: absolute; top: -7px; right: -5px;
+  width: 17px; height: 17px; border-radius: 50%;
+  background: #34d399; color: #062018; font: 800 11px/17px system-ui, sans-serif; text-align: center;
+  animation: cmdGoalTick 1.6s ease-out 1 forwards;
+}
+@keyframes cmdGoalGlow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(252, 211, 77, .30), 0 0 8px rgba(252, 211, 77, .18); }
+  50% { box-shadow: 0 0 0 1px rgba(252, 211, 77, .55), 0 0 16px rgba(252, 211, 77, .38); }
+}
+@keyframes cmdGoalTick { 0% { transform: scale(.4); opacity: 0; } 18% { transform: scale(1.15); opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .scene-cmd-bar .cmd-btn.cmd-goal, .stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) .cmd-btn.cmd-goal { animation: none; }
+  .scene-cmd-bar .cmd-btn.cmd-goal-done::after { animation: none; opacity: 1; }
+}

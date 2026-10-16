@@ -1035,12 +1035,16 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   ][snRung];
   const snZone = B.inZoneDist ?? 3.2;
   const snZoneTxt = snZone.toFixed(1).replace(/\.0$/, "");
+  // The skill star is something to do with this rung's snake, on the
+  // hotbar: walk in and drop a leaf for it to taste, hold still while it
+  // slides or crosses your path, hold out your hand while it rears and
+  // watches. Never a retreat: "still" here means staying, not freezing away.
   const snSkill = [
-    { id: "near",      icon: "→", text: window.tf("dc.sn.gNear", "Get within {m} m of the snake", { m: snZoneTxt }) },
-    { id: "stillMove", icon: "🧍", text: window.t("dc.sn.gStill", "Stay put while it slides") },
-    { id: "crossHeld", icon: "〰", text: window.t("dc.sn.gCross", "Stay on the path while it crosses") },
-    { id: "rearHeld",  icon: "⬆️", text: window.t("dc.sn.gRear", "Stay close while it rears and watches") },
-    { id: "slowHeld",  icon: "🐢", text: window.t("dc.sn.gSlow", "Stay close — slowly, so it settles") },
+    { id: "leafNear",   icon: "🍃", verb: "leaf",   text: window.t("dc.sn.gLeaf", "Walk in and drop a leaf near it — watch it taste the air") },
+    { id: "stillSlide", icon: "🧘", verb: "still",  text: window.t("dc.sn.gStillSlide", "Hold still while it slides — 3 s, close by") },
+    { id: "stillCross", icon: "🧘", verb: "still",  text: window.t("dc.sn.gStillCross", "Hold still on the path while it crosses") },
+    { id: "handWatch",  icon: "✋", verb: "extend", text: window.t("dc.sn.gHand", "Hold your hand out while it rears and watches you") },
+    { id: "slowHeld",   icon: "🐢", text: window.t("dc.sn.gSlow", "Stay close — slowly, so it settles") },
   ][snRung];
   const snCoach = makeCreatureCoach({
     kit: creatureKit("snakes"),
@@ -1070,7 +1074,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   }
   function snPulse(strength, kind) { snCoach.pulse(strength, kind, snLastDist); }
   let snToward = 0, snPrevSX = null, snPrevSZ = 0, snPlayerSpeed = 0, snPrevPX = null, snPrevPZ = 0;
-  let snStillMoveT = 0, snCrossT = 0, snRearT = 0, snSlowT = 0, snCrossNear = false, snTonguePrev = -1, snBaskT = 0, snGlideT = 0;
+  let snStillMoveT = 0, snCrossT = 0, snRearT = 0, snSlowT = 0, snFreeInvited = false, snCrossNear = false, snTonguePrev = -1, snBaskT = 0, snGlideT = 0;
   const _snV = new THREE.Vector3();
 
   function snakeClampToBounds(p) {
@@ -1091,6 +1095,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     return true;
   }
   function snakePickWanderTarget(controls) {
+    if (snakeCtl._leafGo) { const g = snakeCtl._leafGo; snakeCtl._leafGo = null; snakeCtl.crossing = false; return g; }
     for (let tries = 0; tries < 10; tries++) {
       const t = snakePickWanderTarget1(controls);
       if (snakePathClear(snake.position.x, snake.position.z, t.x, t.z)) return t;
@@ -1128,6 +1133,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     return t;
   }
   function snakeEnter(state, controls) {
+    if (state !== "wander") snakeCtl._leafErrand = false;
     snakeCtl.state = state;
     snakeCtl.stateT = 0;
     const sp = snake.userData.parts;
@@ -1264,10 +1270,19 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       else if (stillness > (B.retreatStill ?? 0.3) && controls && playerDist < 5 && !(snakeCtl._retreatCooldown > 0)) snakeEnter("retreat", controls);
       else if (!B.still && snakeCtl.stateT > snakeCtl.baskDur) snakeEnter("wander", controls);
     } else if (snakeCtl.state === "wander") {
-      if (controls && playerDist < (snakeCtl.crossing ? 1.6 : Math.min(watchAt, B.watchDist ?? 2.6))) snakeEnter("watch", controls);
+      if (!snakeCtl._leafErrand && controls && playerDist < (snakeCtl.crossing ? 1.6 : Math.min(watchAt, B.watchDist ?? 2.6))) snakeEnter("watch", controls);
       else if (snakeCtl.target) {
         const d = Math.hypot(snakeCtl.target.x - snake.position.x, snakeCtl.target.z - snake.position.z);
-        if (d < 0.35 || snakeCtl.stateT > 18) snakeEnter("bask", controls);
+        if (d < 0.35 || snakeCtl.stateT > 18) {
+          // Arrived at the leaf: taste it, twice, then bask beside it.
+          if (snakeCtl._leafErrand && snakeCtl.ctrl) {
+            snakeCtl.ctrl.requestTongueFlick(true);
+            sceneTimers.push(setTimeout(() => { try { snakeCtl.ctrl.requestTongueFlick(true); } catch {} }, 800));
+            snCoach.note("leafTaste");
+          }
+          snakeCtl._leafErrand = false;
+          snakeEnter("bask", controls);
+        }
       }
     } else if (snakeCtl.state === "watch") {
       if (sniffing) {
@@ -1469,7 +1484,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       state: snakeCtl.state, strikePhase: snakeCtl.strikePhase, snoutAlong: snakeCtl._snoutAlong,
       snoutIdx: _snoutIdx ? _snoutIdx.i : null,
       speed: +snakeCtl.speed.toFixed(2), playerDist: +(playerDist || 0).toFixed(2),
-      approachSpeed: +(approachSpeed || 0).toFixed(2),
+      approachSpeed: +(approachSpeed || 0).toFixed(2), crossing: !!snakeCtl.crossing,
     };
     // Creature readout — strike phrases may override the dwell (a telegraph
     // must never wait 0.9 s behind "it noticed you").
@@ -1779,10 +1794,11 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           } else snTonguePrev = -1;
           if (st === "wander" && !snakeCtl.crossing) { snGlideT += dtN; if (snGlideT > 2.5 && Math.random() < dtN * 0.3 && snSignal("glide")) snGlideT = 0; }
           // Rung goals.
-          if (snRung === 0 && distS < snZone) snCoach.goalDone("near");
-          if (snRung === 1) { snStillMoveT = (st === "wander" && inZone && snPlayerSpeed < 0.3) ? snStillMoveT + dtN : snStillMoveT; if (snStillMoveT > 2) snCoach.goalDone("stillMove"); }
-          if (snRung === 2) { if (snakeCtl.crossing && st === "wander" && inZone) snCrossT += dtN; if (snCrossT > 3) snCoach.goalDone("crossHeld"); }
-          if (snRung === 3) { if (st === "watch" && distS < (B.rearDist ?? 2.6) + 0.3) snRearT += dtN; if (snRearT > 4) snCoach.goalDone("rearHeld"); }
+          // (Rung 1's leaf star lands where the leaf does.)
+          const holdingStill = stillHeld && !(controls && controls.moving);
+          if (snRung === 1) { if (holdingStill && st === "wander" && inZone) snStillMoveT += dtN; if (snStillMoveT > 3) snCoach.goalDone("stillSlide"); }
+          if (snRung === 2) { if (holdingStill && snakeCtl.crossing && st === "wander" && inZone) snCrossT += dtN; if (snCrossT > 2) snCoach.goalDone("stillCross"); }
+          if (snRung === 3) { if (extendHeld && extension > 0.5 && st === "watch" && distS < (B.rearDist ?? 2.6) + 0.3) snRearT += dtN; if (snRearT > 3) snCoach.goalDone("handWatch"); }
           if (snRung === 4) { if (distS < (B.strikeDist ?? 1.45) + 0.8) snSlowT += dtN; if (snSlowT > 8) snCoach.goalDone("slowHeld"); }
         }
 
@@ -1798,6 +1814,18 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           snakeCtl.strikePhase = "none"; snakeCtl.striking = false; snakeCtl.jawTarget = 0;
           if (snakeCtl.state !== "retreat") snakeEnter(intensity === "apex" && distS < 3 ? "retreat" : "bask", controls);
           if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt(window.t("sc.n.settled", "It settled. You held your ground and it stood down."), 4500);
+        }
+        // After the hold: a leaf trail, if you want it. Offered once, never
+        // required, and it pays nothing — it's just time with the snake.
+        if (completionBeatDone && !snFreeInvited) {
+          snFreeInvited = true;
+          sceneTimers.push(setTimeout(() => {
+            try {
+              snCoach.teach("play", IS_COARSE_POINTER
+                ? window.t("dc.sn.tFreeM", "<b>Want to watch it explore?</b> Tap 🍃 to drop a leaf a little way from it — it'll slide over to taste it. Continue whenever you like.")
+                : window.t("dc.sn.tFree", "<b>Want to watch it explore?</b> Press 🍃 to drop a leaf a little way from it — it'll slide over to taste it. Continue whenever you like."), 9000);
+            } catch {}
+          }, 3800));
         }
       }
       // ---- Fear grade the daylight (subtle — it stays a sunny clearing) ----
@@ -1829,9 +1857,25 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
             leaf.userData.settled = true;
             // A novel object landed: tongue-taste it (twice — the same
             // chemosensing beat the extend-hand mechanic teaches).
-            if (snakeCtl.ctrl && Math.hypot(leaf.position.x - snake.position.x, leaf.position.z - snake.position.z) < 4) {
+            const leafD = Math.hypot(leaf.position.x - snake.position.x, leaf.position.z - snake.position.z);
+            if (snakeCtl.ctrl && leafD < 4) {
               snakeCtl.ctrl.requestTongueFlick(true);
-              sceneTimers.push(setTimeout(() => { try { snakeCtl.ctrl.requestTongueFlick(true); } catch {} }, 900));
+              // ...and the tasting is a moment to read: the leaf is a way to
+              // ask the snake a question, not just to watch it.
+              sceneTimers.push(setTimeout(() => { try { snakeCtl.ctrl.requestTongueFlick(true); snSignal("flick"); } catch {} }, 900));
+              // Rung 1's star: you walked in close enough to give it something to read.
+              if (snRung === 0 && snCoach.engaged) snCoach.goalDone("leafNear");
+            }
+            // After the hold, a leaf near it is something to go and taste:
+            // it slides over at its own pace (never at you — it stops at the
+            // leaf), and you get to watch a snake be curious.
+            if (window.__rungHoldComplete && leafD < 4.5 && leafD > 0.5 && controls
+                && Math.hypot(leaf.position.x - controls.position.x, leaf.position.z - controls.position.z) > 0.9
+                && (snakeCtl.state === "bask" || snakeCtl.state === "wander" || snakeCtl.state === "watch")) {
+              const ux = snake.position.x - leaf.position.x, uz = snake.position.z - leaf.position.z, ul = Math.hypot(ux, uz) || 1;
+              snakeCtl._leafGo = snakeClampToBounds({ x: leaf.position.x + ux / ul * 0.32, z: leaf.position.z + uz / ul * 0.32 });
+              snakeCtl._leafErrand = true;
+              snakeEnter("wander", controls);
             }
             // After 4 s, fade away — THIS leaf. The timer used to act on the
             // shared `leaf`, so a second leaf dropped within 4 s was deleted
@@ -1848,8 +1892,11 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       }
       // Stillness mechanic: when user holds "still" + isn't moving, the snake
       // gradually slithers AWAY (it's more afraid of you when you're calm).
+      // Only a snake at rest reads it: one sliding past is busy going
+      // somewhere, so holding still while it passes (a skill star) doesn't
+      // also send it off the moment it stops.
       const moving = controls && controls.moving;
-      if (stillHeld && !moving) {
+      if (stillHeld && !moving && snakeCtl.state !== "wander") {
         stillness = Math.min(1, stillness + dtN * 0.4);
       } else {
         stillness = Math.max(0, stillness - dtN * 0.5);

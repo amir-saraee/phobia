@@ -699,8 +699,11 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
 
   // ----- Glass jar (humane catch) -----
   // The user can lower a real glass jar over the spider. The spider stays
-  // calm inside it (no panic-fighting). After 2 seconds, the jar lifts
-  // and the spider has been "released outside" — it's gone, the user wins.
+  // calm inside it (no panic-fighting) until YOU lift the glass again — the
+  // second press of 🫙 (or a click on the glass). Lifting it, and staying
+  // there with the spider free again, is the skill; the glass alone is a
+  // shield. Carrying it outside is offered only once the trial is held: a
+  // spider removed before then would be the trial ending on an escape.
   // Clicking the floor near the spider also lowers the jar there.
   let jarMode = false;
   let jar = null;
@@ -711,6 +714,28 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   let spiderReleased = false;
   let jarPhase = "idle"; // idle | falling | held | lifting
   let jarLifeT = 0;
+  // Release (carry outside) only after the hold — and on the glass rung only
+  // once its own star is in (until then the second press just lifts it).
+  const canRelease = () => !!window.__rungHoldComplete && !(spCoach.goalOpen && spCoach.goalOpen("glassLift"));
+  function liftJar() {
+    if (!jar || jarPhase !== "held") return false;
+    jar.userData.release = canRelease();
+    jarPhase = "lifting"; jarLifeT = 0;
+    if (jar.userData.release) {
+      if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.released", "Released outside. You did that calmly."));
+      spCoach.note("release");
+      if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.15);
+    }
+    return true;
+  }
+  function syncJarLabel() {
+    const lb = document.querySelector('.scene-cmd-bar[data-scene="spiders"] [data-cmd="jar"] > span:last-child');
+    if (!lb) return;
+    const want = jarPhase === "held" && jar && !jar.userData.staleMiss
+      ? (canRelease() ? window.t("cmd.sp.jarOut", "Carry it out") : window.t("cmd.sp.jarLift", "Lift the glass"))
+      : window.t("cmd.sp.jar", "Glass");
+    if (lb.textContent !== want) lb.textContent = want;
+  }
   function buildJar() {
     const g = new THREE.Group();
     const glass = new THREE.Mesh(
@@ -831,8 +856,10 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     const hit = spPickWorld(px, py, spCanvasDom);
     if (!hit) return;
     // Drop the jar over wherever the user clicked (preferring the spider)
-    let p = hit.object, hitSpider = false;
-    while (p) { if (p === spider) { hitSpider = true; break; } p = p.parent; }
+    let p = hit.object, hitSpider = false, hitJar = false;
+    while (p) { if (p === spider) { hitSpider = true; break; } if (p === jar) { hitJar = true; break; } p = p.parent; }
+    // The glass is down: a click on it (or the spider under it) lifts it.
+    if (jarPhase === "held" && (hitJar || hitSpider)) { liftJar(); return; }
     if (jarMode || hitSpider) {
       const tx = hitSpider ? spider.position.x : hit.point.x;
       const tz = hitSpider ? spider.position.z : hit.point.z;
@@ -903,6 +930,9 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             break;
           }
           case "jar":
+            // Glass down: this press lifts it (or, once the trial is held,
+            // carries the spider outside).
+            if (jarPhase === "held") { liftJar(); return; }
             // Arms the next click to lower the jar (or drops it on the spider directly)
             if (jarPhase !== "idle" || spiderReleased) return;
             jarMode = true;
@@ -945,11 +975,15 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   const spZone = B.inZoneDist ?? 3.0;
   const spZoneTxt = spZone.toFixed(1).replace(/\.0$/, "");
   const spName = window.t("coach.sp.name", "the spider");
+  // The skill star is something to do with this rung's spider, on the
+  // hotbar: look closer at it, glass it and LIFT the glass again, watch it
+  // up close while it runs, step back in after it jumps. Every one is
+  // attention or approach — the glass only counts once it's lifted.
   const spSkill = [
-    { id: "near",       icon: "→", text: window.tf("dc.sp.gNear", "Get within {m} m of the spider", { m: spZoneTxt }) },
-    { id: "stillMove",  icon: "🧍", text: window.t("dc.sp.gStill", "Stay put while it moves") },
-    { id: "dashHeld",   icon: "💨", text: window.t("dc.sp.gDash", "Stay close through a dash your way") },
-    { id: "pounceHeld", icon: "»", text: window.t("dc.sp.gJump", "Stay put through a jump") },
+    { id: "lookClose",  icon: "🔍", verb: "focus", text: window.tf("dc.sp.gLook", "Walk within {m} m, then hold 🔍 to look closer for 3 s", { m: spZoneTxt }) },
+    { id: "glassLift",  icon: "🫙", verb: "jar", need: 2, text: window.t("dc.sp.gGlass", "Lower the glass over it, then lift it") },
+    { id: "watchMove",  icon: "🔍", verb: "focus", text: window.t("dc.sp.gWatch", "Hold 🔍 and watch it up close while it runs") },
+    { id: "jumpCloser", icon: "→", text: window.t("dc.sp.gJumpCloser", "When it jumps, stay — then step closer again") },
     { id: "pounceHeld", icon: "»", text: window.t("dc.sp.gWall", "Stay put when it jumps off the wall") },
   ][rung];
   const spCoach = makeCreatureCoach({
@@ -1005,6 +1039,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   function spPulse(strength, kind, dist) { spCoach.pulse(strength, kind, dist); }
   let spOnScreen = false, spStillT = 0, spAlertPrev = 0, spFlickPrev = 0, spDartToward = 0;
   let spToward = 0, spPrevSX = null, spPrevSZ = 0, spMovedT = 0, spPlayerSpeed = 0, spPrevPX = null, spPrevPZ = 0;
+  let spLookT = 0, spJump = null, spFreeInvited = false;
   const spSubj = { x: 0, z: 0 };
   const _spV = new THREE.Vector3();
 
@@ -1044,9 +1079,13 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       if (scriptedGesture && performance.now() < scriptedGestureUntil) {
         return { gesture: scriptedGesture, hint: "" };
       }
-      if (jarPhase !== "idle") {
-        return { gesture: "rest", hint: window.t("sc.s.hintContained", "contained — slow breath, it releases in a moment") };
+      if (jarPhase === "held" && jar && !jar.userData.staleMiss) {
+        const out = canRelease();
+        return { gesture: "rest", hint: IS_COARSE_POINTER
+          ? (out ? window.t("sc.s.hintOutT", "under the glass · tap 🫙 to carry it outside") : window.t("sc.s.hintLiftT", "under the glass · tap 🫙 to lift it when you're ready"))
+          : (out ? window.t("sc.s.hintOut", "under the glass · press 🫙 (or click the glass) to carry it outside") : window.t("sc.s.hintLift", "under the glass · press 🫙 (or click the glass) to lift it when you're ready")) };
       }
+      if (jarPhase !== "idle") return { gesture: "rest", hint: "" };
       if (spiderReleased) return { gesture: "rest", hint: "" };
       if (controls) {
         const dx = spider.position.x - controls.position.x;
@@ -1185,35 +1224,43 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           } else {
             if (!onWall) { spider.position.x = rest.x; spider.position.z = rest.z; }
             pounceState = "idle";
+            // Step one of the glass rung's star: it's under the glass.
+            if (spCoach.engaged) spCoach.goalCount("glassLift", 1);
             // Under the glass it settles — breath and a faint twitch, never a
             // frozen prop (SpiderController.calm), back on its Idle clip.
             if (spider.userData.parts && spider.userData.parts.play) spider.userData.parts.play("Idle", 0.25);
           }
         }
       } else if (jar && jarPhase === "held") {
+        // It stays under the glass until you lift it. (A catch used to lift
+        // itself after 2 s and carry the spider out — and that removal
+        // completed the trial: an escape, credited as a hold.) A glass left
+        // down a long while is lifted for you, with no star for it.
         jarLifeT += d;
-        if (jarLifeT > 2.0) {
-          jarPhase = "lifting"; jarLifeT = 0;
-          if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.released", "Released outside. You did that calmly."));
-          // A settled catch is a legitimate completion route — route it through
-          // the same honest hold path (the fanfare still waits for the gate).
-          window.__rungHoldComplete = true;
-          if (window.PhobiaFear) window.PhobiaFear.pulseEvent(0.15);
-        }
+        if (jarLifeT > 25 && !canRelease()) { jar.userData.autoLift = true; liftJar(); }
       } else if (jar && jarPhase === "lifting") {
         jarLifeT += d;
         const k = Math.min(1, jarLifeT / 0.6);
         placeJar(jar.userData.rest, 1 - k);
-        // Only shrink the spider on a real catch (it's "taken outside"); a miss
+        // Only shrink the spider when it's carried out; a lift or a miss
         // leaves it in place.
-        if (!jar.userData.staleMiss) spider.scale.setScalar(1 - k);
+        const release = !jar.userData.staleMiss && jar.userData.release;
+        if (release) spider.scale.setScalar(1 - k);
         if (k >= 1) {
           scene.remove(jar);
           jar.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
-          const missed = jar.userData.staleMiss;
+          const missed = jar.userData.staleMiss, auto = jar.userData.autoLift;
           jar = null; jarPhase = "idle";
-          if (missed) { spider.scale.setScalar(1); if (spider.userData.parts && spider.userData.parts.play) spider.userData.parts.play("Idle", 0.2); }
-          else { spider.position.set(0, -50, 0); spiderReleased = true; }   // released — gone for the rung
+          if (release) { spider.position.set(0, -50, 0); spiderReleased = true; }   // released — gone for the rung
+          else {
+            spider.scale.setScalar(1);
+            if (spider.userData.parts && spider.userData.parts.play) spider.userData.parts.play("Idle", 0.2);
+            if (!missed) {
+              // Uncovered: it's right there again, a fresh (smaller) wave.
+              spPulse(0.22, "uncover", spLastDist);
+              if (!auto && spCoach.engaged) spCoach.goalCount("glassLift", 2);
+            }
+          }
         }
       }
 
@@ -1499,6 +1546,11 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               if (Math.hypot(spider.position.x - controls.position.x, spider.position.z - controls.position.z) < 1.8) heldCycles++;
               // Still in the zone after it jumped and went back: you held it.
               if (spCoach.engaged) spCoach.goalDone("pounceHeld");
+              // Rung 4's star: now step back in (the 🡒 button lights for it).
+              if (rung === 3 && spCoach.goalOpen("jumpCloser")) {
+                spJump = { px: controls.position.x, pz: controls.position.z, until: elapsed + 10 };
+                spCoach.setVerb("jumpCloser", "closer");
+              }
               // Back ON the face, not hovering the last few percent of an ease.
               if (onWall) spider.position.set(recoilTgt.x, recoilTgt.y, recoilTgt.z);
               recoilTgt = null;
@@ -1548,7 +1600,9 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
 
         // ---- The coach, every frame ----
         {
-          spLastDist = spiderReleased ? 99 : distP;
+          // Under the glass it's contained — a shield, so the alarm reads it
+          // as a little further off until the glass is lifted.
+          spLastDist = spiderReleased ? 99 : distP + (jarPhase === "held" ? 0.4 : 0);
           // The spider's own speed toward you (m/s), and yours.
           if (spPrevSX != null && d > 0) {
             const vx = (spider.position.x - spPrevSX) / d, vz = (spider.position.z - spPrevSZ) / d;
@@ -1589,9 +1643,22 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             onScreen: spOnScreen, dogGazing: facing, trust: null,
             anchorX: ax, anchorY: ay, stageW: sw, stageH: shh,
           });
-          // Rung goals about where you stand.
-          if (rung === 0 && distP < spZone) spCoach.goalDone("near");
-          if (rung === 1 && spMovedT > 0 && distP < spZone && spPlayerSpeed < 0.3 && skitterState === "skittering") spCoach.goalDone("stillMove");
+          // Rung goals: looking closer (held 🔍 / Z, the spider in view, you
+          // within reach of it) — on rung 3 only while it's actually moving.
+          const lookingClose = spZoomHeld && spOnScreen && !spiderReleased && jarPhase === "idle" && distP < spZone + 0.3;
+          if (rung === 0 && lookingClose) { spLookT += d; if (spLookT > 3) spCoach.goalDone("lookClose"); }
+          if (rung === 2 && lookingClose && spMovedT > 0) { spLookT += d; if (spLookT > 2) spCoach.goalDone("watchMove"); }
+          // After a jump: step back in. Measured from YOUR feet — toward where
+          // the spider is now, from where you stood when it landed.
+          if (rung === 3 && spJump) {
+            if (elapsed > spJump.until) { spJump = null; spCoach.setVerb("jumpCloser", null); }
+            else {
+              const jx = spider.position.x - spJump.px, jz = spider.position.z - spJump.pz, jl = Math.hypot(jx, jz) || 1;
+              const stepIn = ((controls.position.x - spJump.px) * jx + (controls.position.z - spJump.pz) * jz) / jl;
+              if (stepIn > 0.35 && distP < spZone + 0.2) { spJump = null; spCoach.goalDone("jumpCloser"); }
+            }
+          }
+          syncJarLabel();
           // Readable moments that aren't events: stillness, feelers, a leg
           // flick, the stilt-stand as you come close.
           if (loose && !spiderReleased && pounceState === "idle") {
@@ -1606,6 +1673,21 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           }
         }
 
+        // ---- After the hold: catch and release, if you want it ----
+        // The real-life skill at the end of this fear: a glass, a card, and
+        // the spider put outside. Offered once, never required, and only now
+        // — removing it before the hold would be the trial ending on an escape.
+        if (completionBeatDone && !spFreeInvited && !spiderReleased && jarPhase === "idle") {
+          spFreeInvited = true;
+          sceneTimers.push(setTimeout(() => {
+            if (spiderReleased) return;
+            try {
+              spCoach.teach("play", IS_COARSE_POINTER
+                ? window.t("dc.sp.tFreeM", "<b>Want to put it outside?</b> Tap 🫙 to lower the glass over it, then tap it again to carry it out — the way you'd do it at home. Continue whenever you like.")
+                : window.t("dc.sp.tFree", "<b>Want to put it outside?</b> Press 🫙 to lower the glass over it, then press it again to carry it out — the way you'd do it at home. Continue whenever you like."), 9000);
+            } catch {}
+          }, 3200));
+        }
         // ---- Diegetic completion beat ----
         if (window.__rungHoldComplete && !completionBeatDone) {
           if (spCoach.everSettled) spCoach.goalDone("settle");

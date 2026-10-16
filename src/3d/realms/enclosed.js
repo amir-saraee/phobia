@@ -597,11 +597,14 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
     { sizeMul: 0.74, tau: 16, hFloor: 0.36 },
     { sizeMul: 0.86, tau: 18, hFloor: 0.38 },
   ][rung];
+  // The skill star is the hotbar's verbs, in the space: close the door and
+  // go and touch the far wall; in the booth, a hand on two of its walls;
+  // ride the lift; pull the closet light. (The scanner is lying still.)
   const eSkill = [
-    { id: "shut",  icon: "🚪", text: window.t("dc.e.gShut", "Close the door yourself") },
-    { id: "back",  icon: "↘",  text: window.t("dc.e.gBack", "Stand at the back for 10 seconds, door shut") },
-    { id: "ride",  icon: "↕",  need: 2, text: window.t("dc.e.gRide", "Ride two floors with the doors shut") },
-    { id: "dark",  icon: "💡", text: window.t("dc.e.gDark", "Pull the light off for 5 seconds") },
+    { id: "shutTouch",  icon: "✋", verb: "door",  need: 2, text: window.t("dc.e.gShutTouch", "Close the door, then touch the far wall") },
+    { id: "touchWalls", icon: "✋", verb: "door",  need: 2, text: window.t("dc.e.gTouchWalls", "Door closed, rest a hand on two of the walls") },
+    { id: "ride",  icon: "↕",  verb: "ride",  need: 2, text: window.t("dc.e.gRide", "Ride two floors with the doors shut") },
+    { id: "dark",  icon: "💡", verb: "light", text: window.t("dc.e.gDark", "Pull the light off for 5 seconds") },
     { id: "scan",  icon: "🥁", text: window.t("dc.e.gScan", "Lie still through a whole scan") },
   ][rung];
   const coach = makeCreatureCoach({
@@ -637,7 +640,7 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
 
   // ---------------- State + actions ----------------
   let clock = 0, disposed = false, inside = false, shut = false, wasEngaged = false;
-  let everClosedInside = false, backT = 0, darkT = 0, reachT = 0, touchT = 0, sigGap = 4, moved = 0, prevX = null, prevZ = null;
+  let everClosedInside = false, darkT = 0, reachT = 0, touchT = 0, sigGap = 4, moved = 0, prevX = null, prevZ = null;
   let latchSaid = false, ventSaid = false, humSaid = false, knockSaid = false, nextEventAt = 9 + Math.random() * 4;
   const bodySaid = {};
   const A = () => window.PhobiaAudio;
@@ -721,7 +724,31 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
     else if (/^floor\d$/.test(a)) liftGo(+a.slice(5));
     else if (a === "slide") slide(mriState === "out");
     else if (a === "ball") slide(false);
-    else if (a === "touch") touchT = 3;
+    else if (a === "touch") touchWallNow();
+  }
+  // A hand flat on a wall: the one you're facing within reach (else the
+  // nearest). Counted on the first two rungs with the door shut — the walls
+  // of a small space, touched by choice, are the space's real size.
+  let touchWall = null;
+  const touched = new Set();
+  function touchWallNow() {
+    touchT = 3;
+    const c = controlsRef; if (!c || !I || !inside) { touchWall = null; return; }
+    const px = c.position.x, pz = c.position.z, fx = -Math.sin(c.yaw), fz = -Math.cos(c.yaw);
+    const cands = [["left", I.x0 + 0.05, pz, 1, 0], ["right", I.x1 - 0.05, pz, -1, 0], ["back", px, I.z0 + 0.05, 0, 1]];
+    let best = null, score = -9;
+    for (const w of cands) {
+      const dx = w[1] - px, dz = w[2] - pz, dd = Math.hypot(dx, dz);
+      if (dd > 0.9) continue;
+      const sc = (dx * fx + dz * fz) / (dd || 1) - dd * 0.5;
+      if (sc > score) { score = sc; best = w; }
+    }
+    touchWall = best;
+    if (!best) return;
+    if (!shut) return;
+    if (rung === 0 && best[0] === "back") coach.goalCount("shutTouch", 2);
+    if (rung === 1) { touched.add(best[0]); coach.goalCount("touchWalls", touched.size); }
+    coach.note("touch");
   }
   function liftOpen() {
     if (liftState === "moving") { coach.teach("liftMoving" + Math.floor(clock / 6), window.t("dc.e.tLiftMoving", "Lift doors open at a floor — you'll be there in a few seconds."), 4000, true); return; }
@@ -816,11 +843,12 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
         if (reachT > 0 && doorPivot) {
           doorPivot.localToWorld(_wp.set(L.door.w - 0.08, 1.0, pz < 0 ? -0.05 : 0.05));
           hands.setReachTarget(_wp, { hand: "right", grip: "wrap", maxReach: 0.8 });
-        } else if (touchT > 0 && inside) {
-          const cands = [[I.x0 + 0.05, pz, 1, 0], [I.x1 - 0.05, pz, -1, 0], [px, I.z0 + 0.05, 0, 1]];
-          let best = null, bd = 9;
-          for (const [x, z, nx, nz] of cands) { const d = Math.hypot(px - x, pz - z); if (d < bd) { bd = d; best = [x, z, nx, nz]; } }
-          if (best && bd < 0.9) { _wp.set(best[0], 0.35, best[1]); _n.set(best[2], 0, best[3]); hands.setReachTarget(_wp, { hand: "right", grip: "flat", normal: _n, maxReach: 0.85 }); }
+        } else if (touchT > 0 && inside && touchWall) {
+          // The wall chosen at the touch, tracked as you shift: the side
+          // walls follow your z, the back wall your x.
+          const w = touchWall;
+          const wx = w[0] === "back" ? px : w[1], wz = w[0] === "back" ? w[2] : pz;
+          if (Math.hypot(px - wx, pz - wz) < 0.95) { _wp.set(wx, 0.35, wz); _n.set(w[3], 0, w[4]); hands.setReachTarget(_wp, { hand: "right", grip: "flat", normal: _n, maxReach: 0.85 }); }
           else hands.clearReachTarget();
         } else hands.clearReachTarget();
       }
@@ -898,7 +926,12 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
         // the latch: closing yourself in
         if (inside && shut && doorTarget === 0 && !everClosedInside) {
           everClosedInside = true;
-          if (!LIFT) { coach.pulse(0.18, "latch", lastDist); coach.goalDone("shut"); if (!latchSaid) setTimeout(() => { if (!disposed && sig("latch")) latchSaid = true; }, 700); }
+          if (!LIFT) {
+            coach.pulse(0.18, "latch", lastDist);
+            // Step one of the first two rungs' stars: the door is shut by you.
+            if (rung === 0) coach.goalCount("shutTouch", 1);
+            if (!latchSaid) setTimeout(() => { if (!disposed && sig("latch")) latchSaid = true; }, 700);
+          }
         }
         // ---- Lift ----
         if (LIFT) {
@@ -936,10 +969,13 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
           }
         }
         // rung goals
-        if (rung === 1 && inside && shut && pz < -0.6) { backT += d; if (backT > 10) coach.goalDone("back"); } else if (rung === 1) backT = Math.max(0, backT - d * 2);
+        // (Rungs 1–2's stars land in touchWallNow; the lit button follows
+        // the step you're on — the door until it's shut, then a wall.)
+        if (rung <= 1) coach.setVerb(rung === 0 ? "shutTouch" : "touchWalls", inside && shut ? "touch" : "door");
         if (rung === 3 && inside && shut && !lightOn) { darkT += d; if (darkT > 5) coach.goalDone("dark"); } else if (rung === 3) darkT = 0;
         // the room's own sounds and air, one at a time, while you're in it
-        if (inside && shut && clock > nextEventAt && !window.__rungHoldComplete && (!LIFT || liftState !== "moving")) {
+        // (Quiet once the trial is held — unless its read star is still open.)
+        if (inside && shut && clock > nextEventAt && (!window.__rungHoldComplete || coach.goalOpen("read")) && (!LIFT || liftState !== "moving")) {
           nextEventAt = clock + 11 + Math.random() * 7;
           const kind = (rung === 0 || rung === 1 || LIFT) && !ventSaid && Math.random() < 0.6 ? "vent" : "hum";
           if (kind === "vent") { try { A() && A().machineHum && A().machineHum(3.5, 38, 0.03); } catch {} coach.pulse(0.08, "noise", lastDist); if (sig("vent")) ventSaid = true; }
