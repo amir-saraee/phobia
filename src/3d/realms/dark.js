@@ -536,7 +536,7 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
       // Scheduled happenings — quiet once the trial is complete, unless its
       // read star is still open: then the house carries on a little, so the
       // star you stayed for is still there to earn.
-      if (clock > nextEventAt && (!window.__rungHoldComplete || coach.goalOpen("read"))) {
+      if (clock > nextEventAt && (!window.__rungHoldComplete || coach.goalOpen("read") || coach.goalOpen("threeSounds"))) {
         fireEvent(EVENTS[Math.floor(Math.random() * EVENTS.length)]);
         nextEventAt = clock + 10 + Math.random() * 8;
       }

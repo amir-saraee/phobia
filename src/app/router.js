@@ -41,7 +41,7 @@ function serializeRoute(view, params = {}) {
 
 function parseRoute(hash) {
   const path = (hash || "").replace(/^#/, "");
-  const parts = path.replace(/^\//, "").split("/").filter(Boolean).map(decodeURIComponent);
+  const parts = path.replace(/^\//, "").split("/").filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch { return x; } });
   if (parts.length === 0) return { view: "welcome", params: {} };
   switch (parts[0]) {
     case "fears":    return { view: "select",    params: {} };
@@ -137,7 +137,51 @@ function brandLamp() {
   return `<svg class="lw-lamp" viewBox="0 0 24 32" aria-hidden="true" focusable="false"><path d="M12 1.5v3.5M7 5h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M6.5 8h11l2 3v12l-2 3h-11l-2-3V11z" fill="rgba(255,200,110,.16)" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path class="lw-lamp-flame" d="M12 12.2c3 3.3 3 6.3 0 8.8c-3-2.5-3-5.5 0-8.8z" fill="#ffc86b"/></svg>`;
 }
 
+// A page that throws while drawing used to leave the screen blank with no way
+// out but clearing site data (and with it, everything). Catch it, log it, and
+// offer the way back: the title screen, a copy of the data, or a clean start.
 function render(view, params) {
+  try { renderView(view, params); }
+  catch (err) {
+    try { console.warn("[Lanternwalk] render failed:", err); } catch {}
+    try { pushErrLog({ ts: Date.now(), msg: ("render " + view + ": " + String((err && err.message) || err)).slice(0, 300), route: location.hash }); } catch {}
+    showRenderRecovery(view);
+  }
+}
+function showRenderRecovery(view) {
+  const root = document.getElementById("app");
+  if (!root) return;
+  root.innerHTML = `
+    <main id="view" role="main" class="render-recovery">
+      <div class="card" style="max-width:520px;margin:12vh auto;padding:24px">
+        <h2 style="margin-top:0">${t("rec.title", "Something on this page didn't load")}</h2>
+        <p>${t("rec.body", "Your saved data may be damaged, or this page hit a bug. Nothing has been deleted.")}</p>
+        <div class="actions" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:16px">
+          ${view !== "welcome" ? `<button class="btn-primary" id="recHome">${t("rec.home", "Back to the start")}</button>` : ""}
+          <button class="btn-ghost" id="recSave">${t("rec.save", "Save a copy of my data")}</button>
+          <button class="btn-ghost" id="recReset">${t("rec.reset", "Erase data and start over")}</button>
+        </div>
+      </div>
+    </main>`;
+  const home = document.getElementById("recHome");
+  if (home) home.onclick = () => { location.hash = "#/"; };
+  document.getElementById("recSave").onclick = () => {
+    const dump = {};
+    try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith("fobia.")) dump[k] = localStorage.getItem(k); } } catch {}
+    const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `lanternwalk-raw-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  document.getElementById("recReset").onclick = () => {
+    if (!confirm(t("rec.confirm", "Erase every character, session and setting on this device? This can't be undone."))) return;
+    eraseAllLocalData();
+    location.hash = "#/";
+    location.reload();
+  };
+}
+function renderView(view, params) {
   // Tear down any active 3D scene + audio + voice before swapping the DOM
   if (window.Scene3D && typeof window.Scene3D.unmount === "function") {
     window.Scene3D.unmount();
@@ -193,7 +237,7 @@ function render(view, params) {
   const charBadge = character ? `
     <button class="char-badge" id="charBadge" title="${allChars.length > 1 ? t("a11y.switchChar", "Switch character") : t("a11y.editChar", "Edit character")}">
       <span class="char-badge-avatar">${window.Character.avatarSVG(character, 28)}</span>
-      ${character.name ? `<span class="char-badge-name">${character.name}</span>` : ""}
+      ${character.name ? `<span class="char-badge-name">${escapeHtml(character.name)}</span>` : ""}
       ${allChars.length > 1 ? `<span class="char-badge-count">${allChars.length}</span>` : ""}
       ${streak >= 2 ? `<span class="char-badge-streak" title="${tf("a11y.streak", "{n}-day streak", { n: streak })}">🔥 ${streak}</span>` : ""}
     </button>` : "";

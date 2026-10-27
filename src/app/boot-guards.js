@@ -50,7 +50,7 @@ window.addEventListener("unhandledrejection", (e) => {
 // a bug report, which is the whole telemetry budget of a local-only app.
 const ERRLOG_KEY = "fobia.errlog.v1";
 function readErrLog() {
-  try { return JSON.parse(localStorage.getItem(ERRLOG_KEY)) || []; } catch { return []; }
+  try { const l = JSON.parse(localStorage.getItem(ERRLOG_KEY)); return Array.isArray(l) ? l : []; } catch { return []; }
 }
 function pushErrLog(entry) {
   try {

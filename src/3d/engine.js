@@ -81,7 +81,19 @@ function unmount() {
     active.renderer.domElement.removeEventListener("pointerdown", active.pointerListeners.onPointerDownTrack);
     active.renderer.domElement.removeEventListener("pointerup",   active.pointerListeners.onPointerUpInteract);
   }
-  if (active.scene) disposeObject(active.scene);
+  if (active.scene) {
+    disposeObject(active.scene);
+    // The sky and environment aren't on any mesh, so disposeObject never
+    // reaches them — and they are often module-cached textures (the meadow
+    // HDR) that outlive the scene. Every renderer that drew one left its
+    // dispose listener on it, which kept that whole renderer, scene and
+    // canvas alive: ~6 MB of heap per trial. Disposing frees only this
+    // renderer's copy; the cached texture uploads again in the next scene.
+    for (const k of ["background", "environment"]) {
+      const v = active.scene[k];
+      if (v && v.isTexture) { try { v.dispose(); } catch {} }
+    }
+  }
   if (active.renderer) {
     // Force the WebGL context to be released NOW, not whenever GC happens to
     // run. Without this, navigating through enough scenes leaks contexts until

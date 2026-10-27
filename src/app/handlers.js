@@ -92,7 +92,7 @@ function attachHandlers(view, params) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `mira-progress-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `lanternwalk-progress-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -480,6 +480,13 @@ function openSettings() {
       </div>
       <button class="btn-warn" id="resetAllBtn" style="padding:6px 12px;font-size:12px;">${t("set.resetBtn", "Reset")}</button>
     </div>
+    <div class="row">
+      <div>
+        <label>${t("set.erase", "Erase everything on this device")}</label>
+        <div class="small">${t("set.eraseSub", "Every character, session, note, dog and setting. For a shared device, or a fresh start.")}</div>
+      </div>
+      <button class="btn-warn" id="eraseAllBtn" style="padding:6px 12px;font-size:12px;">${t("set.eraseBtn", "Erase")}</button>
+    </div>
 
     <div class="settings-section">${t("settings.diag", "Diagnostics")}</div>
     <div class="row">
@@ -539,6 +546,13 @@ function openSettings() {
       resetActiveProgress();
       close();
       go("select");
+    }
+  };
+  drawer.querySelector("#eraseAllBtn").onclick = () => {
+    if (confirm(t("rec.confirm", "Erase every character, session and setting on this device? This can't be undone."))) {
+      eraseAllLocalData();
+      location.hash = "#/";
+      location.reload();
     }
   };
   drawer.querySelector("#editCharBtn").onclick = () => {
@@ -789,7 +803,11 @@ function handleAction(d, params) {
       const rolled = C.randomCharacter();
       // Never overwrite a name the player typed themselves.
       const keptName = (_travelerDraft && _travelerDraft.name) || "";
-      _travelerDraft = Object.assign({}, rolled, keptName ? { name: keptName } : {});
+      // A roll restyles the traveler being edited — it keeps that one's id,
+      // or saving would add a second character next to it.
+      const keep = {};
+      if (_travelerDraft && _travelerDraft.id) { keep.id = _travelerDraft.id; keep.createdAt = _travelerDraft.createdAt; }
+      _travelerDraft = Object.assign({}, rolled, keep, keptName ? { name: keptName } : {});
       render("traveler", {});
       break;
     }
@@ -799,7 +817,8 @@ function handleAction(d, params) {
       const draft = Object.assign({}, C.defaultCharacter(), _travelerDraft || {});
       // The realm they picked in the creator (an open one), else the dogs.
       if (!draft.primaryPhobia || !PHOBIAS[draft.primaryPhobia] || !realmOpen(draft.primaryPhobia)) draft.primaryPhobia = "dogs";
-      if (!draft.name) draft.name = "Traveler";
+      draft.name = String(draft.name || "").trim();
+      if (!draft.name) draft.name = t("tw.defaultName", "Traveler");
       try { C.saveCharacter(draft); } catch {}
       try { localStorage.setItem("fobia.travelerMade", "1"); } catch {}
       _travelerDraft = null;
@@ -903,10 +922,18 @@ function handleAction(d, params) {
       // quietly ended the exposure (and the tour promised otherwise).
       const st = document.getElementById("stage");
       if (st && st.isConnected && st.closest(".exposure-panel")) { openStageBreath(st); break; }
+      // From the done screen's check-in the trial is already logged: the
+      // breath leads back to the realm, not into a second rating.
+      window.__breatheAfter = d.after || null;
       go("breathe", { phobia: d.phobia, level: parseInt(d.level, 10) });
       break;
     }
-    case "after-breathe":   go("rate", { phobia: d.phobia, level: parseInt(d.level, 10) }); break;
+    case "after-breathe": {
+      const after = window.__breatheAfter; window.__breatheAfter = null;
+      if (after === "ladder") go("ladder", { phobia: d.phobia });
+      else go("rate", { phobia: d.phobia, level: parseInt(d.level, 10) });
+      break;
+    }
     case "next-level":      startTrial(d.phobia, parseInt(d.level, 10)); break;   // story page (if one is waiting) → predict → the trial
     case "back-ladder":     go("ladder", { phobia: d.phobia }); break;
     case "open-insights":   go("insights"); break;
@@ -942,12 +969,11 @@ function handleAction(d, params) {
       break;
     }
     case "new-character": {
-      // Remember who was active so a CANCEL can restore them (otherwise the
-      // active id stays stuck on the "__new__" sentinel and milestones get
-      // written to a phantom character).
-      window._prevActiveCharId = (window.Character.activeCharacterId && window.Character.activeCharacterId()) || null;
-      // Open the creator with no existing data
-      window.Character.setActiveCharacter("__new__"); // sentinel, won't match anything
+      // The creator opens blank on its own (editing: false). The active
+      // traveler stays active until the new one is saved — it used to be
+      // switched to a "__new__" sentinel, and leaving the creator without
+      // saving sent every later reward to that phantom slot.
+      window._prevActiveCharId = null;
       go("character", { editing: false });
       break;
     }

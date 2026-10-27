@@ -71,7 +71,7 @@ function viewLadder(phobiaKey) {
   const lastFear = rated.length ? rated[rated.length - 1].suds : null;
   const guessPairs = previous.filter(l => typeof l.predicted === "number" && typeof l.suds === "number");
   const overGuess = guessPairs.length
-    ? guessPairs.reduce((s, l) => s + (l.predicted - l.suds), 0) / guessPairs.length
+    ? guessPairs.reduce((s, l) => s + (l.predicted - feltFor(l)), 0) / guessPairs.length
     : null;
   const realSteps = getWorldsteps(phobiaKey).length;
   const rstat = realmStatus(phobiaKey);
@@ -710,7 +710,7 @@ function viewInsights() {
   // Average prediction-vs-actual gap (only sessions that recorded a prediction)
   const predicted = state.log.filter(l => l.predicted != null);
   const avgGap = predicted.length
-    ? predicted.reduce((s, l) => s + (l.predicted - l.suds), 0) / predicted.length
+    ? predicted.reduce((s, l) => s + (l.predicted - feltFor(l)), 0) / predicted.length
     : null;
 
   if (myPhobias.length === 0) {
@@ -1478,7 +1478,26 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     : `<button class="btn-primary" data-action="back-ladder" data-phobia="${phobiaKey}">${realmStatus(phobiaKey).tamed
         ? t("complete.tamed", "🕊 The realm is behind you — see it")
         : t("complete.walked", "🌍 The valley is walked — see the Real Path")}</button>`;
-  const heroCta = `<div class="actions vc-cta">${nextBtn}${(early || (hasStars && nStars < 3)) ? replayBtn : ""}</div>`;
+  // A trial that ran near the top of the scale is not the moment to point at
+  // a harder one: lead with staying here (or a step down), and check in.
+  const peakNum = (peak == null || Number.isNaN(+peak)) ? null : +peak;
+  const heavy = suds >= 8 || (peakNum != null && peakNum >= 8) || (early && peakNum != null && peakNum >= 7);
+  const easierBtn = levelIdx > 0
+    ? `<button class="btn-ghost" data-action="start-level" data-phobia="${phobiaKey}" data-level="${levelIdx - 1}">${tf("vc.easier", "↓ A step easier: {t}", { t: escapeHtml(lvTitle(phobiaKey, levelIdx - 1)) })}</button>`
+    : "";
+  const heroCta = heavy
+    ? `<div class="actions vc-cta">${replayBtn.replace("btn-ghost vc-replay", "btn-primary vc-replay")}${easierBtn}${nextBtn.replace('class="btn-primary"', 'class="btn-ghost"')}</div>`
+    : `<div class="actions vc-cta">${nextBtn}${(early || (hasStars && nStars < 3)) ? replayBtn : ""}</div>`;
+  const checkInBlock = heavy ? `
+    <div class="mirror-invite vc-checkin" role="note">
+      <span class="bridge-invite-kicker">${t("ci.kicker", "🫶 A check-in")}</span>
+      <strong>${t("ci.title", "That one ran high. How are you right now?")}</strong>
+      <p>${t("ci.p", "Nothing needs to happen next. Slow your breathing for a minute, stay at this trial for a few more passes, or take a step down. Any of those is progress. If the fear is still very strong now that you're out, please reach someone who can help.")}</p>
+      <div class="actions" style="margin-top:8px">
+        <button class="btn-ghost" data-action="do-breathe" data-after="ladder" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("ci.breathe", "🌬 Breathe for a minute")}</button>
+        <a class="btn-ghost" href="https://findahelpline.com" target="_blank" rel="noopener">${t("ci.help", "☎️ Talk to someone — findahelpline.com")}</a>
+      </div>
+    </div>` : "";
   // A dog joins the campfire the first time its last trial is faced.
   let companionBlock = "";
   if (fresh && !early && lastAward.advanced && phobiaKey === "dogs") {
@@ -1509,6 +1528,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
         ${rankRow || rewardStrip}
         ${heroCta}
       </div>
+      ${checkInBlock}
       ${(() => {
         // The page this trial turned — right under the next step, since the
         // next step plays it anyway if it's still unread.

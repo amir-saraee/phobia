@@ -543,7 +543,7 @@ function makeCreatureCoach(opts) {
       // A verb goal is always still on offer — it's the player's move, not
       // the animal's — so it gets the same one-line nudge.
       const open = goals.filter((x) => !x.done && x.id !== "settle");
-      if (open.length === 1 && ((!K.place && open[0].id === "read") || open[0].verb)) {
+      if (open.length === 1 && (open[0].id === "read" || open[0].id === "threeSounds" || open[0].verb)) {
         teach("starsLeft", tf("dc.tStarsLeft",
           "Trial held — continue whenever you like. <b>One star is still open:</b> {g}. Stay a little longer if you want all three.",
           { g: esc(open[0].text) }), 8000);

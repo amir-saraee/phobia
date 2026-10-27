@@ -517,6 +517,12 @@ function mountExposure(phobiaKey, levelIdx) {
       const markUser = (e) => { if (!(e.target && e.target.closest && e.target.closest("#stage"))) userScrolled = true; };
       window.addEventListener("wheel", markUser, { passive: true, once: true });
       window.addEventListener("touchmove", markUser, { passive: true, once: true });
+      // "once" only removes the one that fires — the other kept this trial's
+      // whole stage (and through it the scene) alive after unmount.
+      setTimeout(() => {
+        window.removeEventListener("wheel", markUser);
+        window.removeEventListener("touchmove", markUser);
+      }, 3200);
       [700, 1500, 3000].forEach((ms) => setTimeout(() => {
         if (userScrolled || !stage.isConnected) return;
         const top = stage.getBoundingClientRect().top;
@@ -836,6 +842,7 @@ function mountExposure(phobiaKey, levelIdx) {
     // Tear down the inactivity watcher
     if (inactivityInterval) { clearInterval(inactivityInterval); inactivityInterval = null; }
     INACTIVITY_EVENTS.forEach(ev => window.removeEventListener(ev, onAnyActivity));
+    if (window.__stopTrialAudio === stopAllAudio) window.__stopTrialAudio = null;
   }
   // Also stop audio when the page goes away. One listener for the page's
   // life, calling whichever trial is current — this used to add a new one
@@ -843,7 +850,9 @@ function mountExposure(phobiaKey, levelIdx) {
   window.__stopTrialAudio = stopAllAudio;
   if (!window.__trialUnloadWired) {
     window.__trialUnloadWired = true;
-    window.addEventListener("beforeunload", () => { try { window.__stopTrialAudio && window.__stopTrialAudio(); } catch {} });
+    // A closure made here would hold this first trial's whole scope (stage,
+    // scene, renderer) for the rest of the session; the handler lives outside.
+    window.addEventListener("beforeunload", stopCurrentTrialAudio);
   }
 
   // SUDS slider live update. The readout starts blank ("—") and Save stays
@@ -1045,4 +1054,10 @@ function runBreathing() {
     setTimeout(step, phase.ms);
   }
   step();
+}
+
+// The page-lifetime unload hook for whichever trial is current (see
+// mountExposure). Top-level so it captures no trial's scope.
+function stopCurrentTrialAudio() {
+  try { window.__stopTrialAudio && window.__stopTrialAudio(); } catch {}
 }

@@ -304,7 +304,19 @@ function getRoomEnvMap(renderer) {
 // rebuilt (and disposed) per mount, while the 1.4 MB decode is renderer-
 // agnostic and worth keeping. Resolves to null if the file is missing.
 let _meadowHDR = null;
+// Every caller gets its own Texture over the one decoded image: a renderer
+// that draws a texture hangs a dispose listener on that object, and on the
+// shared cached one those listeners kept every past renderer, scene and
+// canvas alive (one per trial, never collected).
 function loadMeadowHDR() {
+  return loadMeadowHDRBase().then((t) => {
+    if (!t) return null;
+    const c = t.clone();
+    c.needsUpdate = true;
+    return c;
+  });
+}
+function loadMeadowHDRBase() {
   if (_meadowHDR) return _meadowHDR;
   _meadowHDR = new Promise((resolve) => {
     try {

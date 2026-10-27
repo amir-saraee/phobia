@@ -146,6 +146,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
             dogEnvTex = gen.fromEquirectangular(hdr).texture;
             scene.environment = dogEnvTex;
             gen.dispose();
+            hdr.dispose();   // this mount's copy; the PMREM holds what it needs
           } catch (e) { console.warn("[dogs] HDRI:", e); }
         });
       }

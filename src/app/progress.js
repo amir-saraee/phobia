@@ -386,11 +386,61 @@ let lastRungOutcome = null;   // { heldSec, minHold, finished, phobia, level }
 // Active background pad handle, if music is enabled.
 let ambientPad = null;
 
+// What a prediction is measured against: the fear at its worst in the scene,
+// not the "right now" rating after it. Older entries without a peak fall back.
+function feltFor(l) {
+  return (l && typeof l.peak === "number" && !Number.isNaN(l.peak)) ? l.peak : l.suds;
+}
 function loadState() {
   try {
-    const s = JSON.parse(localStorage.getItem(STATE_KEY)) || {};
-    return Object.assign({ progress: {}, log: [], courage: 0 }, s);
+    return sanitizeState(JSON.parse(localStorage.getItem(STATE_KEY)));
   } catch { return { progress: {}, log: [], courage: 0 }; }
+}
+// Saved state comes from storage or an imported file, so it's whatever shape
+// someone (or an old build) left there. Coerce every part the app reads to
+// the type it expects, dropping what can't be repaired, instead of letting a
+// stray null blank every page.
+// (Function declarations, not consts: loadState() runs at the top of this
+// file, before any const below it exists.)
+function _isObj(v) { return !!v && typeof v === "object" && !Array.isArray(v); }
+function _cleanProgress(p) {
+  if (!_isObj(p)) return {};
+  for (const k of Object.keys(p)) {
+    if (!_isObj(p[k])) { delete p[k]; continue; }
+    if (!Number.isFinite(p[k].highestCompleted)) p[k].highestCompleted = -1;
+  }
+  return p;
+}
+function _cleanArrMap(m) {
+  if (!_isObj(m)) return {};
+  for (const k of Object.keys(m)) if (!Array.isArray(m[k])) delete m[k];
+  return m;
+}
+function _cleanSlice(s) {
+  if (!_isObj(s)) return null;
+  s.progress = _cleanProgress(s.progress);
+  s.log = Array.isArray(s.log) ? s.log.filter(_isObj) : [];
+  if (s.courage != null && !Number.isFinite(+s.courage)) s.courage = 0;
+  if (s.goals != null && !_isObj(s.goals)) s.goals = {};
+  if (s.sparks != null && !Array.isArray(s.sparks)) s.sparks = [];
+  if (s.milestones != null && !Array.isArray(s.milestones)) s.milestones = [];
+  if (s.worldsteps != null) s.worldsteps = _cleanArrMap(s.worldsteps);
+  if (s.checks != null) s.checks = _cleanArrMap(s.checks);
+  if (s.story != null && !_isObj(s.story)) delete s.story;
+  if (s.primer != null && !_isObj(s.primer)) delete s.primer;
+  return s;
+}
+function sanitizeState(raw) {
+  const s = _cleanSlice(_isObj(raw) ? raw : {}) || {};
+  if (s.courage == null) s.courage = 0;
+  if (s.byCharacter != null) {
+    if (!_isObj(s.byCharacter)) s.byCharacter = {};
+    for (const id of Object.keys(s.byCharacter)) {
+      const c = _cleanSlice(s.byCharacter[id]);
+      if (c) s.byCharacter[id] = c; else delete s.byCharacter[id];
+    }
+  }
+  return s;
 }
 // saveState swallows storage errors (Safari Private Mode rejects writes
 // past a tiny quota — without the catch, the whole render thread can throw
@@ -620,7 +670,7 @@ const MILESTONES = [
     check: () => {
       const preds = state.log.filter(l => l.predicted != null);
       if (preds.length < 5) return false;
-      const avgGap = preds.reduce((s, l) => s + Math.abs(l.predicted - l.suds), 0) / preds.length;
+      const avgGap = preds.reduce((s, l) => s + Math.abs(l.predicted - feltFor(l)), 0) / preds.length;
       return avgGap < 1;
     } },
 ];
@@ -740,7 +790,7 @@ function viewQuiz() {
 // the evidence file, the printable report. One quiet signpost per page-load,
 // each retiring forever once acted on, dismissed, or found unaided.
 function nudgesDone() {
-  try { return JSON.parse(localStorage.getItem("fobia.nudges.v1") || "[]"); } catch { return []; }
+  try { const d = JSON.parse(localStorage.getItem("fobia.nudges.v1") || "[]"); return Array.isArray(d) ? d : []; } catch { return []; }
 }
 function markNudgeDone(id) {
   try {

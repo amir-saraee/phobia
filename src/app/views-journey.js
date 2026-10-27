@@ -1100,7 +1100,10 @@ function upgradeFaces(root) {
         if (!el.isConnected) return;
         const svg = el.querySelector("svg");
         const size = (svg && +svg.getAttribute("width")) || el.clientWidth || 28;
-        el.innerHTML = `<img class="cast-face baked me" src="${url}" width="${size}" height="${size}" alt="">`;
+        // Inline size too: story.js's .cast-face {width:100%} beats the
+        // attributes, and the header badge has no box of its own — the
+        // portrait grew to its natural 128px and pushed every page down.
+        el.innerHTML = `<img class="cast-face baked me" src="${url}" width="${size}" height="${size}" style="width:${size}px;height:${size}px" alt="">`;
       });
     }).catch(() => {});
   };

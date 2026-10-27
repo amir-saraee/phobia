@@ -659,7 +659,7 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
     if (open && byPlayer && coach.engaged) { coach.note("door"); coach.safety("door"); }
   }
   // Lift.
-  let floor = 1, liftState = "open", liftTarget = 1, moveT = 0, moveDur = 0, idleT = 0, floorsRidden = 0, rideStartInside = false;
+  let floor = 1, liftState = "open", liftTarget = 1, moveT = 0, moveDur = 0, idleT = 0, floorsRidden = 0, rideStartInside = false, liftPrevPz = 0;
   function liftGo(n) {
     if (!LIFT) return;
     if (!inside) { coach.teach("liftOut", window.t("dc.e.tLiftOut", "Step inside the lift first — then pick a floor."), 4500, true); return; }
@@ -935,6 +935,16 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
         }
         // ---- Lift ----
         if (LIFT) {
+          // Safety edge, as real lifts have: doors that are closing reopen
+          // for anyone in the doorway or heading out. Shutting on a player
+          // who is leaving (and shoving them back in) taught "trapped" —
+          // the one belief this realm exists to undo.
+          const headingOut = pz - liftPrevPz > 0.002;
+          const atDoor = Math.abs(px) < 0.6 && pz > -0.55;
+          liftPrevPz = pz;
+          if ((liftState === "closing" || liftState === "closing-idle") && doorAmt > 0.02 && atDoor && (headingOut || Math.abs(pz) < 0.4)) {
+            setDoor(true, false); liftState = "opening"; idleT = 0;
+          }
           if (liftState === "closing" && doorAmt <= 0.001) startRide();
           else if (liftState === "closing-idle" && doorAmt <= 0.001) liftState = "closed";
           else if (liftState === "opening" && doorAmt >= 0.999) { liftState = "open"; idleT = 0; }
@@ -964,7 +974,7 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
             const inDoorway = Math.abs(pz) < 0.4 && Math.abs(px) < 0.6;
             // After a ride, an idle lift closes its doors again with you inside —
             // as lifts do. Before the first ride it waits for you to pick a floor.
-            if (inDoorway) idleT = 0;
+            if (inDoorway || (headingOut && pz > -0.9)) idleT = 0;
             if (floorsRidden > 0 && idleT > 7 && inside && !inDoorway) { setDoor(false, false); liftState = "closing-idle"; }
           }
         }

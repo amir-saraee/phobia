@@ -173,7 +173,9 @@ function loadCharacters() {
   // Returns the list, migrating from legacy single-character storage if needed.
   try {
     const arr = JSON.parse(localStorage.getItem(CHARS_KEY));
-    if (Array.isArray(arr)) return arr;
+    // Only real character objects with an id: a null or a bare string in the
+    // list (a damaged save, a hand-edited import) used to blank every page.
+    if (Array.isArray(arr)) return arr.filter(c => c && typeof c === "object" && typeof c.id === "string" && c.id);
   } catch {}
   // Migrate the old single-character format into a 1-element list
   try {
@@ -188,7 +190,14 @@ function loadCharacters() {
   return [];
 }
 function activeCharacterId() {
-  try { return localStorage.getItem(ACTIVE_KEY) || null; } catch { return null; }
+  // Only an id that names a saved character: a stale pointer (a deleted
+  // character, the old "__new__" sentinel) falls back to the one
+  // loadCharacter() shows, so rewards land on the traveler on screen.
+  let id = null;
+  try { id = localStorage.getItem(ACTIVE_KEY) || null; } catch { return null; }
+  const all = loadCharacters();
+  if (!all.length) return id;
+  return all.some(c => c.id === id) ? id : all[0].id;
 }
 function loadCharacter() {
   // Active character (if any). Prefer the saved active id; fall back to the first.

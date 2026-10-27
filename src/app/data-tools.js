@@ -22,10 +22,13 @@ function applyTheme() {
 let reminderInterval = null;
 function scheduleReminders() {
   if (reminderInterval) clearInterval(reminderInterval);
-  if (localStorage.getItem("fobia.reminders") !== "1") return;
+  // Storage can be blocked outright (cookies off, some in-app browsers):
+  // getItem then throws, and at boot that blanked the whole page.
+  try { if (localStorage.getItem("fobia.reminders") !== "1") return; } catch { return; }
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   const tick = () => {
-    const last = parseInt(localStorage.getItem("fobia.lastReminder") || "0", 10);
+    let last = 0;
+    try { last = parseInt(localStorage.getItem("fobia.lastReminder") || "0", 10) || 0; } catch { return; }
     const now = Date.now();
     if (now - last > 1000 * 60 * 60 * 22) {
       try {
@@ -44,6 +47,32 @@ function scheduleReminders() {
   reminderInterval = setInterval(tick, 1000 * 60 * 60);   // every hour
 }
 
+// Remove every Lanternwalk key on this device (characters, sessions, dog
+// trust, settings, diagnostics). Used by the recovery screen and Settings.
+function eraseAllLocalData() {
+  try {
+    const ks = [];
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith("fobia.")) ks.push(k); }
+    ks.forEach(k => localStorage.removeItem(k));
+  } catch {}
+}
+
+// Keys export/import carry as their own sections (or never carry: the error
+// log is this device's diagnostics, not the player's data).
+const EXPORT_SKIP = new Set(["characters.v2", "activeCharacter.v1", "state.v1", "customPhobias.v1", "errlog.v1", "character.v1"]);
+function exportedSettings() {
+  const out = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith("fobia.")) continue;
+      const short = k.slice(6);
+      if (!EXPORT_SKIP.has(short)) out[short] = localStorage.getItem(k);
+    }
+  } catch {}
+  return out;
+}
+
 // Import a previously-exported JSON file. Restores characters, state and
 // settings into localStorage and reloads the app so all caches refresh.
 function importData() {
@@ -56,28 +85,44 @@ function importData() {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      if (!data || data.version == null) {
+      if (!data || typeof data !== "object" || data.version == null) {
+        alert(t("imp.bad", "This doesn't look like a Lanternwalk export. Nothing was changed."));
+        return;
+      }
+      // Check every section's shape BEFORE writing anything: a file that is
+      // half right used to be written as-is and blank the app for good.
+      const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+      const chars = data.characters == null ? null
+        : (Array.isArray(data.characters) ? data.characters.filter(c => isObj(c) && typeof c.id === "string" && c.id) : []);
+      if ((data.characters != null && (!chars || !chars.length)) ||
+          (data.state != null && !isObj(data.state)) ||
+          (data.settings != null && !isObj(data.settings)) ||
+          (data.customPhobias != null && !isObj(data.customPhobias))) {
         alert(t("imp.bad", "This doesn't look like a Lanternwalk export. Nothing was changed."));
         return;
       }
       if (!confirm(t("imp.confirm", "Import this file? It will replace every character, session, note and setting on this device."))) return;
       // Restore each section if present
-      if (Array.isArray(data.characters)) {
-        localStorage.setItem("fobia.characters.v2", JSON.stringify(data.characters));
+      if (chars) {
+        chars.forEach(c => { if (typeof c.name !== "string") c.name = ""; c.name = c.name.slice(0, 24); });
+        localStorage.setItem("fobia.characters.v2", JSON.stringify(chars));
       }
-      if (data.activeCharacterId) {
+      if (typeof data.activeCharacterId === "string" && chars && chars.some(c => c.id === data.activeCharacterId)) {
         localStorage.setItem("fobia.activeCharacter.v1", data.activeCharacterId);
+      } else if (chars) {
+        localStorage.setItem("fobia.activeCharacter.v1", chars[0].id);
       }
       if (data.state) {
-        localStorage.setItem("fobia.state.v1", JSON.stringify(data.state));
+        localStorage.setItem("fobia.state.v1", JSON.stringify(sanitizeState(data.state)));
       }
       if (data.settings) {
         for (const [k, v] of Object.entries(data.settings)) {
-          if (v != null) localStorage.setItem("fobia." + k, v);
+          // Settings are flat strings; anything else would be stored as "[object Object]".
+          if (v != null && typeof v !== "object" && /^[\w.-]+$/.test(k) && !EXPORT_SKIP.has(k)) localStorage.setItem("fobia." + k, String(v));
         }
       }
       if (data.customPhobias) {
-        localStorage.setItem("fobia.customPhobias.v1", JSON.stringify(data.customPhobias));
+        localStorage.setItem("fobia.customPhobias.v1", JSON.stringify(cleanCustomPhobias(data.customPhobias)));
       }
       alert(t("imp.done", "Imported. Reloading…"));
       location.reload();
@@ -94,8 +139,20 @@ function importData() {
 // "imagined exposure" — voice + hold timer + ambient pad.
 const CUSTOM_PHOBIAS_KEY = "fobia.customPhobias.v1";
 function loadCustomPhobias() {
-  try { return JSON.parse(localStorage.getItem(CUSTOM_PHOBIAS_KEY)) || {}; }
+  try { return cleanCustomPhobias(JSON.parse(localStorage.getItem(CUSTOM_PHOBIAS_KEY))); }
   catch { return {}; }
+}
+// Keep only ladders the app can draw: an object per key with a rungs list.
+function cleanCustomPhobias(obj) {
+  const out = {};
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return out;
+  for (const [k, c] of Object.entries(obj)) {
+    if (c && typeof c === "object" && Array.isArray(c.rungs)) {
+      c.rungs = c.rungs.filter(r => r && typeof r === "object");
+      out[k] = c;
+    }
+  }
+  return out;
 }
 function saveCustomPhobias(obj) {
   try { localStorage.setItem(CUSTOM_PHOBIAS_KEY, JSON.stringify(obj)); } catch {}
@@ -269,7 +326,7 @@ function generateProgressCard() {
   const ladders = Object.keys(PHOBIAS).filter((k) => realmStatus(k).walked).length;
   const predicted = state.log.filter(l => l.predicted != null);
   const avgGap = predicted.length
-    ? predicted.reduce((s, l) => s + (l.predicted - l.suds), 0) / predicted.length
+    ? predicted.reduce((s, l) => s + (l.predicted - feltFor(l)), 0) / predicted.length
     : null;
   const streak = computeStreak();
 
@@ -337,7 +394,7 @@ function generateProgressCard() {
   // Output
   canvas.toBlob((blob) => {
     if (!blob) return;
-    const file = new File([blob], "mira-progress.png", { type: "image/png" });
+    const file = new File([blob], "lanternwalk-progress.png", { type: "image/png" });
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
       navigator.share({
         files: [file],
@@ -348,7 +405,7 @@ function generateProgressCard() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "mira-progress.png";
+      a.download = "lanternwalk-progress.png";
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
@@ -364,22 +421,15 @@ function exportData() {
     activeCharacterId: window.Character ? window.Character.activeCharacterId() : null,
     state: state,
     customPhobias: loadCustomPhobias(),
-    settings: {
-      muted: localStorage.getItem("fobia.muted"),
-      voiceMuted: localStorage.getItem("fobia.voiceMuted"),
-      captions: localStorage.getItem("fobia.captions"),
-      reducedMotion: localStorage.getItem("fobia.reducedMotion"),
-      heart: localStorage.getItem("fobia.heart"),
-      music: localStorage.getItem("fobia.music"),
-      quality: localStorage.getItem("fobia.quality"),
-      theme: localStorage.getItem("fobia.theme"),
-    },
+    // Every other fobia.* key: settings, language, dog trust and names,
+    // achievements — so a backup brings back the whole game, not just the log.
+    settings: exportedSettings(),
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `step-up-export-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `lanternwalk-backup-${new Date().toISOString().slice(0, 10)}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
