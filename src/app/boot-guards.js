@@ -86,3 +86,72 @@ function isCoarsePointer() {
   try { forced = localStorage.getItem("fobia.forceTouch") === "1"; } catch {}
   return !!(coarse || forced);
 }
+
+// ---------- Dialog focus ----------
+// The consent notice, Settings, the menu and every modal opened without
+// taking focus: Tab walked the page behind them (the consent's button was
+// the ninth stop), Esc did nothing in most, and closing one dropped focus on
+// <body>. One watcher gives every dialog the same contract: focus moves in,
+// Tab stays inside, Esc closes where closing is allowed, and focus returns
+// to whatever opened it.
+(function dialogFocus() {
+  const SEL = ".goal-modal-overlay, .settings-drawer, .menu-drawer";
+  const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])';
+  const visible = (el) => el.offsetParent !== null || el.getClientRects().length > 0;
+  const focusables = (root) => [...root.querySelectorAll(FOCUSABLE)].filter(visible);
+  function closeOf(root) {
+    if (root.classList.contains("settings-drawer")) return () => { try { closeSettings(); } catch {} };
+    if (root.classList.contains("menu-drawer")) return () => { try { closeMenu(); } catch {} };
+    // A first-visit notice is agreed to, not dismissed.
+    if (root.classList.contains("consent-overlay")) {
+      if (root.querySelector("#consentAbout")) return null;
+      const ok = root.querySelector("#consentOk");
+      return ok ? () => ok.click() : null;
+    }
+    const btn = root.querySelector('.close-btn, [data-dismiss], #fbClose, #wsCancel, #fcCancel, #goalCancel, #prClose, #kpClose');
+    return btn ? () => btn.click() : null;
+  }
+  function wire(root) {
+    if (root._dlg) return;
+    const opener = document.activeElement;
+    root._dlg = true;
+    const box = root.matches(".goal-modal-overlay") ? (root.querySelector('[role="dialog"], .goal-modal') || root) : root;
+    if (!box.getAttribute("role")) box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    requestAnimationFrame(() => {
+      if (!root.isConnected) return;
+      const f = focusables(box);
+      const first = box.querySelector(".btn-primary:not([disabled])") || f.find((el) => !el.classList.contains("close-btn")) || f[0];
+      if (first) { try { first.focus({ preventScroll: true }); } catch {} }
+    });
+    root.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        const close = closeOf(root);
+        if (close) { e.stopPropagation(); close(); }
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const f = focusables(box);
+      if (!f.length) return;
+      const a = f[0], z = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); }
+      else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+      else if (!box.contains(document.activeElement)) { e.preventDefault(); a.focus(); }
+    });
+    const mo = new MutationObserver(() => {
+      if (root.isConnected) return;
+      mo.disconnect();
+      if (opener && opener.isConnected && typeof opener.focus === "function") { try { opener.focus({ preventScroll: true }); } catch {} }
+    });
+    mo.observe(document.body, { childList: true });
+  }
+  const start = () => {
+    new MutationObserver((muts) => {
+      for (const m of muts) for (const n of m.addedNodes) {
+        if (n.nodeType !== 1) continue;
+        if (n.matches && n.matches(SEL)) wire(n);
+      }
+    }).observe(document.body, { childList: true });
+  };
+  if (document.body) start(); else document.addEventListener("DOMContentLoaded", start, { once: true });
+})();

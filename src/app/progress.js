@@ -386,6 +386,33 @@ let lastRungOutcome = null;   // { heldSec, minHold, finished, phobia, level }
 // Active background pad handle, if music is enabled.
 let ambientPad = null;
 
+// The trial in flight — prediction, the hold's outcome, the scene's evidence —
+// lived only in memory, so a reload (or a phone discarding the tab) between
+// the scene and the rating lost the prediction and logged a finished trial
+// as "left early". Mirrored to sessionStorage: it survives a reload of this
+// tab, and dies with it.
+const TRIAL_SNAP_KEY = "fobia.trialSnap";
+function saveTrialSnap() {
+  try {
+    sessionStorage.setItem(TRIAL_SNAP_KEY, JSON.stringify({
+      o: lastRungOutcome, p: pendingPrediction, e: pendingExpect,
+      ev: window.__lastTrialEvidence || null, pk: lastRungPeakFear,
+    }));
+  } catch {}
+}
+function clearTrialSnap() { try { sessionStorage.removeItem(TRIAL_SNAP_KEY); } catch {} }
+(function restoreTrialSnap() {
+  try {
+    const s = JSON.parse(sessionStorage.getItem(TRIAL_SNAP_KEY));
+    if (!s) return;
+    if (s.o) lastRungOutcome = s.o;
+    if (s.p) pendingPrediction = s.p;
+    if (s.e) { pendingExpect = s.e; window.__pendingExpect = s.e; }
+    if (s.ev && !window.__lastTrialEvidence) window.__lastTrialEvidence = s.ev;
+    if (s.pk) lastRungPeakFear = s.pk;
+  } catch {}
+})();
+
 // What a prediction is measured against: the fear at its worst in the scene,
 // not the "right now" rating after it. Older entries without a peak fall back.
 function feltFor(l) {
@@ -446,8 +473,39 @@ function sanitizeState(raw) {
 // past a tiny quota — without the catch, the whole render thread can throw
 // when persisting after a session).
 function saveState() {
-  try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch {}
+  try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); }
+  catch { warnSaveFailed(); }
 }
+// A full or blocked store used to drop sessions without a word. Say so once
+// per page-load, with the way out (a backup file keeps what's in memory).
+let _saveWarned = false;
+function warnSaveFailed() {
+  if (_saveWarned || typeof document === "undefined" || !document.body) return;
+  _saveWarned = true;
+  const el = document.createElement("div");
+  el.className = "save-warn";
+  el.setAttribute("role", "alert");
+  el.innerHTML = `<span>${t("save.fail", "This device didn't save your last change — its storage is full or blocked. Save a backup now so nothing is lost.")}</span>
+    <button class="btn-primary" type="button">${t("save.backup", "Save a backup")}</button>
+    <button class="btn-ghost" type="button" aria-label="${t("save.dismiss", "Dismiss")}">✕</button>`;
+  const [b1, b2] = el.querySelectorAll("button");
+  b1.onclick = () => { try { exportData(); } catch {} el.remove(); };
+  b2.onclick = () => el.remove();
+  document.body.appendChild(el);
+}
+// Another tab of the game wrote: take its data as ours, or the next save
+// here would write this tab's stale copy over it (two tabs used to erase
+// each other's sessions). Pages with nothing typed into them redraw.
+window.addEventListener("storage", (e) => {
+  if (e.storageArea !== localStorage) return;
+  if (e.key !== null && e.key !== STATE_KEY && e.key !== "fobia.characters.v2" && e.key !== "fobia.activeCharacter.v1") return;
+  state = loadState();
+  try { activateCharacterState(); } catch {}
+  try {
+    const r = parseRoute(location.hash);
+    if (["select", "ladder", "insights", "report", "profiles", "phobia-progress", "journal", "story", "threshold"].includes(r.view)) render(r.view, r.params);
+  } catch {}
+});
 
 function getProgress(phobiaKey) {
   return state.progress[phobiaKey] || { highestCompleted: -1 };

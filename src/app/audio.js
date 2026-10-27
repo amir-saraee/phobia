@@ -941,6 +941,33 @@ const PhobiaAudio = (() => {
     subO.start(t0); subO.stop(t0 + 0.18);
   }
 
+  // A short "[ barking ]" chip in the scene, when captions are on.
+  let _capT = 0, _capEl = null, _capTimer = null;
+  function soundCaption(kind, count) {
+    try {
+      if (localStorage.getItem("fobia.captions") === "0") return;
+    } catch {}
+    const stage = document.getElementById("stage");
+    if (!stage || !stage.querySelector("canvas")) return;
+    const now = performance.now();
+    if (now - _capT < 1800) return;
+    _capT = now;
+    const tt = window.t || ((k, f) => f);
+    const label = kind === "growl" ? tt("snd.growl", "growling")
+      : kind === "whine" ? tt("snd.whine", "whining")
+      : count > 1 ? tt("snd.barks", "barking") : tt("snd.bark", "a bark");
+    if (!_capEl || !_capEl.isConnected) {
+      _capEl = document.createElement("div");
+      _capEl.className = "sound-cap";
+      _capEl.setAttribute("aria-hidden", "true");   // the coach already announces the beats
+      stage.appendChild(_capEl);
+    }
+    _capEl.textContent = "🔊 " + label;
+    _capEl.classList.add("show");
+    clearTimeout(_capTimer);
+    _capTimer = setTimeout(() => { if (_capEl) _capEl.classList.remove("show"); }, 1600);
+  }
+
   // Unified dog vocal entry: recorded sample when the bank covers the kind,
   // synthesis otherwise. Supports bark SEQUENCES (count/gap with micro-timing
   // + per-shot intensity jitter) — real dogs rarely bark exactly once.
@@ -954,6 +981,10 @@ const PhobiaAudio = (() => {
         if (window.PhobiaFX && window.PhobiaFX.haptic) window.PhobiaFX.haptic(Math.round(8 + intensity * 18));
       } catch {}
     }
+    // Deaf / muted players saw nothing when the dog barked, yet "stay close
+    // through a bark" is a star. Name the sound on screen (pants and sniffs
+    // are ambience, not events).
+    if (kind === "bark" || kind === "woof" || kind === "growl" || kind === "whine") soundCaption(kind, opts.count || 1);
     const count = opts.count || 1;
     const gap = opts.gap || 0.16;
     for (let i = 0; i < count; i++) {

@@ -169,8 +169,13 @@ function mountExposure(phobiaKey, levelIdx) {
   const heartEnabled = (() => {
     try { return localStorage.getItem("fobia.heart") !== "0"; } catch { return true; }
   })();
+  // The app's own toggle OR the system setting (the trial used to read only
+  // the toggle, so "reduce motion" in the OS still got a shaking stage and a
+  // 4 Hz pulsing vignette).
   const motionReduced = (() => {
-    try { return localStorage.getItem("fobia.reducedMotion") === "1"; } catch { return false; }
+    let app = false;
+    try { app = localStorage.getItem("fobia.reducedMotion") === "1"; } catch {}
+    return app || !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   })();
 
   // Heart rate ramps up with the rung: rung 1 ≈ 70 bpm, rung 5 ≈ 132 bpm
@@ -188,6 +193,8 @@ function mountExposure(phobiaKey, levelIdx) {
   heart.style.setProperty("--heart-opacity", "0");
   // No pulse on this rung (or switched off): no element animating unseen.
   if (!heartIntensity) heart.hidden = true;
+  // Reduced motion: a still glow, no pulse.
+  if (motionReduced) heart.classList.add("still");
   stage.appendChild(heart);
 
   // Continuous shake only on the very top rung (unless reduce-motion is on).
@@ -627,7 +634,10 @@ function mountExposure(phobiaKey, levelIdx) {
   // back when the alarm spikes again after completion, and the exit must
   // never re-lock.
   let holdMet = false;
-  lastRungOutcome = null;
+  // From the first moment, so leaving before the first tick still rates
+  // this trial (as an early step-out) rather than "no trial to rate".
+  lastRungOutcome = { heldSec: 0, minHold, finished: false, phobia: phobiaKey, level: levelIdx };
+  saveTrialSnap();
   window.__rungHoldComplete = false;
   const timer = document.getElementById("timer");
   const continueBtn = document.getElementById("continueBtn");
@@ -711,7 +721,9 @@ function mountExposure(phobiaKey, levelIdx) {
     if (!holdMet && facingSec >= minHold && polReady) holdMet = true;
     // Honest outcome, written every tick: leaving at ANY moment (the
     // continue button is always live) captures held time + finished state.
+    const _o = lastRungOutcome;
     lastRungOutcome = { heldSec: facingSec, minHold, finished: holdMet, phobia: phobiaKey, level: levelIdx };
+    if (!_o || _o.heldSec !== facingSec || _o.finished !== holdMet) saveTrialSnap();
 
     if (continueBtn && holdBar && holdLabel) {
       let pct = Math.min(100, (facingTimeMs / 1000 / minHold) * 100);

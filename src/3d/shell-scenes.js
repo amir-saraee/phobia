@@ -29,7 +29,8 @@ const ShellScenes = (() => {
   window.__shellCtxs = registry;
   let landingCtl = null;
   const reduceMotion = () =>
-    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document.documentElement.classList.contains("reduce-motion")
+    || !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
   function makeCtx(container, opts = {}) {
     // These are backdrops (the title room, the camp, a realm's hero), so on a

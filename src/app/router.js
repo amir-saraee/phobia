@@ -322,10 +322,17 @@ function renderView(view, params) {
   if (view === "exposure" || view === "demo") {
     const key = view === "demo" ? "dogs" : params.phobia, lvl = view === "demo" ? 0 : params.level;
     const stageEl = document.getElementById("stage");
-    requestAnimationFrame(() => setTimeout(() => {
+    const mountNow = () => requestAnimationFrame(() => setTimeout(() => {
       if (!stageEl || !stageEl.isConnected) return;
       mountExposure(key, lvl);
     }, 0));
+    // A deep link into a trial used to start the scene (the barking dog,
+    // the drop) running behind the first-visit notice, before anyone agreed
+    // to anything. The scene waits for the notice now.
+    if (typeof hasConsented === "function" && !hasConsented()) {
+      window.addEventListener("consent-given", () => { if (stageEl && stageEl.isConnected) mountNow(); }, { once: true });
+      showConsent(false);
+    } else mountNow();
   }
   if (view === "breathe")   runBreathing();
   if (view === "threshold" || view === "select" || view === "ladder") mountShell3D(view, params);

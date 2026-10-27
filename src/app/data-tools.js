@@ -11,6 +11,11 @@ function applyTheme() {
   let pref = "dark";
   try { pref = localStorage.getItem("fobia.theme") || "dark"; } catch {}
   document.body.classList.toggle("light-mode", pref === "light");
+  // The in-app "Reduce motion" switch reaches the menus too, not only the
+  // camera: the same class the system setting's rules key on.
+  let rm = false;
+  try { rm = localStorage.getItem("fobia.reducedMotion") === "1"; } catch {}
+  document.documentElement.classList.toggle("reduce-motion", rm);
   // Also keep the theme-color meta in sync so installed PWAs match
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", pref === "light" ? "#f0f4f9" : "#0f1724");

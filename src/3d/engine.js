@@ -682,7 +682,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
             ? T("intro.any.mw", "Swipe to look · use the joystick to walk · tap things to interact")
             : T("intro.any.m", "Swipe in any direction to look around · tap things to interact"))
         : (walkable
-            ? T("intro.any.dw", "Drag with the mouse to look · <b>W A S D</b> or arrow keys to walk · click to interact")
+            ? T("intro.any.dw", "Drag with the mouse to look (or <b>Q R</b> · <b>PgUp PgDn</b>) · <b>W A S D</b> or arrow keys to walk · click to interact")
             : T("intro.any.d", "Drag with the mouse to look · <b>W A S D</b> / arrows to lean · click to interact")));
       // Approach-style hints get a longer reveal — 16 s — because the user
       // is doing something deliberate (walking) and might not have started

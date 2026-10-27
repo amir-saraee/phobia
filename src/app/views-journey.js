@@ -340,6 +340,7 @@ function handleRateSubmit(d, params) {
     }
   }
   window.__lastTrialEvidence = null;
+  clearTrialSnap();
   markCompleted(phobia, level, suds, predicted, peak, outcome, extra);
   go("complete", { phobia, level, suds, predicted, peak });
 }

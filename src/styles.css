@@ -602,6 +602,18 @@ button:active { transform: translateY(1px); }
   opacity: 0;
   animation: heartbeat var(--bpm-dur, 1s) cubic-bezier(.4,.0,.6,1) infinite;
 }
+.stage .heart.still::before { animation: none; opacity: .4; }
+@media (prefers-reduced-motion: reduce) {
+  .stage .heart::before { animation: none; opacity: .4; }
+  .stage.shake { animation: none; }
+}
+/* The in-app switch: every CSS animation and transition reduced to an
+   instant, as the system setting does for the rules that honour it. */
+html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after {
+  animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+  transition-duration: .01ms !important; scroll-behavior: auto !important;
+}
+html.reduce-motion .stage .heart::before { opacity: .4; }
 @keyframes heartbeat {
   0%, 18%, 40%, 70%, 100% { opacity: 0; }
   8%  { opacity: 1; }
@@ -1499,6 +1511,9 @@ body.light-mode .menu-avatar { background: linear-gradient(180deg, #e8eef7 0%, #
   transition: opacity .25s ease;
 }
 .settings-backdrop.show { opacity: 1; pointer-events: auto; }
+.toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* Range sliders had outline:none with nothing in its place. */
+input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
 .toggle {
   position: relative; width: 40px; height: 22px;
   background: #2b3753; border-radius: 999px;
@@ -3101,6 +3116,21 @@ body.light-mode .journal-entry p { color: var(--muted); }
    instead of taking over the page. Was a 420 px panel at the bottom-
    center which felt heavy after every small win; now it's a discreet
    ~280 px chip that gets out of the way fast. */
+.stage .sound-cap {
+  position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 8;
+  padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  background: rgba(10, 14, 28, .72); border: 1px solid rgba(255,255,255,.22); color: #eef2ff;
+  opacity: 0; pointer-events: none; transition: opacity .2s ease;
+}
+.stage .sound-cap.show { opacity: 1; }
+.save-warn {
+  position: fixed; left: 50%; bottom: calc(16px + var(--safe-b, 0px)); transform: translateX(-50%); z-index: 60;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  width: min(560px, calc(100% - 24px)); box-sizing: border-box; padding: 12px 14px;
+  background: rgba(40, 18, 18, .95); border: 1px solid rgba(255, 140, 120, .55); border-radius: 14px;
+  color: var(--text); font-size: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.4);
+}
+.save-warn span { flex: 1 1 220px; }
 .achievement-toast {
   position: fixed; right: var(--space-4); bottom: var(--space-4);
   z-index: 200;

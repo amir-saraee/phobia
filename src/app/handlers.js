@@ -521,7 +521,12 @@ function openSettings() {
   const backdrop = document.createElement("div");
   backdrop.className = "settings-backdrop";
   document.body.appendChild(backdrop);
+  drawer.setAttribute("role", "dialog");
+  drawer.setAttribute("aria-label", t("settings.title", "Settings"));
   document.body.appendChild(drawer);
+  a11ySwitches(drawer);
+  // A drawer left open across a route change sat over the next page.
+  window.addEventListener("hashchange", closeSettings, { once: true });
   // Trigger transitions on next frame
   requestAnimationFrame(() => {
     drawer.classList.add("open");
@@ -585,6 +590,7 @@ function openSettings() {
     const next = !(localStorage.getItem("fobia.reducedMotion") === "1");
     try { localStorage.setItem("fobia.reducedMotion", next ? "1" : "0"); } catch {}
     e.currentTarget.classList.toggle("on", next);
+    try { applyTheme(); } catch {}
   };
   drawer.querySelector("#toggleMusic").onclick = (e) => {
     const next = !(localStorage.getItem("fobia.music") === "1");
@@ -697,6 +703,26 @@ function openSettings() {
     const route = parseRoute(location.hash);
     render(route.view, route.params);
   };
+}
+// The settings switches were bare <div>s with a click handler: no keyboard
+// focus, no role, no state for a screen reader. Each becomes a real switch
+// named by its row's label; aria-checked follows the "on" class whatever
+// code flips it.
+function a11ySwitches(root) {
+  root.querySelectorAll(".toggle").forEach((sw, i) => {
+    sw.setAttribute("role", "switch");
+    sw.tabIndex = sw.classList.contains("disabled") ? -1 : 0;
+    if (sw.classList.contains("disabled")) sw.setAttribute("aria-disabled", "true");
+    const row = sw.closest(".row");
+    const lab = row && row.querySelector("label");
+    if (lab) { if (!lab.id) lab.id = "swl-" + (sw.id || i); sw.setAttribute("aria-labelledby", lab.id); }
+    const sync = () => sw.setAttribute("aria-checked", sw.classList.contains("on") ? "true" : "false");
+    sync();
+    new MutationObserver(sync).observe(sw, { attributes: true, attributeFilter: ["class"] });
+    sw.addEventListener("keydown", (e) => {
+      if (e.key === " " || e.key === "Enter") { e.preventDefault(); sw.click(); }
+    });
+  });
 }
 function closeSettings() {
   const drawer = document.querySelector(".settings-drawer");
@@ -909,6 +935,7 @@ function handleAction(d, params) {
         ? { phobia: d.phobia, level: lvl, fear: chip.dataset.fear, belief: (bel && bel.dataset.touched) ? parseInt(bel.value, 10) : null, ts: Date.now() }
         : null;
       window.__pendingExpect = pendingExpect;
+      lastRungOutcome = null; saveTrialSnap();
       // The gate page told the chapter's opening; walking in turns it.
       try { if (window.Story && !window.Story.isSeen(`${d.phobia}.open`)) window.Story.markSeen(`${d.phobia}.open`); } catch {}
       go("exposure", { phobia: d.phobia, level: lvl });

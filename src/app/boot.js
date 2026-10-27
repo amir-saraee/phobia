@@ -73,11 +73,12 @@ function showConsent(rereading, onOk) {
   overlay.querySelector("#consentOk").onclick = () => {
     try { localStorage.setItem(CONSENT_KEY, "1"); } catch {}
     overlay.remove();
+    try { window.dispatchEvent(new Event("consent-given")); } catch {}
     if (typeof onOk === "function") { try { onOk(); } catch (e) { console.warn("[consent]", e); } }
   };
   const aboutBtn = overlay.querySelector("#consentAbout");
+  // Reading more isn't agreeing: the notice comes back with the next trial.
   if (aboutBtn) aboutBtn.onclick = () => {
-    try { localStorage.setItem(CONSENT_KEY, "1"); } catch {}
     overlay.remove();
     go("about");
   };

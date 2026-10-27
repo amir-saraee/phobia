@@ -317,6 +317,15 @@ class FPControls {
       // Don't scroll the page when arrow keys are used in the stage
       if (e.code.startsWith("Arrow")) e.preventDefault();
     }
+    // Looking without a mouse: Q / R turn, Page Up / Page Down tilt. Turning
+    // and looking down used to need a mouse or a finger, which put the
+    // heights "look straight down" star out of reach from a keyboard.
+    if (["KeyQ", "KeyR", "PageUp", "PageDown"].includes(e.code)) {
+      const tag = e.target && e.target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      this.keys[e.code] = true;
+      e.preventDefault();
+    }
   }
   _onKeyUp(e) { this.keys[e.code] = false; }
 
@@ -358,6 +367,11 @@ class FPControls {
 
   update(dt) {
     if (!this.enabled) return;
+    if (this.keys && (this.keys.KeyQ || this.keys.KeyR || this.keys.PageUp || this.keys.PageDown)) {
+      const turn = (this.keys.KeyQ ? 1 : 0) - (this.keys.KeyR ? 1 : 0);
+      const tilt = (this.keys.PageUp ? 1 : 0) - (this.keys.PageDown ? 1 : 0);
+      this._lookTo((this._yawT ?? this.yaw) + turn * 1.8 * dt, (this._pitchT ?? this.pitch) + tilt * 1.2 * dt);
+    }
     // Smoothed look: filter yaw/pitch toward the input targets. At the
     // 10 Hz cutoff the lag is ~1.5 frames — imperceptible latency that kills
     // the per-pixel stair-stepping of raw mouse deltas.

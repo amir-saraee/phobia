@@ -1079,6 +1079,24 @@ function syncSudsChips(inp) {
 }
 
 function viewRate(phobiaKey, levelIdx) {
+  // A rating page with no trial behind it (a deep link, an old bookmark, a
+  // second tab) used to log a "left early" session to the clinical report.
+  // Offer the trial instead.
+  const hasTrial = !!(lastRungOutcome && lastRungOutcome.phobia === phobiaKey && lastRungOutcome.level === levelIdx);
+  if (!hasTrial) {
+    return `
+    <div class="panel">
+      <h2>${t("rate.noneH", "There's no trial to rate here yet")}</h2>
+      <p>${tf("rate.noneP", "Ratings follow a trial you've just walked. Trial {n} is ready whenever you are.", { n: levelIdx + 1 })}</p>
+      <div class="actions">
+        <button class="btn-primary" data-action="start-level" data-phobia="${phobiaKey}" data-level="${levelIdx}">${tf("rate.noneGo", "Start trial {n}", { n: levelIdx + 1 })}</button>
+        <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">${t("rate.noneBack", "Back to the realm")}</button>
+      </div>
+    </div>`;
+  }
+  // The scene's evidence is written as it unmounts — keep it with the rest
+  // of the trial, in case this page is reloaded before it's saved.
+  saveTrialSnap();
   const earlyNote = (lastRungOutcome && lastRungOutcome.finished === false)
     ? `<p class="small" style="opacity:.75">${t("rate.early", "You stepped out before the hold finished — that is always allowed. Rate how it felt anyway.")}</p>`
     : "";
