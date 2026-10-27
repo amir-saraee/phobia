@@ -893,7 +893,7 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
           const grid = ph.querySelector(".phobia-grid");
           ph.insertBefore(note, grid || null);
         }
-        note.textContent = "Pick at least one fear to start — you can add more later.";
+        note.textContent = window.t("cc.pickFear", "Pick at least one fear to start — you can add more later.");
         ph.classList.remove("nudge");
         void ph.offsetWidth;            // restart the pulse animation
         ph.classList.add("nudge");

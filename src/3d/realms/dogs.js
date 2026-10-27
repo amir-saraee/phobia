@@ -1023,9 +1023,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   const dogName = (() => {
     try {
       return breed === "husky"
-        ? (localStorage.getItem("fobia.dogName.husky") || "Koda")
-        : (localStorage.getItem("fobia.dogName") || "Buddy");
-    } catch { return breed === "husky" ? "Koda" : "Buddy"; }
+        ? (localStorage.getItem("fobia.dogName.husky") || window.t("dog.koda", "Koda"))
+        : (localStorage.getItem("fobia.dogName") || window.t("dog.buddy", "Buddy"));
+    } catch { return breed === "husky" ? window.t("dog.koda", "Koda") : window.t("dog.buddy", "Buddy"); }
   })();
   // Leave a trace of this encounter for the pages outside the scene. The
   // temperament is drawn per visit and was only ever legible for the seconds

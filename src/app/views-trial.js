@@ -81,10 +81,10 @@ function viewLadder(phobiaKey) {
   const groundStats = [
     groundStat(t("ground.trials", "trials faced"), `${done}<i>/${total}</i>`),
     groundStat(t("ground.stars", "stars"), `<span class="gs-star">★</span>${rStars.stars}<i>/${rStars.total}</i>`),
-    longest != null ? groundStat(t("ground.longest", "longest stay"), `${Math.round(longest)}<i>s</i>`) : "",
+    longest != null ? groundStat(t("ground.longest", "longest stay"), `${fnum(Math.round(longest))}<i>${isRtl() ? " ث" : "s"}</i>`) : "",
     // Only worth showing once there are two readings to compare.
     (firstFear != null && lastFear != null && rated.length > 1)
-      ? groundStat(t("ground.fear", "fear, first → last"), `${firstFear}<i>→</i>${lastFear}`) : "",
+      ? groundStat(t("ground.fear", "fear, first → last"), `${fnum(firstFear)}<i>${isRtl() ? "←" : "→"}</i>${fnum(lastFear)}`) : "",
     // Always shown, even at zero: the real steps are the half of the ladder
     // that transfers, and a stat that only appears once you've earned it is a
     // stat nobody discovers.
@@ -408,7 +408,7 @@ function viewLadder(phobiaKey) {
         <div class="realm-hero-grad" aria-hidden="true"></div>
         <div class="realm-3d" id="realmHero3d" title="${t("realm.drag", "Drag to look around")}"></div>
         <div class="realm-hero-text">
-          <span class="realm-kicker">${realmIdx >= 0 ? `${t("realmWord", "Realm")} ${ROMAN[realmIdx] || realmIdx + 1} · ` : ""}${escapeHtml(phName(phobiaKey))} — ${escapeHtml(phLabel(phobiaKey))}</span>
+          <span class="realm-kicker">${realmIdx >= 0 ? `${t("realmWord", "Realm")} ${realmNum(realmIdx)} · ` : ""}${escapeHtml(phName(phobiaKey))} — ${escapeHtml(phLabel(phobiaKey))}</span>
           <h2>${escapeHtml(realm.realmName)}</h2>
           <p class="realm-epithet">${escapeHtml(realm.epithet)}</p>
         </div>
@@ -758,7 +758,7 @@ function viewInsights() {
       <div class="stats-row">
         <div class="stat"><div class="stat-num">${totalSessions}</div><div class="stat-lbl">${t("ins.total", "total sessions")}</div></div>
         <div class="stat"><div class="stat-num">${completedRungs}</div><div class="stat-lbl">${t("profile.rungs", "rungs climbed")}</div></div>
-        <div class="stat"><div class="stat-num">${avgGap == null ? "—" : (avgGap >= 0 ? "+" : "") + avgGap.toFixed(1)}</div><div class="stat-lbl">${t("ins.over", "avg over-prediction")}</div></div>
+        <div class="stat"><div class="stat-num"><bdi dir="ltr">${avgGap == null ? "—" : (avgGap >= 0 ? "+" : "") + fnum(avgGap.toFixed(1))}</bdi></div><div class="stat-lbl">${t("ins.over", "avg over-prediction")}</div></div>
       </div>
       ${(avgGap != null && predicted.length >= 2) ? `<p class="hint" style="margin-top:-4px;margin-bottom:16px">${
         avgGap >= 0.8 ? tf("ins.lower", `On average, your fear came in about <strong>{n} point${avgGap >= 1.5 ? "s" : ""} lower</strong> than you predicted. Your brain keeps over-estimating the danger — and each rung is teaching it otherwise.`, { n: avgGap.toFixed(1) })
@@ -906,8 +906,8 @@ function viewExposure(phobiaKey, levelIdx) {
     // release it outside. Click on the spider to drop the jar.
     cmdBar = `
       <div class="scene-cmd-bar collapsed" data-scene="spiders">
-        <button class="cmd-btn" data-cmd="closer" title="${t("cmd.sp.closerTip", "Walk a little closer")}"><span class="cmd-icon">→</span><span>${t("cmd.sp.closer", "Step closer")}</span></button>
-        <button class="cmd-btn" data-cmd="back" title="${t("cmd.sp.backTip", "Step back if you need to")}"><span class="cmd-icon">←</span><span>${t("cmd.sp.back", "Step back")}</span></button>
+        <button class="cmd-btn" data-cmd="closer" title="${t("cmd.sp.closerTip", "Walk a little closer")}"><span class="cmd-icon">↑</span><span>${t("cmd.sp.closer", "Step closer")}</span></button>
+        <button class="cmd-btn" data-cmd="back" title="${t("cmd.sp.backTip", "Step back if you need to")}"><span class="cmd-icon">↓</span><span>${t("cmd.sp.back", "Step back")}</span></button>
         <button class="cmd-btn" data-cmd="focus" title="${t("cmd.sp.lookTip", "Tap to face it · hold to look closer (Z)")}"><span class="cmd-icon">🔍</span><span>${t("cmd.sp.look", "Look closer (hold)")}</span></button>
         <button class="cmd-btn" data-cmd="jar" title="${t("cmd.sp.jarTip", "Click the spider to lower the glass")}"><span class="cmd-icon">🫙</span><span>${t("cmd.sp.jar", "Glass")}</span></button>
       </div>
@@ -1027,7 +1027,7 @@ function viewExposure(phobiaKey, levelIdx) {
         <button class="btn-warn" data-action="do-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("stage.breathe", "Pause &amp; breathe")}</button>
         <button class="btn-primary holding" id="continueBtn" data-action="to-rate" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("hold.stepOut", "Step out early")}</button>
         <div class="hold-bar"><div id="holdBarFill"></div></div>
-        <span class="hold-label" id="holdLabel">0 / ${minHold}s</span>
+        <span class="hold-label" id="holdLabel">${fnum(0)} / ${fsecs(minHold)}</span>
         <span class="timer" id="timer">00:00</span>
       </div>
     </div>
@@ -1052,7 +1052,7 @@ function sudsScale(id, value, { picked = false, aria = "", valueId = "" } = {}) 
     <div class="suds-chips" role="radiogroup" data-for="${id}" ${aria ? `aria-label="${escapeHtml(aria)}"` : `aria-labelledby="lbl-${id}"`}>
       ${Array.from({ length: 11 }, (_, v) => {
         const on = picked && v === +value;
-        return `<button type="button" class="sc${on ? " on" : ""}" role="radio" aria-checked="${on}" data-v="${v}" style="--c:${sudsColor(v)}">${v}</button>`;
+        return `<button type="button" class="sc${on ? " on" : ""}" role="radio" aria-checked="${on}" data-v="${v}" style="--c:${sudsColor(v)}">${fnum(v)}</button>`;
       }).join("")}
     </div>
     <div class="suds-ends"><span>${t("scale.calm", "0 calm")}</span><span>${t("scale.panic", "10 panic")}</span></div>
@@ -1259,6 +1259,8 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     }).join("");
     const settleNote = ev.settledAt != null
       ? tf("wave.settled", "It peaked at <b>{p}</b> and settled by about <b>{s}s</b> — while you stayed.", { p: ev.peak, s: ev.settledAt })
+      // An alarm that never rose (a step-out before it began) has nothing to settle.
+      : (ev.peak || 0) < 5 ? t("wave.quiet", "The alarm stayed quiet this time.")
       : tf("wave.notSettled", "It peaked at <b>{p}</b> and ended at <b>{e}</b>. It hadn't fully settled yet — a longer stay next time lets it.", { p: ev.peak, e: ev.end });
     const extras = [];
     const habN = phobiaKey === "dogs" ? ev.barks : ((CREATURE_KITS[phobiaKey] || {}).habKinds || []).reduce((a, k) => a + ((ev.kinds || {})[k] || 0), 0);
@@ -1459,13 +1461,13 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
   }
   const stat = (icon, v, l) => `<div class="vc-stat"><span class="vc-sv">${icon} ${v}</span><span class="vc-sl">${l}</span></div>`;
   const statBits = [];
-  if (last && last.heldSec) statBits.push(stat("⏱", `${last.heldSec}s`, t("vc.stayed", "you stayed")));
+  if (last && last.heldSec) statBits.push(stat("⏱", fsecs(last.heldSec), t("vc.stayed", "you stayed")));
   // Both clocks count time spent staying; the two trackers differ by a beat,
   // and "settled by 22s" beside "you stayed 18s" read as settling after you left.
-  if (ev && ev.settledAt != null) statBits.push(stat("〰", `${last && last.heldSec ? Math.min(ev.settledAt, last.heldSec) : ev.settledAt}s`, t("vc.settled", "alarm settled by")));
-  else if (ev && ev.peak) statBits.push(stat("〰", `${ev.peak}`, t("vc.peak", "alarm peak")));
-  if (predicted != null && !Number.isNaN(+predicted)) statBits.push(stat("🔮", `${predicted}<i>→</i>${peakForPrediction}`, t("vc.guess", "guessed → felt")));
-  if (ev && ev.reads > 0) statBits.push(stat("👁", `${ev.readsRight}/${ev.reads}`, t("vc.reads", "read right")));
+  if (ev && ev.settledAt != null) statBits.push(stat("〰", fsecs(last && last.heldSec ? Math.min(ev.settledAt, last.heldSec) : ev.settledAt), t("vc.settled", "alarm settled by")));
+  else if (ev && ev.peak) statBits.push(stat("〰", fnum(ev.peak), t("vc.peak", "alarm peak")));
+  if (predicted != null && !Number.isNaN(+predicted)) statBits.push(stat("🔮", `${fnum(predicted)}<i>${isRtl() ? "←" : "→"}</i>${fnum(peakForPrediction)}`, t("vc.guess", "guessed → felt")));
+  if (ev && ev.reads > 0) statBits.push(stat("👁", `${fnum(ev.readsRight)}/${fnum(ev.reads)}`, t("vc.reads", "read right")));
   const statsRow = statBits.length ? `<div class="vc-statrow">${statBits.join("")}</div>` : "";
   // Courage, counted up, and the rank bar filling toward the next title.
   let rankRow = "";
@@ -1485,7 +1487,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       <div class="vc-rank" data-to="${span(rA, after).toFixed(1)}" data-c0="${before}" data-c1="${after}">
         <span class="vc-rank-title">${rA.icon} ${escapeHtml(rA.title)}${rA.idx > rB.idx ? ` <span class="vc-best">${t("vc.rankUp", "rank up!")}</span>` : ""}</span>
         <div class="rank-bar"><div class="rank-fill" style="width:${from.toFixed(1)}%"></div></div>
-        <span class="vc-rank-n">⚡ <b class="vc-courage">${before}</b>${rA.next ? ` / ${rA.next.min} ${tf("vc.toRank", "to {title}", { title: escapeHtml(rA.next.title) })}` : ""}</span>
+        <span class="vc-rank-n">⚡ <b class="vc-courage">${fnum(before)}</b>${rA.next ? ` / ${fnum(rA.next.min)} ${tf("vc.toRank", "to {title}", { title: escapeHtml(rA.next.title) })}` : ""}</span>
       </div>`;
   }
   // The next step, where the thumb already is. A star still open makes a

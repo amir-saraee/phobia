@@ -141,12 +141,24 @@ function brandLamp() {
 // out but clearing site data (and with it, everything). Catch it, log it, and
 // offer the way back: the title screen, a copy of the data, or a clean start.
 function render(view, params) {
-  try { renderView(view, params); }
+  try { renderView(view, params); if (isRtl()) faDigitsIn(document.getElementById("app")); }
   catch (err) {
     try { console.warn("[Lanternwalk] render failed:", err); } catch {}
     try { pushErrLog({ ts: Date.now(), msg: ("render " + view + ": " + String((err && err.message) || err)).slice(0, 300), route: location.hash }); } catch {}
     showRenderRecovery(view);
   }
+}
+// Persian pages: every number a view wrote with Latin digits (counts, stars,
+// "/5", seconds) is rewritten in Persian digits — text nodes only, never
+// attributes, inputs or the clinical report, which stays English by design.
+function faDigitsIn(root) {
+  if (!root || typeof document.createTreeWalker !== "function") return;
+  const skip = (el) => !el || !!el.closest("script, style, textarea, input, select, code, pre, .report-view, [lang='en'], .no-fa-digits");
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const todo = [];
+  let n;
+  while ((n = w.nextNode())) if (/[0-9]/.test(n.nodeValue) && !skip(n.parentElement)) todo.push(n);
+  for (const t of todo) t.nodeValue = fnum(t.nodeValue);
 }
 function showRenderRecovery(view) {
   const root = document.getElementById("app");
@@ -251,7 +263,7 @@ function renderView(view, params) {
         <h1 class="lw-head">${brandLamp()}<span class="lw-name">${t("brand.name", "Lanternwalk")}</span> <span class="brand-tag">${t("brand.tag", "small steps, brave paths")}</span></h1>
       </div>
       <nav class="nav-actions" aria-label="${t("a11y.nav", "App navigation")}">
-        ${getCourage() > 0 ? `<span class="courage-badge" id="courageBadge" title="${t("hud.courage", "Courage — earned every time you face a trial")}">⚡ ${getCourage()}</span>` : ""}
+        ${getCourage() > 0 ? `<span class="courage-badge" id="courageBadge" title="${t("hud.courage", "Courage — earned every time you face a trial")}">⚡ ${fnum(getCourage())}</span>` : ""}
         ${charBadge}
         ${langBtn}
         ${view !== "welcome" && view !== "character" && view !== "threshold" ? `<button class="home-btn" id="home" aria-label="${t("a11y.home", "Back to the journey map")}">${t("hud.camp", "🏕 Camp")}</button>` : ""}

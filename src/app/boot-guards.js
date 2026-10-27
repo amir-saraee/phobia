@@ -18,6 +18,11 @@
 if (typeof window.t !== "function") {
   window.t = (key, fallback) => (fallback != null ? fallback : key);
 }
+// Right-to-left right now (Persian)? For arrows and other glyphs whose
+// direction is meaning, not decoration.
+function isRtl() { return !!(window.I18n && window.I18n.isRTL && window.I18n.isRTL()); }
+if (typeof window.fnum !== "function") window.fnum = (v) => String(v);
+if (typeof window.fsecs !== "function") window.fsecs = (n) => n + "s";
 if (typeof window.tf !== "function") {
   window.tf = (key, fallback, vars) =>
     String(fallback != null ? fallback : key)

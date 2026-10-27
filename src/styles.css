@@ -880,7 +880,7 @@ html.reduce-motion .stage .heart::before { opacity: .4; }
 .exp-head .exp-n { color: #9faae7; font-weight: 600; font-size: 11px; }
 .exp-list { display: flex; flex-direction: column; gap: 6px; padding: 0 9px 9px; }
 .exp-item {
-  text-align: left; border: 1px solid rgba(255,255,255,.14); border-radius: 9px;
+  text-align: start; border: 1px solid rgba(255,255,255,.14); border-radius: 9px;
   background: rgba(20, 26, 48, .55); color: var(--text);
   padding: 7px 9px; cursor: pointer; font-size: 12px; line-height: 1.35;
 }
@@ -890,7 +890,7 @@ html.reduce-motion .stage .heart::before { opacity: .4; }
 .exp-pick { padding: 2px 9px 10px; }
 .exp-pick .exp-q { font-size: 12px; color: var(--muted); margin: 4px 0 7px; line-height: 1.35; }
 .exp-chip {
-  display: block; width: 100%; text-align: left; margin-top: 5px;
+  display: block; width: 100%; text-align: start; margin-top: 5px;
   border: 1px solid rgba(255,255,255,.18); border-radius: 9px;
   background: rgba(28, 34, 60, .6); color: var(--text);
   padding: 7px 9px; cursor: pointer; font-size: 12px;
@@ -1155,7 +1155,7 @@ html.reduce-motion .stage .heart::before { opacity: .4; }
   gap: 10px; margin: 14px 0 10px;
 }
 .quiz-card {
-  text-align: left; padding: 13px 15px; cursor: pointer;
+  text-align: start; padding: 13px 15px; cursor: pointer;
   background: linear-gradient(180deg, var(--panel), var(--panel-3));
   border: 1px solid var(--border-2); border-radius: 14px; color: var(--text);
   display: flex; flex-direction: column; gap: 3px;
@@ -1164,7 +1164,7 @@ html.reduce-motion .stage .heart::before { opacity: .4; }
 .quiz-card strong { font-size: 15px; }
 .quiz-card .quiz-realm { font-size: 12px; color: var(--muted); }
 .quiz-note { opacity: .75; }
-.quiz-next { text-align: left; margin-top: 12px; border-top: 1px solid rgba(255,255,255,.09); padding-top: 12px; }
+.quiz-next { text-align: start; margin-top: 12px; border-top: 1px solid rgba(255,255,255,.09); padding-top: 12px; }
 .quiz-next-head { font-size: 14px; margin: 0 0 6px; }
 .quiz-next-sub { font-size: 12.5px; color: var(--muted); margin: 0 0 4px; }
 .quiz-steps { margin: 0 0 6px; padding-left: 20px; font-size: 13px; line-height: 1.55; }
@@ -1178,7 +1178,7 @@ html.reduce-motion .stage .heart::before { opacity: .4; }
   display: flex; align-items: center; gap: 10px;
   max-width: 640px; margin: 12px auto 0; padding: 9px 12px;
   background: rgba(16, 24, 40, .6); border: 1px solid var(--border-2);
-  border-radius: 12px; font-size: 13px; text-align: left;
+  border-radius: 12px; font-size: 13px; text-align: start;
 }
 .nudge-card .nudge-txt { flex: 1; line-height: 1.4; }
 .nudge-card .nudge-go { font-size: 12px; padding: 5px 11px; white-space: nowrap; }
@@ -1452,7 +1452,7 @@ body.light-mode .menu-avatar { background: linear-gradient(180deg, #e8eef7 0%, #
 .menu-list { list-style: none; padding: 0; margin: 0 0 4px; }
 .menu-list li { padding: 0; }
 .menu-list button {
-  width: 100%; text-align: left;
+  width: 100%; text-align: start;
   background: transparent; color: var(--text);
   border: 1px solid transparent; border-radius: 10px;
   padding: 10px 12px; font: inherit; font-size: 14px; font-weight: 500;
@@ -1736,7 +1736,7 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 .stat-tile {
   background: linear-gradient(160deg, var(--panel-2) 0%, var(--panel-3) 100%);
   border: 1px solid var(--border); border-radius: 12px;
-  padding: 14px 16px; text-align: left;
+  padding: 14px 16px; text-align: start;
   opacity: 0; animation: card-rise .45s cubic-bezier(.2,.7,.3,1) forwards;
   animation-delay: calc(var(--i, 0) * 60ms);
 }
@@ -2769,7 +2769,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .treat-path { margin: 16px 0 6px; }
 .tp-steps { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; counter-reset: none; }
 .tp-step button {
-  width: 100%; height: 100%; text-align: left; cursor: pointer;
+  width: 100%; height: 100%; text-align: start; cursor: pointer;
   display: flex; flex-direction: column; gap: 3px;
   padding: 10px 11px; border-radius: 12px;
   background: rgba(20, 28, 50, .7); border: 1px solid var(--border-2); color: var(--text);
@@ -2930,6 +2930,10 @@ body.light-mode .tour-card p { color: var(--muted); }
 }
 .ladder-cta .btn-primary .arr { transition: transform .15s ease; display: inline-block; }
 .ladder-cta .btn-primary:hover .arr { transform: translateX(3px); }
+/* "Onward" points the way the line reads: left in Persian. */
+html[dir="rtl"] .arr { display: inline-block; transform: scaleX(-1); }
+html[dir="rtl"] .ladder-cta .btn-primary:hover .arr { transform: scaleX(-1) translateX(3px); }
+html[dir="rtl"] .grid.big .card:hover .card-go .arr { transform: scaleX(-1) translateX(4px); }
 .ladder-cta-sub { font-size: 12px; color: var(--muted); }
 @media (max-width: 600px) {
   .ladder-cta { gap: 8px; }
@@ -3992,7 +3996,7 @@ body.light-mode .story-disclaimer { color: #8a5b00; }
   background: var(--accent); color: #08221e; font-weight: 800;
   border-radius: 999px; padding: 1px 8px; margin-top: -6px;
 }
-.realm-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 3px; text-align: left; }
+.realm-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 3px; text-align: start; }
 .realm-kicker { font-size: 10.5px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--accent); font-weight: 700; }
 .realm-name { margin: 0; font-size: 20px; color: var(--text); }
 .realm-epithet { margin: 0; font-size: 12.5px; color: var(--muted); font-style: italic; }
@@ -4016,7 +4020,7 @@ body.light-mode .pip { background: #cbd3e0; }
 .jw-soon p { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
 .jw-soon-row { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-.jw-soon-chip { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; text-align: left;
+.jw-soon-chip { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; text-align: start;
   border: 1px dashed var(--border-2); border-radius: 14px; background: rgba(20, 26, 46, .45); opacity: .82; }
 .jw-soon-chip strong { font-size: 14px; color: var(--text); }
 .jw-soon-chip span { font-size: 12px; color: var(--muted); }
@@ -4260,7 +4264,7 @@ body.light-mode .tf { background: #cbd3e0; }
 
 /* ---- Daily quest ("Today's step") ---- */
 .quest-card {
-  max-width: 480px; margin: 16px auto 0; text-align: left;
+  max-width: 480px; margin: 16px auto 0; text-align: start;
   background: linear-gradient(180deg, rgba(38,32,20,.92), rgba(24,20,12,.94));
   border: 1px solid #8a6d35; border-radius: 16px; padding: 14px 16px;
   box-shadow: 0 10px 34px rgba(0,0,0,.4);
@@ -5021,6 +5025,12 @@ html[dir="rtl"] .lang-btn, .lang-btn { font-weight: 800; font-size: 13px; }
   -webkit-tap-highlight-color: transparent;
 }
 .mob-spacer { flex: 1; }
+.mob-lang-chip {
+  min-height: 44px; padding: 0 16px; margin-inline-end: 8px; border-radius: 999px;
+  background: rgba(10, 14, 28, .55); border: 1px solid rgba(255,255,255,.28); color: #eef2ff;
+  font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; backdrop-filter: blur(8px);
+}
+.mob-lang-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ---- Hero title over the stage ---- */
 .mob-hero {

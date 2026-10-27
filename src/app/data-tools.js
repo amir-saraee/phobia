@@ -347,7 +347,7 @@ function generateProgressCard() {
   drawStat(380, 380, String(completedRungs), t("card.rungs", "RUNGS CLIMBED"));
   drawStat(680, 380, streak >= 1 ? `🔥 ${streak}` : "—", t("card.streak", "DAY STREAK"));
   drawStat( 80, 540, ladders > 0 ? String(ladders) : "—", t("card.valleys", "VALLEYS WALKED"));
-  drawStat(380, 540, avgGap == null ? "—" : (avgGap >= 0 ? "+" : "") + avgGap.toFixed(1), t("card.over", "AVG OVER-PREDICTION"));
+  drawStat(380, 540, avgGap == null ? "—" : (isRtl() ? "\u200e" : "") + (avgGap >= 0 ? "+" : "") + fnum(avgGap.toFixed(1)), t("card.over", "AVG OVER-PREDICTION"));
 
   // Per-phobia mini chart
   const myPhobias = ch

@@ -127,11 +127,11 @@ function attachHandlers(view, params) {
     const run = () => {
       if (!vcRank.isConnected) return;
       if (fill) fill.style.width = vcRank.dataset.to + "%";
-      if (!num || reduce || c1 <= c0) { if (num) num.textContent = c1; return; }
+      if (!num || reduce || c1 <= c0) { if (num) num.textContent = fnum(c1); return; }
       const t0 = performance.now(), dur = 1300;
       const step = (now) => {
         const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
-        num.textContent = Math.round(c0 + (c1 - c0) * e);
+        num.textContent = fnum(Math.round(c0 + (c1 - c0) * e));
         if (k < 1 && num.isConnected) requestAnimationFrame(step);
       };
       requestAnimationFrame(step);
@@ -702,6 +702,15 @@ function openSettings() {
     // Re-render the current view so translated strings appear
     const route = parseRoute(location.hash);
     render(route.view, route.params);
+    // ...and the drawer itself, which stayed in the old language (with RTL
+    // punctuation on English text) until it was closed and reopened.
+    const old = document.querySelector(".settings-drawer");
+    if (old) {
+      old.remove();
+      const bd = document.querySelector(".settings-backdrop"); if (bd) bd.remove();
+      openSettings();
+      requestAnimationFrame(() => { const sel = document.getElementById("langSelect"); if (sel) sel.focus(); });
+    }
   };
 }
 // The settings switches were bare <div>s with a click handler: no keyboard
@@ -879,6 +888,12 @@ function handleAction(d, params) {
       break;
     }
     case "open-settings": try { openSettings(); } catch {} break;
+    case "toggle-lang": {
+      window.I18n.setLang(window.I18n.currentLanguage() === "fa" ? "en" : "fa");
+      const route = parseRoute(location.hash);
+      render(route.view, route.params);
+      break;
+    }
 
     case "try-demo": go("demo"); break;
     case "demo-end": try { showDemoEnd(); } catch {} break;

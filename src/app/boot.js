@@ -63,7 +63,7 @@ function showConsent(rereading, onOk) {
           ? t("consent.control2m", "You're in control: leave any scene, any time — 🛟 grounds you. Stepping out is never a failure.")
           : t("consent.control2d", "You're in control: leave any scene, any time — Esc grounds you. Stepping out is never a failure.")}</li>
       </ul>
-      <p class="consent-crisis">☎️ ${t("consent.crisis", "If you're in crisis right now, please reach a real person:")} <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a></p>
+      <p class="consent-crisis">☎️ ${t("consent.crisis", "If you're in crisis right now, please reach a real person:")} <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a>${isRtl() ? " · اورژانس اجتماعی <b>۱۲۳</b> · صدای مشاور بهزیستی <b>۱۴۸۰</b>" : ""}</p>
       <div class="actions" style="margin-top:14px">
         ${rereading ? "" : `<button class="btn-ghost" id="consentAbout">${t("consent.more", "Read more")}</button>`}
         <button class="btn-primary" id="consentOk">${rereading ? t("consent.close", "Close") : t("consent.ok", "I understand — begin")}</button>
@@ -94,7 +94,7 @@ function gateTitleScreenOnConsent() {
   const onTap = (e) => {
     if (hasConsented()) { v.removeEventListener("click", onTap, true); return; }
     const btn = e.target && e.target.closest && e.target.closest("button[data-action]");
-    if (!btn || btn.dataset.action === "open-settings") return;
+    if (!btn || btn.dataset.action === "open-settings" || btn.dataset.action === "toggle-lang") return;
     e.preventDefault();
     e.stopImmediatePropagation();
     showConsent(false, () => { v.removeEventListener("click", onTap, true); btn.click(); });

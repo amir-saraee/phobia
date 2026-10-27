@@ -250,7 +250,7 @@ function mountExposure(phobiaKey, levelIdx) {
   // they were earning the hold at all). CSS keeps it hidden on desktop.
   const holdPill = document.createElement("div");
   holdPill.className = "hold-pill";
-  holdPill.innerHTML = `<span class="hp-txt">0/${minHold}s</span><span class="hp-bar"><span class="hp-fill"></span></span>`;
+  holdPill.innerHTML = `<span class="hp-txt">${fnum(0)}/${fsecs(minHold)}</span><span class="hp-bar"><span class="hp-fill"></span></span>`;
   stage.appendChild(holdPill);
 
   // Closed captions for voice (respect user's preference)
@@ -664,7 +664,7 @@ function mountExposure(phobiaKey, levelIdx) {
       return;
     }
     const wallElapsed = Math.floor((Date.now() - t0) / 1000);
-    timer.textContent = String(Math.floor(wallElapsed / 60)).padStart(2, "0") + ":" + String(wallElapsed % 60).padStart(2, "0");
+    timer.textContent = fnum(String(Math.floor(wallElapsed / 60)).padStart(2, "0") + ":" + String(wallElapsed % 60).padStart(2, "0"));
 
     // Compute credit based on current fear value
     const now = Date.now();
@@ -749,7 +749,7 @@ function mountExposure(phobiaKey, levelIdx) {
       let starTxt = "";
       const SC = window.__coach;
       if (holdMet && SC && SC.starsTotal) starTxt = "★".repeat(SC.stars) + "☆".repeat(Math.max(0, SC.starsTotal - SC.stars));
-      const pillTxt = holdMet ? (starTxt ? `🏮 ${starTxt}` : t("hold.pillDone3", "🏮 held")) : (polPill || `${facingSec}/${minHold}s`);
+      const pillTxt = holdMet ? (starTxt ? `🏮 ${starTxt}` : t("hold.pillDone3", "🏮 held")) : (polPill || `${fnum(facingSec)}/${fsecs(minHold)}`);
       if (hpT && hpT.textContent !== pillTxt) hpT.textContent = pillTxt;
       holdPill.classList.toggle("in-zone", inZone);
       // Held: the pill shows it (and the stars so far). It is no longer a

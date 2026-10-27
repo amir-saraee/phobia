@@ -1310,7 +1310,12 @@
       const id = btn.dataset.sbtab;
       root.querySelectorAll(".sb-tab").forEach((b) => b.setAttribute("aria-selected", String(b === btn)));
       root.querySelectorAll(".sb-tabpanel").forEach((p) => { p.hidden = p.dataset.sbpanel !== id; });
+      try { btn.scrollIntoView({ block: "nearest", inline: "nearest" }); } catch {}
     }));
+    // On a narrow phone (and in Persian, where the row starts at the right)
+    // the open tab could begin scrolled out of view.
+    const on = root.querySelector('.sb-tab[aria-selected="true"]');
+    if (on) { try { on.scrollIntoView({ block: "nearest", inline: "nearest" }); } catch {} }
   }
 
 

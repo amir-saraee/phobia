@@ -7,6 +7,8 @@
 "use strict";
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+// A realm's ordinal: Roman in English, a Persian numeral in Persian.
+function realmNum(i) { return isRtl() ? fnum(i + 1) : (ROMAN[i] || String(i + 1)); }
 
 // ---------- Sparks of Wisdom (collectible psychoeducation) ----------
 // One card is earned per finished trial, in a deliberate teaching order —
@@ -180,9 +182,10 @@ function dogCompanions() {
   // chain matters, the && chain does not (it only proves the function exists).
   const charId = (window.Character?.loadCharacter?.()?.id) || "default";
   return DOG_COMPANIONS.map((c) => {
-    let name = c.fallback, trust = 0, seen = null;
+    const fb = t(c.breed === "husky" ? "dog.koda" : "dog.buddy", c.fallback);
+    let name = fb, trust = 0, seen = null;
     try {
-      name = localStorage.getItem(c.nameKey) || c.fallback;
+      name = localStorage.getItem(c.nameKey) || fb;
       trust = Math.max(0, Math.min(1, parseFloat(localStorage.getItem(`fobia.dogs.trust.${charId}.${c.breed}`) || "0")));
       seen = JSON.parse(localStorage.getItem(`fobia.dogs.lastSeen.${c.breed}`) || "null");
     } catch {}
@@ -533,7 +536,7 @@ function awardCourage(points, reason) {
   try {
     const badge = document.getElementById("courageBadge");
     if (badge) {
-      badge.textContent = `⚡ ${cs.courage}`;
+      badge.textContent = `⚡ ${fnum(cs.courage)}`;
       badge.classList.add("pop");
       setTimeout(() => badge.classList.remove("pop"), 600);
     }
@@ -781,7 +784,7 @@ function openWorldstepModal(phobiaKey, stepIdx) {
   const overlay = document.createElement("div");
   overlay.className = "goal-modal-overlay";
   overlay.innerHTML = `
-    <div class="goal-modal ws-modal" role="dialog" aria-label="Record a real-world step">
+    <div class="goal-modal ws-modal" role="dialog" aria-label="${t("ws.aria", "Record a real-world step")}">
       <span class="bridge-invite-kicker">${t("ws.kicker", "🌍 The Real Path")}</span>
       <h3 style="margin:6px 0 4px">${escapeHtml(s.t)}</h3>
       <p class="small" style="margin-bottom:12px">${t("ws.p", "You did this out in the world — that's the bravest kind of trial. One honest question:")}</p>
@@ -910,7 +913,7 @@ function openFearCheckModal(phobiaKey, at, mOpts = {}) {
       </div>
     </div>`).join("");
   overlay.innerHTML = `
-    <div class="goal-modal fc-modal" role="dialog" aria-label="Fear check-in">
+    <div class="goal-modal fc-modal" role="dialog" aria-label="${t("fc.aria", "Fear check-in")}">
       <span class="bridge-invite-kicker">${t("mirror.kicker", "🪞 The Mirror")} — ${escapeHtml(realm.realmName)}</span>
       <h3 style="margin:6px 0 2px">${t("mirror.modalTitle", "How is this fear, out there?")}</h3>
       <p class="small" style="margin-bottom:12px">${t("mirror.modalP", "Answer about <strong>real life</strong> — not the game. 60 seconds, just for you. A self-check, not a diagnosis.")}</p>

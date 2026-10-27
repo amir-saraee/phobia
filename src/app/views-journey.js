@@ -453,6 +453,13 @@ function viewArrival() {
   <div class="mob-stage mob-valley" aria-hidden="true">${valleyHeroSVG({ lit, next })}</div>
   <div class="mob-top">
     <span class="mob-spacer"></span>
+    ${(() => {
+      // The language switch, on the first screen and in the other language's
+      // own script — a Persian speaker can't be expected to find "Language"
+      // in an English settings drawer.
+      const fa = window.I18n && window.I18n.currentLanguage() === "fa";
+      return `<button class="mob-lang-chip" data-action="toggle-lang" lang="${fa ? "en" : "fa"}" aria-label="${fa ? "Switch to English" : "تغییر زبان به فارسی"}">${fa ? "English" : "فارسی"}</button>`;
+    })()}
     <button class="mob-icon-btn" data-action="open-settings" aria-label="${t("a11y.settings", "Settings")}">⚙</button>
   </div>`;
   const wordmark = `
@@ -705,7 +712,7 @@ function viewSelect() {
           ${isCurrent && ch ? `<span class="you-marker" title="${t("node.youHere", "You are here")}">${window.Character.avatarSVG(ch, 40)}<span>${t("node.you", "you")}</span></span>` : ""}
         </div>
         <div class="realm-body">
-          <span class="realm-kicker">${t("realmWord", "Realm")} ${ROMAN[i] || i + 1} · ${escapeHtml(phName(k))}</span>
+          <span class="realm-kicker">${t("realmWord", "Realm")} ${realmNum(i)} · ${escapeHtml(phName(k))}</span>
           <h3 class="realm-name">${escapeHtml(realm.realmName)}</h3>
           <p class="realm-epithet">${escapeHtml(realm.epithet)}</p>
           <div class="realm-pips">${pips}${(() => { const rsS = realmStars(k); return rsS.stars > 0 ? `<span class="realm-stars" title="${escapeHtml(tf("stars.aria", "{n} of {m} stars", { n: rsS.stars, m: rsS.total }))}">★ ${rsS.stars}<i>/${rsS.total}</i></span>` : ""; })()}</div>
@@ -1023,13 +1030,13 @@ function viewReport() {
   return `
     <div class="panel report-view">
       <div class="report-actions">
-        <button class="btn-primary" id="reportPrint">🖨 Print / save as PDF</button>
-        <button class="btn-ghost" id="reportJson">⤓ Download data (JSON)</button>
-        <button class="btn-ghost" data-action="open-select">Back to the valley</button>
+        <button class="btn-primary" id="reportPrint">${t("rep.print", "🖨 Print / save as PDF")}</button>
+        <button class="btn-ghost" id="reportJson">${t("rep.json", "⤓ Download data (JSON)")}</button>
+        <button class="btn-ghost" data-action="open-select">${t("rep.back", "Back to the valley")}</button>
       </div>
       <h2>Exposure practice report</h2>
       <p class="report-line">
-        ${ch && ch.name ? `Traveler: <strong>${escapeHtml(ch.name)}</strong> · ` : ""}
+        ${ch && ch.name ? `Traveler: <strong><bdi>${escapeHtml(ch.name)}</bdi></strong> · ` : ""}
         ${log.length} logged session${log.length === 1 ? "" : "s"}${first ? ` · ${fmtD(first.ts)} – ${fmtD(last.ts)}` : ""}
         · ${worldstepCount()} real-world step${worldstepCount() === 1 ? "" : "s"}
       </p>
@@ -1054,13 +1061,13 @@ function viewAbout() {
 
       <h3>${t("about.limitsH", "What Lanternwalk is not")}</h3>
       <p>${t("about.limits", "Not therapy, not diagnosis, not a medical device. It was made for curiosity and education. If a fear is seriously limiting your life, a trained clinician can run real exposure work with you safely — bring the report; it makes a good first conversation.")}
-      <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a></p>
+      <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a>${isRtl() ? " · اورژانس اجتماعی <b>۱۲۳</b> · صدای مشاور بهزیستی <b>۱۴۸۰</b>" : ""}</p>
 
       <h3>${t("about.privacyH", "Privacy")}</h3>
       <p>${t("about.privacy", "Everything stays in your browser: characters, sessions, check-ins — all of it lives in this device's local storage. No account, no analytics, no server. Your data leaves only when you export it yourself (Settings → Export).")}</p>
 
       <h3>${t("about.creditsH", "Credits")}</h3>
-      <p class="about-credits">${t("about.credits", "Built for fun with")} <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> · ${t("about.creditsPhysics", "physics by")} <a href="https://rapier.rs" target="_blank" rel="noopener">Rapier</a> · ${t("about.creditsModels", "creature models by")} <a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a> (CC0) · ${t("about.creditsAmbient", "ambient recordings from")} <a href="https://mixkit.co" target="_blank" rel="noopener">Mixkit</a> · ${t("about.creditsHdri", "sky lighting from")} <a href="https://polyhaven.com/a/meadow" target="_blank" rel="noopener">Poly Haven</a> (CC0) · ${t("about.creditsMade", "made with care by Amir.")}</p>
+      <p class="about-credits">${t("about.credits", "Built for fun with")} <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> · ${t("about.creditsPhysics", "physics by")} <a href="https://rapier.rs" target="_blank" rel="noopener">Rapier</a> · ${t("about.creditsModels", "creature models by")} <bdi><a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a> (CC0)</bdi> · ${t("about.creditsAmbient", "ambient recordings from")} <a href="https://mixkit.co" target="_blank" rel="noopener">Mixkit</a> · ${t("about.creditsHdri", "sky lighting from")} <bdi><a href="https://polyhaven.com/a/meadow" target="_blank" rel="noopener">Poly Haven</a> (CC0)</bdi> · ${t("about.creditsMade", "made with care by Amir.")}</p>
 
       <div class="actions" style="margin-top:14px">
         <button class="btn-ghost" data-action="show-consent">${t("about.reread", "Re-read the welcome notice")}</button>

@@ -207,7 +207,7 @@ const PACKS = {
     "mirror.modalP": "دربارهٔ زندگی واقعی جواب بده — نه بازی. ۶۰ ثانیه، فقط برای خودت. یک خودسنجی است، نه تشخیص.",
     "mirror.q1": "در زندگی واقعی چقدر راهت را کج می‌کنی تا با آن رو‌به‌رو نشوی؟",
     "mirror.q2": "وقتی با آن رو‌به‌رو می‌شوی، ترس در اوج چقدر شدید است؟",
-    "mirror.q3": "بدنت چقدر واکنش نشان می‌دهد — قلب، نفس، عرق، خشک‌شدن؟",
+    "mirror.q3": "بدنت چقدر واکنش نشان می‌دهد — قلب، نفس، عرق، خشکت زدن؟",
     "mirror.q4": "این ترس چقدر زندگی روزمره‌ات را محدود می‌کند — مسیرها، جاها، برنامه‌ها؟",
     "mirror.q5": "همین حالا چقدر مطمئنی که رو‌به‌رو شدن با آن بد تمام می‌شود؟",
     "mirror.s0": "اصلاً",
@@ -242,7 +242,7 @@ const PACKS = {
     "bridge.see": "دیدن مسیر واقعی",
     "ws.kicker": "🌍 مسیر واقعی",
     "ws.p": "این کار را آن بیرون، در دنیای واقعی کردی — شجاعانه‌ترین نوع آزمون. یک پرسش صادقانه:",
-    "ws.q": "ترس در اوجش، آن بیرون، چقدر بلند بود؟",
+    "ws.q": "ترس در اوجش، آن بیرون، چقدر شدید بود؟",
     "ws.save": "🌍 رو‌به‌رو شدم",
     "ws.notYet": "هنوز نه",
 
@@ -255,15 +255,15 @@ const PACKS = {
     "predict.enter": "⚔ ورود به آزمون",
     "scale.calm": "۰ آرام",
     "scale.panic": "۱۰ وحشت",
-    "rate.h2": "آزمون پشت سر توست. چقدر بلند بود؟",
-    "rate.p": "ترسی را که همین حالا حس می‌کنی روی مقیاس SUDS ثبت کن. صادق باش؛ این دفترچه فقط مال خودِ توست.",
+    "rate.h2": "آزمون پشت سر توست. چقدر شدید بود؟",
+    "rate.p": "ترسی را که حس کردی روی مقیاسِ نمرهٔ ترس (۰ آرام تا ۱۰ وحشت) ثبت کن. صادق باش؛ این دفترچه فقط مال خودِ توست.",
     "rate.breathe": "اول یک نفس",
     "rate.save": "ذخیره و ادامه",
     "breathe.h2": "نفسِ کنار آتش",
     "breathe.p": "ابزار مسافر: دایره را دنبال کن. ۴ ثانیه دم، ۶ ثانیه بازدم — بازدمِ بلند ترمز بدن را می‌گیرد. هر چقدر خواستی بمان؛ آتش جایی نمی‌رود.",
     "breathe.btn": "آرام‌ترم — ادامه",
     "complete.faced": "آزمون {n} انجام شد",
-    "complete.early": "آزمون {n} · عقب‌نشینی",
+    "complete.early": "آزمون {n} · زودتر بیرون آمدی",
     "complete.h2": "آزمون رفته. این زمین حالا مال توست.",
     "complete.h2early": "یک قدم عقب رفتی — حاضر شدن هم حساب است.",
     "complete.next": "⚔ آزمون بعدی: {t}",
@@ -565,7 +565,7 @@ const PACKS = {
     "card.wave.title": "ترس یک موج است",
     "card.wave.text": "اضطراب بالا می‌رود، به اوج می‌رسد و خودش فرو می‌نشیند — حتی اگر هیچ کاری نکنی و فقط بمانی. همین حالا سوار یکی شدی. هیچ موجی بی‌پایان نیست.",
     "card.avoidance.title": "فرار، سایه را سیر می‌کند",
-    "card.avoidance.text": "گریختن از ترس یک دقیقه حال خوب می‌دهد — و به مغزت یاد می‌دهد خطر واقعی بود. هر حیاطِ دورزده، پارس را بلندتر می‌کند. رو‌به‌رو شدن تنها رژیمی است که سایه تابش نمی‌آورد.",
+    "card.avoidance.text": "گریختن از ترس یک دقیقه حال خوب می‌دهد — و به مغزت یاد می‌دهد خطر واقعی بود. هر حیاطِ دورزده، پارس را بلندتر می‌کند. رو‌به‌رو شدن تنها رژیمی است که سایه تابِ آن را نمی‌آورد.",
     "card.brave.title": "شجاع یعنی آرام نیست",
     "card.brave.text": "شجاعت نبودِ ترس نیست — لرزیدنِ دست‌هاست وقتی می‌مانی. اگر آن تو ترسیدی، اشتباهش نکرده‌ای؛ دقیقاً درست انجامش داده‌ای.",
     "card.habituation.title": "بدن با ماندن یاد می‌گیرد",
@@ -1873,7 +1873,7 @@ const PACKS = {
     "rate.peakAria": "میزان اضطراب در بدترین لحظهٔ آزمون، ۰ آرام تا ۱۰ وحشت",
     "rate.nowAria": "میزان اضطراب همین حالا، ۰ آرام تا ۱۰ وحشت",
     "rate.hint": "لغزنده را حرکت بده تا ثبت کنی واقعاً چه حسی داشت — جواب درست و غلطی ندارد.",
-    "rate.bands": "کم (۰–۳): آمادهٔ بالا رفتنی. &nbsp; متوسط (۴–۶): یک نفس‌گیری کمک می‌کند. &nbsp; زیاد (۷–۱۰): همین‌جا بمان، نفس بکش، تکرار کن.",
+    "rate.bands": "کم (۰–۳): آمادهٔ بالا رفتنی. &nbsp; متوسط (۴–۶): کمی مکث و نفس کمک می‌کند. &nbsp; زیاد (۷–۱۰): همین‌جا بمان، نفس بکش، تکرار کن.",
     "breath.go": "نفس بکش",
     "breath.in": "دم…",
     "breath.hold": "نگه دار",
@@ -1895,7 +1895,7 @@ const PACKS = {
     "meter.end": "در پایان",
     "meter.last": "دفعهٔ پیش",
     "meter.this": "این بار",
-    "reward.courage": "+{n} شجاعت",
+    "reward.courage": "‎+{n} شجاعت",
     "reward.ember": "🔥 اخگرِ روزانه +۱۵",
     "reward.day": "روز {n} تمرین",
     "reward.milestone": "🏅 نشانِ تازه: {list}",
@@ -1920,7 +1920,7 @@ const PACKS = {
     "vc.peak": "اوج زنگ خطر",
     "vc.guess": "حدس ← حس",
     "vc.reads": "درست خواندی",
-    "vc.starBonus": "+{n} برای ستاره‌های تازه",
+    "vc.starBonus": "‎+{n} برای ستاره‌های تازه",
     "vc.rankUp": "رتبهٔ تازه!",
     "vc.toRank": "تا {title}",
     "vc.tryAgain": "↻ دوباره امتحان کن",
@@ -1945,7 +1945,7 @@ const PACKS = {
     "journal.saved": "ذخیره شد",
     "ach.rankUp": "رتبهٔ تازه — {title}",
     "ach.rankUpP": "دره حالا اسمت را می‌شناسد. ({n} شجاعت)",
-    "courage.gain": "+{n} شجاعت · {why}",
+    "courage.gain": "‎+{n} شجاعت · {why}",
     "courage.first": "بار اول",
     "courage.well": "آفرین",
     "courage.showed": "آمدی",
@@ -1965,7 +1965,7 @@ const PACKS = {
     "ms.first_session.desc": "شروع کردی. سخت‌ترین پله همین است.",
     "ms.rung_3.title": "میانهٔ نردبان",
     "ms.rung_3.desc": "در یکی از ترس‌ها به پلهٔ سوم رسیدی.",
-    "ms.low_on_high.title": "SUDS پایین روی پلهٔ بالا",
+    "ms.low_on_high.title": "نمرهٔ ترسِ پایین روی پلهٔ بالا",
     "ms.low_on_high.desc": "روی پلهٔ ۴ یا ۵ ترست ۴ یا کمتر بود — خوگیری دارد کار می‌کند.",
     "ms.first_journal.title": "اهل تأمل",
     "ms.first_journal.desc": "برای یک جلسه یادداشت نوشتی.",
@@ -2032,7 +2032,7 @@ const PACKS = {
     "set.custom": "نردبانِ دلخواه",
     "set.customSub": "ترس و پله‌های خودت را بساز.",
     "set.reset": "بازنشانیِ پیشرفتِ این مسافر",
-    "set.resetSub": "نردبان، دفترچهٔ SUDS، شجاعت و سوگندهای این مسافر پاک می‌شود. مسافرهای دیگر دست‌نخورده می‌مانند.",
+    "set.resetSub": "نردبان، دفترچهٔ نمره‌های ترس، شجاعت و سوگندهای این مسافر پاک می‌شود. مسافرهای دیگر دست‌نخورده می‌مانند.",
     "a11y.closeSettings": "بستن تنظیمات",
     "set.secSound": "صدا",
     "set.secPerf": "کارایی",
@@ -2153,8 +2153,8 @@ const PACKS = {
     "pp.sum1": "{a}/{b} پله · {n} جلسه",
     "pp.highest": "بالاترین پله",
     "pp.sessions": "جلسه‌ها",
-    "pp.avg": "میانگین SUDS",
-    "pp.chart": "SUDS در گذر زمان",
+    "pp.avg": "میانگین نمرهٔ ترس",
+    "pp.chart": "نمرهٔ ترس در گذر زمان",
     "pp.actual": "واقعی",
     "pp.predicted": "پیش‌بینی",
     "pp.perRung": "پله‌به‌پله",
@@ -2170,14 +2170,14 @@ const PACKS = {
     "pr.active": "فعال",
     "pr.delete": "حذف",
     "pr.h": "مسافرهای تو",
-    "pr.p": "هر مسافر پیشرفتِ نردبان، دفترچهٔ SUDS و فهرست ترس‌های خودش را دارد. هر وقت خواستی بینشان جابه‌جا شو.",
+    "pr.p": "هر مسافر پیشرفتِ نردبان، دفترچهٔ نمره‌های ترس و فهرست ترس‌های خودش را دارد. هر وقت خواستی بینشان جابه‌جا شو.",
     "pr.new": "+ مسافرِ تازه",
     "ms.h": "نشان‌ها",
     "ms.earnedP": "{a} از {b} به دست آمده — با پیشرفتت باز می‌شوند.",
     "ms.autoP": "با پیشرفتت خودبه‌خود باز می‌شوند. {a} از {b} به دست آمده.",
-    "ins.empty": "وقتی یک پله را تمام کنی، داده‌ها این‌جا می‌آیند: نمره‌های SUDS، فاصلهٔ پیش‌بینی و واقعیت، و بالاترین پله در هر ترس.",
-    "ins.sum": "{a}/{b} پله · {n} جلسه · میانگین SUDS {avg}",
-    "ins.sum1": "{a}/{b} پله · {n} جلسه · میانگین SUDS {avg}",
+    "ins.empty": "وقتی یک پله را تمام کنی، داده‌ها این‌جا می‌آیند: نمره‌های ترس، فاصلهٔ پیش‌بینی و واقعیت، و بالاترین پله در هر ترس.",
+    "ins.sum": "{a}/{b} پله · {n} جلسه · میانگین نمرهٔ ترس {avg}",
+    "ins.sum1": "{a}/{b} پله · {n} جلسه · میانگین نمرهٔ ترس {avg}",
     "ins.open": "باز کردن نردبان",
     "ins.p": "هر نمودار نشان می‌دهد در هر پله‌ای که بالا رفتی واقعاً چقدر مضطرب بودی. نقطه‌های کم‌رنگ‌تر <em>پیش‌بینی‌های</em> تواند — فاصلهٔ پیش‌بینی و واقعیت همان جایی است که مغز یاد می‌گیرد.",
     "ins.total": "کلِ جلسه‌ها",
@@ -2226,6 +2226,17 @@ const PACKS = {
     "snd.whine": "ناله",
     "snd.barks": "پارس",
     "snd.bark": "یک پارس",
+    "cc.pickFear": "برای شروع دست‌کم یک ترس انتخاب کن — بعداً می‌توانی بیشتر اضافه کنی.",
+    "ws.aria": "ثبت یک قدم در دنیای واقعی",
+    "fc.aria": "احوال‌پرسیِ ترس",
+    "rep.print": "🖨 چاپ / ذخیره به‌صورت PDF",
+    "rep.json": "⤓ دریافت داده‌ها (JSON)",
+    "rep.back": "بازگشت به دره",
+    "st.read": "خواندن صفحه",
+    "st.reread": "دوباره بخوان",
+    "wave.quiet": "این بار زنگِ هشدار آرام ماند.",
+    "dog.buddy": "بادی",
+    "dog.koda": "کودا",
     "rec.title": "بخشی از این صفحه بارگذاری نشد",
     "rec.body": "شاید داده‌های ذخیره‌شده‌ات آسیب دیده باشد، یا این صفحه به خطایی خورده. چیزی پاک نشده است.",
     "rec.home": "بازگشت به آغاز",
@@ -2398,10 +2409,31 @@ const PACKS = {
 };
 
 let currentLang = "en";
+let _langSaved = false;
 try {
   const saved = localStorage.getItem("fobia.lang");
-  if (saved && PACKS[saved]) currentLang = saved;
+  if (saved && PACKS[saved]) { currentLang = saved; _langSaved = true; }
 } catch {}
+// A first visit from a Persian-language browser starts in Persian: the
+// language switch is in Settings, below the fold of a title screen that a
+// Persian speaker would otherwise meet in English. Not saved — choosing
+// either language in the game is what sticks.
+if (!_langSaved) {
+  try {
+    const nav = (navigator.languages && navigator.languages[0]) || navigator.language || "";
+    if (/^fa\b/i.test(nav) && PACKS.fa) currentLang = "fa";
+  } catch {}
+}
+// Numbers as the reader writes them. The Persian strings carried Persian
+// digits but every number the game filled in stayed Latin ("آزمون 1 از 5").
+const FA_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
+function num(v) {
+  const s = String(v);
+  if (currentLang !== "fa") return s;
+  return s.replace(/[0-9]/g, (d) => FA_DIGITS[d]).replace(/([۰-۹])\.([۰-۹])/g, "$1٫$2");
+}
+// A duration in seconds: "81s" / "۸۱ ث".
+function secs(n) { return currentLang === "fa" ? num(n) + " ث" : n + "s"; }
 
 function t(key, fallback) {
   const pack = PACKS[currentLang];
@@ -2413,7 +2445,12 @@ function t(key, fallback) {
 // concatenation at call sites, so word order is the translator's choice).
 function tf(key, fallback, vars) {
   let s = t(key, fallback);
-  if (vars) for (const k of Object.keys(vars)) s = s.split("{" + k + "}").join(vars[k]);
+  if (vars) for (const k of Object.keys(vars)) {
+    let v = vars[k];
+    // Only plain numbers are localized — a var holding markup keeps its digits.
+    if (typeof v === "number" || (typeof v === "string" && /\d/.test(v) && /^[\s\d.,+\-−%/:×]*$/.test(v))) v = num(v);
+    s = s.split("{" + k + "}").join(v);
+  }
   return s;
 }
 function setLang(lang) {
@@ -2431,6 +2468,9 @@ function applyLang() {
   try {
     document.documentElement.setAttribute("lang", currentLang);
     document.documentElement.setAttribute("dir", rtl ? "rtl" : "ltr");
+    // The tab's name follows the language (it stayed English in Persian).
+    if (!applyLang._enTitle) applyLang._enTitle = document.title;
+    document.title = rtl ? "فانوس‌به‌دست — بازی‌ای آرام برای رو‌به‌رو شدن با ترس‌ها" : applyLang._enTitle;
   } catch {}
 }
 function registerLang(lang, pack) {
@@ -2442,6 +2482,8 @@ function isRTL() { return currentLang === "fa"; }
 
 applyLang();
 
-window.I18n = { t, tf, setLang, registerLang, availableLangs, currentLanguage, isRTL };
+window.I18n = { t, tf, num, secs, setLang, registerLang, availableLangs, currentLanguage, isRTL };
 window.t = t;
 window.tf = tf;
+window.fnum = num;
+window.fsecs = secs;

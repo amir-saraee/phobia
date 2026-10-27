@@ -130,7 +130,7 @@ function makeCreatureCoach(opts) {
     const next = goals.find((g) => !g.done);
     const n = starsDone();
     goalsEl.innerHTML = `<li class="dc-stars-row"><span><span class="dc-lamp" aria-hidden="true" title="${esc(t("dc.lampTip", "This trial's flame — it lights when you've held the trial"))}">🏮</span> <span class="dc-stars-lbl">${t("dc.stars", "Trial stars")}</span></span><span class="dc-stars" aria-label="${esc(tf("dc.starsAria", "{n} of {m} stars", { n, m: goals.length }))}">${starRow(n)}</span></li>` + goals.map((g) => {
-      const cnt = g.need > 1 ? ` <span class="dc-n">${Math.min(g.n, g.need)}/${g.need}</span>` : "";
+      const cnt = g.need > 1 ? ` <span class="dc-n">${window.fnum(Math.min(g.n, g.need))}/${window.fnum(g.need)}</span>` : "";
       return `<li class="dc-goal${g.done ? " done" : ""}${g.required ? " req" : ""}${g === next ? " next" : ""}"><i>${g.done ? "✓" : g.icon || "○"}</i><span>${esc(g.text)}${cnt}</span><b class="dc-gs" aria-hidden="true">★</b></li>`;
     }).join("");
     syncVerb();
@@ -453,7 +453,7 @@ function makeCreatureCoach(opts) {
       const HT = o.holdText || K.holdText;   // place realms word it by place (a rung may word its own)
       if (!everEngaged) return { label: HT ? HT.begin() : tf("dc.hBegin", "Walk within {m} m of {dog} to begin — at your pace", { m: zone, dog: o.dogName }), pill: t("dc.pWalk", "walk in") };
       if (!eng) return { label: HT ? HT.back() : tf("dc.hBack", "Paused — come back within {m} m of {dog} to carry on", { m: zone, dog: o.dogName }), pill: t("dc.pPaused", "paused") };
-      if (sec < minHold) return { label: HT ? tf("dc.hStayPlace", "{s} / {n}s · just stay", { s: sec, n: minHold }) : tf("dc.hStay", "{s} / {n}s with {dog} · just stay", { s: sec, n: minHold, dog: o.dogName }), pill: `${sec}/${minHold}s` };
+      if (sec < minHold) return { label: HT ? tf("dc.hStayPlace", "{s} / {n}s · just stay", { s: sec, n: minHold }) : tf("dc.hStay", "{s} / {n}s with {dog} · just stay", { s: sec, n: minHold, dog: o.dogName }), pill: `${window.fnum(sec)}/${window.fsecs(minHold)}` };
       if (!ready) return { label: t("dc.hSettle", "Stay — let the alarm come down to the line on its own"), pill: t("dc.pSettle", "settling…") };
       return null;
     },
