@@ -295,6 +295,8 @@ function makeCreatureCoach(opts) {
     const S = K.signals[id];
     if (!S) return false;
     if (readOpen || readResultT > 0 || readCooldown > 0) return false;
+    // Never a quiz over the grounding exercise (it used to cover the text).
+    if (window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding()) return false;
     if (s.onScreen === false) return false;
     if (s.dist != null && s.dist > 9.5) return false;
     // Variety: a signal already read this trial comes back only rarely.
@@ -519,7 +521,9 @@ function makeCreatureCoach(opts) {
     settledNow = engaged && engagedPeak >= 12 && cur <= line && (clock - lastPulseT) > 2.5 && !grounding;
     if (settledNow && !settledLatched && engagedSec > 5) {
       settledLatched = true; everSettled = true;
-      ev.settledAt = Math.round(clock);
+      // In seconds of staying, the same clock as "You stayed" on the done
+      // screen — scene time (walk-in included) read as settling after you'd left.
+      ev.settledAt = Math.round(engagedSec);
       if (window.__rungHoldComplete) goalDone("settle");   // settled after a long-stay finish
       mark("settle");
       root.classList.add("dc-settled");
@@ -554,7 +558,11 @@ function makeCreatureCoach(opts) {
     if (engaged && cur > 22) teach("rise", K.texts.rise ? K.texts.rise() : t("dc.tRise",
       "That rise is your alarm doing its job: <b>loud, not necessarily right</b>. You don't have to do anything about it. Stay, and watch the line."), 7500);
     peakSinceFall = Math.max(peakSinceFall, cur);
-    if (!fell && peakSinceFall >= 20 && cur < peakSinceFall * 0.7 && engaged) {
+    // Not while they're on the way out: a fall that comes with stepping
+    // back (the MRI ball, the door) is relief, and praising it as "you
+    // stayed" told the player the opposite of what just happened.
+    if (!fell && peakSinceFall >= 20 && cur < peakSinceFall * 0.7 && engaged
+        && clock - lastSafetyT > 8 && clock - lastEscapeT > 8) {
       fell = true;
       teach("fall", t("dc.tFall",
         "See it coming down? You didn't escape, argue or distract yourself — you <b>stayed</b>. That fall is habituation: your body updating, live."), 8000, true);
@@ -572,7 +580,9 @@ function makeCreatureCoach(opts) {
       const ux = s.px - s.dogX, uz = s.pz - s.dogZ, ul = Math.hypot(ux, uz) || 1;
       backed = ((s.px - h0[1]) * ux + (s.pz - h0[2]) * uz) / ul;   // + = moved away from the dog
     }
-    if (everEngaged && !engaged && backed > 1.1 && d0 < o.inZoneDist + 0.8 && cur > 30 && clock - lastEscapeT > 6) {
+    // (Once the hold is met, leaving is finishing — not an escape to teach.)
+    if (everEngaged && !engaged && backed > 1.1 && d0 < o.inZoneDist + 0.8 && cur > 30 && clock - lastEscapeT > 6
+        && !window.__rungHoldComplete) {
       lastEscapeT = clock;
       ev.escapes++;
       h = Math.min(1, h + 0.14);          // relief without learning: it'll be back
@@ -625,7 +635,7 @@ function makeCreatureCoach(opts) {
       const { bw, bh } = readBox._sz;
       const panelW = (readBox._sz.pw && s.stageW > 700) ? readBox._sz.pw + 16 : 0;
       const lo = bw / 2 + 8, hi = s.stageW - bw / 2 - 8 - panelW;
-      const tx = hi > lo ? Math.max(lo, Math.min(hi, s.anchorX)) : s.stageW / 2;
+      let tx = hi > lo ? Math.max(lo, Math.min(hi, s.anchorX)) : s.stageW / 2;
       let ty = Math.max(bh + 96, Math.min(bh + 104, s.anchorY - 16));
       // A narrow stage can't seat the card beside the coach panel — put it
       // under the panel instead of over it.
@@ -636,6 +646,23 @@ function makeCreatureCoach(opts) {
       const stEl = root.parentElement;
       const barTop = stEl ? parseFloat(stEl.style.getPropertyValue("--cmdbar-top")) : 0;
       if (barTop > 0 && readBox._sz.ch) ty = Math.max(bh + 8, Math.min(ty, readBox._sz.ch - barTop - 8));
+      // Never over the animal it asks about: the band above clamps the card
+      // to a fixed height, and a dog whose head sat in that band (the far dog
+      // on rung 1, almost every creature on a portrait phone) was hidden
+      // behind the question. Slide beside it; else above; else below.
+      const ay = s.anchorY;
+      if (ay != null && ay > 0 && s.anchorX != null) {
+        const covers = (bot) => (bot - bh) < ay + 70 && bot > ay - 60;
+        if (covers(ty) && Math.abs(tx - s.anchorX) < bw / 2 + 40) {
+          const right = s.anchorX + bw / 2 + 70, left = s.anchorX - bw / 2 - 70;
+          const ch = readBox._sz.ch || s.stageH || 0;
+          const maxBot = ch ? ch - (barTop > 0 ? barTop : 0) - 8 : Infinity;
+          if (hi > lo && right <= hi) tx = right;
+          else if (hi > lo && left >= lo) tx = left;
+          else if (ay - 70 >= ((s.stageW <= 700 && readBox._sz.pb) ? readBox._sz.pb + 8 + bh : bh + 96)) ty = ay - 70;
+          else if (ay + 110 + bh <= maxBot) ty = ay + 110 + bh;
+        }
+      }
       if (readPos.x == null) { readPos.x = tx; readPos.y = ty; }
       readPos.x += (tx - readPos.x) * Math.min(1, d * 6);
       readPos.y += (ty - readPos.y) * Math.min(1, d * 6);
@@ -679,7 +706,7 @@ function makeCreatureCoach(opts) {
   // in a tight space): the same relief-without-learning as backing off.
   let lastSafetyT = -99;
   function safety(kind) {
-    if (!everEngaged || clock - lastSafetyT < 4) return;
+    if (!everEngaged || clock - lastSafetyT < 4 || window.__rungHoldComplete) return;
     lastSafetyT = clock;
     const cur = window.PhobiaFear ? window.PhobiaFear.get() : alarm;
     ev.notes["safety_" + kind] = (ev.notes["safety_" + kind] || 0) + 1;

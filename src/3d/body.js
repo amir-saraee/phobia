@@ -418,6 +418,14 @@ class Body {
         const horiz = Math.hypot(fdx, fdz);
         const sink = (ay + this.opts.headY * 0.97) - cam.position.y;
         fadeTarget = horiz < 0.4 ? 1 - Math.max(0, Math.min(1, sink / 0.18)) : 1;
+        // Looking steeply down (a spider at your feet, the drop past the
+        // rail) the torso filled a third of the frame as a faceted blob and
+        // hid the very thing the trial asks you to look at. Fade it out.
+        if (horiz < 0.4) {
+          if (!this._fpDir) this._fpDir = new THREE.Vector3();
+          const down = -cam.getWorldDirection(this._fpDir).y;   // sin(−pitch)
+          fadeTarget = Math.min(fadeTarget, 1 - Math.max(0, Math.min(1, (down - 0.62) / 0.22)));
+        }
       }
       if (this._fadeK == null) this._fadeK = 1;
       this._fadeK += (fadeTarget - this._fadeK) * Math.min(1, dtB * 15);

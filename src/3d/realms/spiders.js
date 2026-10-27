@@ -895,13 +895,26 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         const c = spiderControls; if (!c && btn.dataset.cmd !== "jar") return;
         switch (btn.dataset.cmd) {
           case "closer":
-            c.position.z = Math.max(c.opts.bounds.minZ + 0.2, c.position.z - 1.0);
-            if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.closer", "Closer. It is still. You are still."));
+          case "back": {
+            // A step along the line to the spider (it used to move along
+            // world −z, which from beside the wall spider walked you away
+            // while the voice said "closer"). Never inside its guard ring,
+            // and the step is not a rush: the approach-speed tracker is moved
+            // with you so a button press can't fire a startle dart.
+            const toward = btn.dataset.cmd === "closer";
+            const dx = spider.position.x - c.position.x, dz = spider.position.z - c.position.z;
+            const dist = Math.hypot(dx, dz) || 0.0001;
+            const minD = (B.guardDist ?? 0.4) + 0.35;
+            const step = toward ? Math.min(1.0, Math.max(0, dist - minD)) : -1.0;
+            const bd = c.opts.bounds;
+            c.position.x = Math.max(bd.minX + 0.2, Math.min(bd.maxX - 0.2, c.position.x + (dx / dist) * step));
+            c.position.z = Math.max(bd.minZ + 0.2, Math.min(bd.maxZ - 0.2, c.position.z + (dz / dist) * step));
+            if (spPrevPlayer) { spPrevPlayer.x = c.position.x; spPrevPlayer.z = c.position.z; }
+            if (window.PhobiaVoice) window.PhobiaVoice.speak(toward
+              ? window.t("sc.s.closer", "Closer. It is still. You are still.")
+              : window.t("sc.s.back", "Stepped back. Notice the relief. Then notice it pass."));
             break;
-          case "back":
-            c.position.z = Math.min(c.opts.bounds.maxZ - 0.2, c.position.z + 1.0);
-            if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.s.back", "Stepped back. Notice the relief. Then notice it pass."));
-            break;
+          }
           case "focus": {
             spZoomHeld = false;
             const dx = spider.position.x - c.position.x;

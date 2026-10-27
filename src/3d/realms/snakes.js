@@ -1799,7 +1799,13 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           if (snRung === 1) { if (holdingStill && st === "wander" && inZone) snStillMoveT += dtN; if (snStillMoveT > 3) snCoach.goalDone("stillSlide"); }
           if (snRung === 2) { if (holdingStill && snakeCtl.crossing && st === "wander" && inZone) snCrossT += dtN; if (snCrossT > 2) snCoach.goalDone("stillCross"); }
           if (snRung === 3) { if (extendHeld && extension > 0.5 && st === "watch" && distS < (B.rearDist ?? 2.6) + 0.3) snRearT += dtN; if (snRearT > 3) snCoach.goalDone("handWatch"); }
-          if (snRung === 4) { if (distS < (B.strikeDist ?? 1.45) + 0.8) snSlowT += dtN; if (snSlowT > 8) snCoach.goalDone("slowHeld"); }
+          if (snRung === 4) {
+            // "Slowly" is the star: close AND not closing in fast (a rush
+            // stops the clock; a strike display resets it).
+            if (snakeCtl.state === "defensive") snSlowT = 0;
+            else if (distS < (B.strikeDist ?? 1.45) + 0.8 && approachSpeed < 0.3) snSlowT += dtN;
+            if (snSlowT > 8) snCoach.goalDone("slowHeld");
+          }
         }
 
         // Diegetic completion beat: once the hold is earned, the snake settles

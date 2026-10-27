@@ -677,6 +677,32 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
     railPosts.push(post);
   }
 
+  // Side rails at both ends of the platform. Only the front edge had one, so
+  // walking to an end showed an open drop a metre away held by an invisible
+  // wall — and the alarm, which reads the front rail, stayed "calm" there.
+  {
+    const sideLen = platDepth - 0.3;
+    const sideZ = -0.4 + sideLen / 2;
+    for (const sx of [-halfLen + 0.15, halfLen - 0.15]) {
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, sideLen, 12), railMat);
+      top.rotation.x = Math.PI / 2;
+      top.position.set(sx, cameraY - 0.5, sideZ);
+      top.userData = { noCollide: true };
+      scene.add(top);
+      const mid = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, sideLen, 10), railMat);
+      mid.rotation.x = Math.PI / 2;
+      mid.position.set(sx, cameraY - 1.0, sideZ);
+      mid.userData = { noCollide: true };
+      scene.add(mid);
+      for (let z = -0.4 + 1.6; z < -0.4 + sideLen - 0.2; z += 1.6) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.1, 8), railMat);
+        post.position.set(sx, cameraY - 1.0, z);
+        post.userData = { noCollide: true };
+        scene.add(post);
+      }
+    }
+  }
+
   // Moving cars on the streets — bright lit dots at GROUND level. They give
   // the height a real scale: the eye reads the bright pinpricks as "those are
   // cars, far below me." Crucial for the visceral feeling of altitude.
@@ -1826,21 +1852,18 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         // the edge.
         if (atEdge && goingIn && z <= minZ + 0.05) {
           playerState.pressingAgainstRail += dtN;
+          // Pressing on no longer tips you over the rail by itself — an
+          // unasked-for pitch toward a drop is a startle (and a nausea
+          // risk). It points at the Lean verb instead; leaning is a choice.
           if (playerState.pressingAgainstRail > 0.8 && !playerState.autoLeanFired
               && leanT === 0) {
             playerState.autoLeanFired = true;
-            leanT = 1.0;
-            leanFromPitch = controls.pitch;
-            leanFromZ = controls.position.z;
-            leanBackZ = Math.min(leanFromZ, ((controls.opts && controls.opts.bounds && controls.opts.bounds.minZ) ?? -0.2) + 0.45);
-            hCoach.note("lean"); hSignal("pull");
-          // (the coach card speaks for this moment now)
-            if (window.PhobiaVoice) {
-              window.PhobiaVoice.speak(window.t("sc.h.lean2", "Leaning over. Hold the rail. You are safe."));
-            }
-          // (the coach card speaks for this moment now)
-            // Reset so the player can lean again later (after walking back)
-            setTimeout(() => { playerState.autoLeanFired = false; }, 8000);
+            try {
+              window.PhobiaFX && window.PhobiaFX.contextPrompt && window.PhobiaFX.contextPrompt(IS_COARSE_POINTER
+                ? window.t("sc.h.leanHintT", "You're at the rail. Tap ⤴ Lean over when you choose to look over.")
+                : window.t("sc.h.leanHint", "You're at the rail. Use ⤴ Lean over when you choose to look over."), 4000);
+            } catch {}
+            setTimeout(() => { playerState.autoLeanFired = false; }, 20000);
           }
         } else {
           playerState.pressingAgainstRail = 0;

@@ -528,6 +528,14 @@ function mountExposure(phobiaKey, levelIdx) {
         const top = stage.getBoundingClientRect().top;
         if (Math.abs(top) > 4) { try { stage.scrollIntoView({ block: "start" }); } catch {} }
       }, ms));
+      // Turning the phone re-lays the page; back to portrait it left the
+      // stage half below the fold with the joystick out of reach. Re-seat it
+      // once the new layout has settled. (Removed with the trial's audio.)
+      stage._orientSnap = () => setTimeout(() => {
+        if (!stage.isConnected) return;
+        if (Math.abs(stage.getBoundingClientRect().top) > 4) { try { stage.scrollIntoView({ block: "start" }); } catch {} }
+      }, 450);
+      window.addEventListener("orientationchange", stage._orientSnap);
     }
     // Inactivity watcher — start once the scene is live.
     lastActivity = Date.now();
@@ -843,6 +851,7 @@ function mountExposure(phobiaKey, levelIdx) {
     if (inactivityInterval) { clearInterval(inactivityInterval); inactivityInterval = null; }
     INACTIVITY_EVENTS.forEach(ev => window.removeEventListener(ev, onAnyActivity));
     if (window.__stopTrialAudio === stopAllAudio) window.__stopTrialAudio = null;
+    if (stage && stage._orientSnap) { window.removeEventListener("orientationchange", stage._orientSnap); stage._orientSnap = null; }
   }
   // Also stop audio when the page goes away. One listener for the page's
   // life, calling whichever trial is current — this used to add a new one

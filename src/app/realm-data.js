@@ -96,9 +96,9 @@ const PHOBIAS = {
         behavior: { skitter: true, approach: false, pounce: false, homeRadius: 0.35, inZoneDist: 1.7, fearMul: 0.55, firstSkitterAt: 6, skitterEvery: [3.0, 5.5], skitterSpeed: 0.34, jagAmt: 0.6, approachBias: 0.0, guardDist: 0.35 } },
       { title: "Medium spider, darts",desc: "Closer now — and it darts when it moves.", size: 0.55, intensity: "alert", minHold: 18,
         behavior: { skitter: true, approach: true, pounce: false, homeRadius: 0.7, inZoneDist: 1.5, fearMul: 0.72, firstSkitterAt: 5, skitterEvery: [2.5, 4.5], skitterSpeed: 0.5, jagAmt: 1.0, approachBias: 0.5, guardDist: 0.4, escalate: true, settleAfter: 40 } },
-      { title: "Large spider, close", desc: "A big one, near your feet. You can see the legs work.", size: 0.80, intensity: "alert", minHold: 22,
+      { title: "Large spider, close", desc: "A big one, near your feet. You can see the legs work. Now and then it crouches and hops — a short jump, never onto you; step back and it settles.", size: 0.80, intensity: "alert", minHold: 22,
         behavior: { skitter: true, approach: true, pounce: true, homeRadius: 0.9, inZoneDist: 1.3, fearMul: 0.88, firstSkitterAt: 4, skitterEvery: [1.8, 3.5], skitterSpeed: 0.62, jagAmt: 1.2, approachBias: 0.8, guardDist: 0.34, firstPounceAt: 12, pounceEvery: [10, 16], coilDur: [0.7, 1.1], escalate: true, settleAfter: 50 } },
-      { title: "On the wall by you",  desc: "On the wall, right at eye level. Legs twitching.", size: 1.00, intensity: "apex", minHold: 26,
+      { title: "On the wall by you",  desc: "On the wall, right at eye level. Legs twitching. It may crouch and jump down — it lands short of you, and stepping back calms it.", size: 1.00, intensity: "apex", minHold: 26,
         behavior: { skitter: true, approach: false, pounce: true, onWall: true, wallZ: -2.6, wallEyeY: 0.5, homeRadius: 0.2, inZoneDist: 1.4, fearMul: 1.0, firstSkitterAt: 2, skitterEvery: [1.4, 2.8], skitterSpeed: 0.42, jagAmt: 0.5, twitch: true, guardDist: 0.5, firstPounceAt: 9, pounceEvery: [8, 13], coilDur: [0.6, 0.9], escalate: true } }
     ],
     sceneClass: "scene-approach",

@@ -476,6 +476,7 @@ button:active { transform: translateY(1px); }
   background: var(--c); opacity: .8;
 }
 .suds-chips .sc:hover, .suds-chips .sc:focus-visible { border-color: var(--c); transform: translateY(-1px); outline: none; }
+.suds-chips .sc:focus-visible { outline: 2px solid var(--c); outline-offset: 2px; }
 .suds-chips .sc.on {
   background: var(--c); border-color: var(--c); color: #0b1020;
   transform: scale(1.1); box-shadow: 0 6px 16px rgba(0,0,0,.28); z-index: 1;
@@ -484,8 +485,10 @@ button:active { transform: translateY(1px); }
 .suds-ends { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 7px; }
 @media (max-width: 600px) {
   .suds { padding: 14px 12px; }
-  .suds-chips { gap: 3px; }
-  .suds-chips .sc { min-height: 42px; font-size: 14px; border-radius: 8px; }
+  /* Two rows (0–5, 6–10) so each target is ≥ 44 px square: eleven across a
+     phone made 25-px-wide keys for the game's most important answer. */
+  .suds-chips { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+  .suds-chips .sc { min-height: 46px; font-size: 15px; border-radius: 9px; }
   .suds-chips .sc::after { bottom: 5px; }
 }
 
@@ -1081,7 +1084,8 @@ button:active { transform: translateY(1px); }
 @media (max-width: 600px) {
   /* Below 600px the hold-pill owns the top-left slot (it is the phone's
      only hold readout) — the experiments chip drops beneath it. */
-  .stage .exp-panel { top: 92px; left: 8px; font-size: 12px; width: 216px; }
+  /* Never wider than the gap left of the coach card (156px wide, 8px in). */
+  .stage .exp-panel { top: 92px; left: 8px; font-size: 12px; width: min(216px, calc(100% - 184px)); max-width: none; }
   /* The demo chip becomes a full-width strip instead of a floating bubble
      four lines tall in the middle of the view. (.stage prefix: the base
      .demo-chip rule sits LATER in the sheet, so this needs the extra
@@ -3278,7 +3282,9 @@ body.light-mode .journal-entry p { color: var(--muted); }
 /* Persistent desktop exit affordance during grounding (touch has its own
    "I'm okay — continue" button). */
 .stage .grounding-exit-hint {
-  position: absolute; left: 50%; bottom: 40px; z-index: 8;
+  /* Under the grounding text, not at the bottom edge — the command bar
+     (z-index 12) sat on top of it there. */
+  position: absolute; left: 50%; top: calc(50% + 74px); bottom: auto; z-index: 13;
   transform: translateX(-50%);
   color: rgba(234,243,255,.82); font-size: 13px; font-weight: 600;
   letter-spacing: .3px; text-align: center;
@@ -3287,6 +3293,11 @@ body.light-mode .journal-entry p { color: var(--muted); }
   opacity: 0; pointer-events: none; transition: opacity .5s ease;
 }
 .stage .grounding-exit-hint.visible { opacity: 1; }
+/* While grounding, nothing else asks for attention: no read card, no
+   "click to pet" hint, no context prompts. */
+.stage:has(.grounding-overlay.active) .dc-read,
+.stage:has(.grounding-overlay.active) .reach-hint,
+.stage:has(.grounding-overlay.active) .ctx-prompt { opacity: 0 !important; pointer-events: none !important; }
 /* Tiny pulse indicator showing fear level — small dot at top-left under
    the camera toggle. Visible to the user as biofeedback. */
 .stage .fear-meter {
@@ -5131,6 +5142,17 @@ html[lang="fa"] .lw-name, html[lang="fa"] .lw-mark span, html[lang="fa"] .lw-mar
     animation: none;
   }
 }
+/* A phone held sideways: the sheet covered the wordmark and tagline. Split
+   the screen instead — the valley's title on the left, the choices right. */
+@media (orientation: landscape) and (max-height: 500px) {
+  body.landing-mode .mob-hero { left: 0; right: 50%; padding: 0 12px; }
+  body.landing-mode .arrive-sheet {
+    left: auto; right: 0; top: 0; bottom: 0; transform: none;
+    width: 50%; max-height: none; border-radius: 0;
+    border: 0; border-left: 1px solid rgba(255,255,255,.10);
+    animation: none;
+  }
+}
 .consent-crisis { margin: 12px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
 .consent-crisis a { color: var(--accent); font-weight: 700; }
 .consent-modal .bridge-invite-kicker { display: inline-flex; align-items: center; gap: 6px; }
@@ -5281,6 +5303,14 @@ img.cast-face.baked { animation: castIn .35s ease; }
   border-radius: 4px; border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.06);
   font: 600 10.5px/16px ui-monospace, monospace; color: var(--muted); text-align: center;
 }
+
+/* A bar with more than four actions keeps its Show/Hide toggle; with the
+   cluster open, the toggle rides above it instead of under its buttons
+   (where it could no longer be tapped to collapse the bar again). */
+.stage-wrap:has(.joystick) .stage.cmds-open .cmd-toggle { bottom: calc(var(--cmdbar-top, 140px) + 6px); }
+/* A swipe that starts on the action buttons must not scroll the page out
+   from under the trial (it did, and cancelled the snap-back too). */
+.stage-wrap:has(.joystick) .scene-cmd-bar { touch-action: none; overscroll-behavior: contain; }
 
 /* ---- touch: a 2×2 thumb cluster, bottom-right, opposite the joystick ---- */
 .stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) {

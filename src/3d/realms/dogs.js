@@ -3692,13 +3692,17 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       // a system owns the dog, and never over the rung's own arc (the lying
       // husky on rung 3, the completion settle, the companion sit).
       {
+        const readOpen = !!(coach.goalOpen && coach.goalOpen("read"));
         const busy = fetchPhase !== "idle" || callGreetPending || callWalkAt || arcApproachTgt
           || dogCtrl._companionPending || dogCtrl._drinkingState || sniffActive
           || (dogCtrl._moveLockT > 0) || petPulse > 0.05 || petRequestT > 0
-          || t < (dogCtrl._companionUntil || 0) || _completedCalm
+          || t < (dogCtrl._companionUntil || 0) || (_completedCalm && !readOpen)
           || (B.startPose === "lay" && !esc.stood);
         if (!lifeNextAt) lifeNextAt = t + 9 + Math.random() * 5;
-        if (intensity !== "barking" && dog.userData.ready && !busy && t > lifeNextAt
+        // The loud rung has a life too once it has settled: lying still for
+        // minutes left its read star with nothing to read (0/3, unearnable).
+        const lifeOk = intensity !== "barking" || (barkState === "settling" && readOpen);
+        if (lifeOk && dog.userData.ready && !busy && t > lifeNextAt
             && (dogCtrl.state === "idle" || dogCtrl.state === "sit" || dogCtrl.state === "lay")) {
           lifeNextAt = t + (7 + Math.random() * 8) / Math.max(0.6, temper.restless || 1);
           const r = Math.random();
@@ -4082,7 +4086,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         // most players never found (the ball and the treat live in a
         // collapsed bar). Offered once, never required: playing with the dog
         // you were afraid of is the natural next rep, and it builds the bond.
-        if (completionBeatDone && !playInvited) {
+        // (Not on the loud rung: it takes no commands but "stand", so the
+        // offer named keys that did nothing.)
+        if (completionBeatDone && !playInvited && intensity !== "barking") {
           playInvited = true;
           dogTimers.push(setTimeout(() => {
             try {

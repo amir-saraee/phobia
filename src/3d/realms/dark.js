@@ -263,7 +263,9 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
   // Rung 1: bedside lamp. 2: curtains drawn, a plug-in night-light. 3: lights
   // off, moonlight through the window. 4: the landing, a faint streetlight at
   // its end. 5: nothing — only sound (and those two standby lights).
-  const hemi = add(new THREE.HemisphereLight(0x3a4a70, 0x0c0a08, [0.05, 0.08, 0.1, 0.05, 0.004][rung]));
+  const hemiBase = [0.05, 0.08, 0.1, 0.05, 0.004][rung];
+  let eyeAdapt = 0;
+  const hemi = add(new THREE.HemisphereLight(0x3a4a70, 0x0c0a08, hemiBase));
   if (lampLight && rung === 0) { lampLight.intensity = 2.2; lampShade.material.emissiveIntensity = 0.9; }
   let nightLight = null;
   if (rung === 1) {
@@ -288,7 +290,7 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
   flashlight.position.set(0, -0.05, 0); flashlight.target.position.set(0, -0.15, -1);
   camera.add(flashlight); camera.add(flashlight.target);
   if (!scene.children.includes(camera)) scene.add(camera);
-  let flashlightHeld = false, matchT = 0, strikeAnim = 0, disposed = false;
+  let flashlightHeld = false, matchT = 0, strikeAnim = 0, disposed = false, torchPausedT = 0, torchToldAt = -99;
   // The match's light exists from the start, at 0 — like the flashlight. Adding
   // a light mid-scene changes the light count, and three then recompiles every
   // lit program on the next frame: a freeze at the very moment the player
@@ -518,8 +520,25 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
         nameFlashT -= d;
         if (nameFlashT <= 0) { const lb = document.querySelector('.scene-cmd-bar[data-scene="dark"] [data-cmd="name"] > span:last-child'); if (lb && lb.dataset.base) lb.textContent = lb.dataset.base; }
       }
+      // Eyes adapt: the longer the dark goes without a light, the more of the
+      // room comes back (the streetlight and no-light rungs rendered nearly
+      // black, with "name what you see" and nothing to name). A light resets
+      // it, as it does for real eyes.
+      if (flashlightHeld || matchT > 0.05) eyeAdapt = Math.max(0, eyeAdapt - d * 0.5);
+      else eyeAdapt = Math.min(1, eyeAdapt + d / 40);
+      if (rung >= 1) hemi.intensity = hemiBase * (1 + 3 * eyeAdapt) + (rung >= 3 ? 0.03 * eyeAdapt : 0);
       const dh = Math.hypot(px - HEART.x, pz - HEART.z);
       lastDist = dh + (flashlightHeld ? 2.2 : matchT > 0.05 ? 1.4 : 0);
+      // Standing in the dark with the torch on pauses the trial — say so,
+      // instead of leaving "walk into the dark to begin" up while they're in it.
+      if (flashlightHeld && dh < dZone && !window.__rungHoldComplete) {
+        torchPausedT += d;
+        if (torchPausedT > 1.5 && clock - torchToldAt > 12) {
+          torchToldAt = clock;
+          try { window.PhobiaFX && window.PhobiaFX.contextPrompt && window.PhobiaFX.contextPrompt(
+            window.t("sc.d.torchPause", "The light keeps the dark away, so the trial waits while it's on. Let it go when you're ready."), 4500); } catch {}
+        }
+      } else torchPausedT = 0;
       const facing = lookingAt(HEART.x, -0.2, HEART.z, 0.5) ? 1 : 0.3;
       // (Renderer size, not clientWidth — no forced reflow per frame.)
       if (active && active.renderer) active.renderer.getSize(_coachSize); else _coachSize.set(0, 0);

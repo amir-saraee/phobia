@@ -1442,7 +1442,9 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
   const stat = (icon, v, l) => `<div class="vc-stat"><span class="vc-sv">${icon} ${v}</span><span class="vc-sl">${l}</span></div>`;
   const statBits = [];
   if (last && last.heldSec) statBits.push(stat("⏱", `${last.heldSec}s`, t("vc.stayed", "you stayed")));
-  if (ev && ev.settledAt != null) statBits.push(stat("〰", `${ev.settledAt}s`, t("vc.settled", "alarm settled by")));
+  // Both clocks count time spent staying; the two trackers differ by a beat,
+  // and "settled by 22s" beside "you stayed 18s" read as settling after you left.
+  if (ev && ev.settledAt != null) statBits.push(stat("〰", `${last && last.heldSec ? Math.min(ev.settledAt, last.heldSec) : ev.settledAt}s`, t("vc.settled", "alarm settled by")));
   else if (ev && ev.peak) statBits.push(stat("〰", `${ev.peak}`, t("vc.peak", "alarm peak")));
   if (predicted != null && !Number.isNaN(+predicted)) statBits.push(stat("🔮", `${predicted}<i>→</i>${peakForPrediction}`, t("vc.guess", "guessed → felt")));
   if (ev && ev.reads > 0) statBits.push(stat("👁", `${ev.readsRight}/${ev.reads}`, t("vc.reads", "read right")));
