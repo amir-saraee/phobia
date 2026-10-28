@@ -16,6 +16,9 @@ function applyTheme() {
   let rm = false;
   try { rm = localStorage.getItem("fobia.reducedMotion") === "1"; } catch {}
   document.documentElement.classList.toggle("reduce-motion", rm);
+  let big = false;
+  try { big = localStorage.getItem("fobia.bigText") === "1"; } catch {}
+  document.documentElement.classList.toggle("big-text", big);
   // Also keep the theme-color meta in sync so installed PWAs match
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", pref === "light" ? "#f0f4f9" : "#0f1724");
@@ -544,6 +547,17 @@ function runTutorialTour(stage, phobiaKey) {
           ? t("tour.one.cm", "Walk in with the joystick, only as close as you choose. This line is your alarm: it climbs as you get close, and falls on its own if you stay. 🛟 grounds you — leaving is never a failure.")
           : t("tour.one.cd", "Walk in with WASD or the arrows (Shift to creep), only as close as you choose. This line is your alarm: it climbs as you get close, and falls on its own if you stay. Esc grounds you — leaving is never a failure.")),
       arrow: "up",
+    });
+    // The action bar: the verbs each trial's stars ask for. Nothing else
+    // ever names it (skipped when the bar is collapsed to nothing).
+    steps.push({
+      target: () => {
+        const bar = document.querySelector(".scene-cmd-bar:not(.collapsed)");
+        return bar && bar.offsetHeight > 4 ? bar : document.querySelector(".cmd-toggle");
+      },
+      title: t("tour.bar.t", "Things you can do"),
+      text: t("tour.bar", "These buttons are this trial's actions — each one has its key shown on it. The glowing one is the step that earns a star. None of them is required."),
+      arrow: "down",
     });
   }
   let i = 0;

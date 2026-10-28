@@ -141,10 +141,10 @@ function brandLamp() {
 // out but clearing site data (and with it, everything). Catch it, log it, and
 // offer the way back: the title screen, a copy of the data, or a clean start.
 function render(view, params) {
-  try { renderView(view, params); if (isRtl()) faDigitsIn(document.getElementById("app")); }
+  try { renderView(view, params); if (isRtl()) faDigitsIn(document.getElementById("app")); pageTitle(); }
   catch (err) {
     try { console.warn("[Lanternwalk] render failed:", err); } catch {}
-    try { pushErrLog({ ts: Date.now(), msg: ("render " + view + ": " + String((err && err.message) || err)).slice(0, 300), route: location.hash }); } catch {}
+    try { pushErrLog({ ts: Date.now(), msg: ("render " + view + ": " + String((err && err.message) || err)).slice(0, 300), route: safeRoute() }); } catch {}
     showRenderRecovery(view);
   }
 }
@@ -260,7 +260,7 @@ function renderView(view, params) {
     <header class="brand" role="banner">
       <div class="brand-left">
         ${menuBtn}
-        <h1 class="lw-head">${brandLamp()}<span class="lw-name">${t("brand.name", "Lanternwalk")}</span> <span class="brand-tag">${t("brand.tag", "small steps, brave paths")}</span></h1>
+        <p class="lw-head">${brandLamp()}<span class="lw-name">${t("brand.name", "Lanternwalk")}</span> <span class="brand-tag">${t("brand.tag", "small steps, brave paths")}</span></p>
       </div>
       <nav class="nav-actions" aria-label="${t("a11y.nav", "App navigation")}">
         ${getCourage() > 0 ? `<span class="courage-badge" id="courageBadge" title="${t("hud.courage", "Courage — earned every time you face a trial")}">⚡ ${fnum(getCourage())}</span>` : ""}
@@ -306,7 +306,10 @@ function renderView(view, params) {
       const recent = [...state.log].reverse().find(l => l.phobia === params.phobia && l.level === params.level);
       if (recent) { suds = recent.suds; predicted = recent.predicted; peak = recent.peak; }
     }
-    v.innerHTML = viewComplete(params.phobia, params.level, suds, predicted, peak);
+    // No trial behind the link (a fresh profile, a guessed URL): say so,
+    // instead of a "Trial faced" with nothing faced.
+    v.innerHTML = suds == null ? viewNoTrial(params.phobia, params.level)
+      : viewComplete(params.phobia, params.level, suds, predicted, peak);
   }
   if (view === "insights")    v.innerHTML = viewInsights();
   // The Story Book holds the chapters, what you've learned, and the Sparks —
@@ -381,4 +384,15 @@ function renderView(view, params) {
     v.classList.add("view-enter");
     setTimeout(() => v && v.classList.remove("view-enter"), 500);
   }
+}
+
+// The tab (and a screen reader's page announcement) names the page: its own
+// heading, then the game. It used to say the same thing on every page.
+function pageTitle() {
+  const brand = t("brand.name", "Lanternwalk");
+  const app = document.getElementById("app");
+  const h = app && app.querySelector("h1, h2");
+  const txt = h ? h.textContent.replace(/\s+/g, " ").trim() : "";
+  if (!pageTitle.base || pageTitle.lang !== isRtl()) { pageTitle.base = document.title; pageTitle.lang = isRtl(); }
+  document.title = txt && txt !== brand ? `${txt.slice(0, 60)} — ${brand}` : pageTitle.base;
 }

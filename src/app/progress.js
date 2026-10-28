@@ -18,13 +18,13 @@ const INSIGHT_CARDS = [
   { id: "wave",       icon: "🌊", title: "Fear is a wave",
     text: "Anxiety rises, peaks, and falls on its own — even if you do nothing but stay. You just rode one. No wave is endless." },
   { id: "avoidance",  icon: "🍂", title: "Avoidance feeds the shadow",
-    text: "Escaping a fear feels great for a minute — and teaches your brain the danger was real. Every avoided yard makes the bark louder. Facing is the only diet a shadow can't survive." },
+    text: "Escaping a fear feels great for a minute — and teaches your brain the danger was real. Every detour makes the next one feel more necessary. Facing is the only diet a shadow can't survive." },
   { id: "brave",      icon: "🛡️", title: "Brave is not calm",
     text: "Courage isn't the absence of fear — it's your hands shaking while you stay anyway. If you felt afraid in there, you weren't doing it wrong. You were doing it exactly right." },
   { id: "habituation",icon: "🧠", title: "The body learns by staying",
     text: "Stay near a fear long enough and the alarm quiets on its own. That's habituation — no willpower required, just time in the room. Boredom is the sound of it working." },
   { id: "gap",        icon: "🎯", title: "The gap is the lesson",
-    text: "You predicted an 8. It was a 4. That gap — felt in the body, not read in a book — is literally your brain rewriting what counts as dangerous." },
+    text: "Say you guessed an 8 and it came in at a 4. That gap — felt in the body, not read in a book — is your brain rewriting what counts as dangerous." },
   { id: "exhale",     icon: "🌬️", title: "The long exhale",
     text: "A slow out-breath presses your body's brake pedal (the vagus nerve). Out longer than in — 4 in, 6 out — and the heart has no choice but to follow." },
   { id: "steps",      icon: "🪜", title: "Small steps beat big leaps",
@@ -187,7 +187,10 @@ function dogCompanions() {
     try {
       name = localStorage.getItem(c.nameKey) || fb;
       trust = Math.max(0, Math.min(1, parseFloat(localStorage.getItem(`fobia.dogs.trust.${charId}.${c.breed}`) || "0")));
-      seen = JSON.parse(localStorage.getItem(`fobia.dogs.lastSeen.${c.breed}`) || "null");
+      seen = JSON.parse(localStorage.getItem(`fobia.dogs.lastSeen.${charId}.${c.breed}`) || "null");
+      // The old device-wide key still belongs to someone on a one-traveller
+      // device; with several, nobody can tell whose it was.
+      if (!seen && (window.Character?.loadCharacters?.() || []).length <= 1) seen = JSON.parse(localStorage.getItem(`fobia.dogs.lastSeen.${c.breed}`) || "null");
     } catch {}
     // "Met" is having been in the room together, which trust alone can't say:
     // a traveller who kept their distance the whole time is still someone the
@@ -703,7 +706,7 @@ const MILESTONES = [
     check: () => Object.values(state.progress).some(p => p.highestCompleted >= 2) },
   { id: "low_on_high",    title: "Low SUDS on a high rung", icon: "🧘",
     desc: "Felt 4 or less on rung 4 or 5 — habituation working.",
-    check: () => state.log.some(l => l.level >= 3 && l.suds <= 4) },
+    check: () => state.log.some(l => l.level >= 3 && l.finished !== false && feltFor(l) <= 4) },
   { id: "first_journal",  title: "Reflective journaler", icon: "📓",
     desc: "Wrote a journal note on a session.",
     check: () => state.log.some(l => l.note) },
@@ -824,26 +827,66 @@ function openWorldstepModal(phobiaKey, stepIdx) {
 // seed that realm's Mirror baseline, so a visitor who later becomes a
 // traveler starts with their history already begun.
 function viewQuiz() {
-  const cards = FEATURED.filter((k) => PHOBIAS[k]).map((k) => {
-    const p = PHOBIAS[k];
-    const realm = realmOf(k);
-    return `
-      <button class="quiz-card" data-action="quiz-pick" data-phobia="${k}">
-        <strong>${escapeHtml(t(`phobia.${k}.label`, p.label))}</strong>
-        <span class="quiz-realm">${escapeHtml(realm.realmName)} · ${escapeHtml(realm.epithet)}</span>
-      </button>`;
-  }).join("");
+  // "Not sure which fear?" used to open with … a fear picker. It opens with
+  // six everyday moments instead; the loudest one names the realm to start
+  // in, and the five-question Mirror for it is one tap from there.
+  const moments = {
+    dogs: t("quiz.m.dogs", "A dog off its lead trots toward you on the pavement"),
+    spiders: t("quiz.m.spiders", "A big spider is on the wall above your bed"),
+    snakes: t("quiz.m.snakes", "Someone says there's a snake in the long grass ahead"),
+    heights: t("quiz.m.heights", "You're on a glass-sided balcony, ten floors up"),
+    dark: t("quiz.m.dark", "The power cuts out and the house goes pitch black"),
+    enclosed: t("quiz.m.enclosed", "A crowded lift stops between floors"),
+  };
+  const lv = [t("quiz.l0", "Fine"), t("quiz.l1", "Uneasy"), t("quiz.l2", "I'd avoid it"), t("quiz.l3", "I couldn't")];
+  const rows = FEATURED.filter((k) => PHOBIAS[k] && moments[k]).map((k) => `
+      <div class="quiz-moment" data-phobia="${k}">
+        <p id="qm-${k}">${escapeHtml(moments[k])}</p>
+        <div class="quiz-lv" role="radiogroup" aria-labelledby="qm-${k}">
+          ${lv.map((x, i) => `<button type="button" class="quiz-lv-b" role="radio" aria-checked="false" data-action="quiz-rate" data-phobia="${k}" data-v="${i}">${escapeHtml(x)}</button>`).join("")}
+        </div>
+      </div>`).join("");
   return `
     <div class="panel quiz-panel">
       <span class="badge">${t("quiz.badge", "🪞 A 60-second self-check")}</span>
-      <h2 style="margin-top:10px">${t("quiz.h2", "Which fear runs your life?")}</h2>
-      <p>${t("quiz.p", "Pick the one that costs you the most, answer five honest questions about <strong>real life</strong>, and see where it stands — plus the first real-world steps people use to face it. A self-check, not a diagnosis.")}</p>
-      <div class="quiz-grid">${cards}</div>
+      <h2 style="margin-top:10px">${t("quiz.h2b", "How would each of these feel?")}</h2>
+      <p>${t("quiz.p2", "Six everyday moments. Tap the honest answer for each — the loudest one is where to start. A self-check, not a diagnosis.")}</p>
+      <div class="quiz-moments">${rows}</div>
+      <div class="quiz-result" id="quizResult" hidden></div>
       <p class="small quiz-note">${t("quiz.note", "Private to this device — nothing is sent anywhere.")}</p>
       <div class="actions">
         <button class="btn-ghost" data-action="begin">${t("quiz.skip", "Skip — take me to the valley")}</button>
       </div>
     </div>`;
+}
+// One answer per moment; once all are in, name the loudest (ties: the first
+// in the valley's order) and offer its first trial and its Mirror.
+function quizRate(btn) {
+  const row = btn && btn.closest(".quiz-moment");
+  if (!row) return;
+  row.querySelectorAll(".quiz-lv-b").forEach((b) => {
+    const on = b === btn;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-checked", on ? "true" : "false");
+  });
+  row.dataset.v = btn.dataset.v;
+  const all = [...document.querySelectorAll(".quiz-moment")];
+  const out = document.getElementById("quizResult");
+  if (!out || all.some((r) => r.dataset.v == null)) return;
+  let best = null;
+  all.forEach((r) => { if (!best || +r.dataset.v > +best.dataset.v) best = r; });
+  const k = best.dataset.phobia;
+  const realm = realmOf(k);
+  out.innerHTML = +best.dataset.v === 0
+    ? `<p>${t("quiz.none", "None of these got loud — lucky you. Any realm is open if you'd like to look around.")}</p>
+       <div class="actions"><button class="btn-primary" data-action="begin">${t("quiz.valley", "🗺 See the whole valley")}</button></div>`
+    : `<p>${tf("quiz.start", "Start with <strong>{fear}</strong> — it lives in {realm}.", { fear: escapeHtml(t(`phobia.${k}.label`, PHOBIAS[k].label)), realm: escapeHtml(realm.realmName) })}</p>
+       <div class="actions">
+         <button class="btn-primary" data-action="quick-start" data-phobia="${k}">${tf("quiz.enter", "Step into {realm}", { realm: escapeHtml(realm.realmName) })}</button>
+         <button class="btn-ghost" data-action="quiz-pick" data-phobia="${k}">${t("quiz.mirror", "🪞 Five questions about it first")}</button>
+       </div>`;
+  out.hidden = false;
+  try { out.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch {}
 }
 
 // ---------- One-per-session discovery nudges ----------

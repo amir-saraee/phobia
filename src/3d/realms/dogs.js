@@ -893,6 +893,11 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   pot.position.set(potX, -1.0, potZ);
   pot.castShadow = true;
   scene.add(pot);
+  const soil = new THREE.Mesh(new THREE.CircleGeometry(0.235, 18), new THREE.MeshStandardMaterial({ color: 0x3b2a1e, roughness: 1 }));
+  soil.rotation.x = -Math.PI / 2;
+  soil.position.set(potX, -0.63, potZ);
+  soil.userData.noCollide = true;
+  scene.add(soil);
   const leafGeom = new THREE.PlaneGeometry(0.16, 0.42);
   leafGeom.translate(0, 0.21, 0);              // pivot at the leaf base
   const leafMat = new THREE.MeshStandardMaterial({
@@ -902,8 +907,11 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     const leaf = new THREE.Mesh(leafGeom, leafMat);
     const yaw = i * 2.399;                     // golden angle fan
     leaf.position.set(potX + Math.cos(yaw) * 0.07, -0.58, potZ + Math.sin(yaw) * 0.07);
-    leaf.rotation.y = yaw;
-    leaf.rotation.x = -(0.45 + Math.random() * 0.5);
+    // Yaw first, then the outward tilt in the leaf's own frame. With the
+    // default XYZ order every leaf tipped about world X — all fourteen
+    // leaned the same way, a one-sided tuft over an empty pot.
+    leaf.rotation.order = "YXZ";
+    leaf.rotation.set(-(0.45 + Math.random() * 0.5), yaw + Math.PI / 2, 0);
     leaf.scale.setScalar(0.8 + Math.random() * 0.5);
     leaf.castShadow = sceneQuality() !== "low";
     leaf.userData.noCollide = true;
@@ -1032,7 +1040,10 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   // it was on screen; written down, it lets the realm page say who the
   // traveller actually met last time instead of describing a species.
   try {
-    localStorage.setItem(`fobia.dogs.lastSeen.${breed}`, JSON.stringify({
+    // Per traveller, like trust: a second traveller on this device hasn't met
+    // the dogs just because the first one has.
+    const seenFor = (window.Character?.loadCharacter?.()?.id) || "default";
+    localStorage.setItem(`fobia.dogs.lastSeen.${seenFor}.${breed}`, JSON.stringify({
       temper: temper.label, rung: levelIdx, ts: Date.now(),
     }));
   } catch {}

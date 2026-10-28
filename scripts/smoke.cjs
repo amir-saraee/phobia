@@ -133,6 +133,7 @@ async function firstRunAndTrial(browser, base) {
   check("first run: a traveler was made for the chosen fear", await page.evaluate(() => { const c = window.Character.loadCharacter(); return !!c && c.primaryPhobia === "dogs"; }));
   await shot(page, "01-gate");
   await page.evaluate(() => { const c = document.querySelector('[data-action="pick-fear"][data-fear="bite"]') || document.querySelector('[data-action="pick-fear"]'); c && c.click(); });
+  await page.evaluate(() => { const pc = document.querySelector('.suds-chips[data-for="predictedSuds"] .sc[data-v="6"]'); pc && pc.click(); });   // the gate no longer picks a guess for them
   await click(page, "Enter the trial");
   check("trial 1: scene mounts", await waitFor(page, () => !!(window.__active && window.__active.scene && window.__dogCoach), 15000));
   check("gate: walking in turns the chapter's opening", await page.evaluate(() => window.Story.isSeen("dogs.open")));
@@ -245,6 +246,7 @@ async function hardestTrial(browser, base) {
   await page.goto(base + "/#/dogs/predict/4", { waitUntil: "load" });
   await sleep(800);
   await click(page, "Skip for now");            // primer may open for a traveler with no dog history
+  await page.evaluate(() => { const pc = document.querySelector('.suds-chips[data-for="predictedSuds"] .sc[data-v="6"]'); pc && pc.click(); });   // the gate no longer picks a guess for them
   await click(page, "Enter the trial");
   check("trial 5: scene mounts", await waitFor(page, () => !!(window.__active && window.__active.scene), 15000));
   await page.keyboard.down("KeyW"); await sleep(2500); await page.keyboard.up("KeyW");
@@ -271,7 +273,7 @@ async function hardestTrial(browser, base) {
   // and read right-to-left (key names like Esc / W stay Latin).
   await page.evaluate(() => localStorage.setItem("fobia.countdown", "1"));   // opt-in since the launch pass
   await page.goto(base + "/#/heights/predict/0", { waitUntil: "load" }); await sleep(900);
-  await page.evaluate(() => { const c = document.querySelector(".expect-chip"); c && c.click(); document.querySelector('[data-action="confirm-predict"]').click(); });
+  await page.evaluate(() => { const c = document.querySelector(".expect-chip"); c && c.click(); const pc = document.querySelector('.suds-chips[data-for="predictedSuds"] .sc[data-v="6"]'); pc && pc.click(); document.querySelector('[data-action="confirm-predict"]').click(); });
   await waitFor(page, () => !!document.querySelector(".countdown .label"), 8000);
   const cd = await page.evaluate(() => (document.querySelector(".countdown .label") || {}).textContent || "");
   await waitFor(page, () => ((document.querySelector(".controls-hint") || {}).textContent || "").length > 10, 8000);
@@ -298,7 +300,7 @@ async function creatures(browser, base) {
   for (const [realm, rung, stop] of [["spiders", 1, 1.2], ["snakes", 1, 3.0]]) {
     await page.goto(`${base}/?r=${Date.now()}#/${realm}/predict/${rung}`, { waitUntil: "load" }); await sleep(800);
     check(`${realm}: predict asks what the ${realm === "spiders" ? "spider" : "snake"} will do`, await page.evaluate(() => document.querySelectorAll(".expect-chip").length >= 6));
-    await page.evaluate(() => { const c = document.querySelector(".expect-chip"); c && c.click(); document.querySelector('[data-action="confirm-predict"]').click(); });
+    await page.evaluate(() => { const c = document.querySelector(".expect-chip"); c && c.click(); const pc = document.querySelector('.suds-chips[data-for="predictedSuds"] .sc[data-v="6"]'); pc && pc.click(); document.querySelector('[data-action="confirm-predict"]').click(); });
     check(`${realm}: scene + coach mount`, await waitFor(page, () => !!(window.__active && window.__active.scene && window.__coach && document.querySelector(".dog-coach")), 15000));
     await sleep(2500);
     await page.keyboard.down("KeyW");
@@ -356,7 +358,7 @@ async function places(browser, base) {
   for (const [realm, rung, walk] of [["heights", 1, 3000], ["dark", 0, 2200], ["enclosed", 0, 3000]]) {
     await page.goto(`${base}/?r=${Date.now()}#/${realm}/predict/${rung}`, { waitUntil: "load" }); await sleep(800);
     check(`${realm}: predict asks what the alarm predicts`, await page.evaluate(() => document.querySelectorAll(".expect-chip").length >= 6 && /alarm predicting/i.test((document.querySelector(".expect-q") || {}).textContent || "")));
-    await page.evaluate(() => { const c = document.querySelector(".expect-chip"); c && c.click(); document.querySelector('[data-action="confirm-predict"]').click(); });
+    await page.evaluate(() => { const c = document.querySelector(".expect-chip"); c && c.click(); const pc = document.querySelector('.suds-chips[data-for="predictedSuds"] .sc[data-v="6"]'); pc && pc.click(); document.querySelector('[data-action="confirm-predict"]').click(); });
     check(`${realm}: scene + coach mount`, await waitFor(page, () => !!(window.__active && window.__active.scene && window.__coach && document.querySelector(".dog-coach")), 15000));
     await sleep(2500);
     await page.keyboard.down("KeyW"); await sleep(walk); await page.keyboard.up("KeyW");
@@ -425,7 +427,7 @@ async function phoneTouch(browser, base) {
     localStorage.setItem("fobia.skipCountdown", "1");
   });
   await page.goto(base + "/#/enclosed/predict/4", { waitUntil: "load" }); await sleep(900);
-  await page.evaluate(() => { document.querySelector(".expect-chip").click(); document.querySelector('[data-action="confirm-predict"]').click(); });
+  await page.evaluate(() => { document.querySelector(".expect-chip").click(); const pc = document.querySelector('.suds-chips[data-for="predictedSuds"] .sc[data-v="6"]'); pc && pc.click(); document.querySelector('[data-action="confirm-predict"]').click(); });
   check("phone MRI: scene + coach mount", await waitFor(page, () => !!(window.__active && window.__active.scene && window.__coach), 15000));
   await sleep(2000);
   // The stage grows and the page scrolls it into view as the scene starts;

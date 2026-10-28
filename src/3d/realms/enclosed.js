@@ -363,7 +363,7 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
       for (let k = 0; k < 14; k++) {
         const a = k * 2.39996, lf = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.42), new THREE.MeshStandardMaterial({ map: leafT, color: 0x5f8a4a, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.7 }));
         lf.position.set(pot.position.x + Math.sin(a) * 0.08, -0.45 + (k % 5) * 0.08, pot.position.z + Math.cos(a) * 0.08);
-        lf.rotation.set(-0.5 - (k % 3) * 0.15, a, 0); lf.userData.noCollide = true; add(lf);
+        lf.rotation.order = "YXZ"; lf.rotation.set(-0.5 - (k % 3) * 0.15, a, 0); lf.userData.noCollide = true; add(lf);
       }
       const vent = add(mesh(new THREE.BoxGeometry(0.5, 0.01, 0.3), std(0xdcdad4, 0.6), -1.1, L.top - 0.006, -0.8, false)); vent.userData.noCollide = true;
       for (let k = 0; k < 6; k++) { const sl = add(mesh(new THREE.BoxGeometry(0.46, 0.012, 0.012), std(0x9a9892, 0.6), -1.1, L.top - 0.012, -0.92 + k * 0.045, false)); sl.userData.noCollide = true; }

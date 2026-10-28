@@ -90,7 +90,7 @@ function makeCreatureCoach(opts) {
   const legendEl = root.querySelector(".dc-legend");
   const callout = document.createElement("div");
   callout.className = "dc-callout";
-  callout.setAttribute("role", "status");
+  callout.setAttribute("role", "status"); callout.setAttribute("aria-live", "polite");
   const readBox = document.createElement("div");
   readBox.className = "dc-read";
   if (stage) { stage.appendChild(root); stage.appendChild(callout); stage.appendChild(readBox); }

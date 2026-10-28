@@ -821,7 +821,8 @@ function viewPredict(phobiaKey, levelIdx) {
 
       <div class="suds gate-suds">
         <label id="lbl-predictedSuds">${t("predict.label2", "How scared do you expect to feel in there?")}</label>
-        ${sudsScale("predictedSuds", suggested, { picked: true, valueId: "predictedValue" })}
+        ${sudsScale("predictedSuds", suggested, { valueId: "predictedValue" })}
+        <div class="hint" id="predictNudge" hidden>${t("predict.nudge", "Pick a number first — it's the guess the trial tests. Or tap Enter again to go in without one.")}</div>
       </div>
 ${kit ? `
       <div class="expect-block gate-expect">
@@ -1078,22 +1079,25 @@ function syncSudsChips(inp) {
   });
 }
 
-function viewRate(phobiaKey, levelIdx) {
-  // A rating page with no trial behind it (a deep link, an old bookmark, a
-  // second tab) used to log a "left early" session to the clinical report.
-  // Offer the trial instead.
-  const hasTrial = !!(lastRungOutcome && lastRungOutcome.phobia === phobiaKey && lastRungOutcome.level === levelIdx);
-  if (!hasTrial) {
-    return `
+// A results or rating page with no trial behind it.
+function viewNoTrial(phobiaKey, levelIdx) {
+  return `
     <div class="panel">
-      <h2>${t("rate.noneH", "There's no trial to rate here yet")}</h2>
-      <p>${tf("rate.noneP", "Ratings follow a trial you've just walked. Trial {n} is ready whenever you are.", { n: levelIdx + 1 })}</p>
+      <h2>${t("rate.noneH2", "There's no trial behind this page yet")}</h2>
+      <p>${tf("rate.noneP2", "Ratings and results follow a trial you've just walked. Trial {n} is ready whenever you are.", { n: levelIdx + 1 })}</p>
       <div class="actions">
         <button class="btn-primary" data-action="start-level" data-phobia="${phobiaKey}" data-level="${levelIdx}">${tf("rate.noneGo", "Start trial {n}", { n: levelIdx + 1 })}</button>
         <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">${t("rate.noneBack", "Back to the realm")}</button>
       </div>
     </div>`;
-  }
+}
+
+function viewRate(phobiaKey, levelIdx) {
+  // A rating page with no trial behind it (a deep link, an old bookmark, a
+  // second tab) used to log a "left early" session to the clinical report.
+  // Offer the trial instead.
+  const hasTrial = !!(lastRungOutcome && lastRungOutcome.phobia === phobiaKey && lastRungOutcome.level === levelIdx);
+  if (!hasTrial) return viewNoTrial(phobiaKey, levelIdx);
   // The scene's evidence is written as it unmounts — keep it with the rest
   // of the trial, in case this page is reloaded before it's saved.
   saveTrialSnap();
@@ -1109,6 +1113,8 @@ function viewRate(phobiaKey, levelIdx) {
         <label id="lbl-sudsPeak">${t("rate.peakLabel", "At its worst, in there")}</label>
         ${sudsScale("sudsPeak", 5, { aria: t("rate.peakAria", "Anxiety level at its worst during the trial, 0 calm to 10 panic"), valueId: "sudsPeakValue" })}
         <div class="hint" id="sudsPeakHint">${t("rate.peakHint", "The highest it got while you were in the scene — this is the number your prediction was about.")}</div>
+        ${(pendingPrediction && pendingPrediction.phobia === phobiaKey && pendingPrediction.level === levelIdx && typeof pendingPrediction.predicted === "number")
+          ? `<div class="hint pred-echo" id="predEcho" data-p="${pendingPrediction.predicted}" hidden></div>` : ""}
       </div>
       <div class="suds">
         <label id="lbl-suds">${t("rate.nowLabel", "Right now")}</label>
@@ -1218,6 +1224,9 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
               dark: "It happened — and every time it was the room, not someone in it.",
             })[phobiaKey] || "It happened — and nothing your fear attached to it did."))
           : t("rc.vHappened", "That one happened. It's worth trying this trial again — each repeat is new evidence."))
+      // An early exit tested less than the whole trial: "didn't come true"
+      // would be a verdict on time the player didn't spend in there.
+      : early ? t("rc.vNoEarly", "It didn't happen while you were in there — a shorter test than a full trial, and still a real one.")
       : t("rc.vNo", "Your fear's prediction didn't come true.");
     realityBlock = `
       <div class="reality-card ${r.happened ? "rc-happened" : "rc-no"}">
@@ -1578,7 +1587,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
         if (!needPrimer && !needMirror && !needLook) return "";
         return `
           <div class="mirror-invite first-next">
-            <span class="bridge-invite-kicker">${t("first.kicker", "🧭 Two minutes, whenever you like")}</span>
+            <span class="bridge-invite-kicker">${t("first.kicker", "🧭 A few minutes, whenever you like")}</span>
             <strong>${t("first.title", "Why staying works — and where you're starting from")}</strong>
             <p>${t("first.p", "You just watched an alarm climb and then fall without leaving. The primer shows why that matters and what escaping does instead. The Mirror takes five questions about the fear in <em>real life</em>, so later you can see it get quieter in numbers.")}</p>
             <div class="actions" style="margin-top:8px">

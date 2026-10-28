@@ -57,6 +57,12 @@ const ERRLOG_KEY = "fobia.errlog.v1";
 function readErrLog() {
   try { const l = JSON.parse(localStorage.getItem(ERRLOG_KEY)); return Array.isArray(l) ? l : []; } catch { return []; }
 }
+// The page an error happened on, minus what it says about the player: the
+// fear in "#/spiders/exposure/2" is health information, and diagnostics are
+// pasted into feedback notes. View and level are enough to reproduce.
+function safeRoute(h) {
+  try { return String(h != null ? h : (location.hash || "")).replace(/^#\/[a-z]+(?=\/|$)/i, (m) => /^#\/(about|settings|camp|map|journal|story|insights|report|quiz|select|traveler|welcome|arrival)$/i.test(m) ? m : "#/*"); } catch { return ""; }
+}
 function pushErrLog(entry) {
   try {
     const log = readErrLog();
@@ -70,7 +76,7 @@ window.addEventListener("error", (e) => {
     ts: Date.now(),
     msg: String((e && (e.message || e.error)) || "unknown").slice(0, 300),
     src: `${(e && e.filename) || ""}:${(e && e.lineno) || 0}`,
-    route: location.hash,
+    route: safeRoute(),
   });
 });
 window.addEventListener("unhandledrejection", (e) => {
@@ -78,7 +84,7 @@ window.addEventListener("unhandledrejection", (e) => {
   pushErrLog({
     ts: Date.now(),
     msg: ("Promise: " + String((r && (r.message || r)) || "unknown")).slice(0, 300),
-    route: location.hash,
+    route: safeRoute(),
   });
 });
 

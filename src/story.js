@@ -1392,7 +1392,7 @@
   .sc-portrait { width: 54px; height: 54px; }
   .sc-kicker { display: block; font-size: 12px; color: var(--star, #fcd34d); font-weight: 700; margin-bottom: 2px; }
   .sc-title { display: block; font-size: 16px; }
-  .sc-quote { margin: 4px 0 0; font-size: 13.5px; opacity: .8; font-style: italic; line-height: 1.45; }
+  .sc-quote { margin: 4px 0 0; font-size: 13.5px; opacity: .9; font-style: italic; line-height: 1.45; }
   html[dir="rtl"] .sc-quote { font-style: normal; }
   .sc-read { white-space: nowrap; }
   @media (max-width: 560px) { .story-card { grid-template-columns: auto 1fr; } .sc-read { grid-column: 1 / -1; width: 100%; } }

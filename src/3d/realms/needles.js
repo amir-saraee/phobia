@@ -6,6 +6,7 @@ import { IS_LOW_POWER } from "../renderer.js";
 import { angleGap } from "../human-rig.js";
 import { sceneContext } from "../scene-context.js";
 import { _hexMix } from "../creature-kit.js";
+import { makeLeafTexture } from "../textures.js";
 
 // ---------- Needles (medical) ----------
 function setupNeedles(scene, camera, level, levelIdx, ctx) {
@@ -113,13 +114,16 @@ function setupNeedles(scene, camera, level, levelIdx, ctx) {
     pot.position.set(-2.9, -0.87, -7.2);
     pot.castShadow = true;
     scene.add(pot);
-    const leafMat = new THREE.MeshStandardMaterial({ color: 0x4a7a4e, roughness: 0.85, side: THREE.DoubleSide });
-    for (let i = 0; i < 6; i++) {
-      const leaf = new THREE.Mesh(new THREE.PlaneGeometry(0.13, 0.42), leafMat);
-      const ang = (i / 6) * Math.PI * 2;
-      leaf.position.set(-2.9 + Math.sin(ang) * 0.07, -0.52, -7.2 + Math.cos(ang) * 0.07);
-      leaf.rotation.y = ang;
-      leaf.rotation.x = -0.35;
+    // Leaf-shaped cards (the untextured planes rendered as flat squares),
+    // tilted outward in each leaf's own frame.
+    const leafMat = new THREE.MeshStandardMaterial({ map: makeLeafTexture(), alphaTest: 0.5, roughness: 0.85, side: THREE.DoubleSide });
+    const leafGeom = new THREE.PlaneGeometry(0.13, 0.42); leafGeom.translate(0, 0.21, 0);
+    for (let i = 0; i < 9; i++) {
+      const leaf = new THREE.Mesh(leafGeom, leafMat);
+      const ang = i * 2.399;
+      leaf.position.set(-2.9 + Math.sin(ang) * 0.05, -0.74, -7.2 + Math.cos(ang) * 0.05);
+      leaf.rotation.order = "YXZ";
+      leaf.rotation.set(0.35 + (i % 3) * 0.12, ang, 0);
       scene.add(leaf);
     }
 

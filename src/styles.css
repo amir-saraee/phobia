@@ -68,7 +68,7 @@ body.light-mode {
   --shadow:    0 8px 30px rgba(120, 130, 160, .18);
   --shadow-lg: 0 18px 50px rgba(120, 130, 160, .22);
 }
-body.light-mode { background: radial-gradient(1200px 800px at 70% -10%, #fafdff 0%, var(--bg) 60%); }
+body.light-mode { background: radial-gradient(1200px 800px at 70% -10%, #fafdff 0%, var(--bg) 60%) no-repeat var(--bg); }
 body.light-mode { --star: #d97706; --star-dim: rgba(217, 119, 6, .2); }
 /* The 3D stage is always a dark room, whatever the page theme. */
 .stage { --star: #fcd34d; --star-dim: rgba(252, 211, 77, .22); }
@@ -77,7 +77,9 @@ html, body { height: 100%; }
 body {
   margin: 0;
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
-  background: radial-gradient(1200px 800px at 70% -10%, #1f2a44 0%, var(--bg) 60%);
+  /* One glow at the top, then flat --bg: the gradient is sized to the
+     viewport-high body, and repeating it drew a lighter band one screen down. */
+  background: radial-gradient(1200px 800px at 70% -10%, #1f2a44 0%, var(--bg) 60%) no-repeat var(--bg);
   color: var(--text);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
@@ -157,11 +159,11 @@ header.brand {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 20px;
 }
-.brand h1 {
-  font-size: 18px; margin: 0; letter-spacing: .3px;
+.brand h1, .brand .lw-head {
+  font-size: 18px; margin: 0; letter-spacing: .3px; font-weight: 700;
   display: flex; align-items: center; gap: 8px;
 }
-.brand h1 .dot {
+.brand h1 .dot, .brand .lw-head .dot {
   width: 10px; height: 10px; border-radius: 50%;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   box-shadow: 0 0 14px var(--accent);
@@ -757,10 +759,10 @@ html.reduce-motion .stage .heart::before { opacity: .4; }
      under the "Show controls" toggle on the right). Leave a gutter for that
      toggle. Rounded-rect reads cleanly whether it's one line or three. */
   max-width: min(58ch, calc(100% - 160px));
-  background: rgba(10, 14, 28, .62); color: var(--accent);
+  background: rgba(10, 14, 28, .78); color: var(--accent);
   border: 1px solid rgba(124,209,197,.35);
   padding: 7px 13px; border-radius: 14px;
-  font-size: 11px; font-weight: 600; letter-spacing: .3px; line-height: 1.5;
+  font-size: 12px; font-weight: 600; letter-spacing: .3px; line-height: 1.5;
   backdrop-filter: blur(6px);
   transition: opacity 1s ease;
   pointer-events: none;
@@ -928,7 +930,7 @@ html.reduce-motion .stage .heart::before { opacity: .4; }
   --dc-c: #7cd1c5;
 }
 .dog-coach .dc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.dog-coach .dc-title { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.dog-coach .dc-title { font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: #b4c0d2; font-weight: 700; }
 .dog-coach .dc-word { color: var(--dc-c); font-weight: 700; font-size: 12.5px; transition: color .3s ease; }
 /* The stage's own "canvas" rules (100% height, fade-in from opacity 0)
    are for the 3D view — keep them off the wave. */
@@ -957,7 +959,7 @@ html.reduce-motion .stage .heart::before { opacity: .4; }
 /* Trial stars: a row atop the goals, and a star at the end of each goal. */
 .dog-coach .dc-stars-row {
   display: flex; justify-content: space-between; align-items: center;
-  font-size: 10px; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; color: var(--muted);
+  font-size: 11px; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; color: #b4c0d2;
 }
 .dog-coach .dc-stars { letter-spacing: 1px; font-size: 14px; }
 .dog-coach .dc-stars i, .dog-coach .dc-gs { font-style: normal; color: var(--star-dim); transition: color .4s ease, text-shadow .4s ease; }
@@ -1085,7 +1087,7 @@ html.reduce-motion .stage .heart::before { opacity: .4; }
   .dog-coach .dc-goal.next, .dog-coach.dc-open .dc-goal { display: flex; }
   .dog-coach .dc-goals { font-size: 11px; }
   .dog-coach .dc-foot { margin-top: 5px; }
-  .dog-coach .dc-title { font-size: 9.5px; letter-spacing: .06em; }
+  .dog-coach .dc-title { font-size: 10.5px; letter-spacing: .06em; }
   .stage .dc-callout { top: 264px; bottom: auto; right: 8px; left: 8px; width: auto; font-size: 12.5px; }
   /* The phone's gyro toggle lives top-right — where the coach card is. */
   .stage:has(.dog-coach) .gyro-btn { top: 220px !important; right: 8px !important; }
@@ -1164,6 +1166,22 @@ html.reduce-motion .stage .heart::before { opacity: .4; }
 .quiz-card strong { font-size: 15px; }
 .quiz-card .quiz-realm { font-size: 12px; color: var(--muted); }
 .quiz-note { opacity: .75; }
+.quiz-moments { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 10px; }
+.quiz-moment {
+  padding: 11px 13px; border: 1px solid var(--border-2); border-radius: 14px;
+  background: linear-gradient(180deg, var(--panel), var(--panel-3));
+}
+.quiz-moment p { margin: 0 0 8px; font-size: 14.5px; }
+.quiz-lv { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.quiz-lv-b {
+  min-height: 40px; padding: 6px 4px; border-radius: 10px; cursor: pointer;
+  background: rgba(255,255,255,.04); border: 1px solid var(--border-2);
+  color: var(--text); font: inherit; font-size: 13px;
+}
+.quiz-lv-b.on { border-color: var(--accent); background: rgba(255, 196, 110, .16); font-weight: 600; }
+.quiz-lv-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.quiz-result { padding: 12px 14px; border-radius: 14px; border: 1px solid var(--accent); margin: 4px 0 10px; }
+.quiz-result p { margin: 0 0 8px; }
 .quiz-next { text-align: start; margin-top: 12px; border-top: 1px solid rgba(255,255,255,.09); padding-top: 12px; }
 .quiz-next-head { font-size: 14px; margin: 0 0 6px; }
 .quiz-next-sub { font-size: 12.5px; color: var(--muted); margin: 0 0 4px; }
@@ -1333,7 +1351,7 @@ html.reduce-motion .stage .heart::before { opacity: .4; }
   background: rgba(10, 14, 28, .62); color: var(--text);
   border: 1px solid rgba(255,255,255,.20);
   padding: 6px 12px; border-radius: 999px;
-  font-size: 11px; font-weight: 600; letter-spacing: .2px;
+  font-size: 12px; font-weight: 600; letter-spacing: .2px;
   cursor: pointer; backdrop-filter: blur(8px);
   transition: background .15s ease, transform .08s ease;
 }
@@ -3506,7 +3524,7 @@ body.light-mode .journal-entry p { color: var(--muted); }
   .nav-actions { gap: 3px; }
   .audio-btn, .home-btn { padding: 5px 8px; font-size: 12px; }
   .brand-left { gap: 6px; }
-  .brand h1 { font-size: 17px; }
+  .brand h1, .brand .lw-head { font-size: 17px; }
   .courage-badge { font-size: 10px; padding: 2px 6px; }
   .char-badge { padding: 3px 6px; }
   .char-badge-streak { display: none; }
@@ -4231,6 +4249,10 @@ body.light-mode .tf { background: #cbd3e0; }
   display: block; position: absolute; inset: 0; z-index: 1;
 }
 .realm-3d canvas { width: 100% !important; height: 100% !important; display: block; }
+/* With the live animal on stage, the illustrated one behind it is a giant
+   cartoon head looming over a small real dog. Keep only its colour wash. */
+.realm-hero.has3d .realm-hero-art { opacity: .16; filter: blur(6px) saturate(.8); }
+.realm-hero.has3d .realm-hero-text { text-shadow: 0 1px 3px rgba(0,0,0,.85), 0 0 14px rgba(0,0,0,.6); }
 .realm-hero.has3d .realm-hero-text, .realm-hero.has3d .ground-box { z-index: 2; pointer-events: none; }
 /* Title screen: swap the flat SVG for the 3D turntable when it mounts */
 .story-figure { width: 200px; height: 230px; display: flex; align-items: center; justify-content: center; }
@@ -4523,7 +4545,13 @@ body.light-mode .vc-stat { background: var(--panel-2); }
   /* The hold pill shares the top row with the coach card: cap it short of
      the card, and drop the (full) bar once it becomes "continue". */
   .stage:has(.dog-coach) .hold-pill { max-width: calc(100% - 200px); }
-  .stage .hold-pill .hp-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Two lines, bar underneath, rather than "walk…" at 360 px. */
+  .stage .hold-pill { flex-wrap: wrap; row-gap: 4px; border-radius: 12px; }
+  .stage .hold-pill .hp-txt {
+    min-width: 0; flex: 1 1 100%; line-height: 1.3;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .stage .hold-pill .hp-bar { flex: 1 1 100%; width: auto; }
   .stage .hold-pill.complete .hp-bar { display: none; }
 }
 
@@ -5047,10 +5075,10 @@ html[dir="rtl"] .lang-btn, .lang-btn { font-weight: 800; font-size: 13px; }
    next), so its headline sits higher to stay clear of it. */
 .mob-hero-high { top: 25%; transform: translateY(-50%); }
 .mob-hero-kicker {
-  font-size: 11px;
-  letter-spacing: 0.22em;
+  font-size: 12px;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  opacity: 0.72;
+  opacity: 0.86;
   margin: 0 0 10px;
 }
 .mob-hero-title {
@@ -5098,7 +5126,7 @@ html.fx-lite *:not(.grounding-overlay) {
 .lw-lamp { width: 1em; height: 1.33em; flex: 0 0 auto; color: #f3d9a4; filter: drop-shadow(0 0 6px rgba(255, 190, 90, .55)); }
 .lw-lamp-flame { transform-origin: 12px 21px; animation: lwFlame 2.6s ease-in-out infinite; }
 @keyframes lwFlame { 0%, 100% { transform: scale(1); opacity: 1; } 40% { transform: scale(.9, 1.06); opacity: .88; } 70% { transform: scale(1.05, .95); } }
-.brand h1.lw-head { gap: 7px; font-size: 18px; }
+.brand .lw-head { gap: 7px; font-size: 18px; }
 .lw-head .lw-lamp { font-size: 17px; }
 .lw-name {
   font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
@@ -5194,7 +5222,11 @@ html[lang="fa"] .lw-name, html[lang="fa"] .lw-mark span, html[lang="fa"] .lw-mar
   }
 }
 .consent-crisis { margin: 12px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
-.consent-crisis a { color: var(--accent); font-weight: 700; }
+/* A crisis line has to be easy to hit: a full 44px target, not a 15px word. */
+.consent-crisis a, .crisis-link {
+  color: var(--accent); font-weight: 700;
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px;
+}
 .consent-modal .bridge-invite-kicker { display: inline-flex; align-items: center; gap: 6px; }
 .consent-modal .bridge-invite-kicker .lw-lamp { font-size: 12px; }
 .vh-moon-n { display: none; }
@@ -5229,7 +5261,7 @@ html[lang="fa"] .lw-name, html[lang="fa"] .lw-mark span, html[lang="fa"] .lw-mar
   background: linear-gradient(135deg, #f6c76a, #e78a4e); color: #221a08;
 }
 @media (max-width: 520px) {
-  .brand h1.lw-head { font-size: 16px; gap: 5px; }
+  .brand .lw-head { font-size: 16px; gap: 5px; }
 }
 img.cast-face { display: block; border-radius: 50%; object-fit: cover; background: radial-gradient(circle at 50% 30%, #4a4360 0%, #1a2036 70%); }
 img.cast-face.baked { animation: castIn .35s ease; }
@@ -5409,7 +5441,7 @@ img.cast-face.baked { animation: castIn .35s ease; }
 .ft-icon { font-size: 25px; line-height: 1.1; filter: drop-shadow(0 0 10px rgba(255, 190, 90, .35)); }
 .ft-name { font-weight: 700; font-size: 14.5px; line-height: 1.2; }
 .ft-realm { font-size: 11px; color: var(--muted); line-height: 1.25; text-align: center; }
-.arrive-pick .arrive-promise { font-size: 12.5px; text-align: center; margin: 10px 0 0; opacity: .7; }
+.arrive-pick .arrive-promise { font-size: 13px; text-align: center; margin: 10px 0 0; opacity: .88; }
 .arrive-pick .arrive-link { margin-top: 0; min-height: 38px; padding: 6px; font-size: 13px; }
 @media (max-height: 720px) {
   .arrive-pick .arrive-story { display: none; }
@@ -5472,10 +5504,12 @@ html[dir="rtl"] .gs-kicker { letter-spacing: 0; }
 .dog-coach.dc-lit .dc-lamp { filter: drop-shadow(0 0 6px rgba(255, 186, 92, .9)); opacity: 1; animation: dcLampCatch 1.4s ease-out 1; }
 @keyframes dcLampCatch { 0% { transform: scale(.8); } 35% { transform: scale(1.35); } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { .dog-coach.dc-lit .dc-lamp { animation: none; } }
-/* Phones: the coach card keeps the lamp + stars on one line (no label), and
-   drops the creature's mood note — the wave and the next goal are the read. */
+/* Phones: the coach card keeps the lamp, a small label and the stars on one
+   line (without the label the lamp read as a stray dot), and drops the
+   creature's mood note — the wave and the next goal are the read. */
 @media (max-width: 600px) {
-  .dog-coach .dc-stars-row .dc-stars-lbl { display: none; }
+  .dog-coach .dc-stars-row { font-size: 10px; letter-spacing: .05em; gap: 4px; }
+  .dog-coach .dc-stars-row .dc-stars-lbl { white-space: nowrap; }
   .dog-coach .dc-trust.dc-note { display: none; }
   .dog-coach .dc-stars-row { align-items: center; }
 }
@@ -5518,3 +5552,18 @@ html[dir="rtl"] .gs-kicker { letter-spacing: 0; }
   .scene-cmd-bar .cmd-btn.cmd-goal, .stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) .cmd-btn.cmd-goal { animation: none; }
   .scene-cmd-bar .cmd-btn.cmd-goal-done::after { animation: none; opacity: 1; }
 }
+
+/* Page pinch-zoom is allowed again (low-vision readers); on the 3D stage a
+   pinch or drag belongs to the game. */
+.stage canvas { touch-action: none; }
+
+/* Settings → Larger text. Most sizes here are px, so this scales whole
+   blocks with zoom: the pages (not while the 3D stage is on them — zooming
+   the canvas would skew its pointer maths), and the trial's text overlays. */
+html.big-text #app:not(:has(.stage)) { zoom: 1.15; }
+html.big-text .stage .dog-coach, html.big-text .stage .hold-pill,
+html.big-text .stage .controls-hint, html.big-text .stage .captions,
+html.big-text .stage .ctx-prompt, html.big-text .stage .dc-callout,
+html.big-text .stage .dc-read, html.big-text .stage .reach-hint,
+html.big-text .stage .exp-panel, html.big-text .stage .ml-toggle { zoom: 1.2; }
+html.big-text .settings-drawer .row, html.big-text .goal-modal { zoom: 1.12; }

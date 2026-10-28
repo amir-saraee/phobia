@@ -471,7 +471,11 @@ function viewArrival() {
   // (dogs pre-selected) → a four-page chapter → a long form: twelve taps and
   // ~700 words before the thing they chose. The prologue and the creator are
   // still there — after the first trial, when they mean something.
-  if (!named) {
+  // A traveler the one-tap start made for them, who reloaded before a single
+  // trial was logged, is still a first-time visitor: the picker, not a
+  // "Welcome back, Traveler" with no history behind it.
+  const fresh = ch && ch.autoMade && !(state.log || []).length;
+  if (!named || fresh) {
     const open = VALLEY_KEYS.filter((k) => PHOBIAS[k] && realmOpen(k));
     const icon = { dogs: "🐕", spiders: "🕷", snakes: "🐍", heights: "🏔", dark: "🌙", enclosed: "🚪" };
     const tiles = open.map((k) => `
@@ -708,7 +712,7 @@ function viewSelect() {
           data-action="select-phobia" data-phobia="${k}" tabindex="0" role="button"
           aria-label="${escapeHtml(tf("node.aria", "{realm} — {name}, {n} of {total} trials faced", { realm: realm.realmName, name: phName(k), n: done, total }))}">
         <div class="realm-thumb" aria-hidden="true">${phobiaThumbnail(k)}
-          ${rs.tamed ? `<span class="realm-tamed">${t("node.tamed", "🕊 tamed")}</span>` : `<span class="realm-shadow" style="--rem:${remaining.toFixed(2)}"></span>`}
+          ${rs.tamed ? `<span class="realm-tamed">${t("node.tamed", "🕊 tamed")}</span>` : `<span class="realm-shadow" style="--rem:${remaining.toFixed(2)}" aria-hidden="true"><i class="eye"></i><i class="eye"></i></span>`}
           ${isCurrent && ch ? `<span class="you-marker" title="${t("node.youHere", "You are here")}">${window.Character.avatarSVG(ch, 40)}<span>${t("node.you", "you")}</span></span>` : ""}
         </div>
         <div class="realm-body">
@@ -724,7 +728,10 @@ function viewSelect() {
 
   // The valley literally brightens as shadows are tamed: a dawn glow scales
   // with the tamed-realm count — progress you can SEE in the world itself.
-  const tamedCount = keys.filter(k => (getProgress(k).highestCompleted ?? -1) + 1 >= PHOBIAS[k].levels.length).length;
+  // Tamed means what the realm card means by it: every trial AND every real
+  // step. Counting trials alone said "1 of 6 tamed" beside a realm whose Real
+  // Path was still open.
+  const tamedCount = keys.filter(k => realmStatus(k).tamed).length;
   return `
   <div class="jworld" id="journeyRoot">
     <div class="jw-dawnglow" aria-hidden="true" style="opacity:${(tamedCount / Math.max(1, keys.length)).toFixed(2)}"></div>
@@ -887,7 +894,7 @@ function mountJourney() {
   if (bubble && chB && !reduce) {
     const curKey = currentRealmKey();
     const realm = realmOf(curKey);
-    const tamed = journeyKeys().filter(k => (getProgress(k).highestCompleted ?? -1) + 1 >= PHOBIAS[k].levels.length).length;
+    const tamed = journeyKeys().filter(k => realmStatus(k).tamed).length;
     const rank = courageRank(getCourage());
     const pool = [
       bubble.textContent,
@@ -1061,7 +1068,7 @@ function viewAbout() {
 
       <h3>${t("about.limitsH", "What Lanternwalk is not")}</h3>
       <p>${t("about.limits", "Not therapy, not diagnosis, not a medical device. It was made for curiosity and education. If a fear is seriously limiting your life, a trained clinician can run real exposure work with you safely — bring the report; it makes a good first conversation.")}
-      <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a>${isRtl() ? " · اورژانس اجتماعی <b>۱۲۳</b> · صدای مشاور بهزیستی <b>۱۴۸۰</b>" : ""}</p>
+      <a class="crisis-link" href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a>${isRtl() ? " · اورژانس اجتماعی <b>۱۲۳</b> · صدای مشاور بهزیستی <b>۱۴۸۰</b>" : ""}</p>
 
       <h3>${t("about.privacyH", "Privacy")}</h3>
       <p>${t("about.privacy", "Everything stays in your browser: characters, sessions, check-ins — all of it lives in this device's local storage. No account, no analytics, no server. Your data leaves only when you export it yourself (Settings → Export).")}</p>

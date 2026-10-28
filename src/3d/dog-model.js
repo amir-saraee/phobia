@@ -56,6 +56,48 @@ function attachDogCollar(model, parts, rawH) {
   grp.add(tag);
   neck.add(grp);
   parts.collar = grp;
+  // Fit to the measured neck once the dog is posed (a few frames in — the
+  // build-time probe reads unposed bones, see above). Neck1 doesn't run down
+  // the middle of every breed's neck: on the husky the ring, centred on the
+  // bone, hung a hand's width below the chin. Re-centre on the neck's cross
+  // section and size the ring to it (the shiba's tuned ring sits at 1.1× the
+  // section's median radius, so that's the target).
+  let frames = 0;
+  collar.onBeforeRender = () => {
+    if (++frames < 4) return;
+    collar.onBeforeRender = () => {};
+    try {
+      const ni = bones.indexOf(neck);
+      const pos = gm.geometry.attributes.position, si = gm.geometry.attributes.skinIndex, sw = gm.geometry.attributes.skinWeight;
+      if (ni < 0 || !pos || !si || !sw) return;
+      gm.skeleton.update();
+      neck.updateMatrixWorld(true);
+      const inv = new THREE.Matrix4().copy(neck.matrixWorld).invert();
+      const v = new THREE.Vector3(), pts = [];
+      const y0 = collar.position.y, band = ringR * 0.35;
+      for (let i = 0; i < pos.count; i++) {
+        let w = 0; for (let j = 0; j < 4; j++) if (si.getComponent(i, j) === ni) w += sw.getComponent(i, j);
+        if (w < 0.25) continue;
+        gm.getVertexPosition(i, v); v.applyMatrix4(gm.matrixWorld).applyMatrix4(inv);
+        if (Math.abs(v.y - y0) < band) pts.push([v.x, v.z]);
+      }
+      if (pts.length < 12) return;
+      let cx = 0, cz = 0; pts.forEach((q) => { cx += q[0]; cz += q[1]; }); cx /= pts.length; cz /= pts.length;
+      const rs = pts.map((q) => Math.hypot(q[0] - cx, q[1] - cz)).sort((a, b) => a - b);
+      const want = rs[Math.floor(rs.length / 2)] * 1.1;
+      const f = Math.max(0.6, Math.min(1.4, want / ringR));
+      grp.position.x = cx; grp.position.z = cz;
+      collar.scale.set(f, f, 1);
+      // The tag hangs at the throat: the side of the ring facing the floor
+      // (+Z in Neck1's frame is the nape on these rigs — it sat on the back
+      // of every dog's neck).
+      const down = new THREE.Vector3(0, -1, 0).transformDirection(inv);
+      const a = Math.hypot(down.x, down.z) > 0.2 ? Math.atan2(down.x, down.z) : Math.PI;
+      tag.rotation.order = "YXZ";
+      tag.rotation.set(Math.PI / 2, a, 0);
+      tag.position.set(Math.sin(a) * ringR * f, y0 - tubeR * 1.8, Math.cos(a) * ringR * f);
+    } catch {}
+  };
 }
 
 function buildDog(opts = {}) {

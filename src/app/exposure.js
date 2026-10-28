@@ -408,7 +408,10 @@ function mountExposure(phobiaKey, levelIdx) {
   // Not in coach realms (all six open ones): the tour's one card said what
   // the intro hint, the hold label and the coach card already say, in the
   // same second the room appeared. The intro hint is the one onboarding line.
-  if (!seenTutorial && !hasCreatureKit(phobiaKey)) {
+  // Settings → "Replay onboarding tour" asks for it back, in any realm.
+  const tourAsked = (() => { try { return localStorage.getItem("fobia.tourReplay") === "1"; } catch { return false; } })();
+  if (!seenTutorial && (tourAsked || !hasCreatureKit(phobiaKey))) {
+    try { localStorage.removeItem("fobia.tourReplay"); } catch {}
     runTutorialTour(stage, phobiaKey);
   }
 
@@ -1036,6 +1039,13 @@ document.addEventListener("input", (e) => {
     if (out) out.textContent = e.target.value;
     const hint = document.getElementById(isPeak ? "sudsPeakHint" : "sudsHint");
     if (hint) hint.style.display = "none";
+    // Once the peak is in (never before — it would anchor the rating), set
+    // it beside the guess made at the gate.
+    const echo = isPeak && document.getElementById("predEcho");
+    if (echo) {
+      echo.textContent = tf("rate.predEcho", "At the gate you predicted {p}. It peaked at {v}.", { p: +echo.dataset.p, v: +e.target.value });
+      echo.hidden = false;
+    }
     const submit = document.getElementById("rateSubmit");
     if (submit) {
       submit.dataset[isPeak ? "peakTouched" : "nowTouched"] = "1";
@@ -1048,8 +1058,11 @@ document.addEventListener("input", (e) => {
     if (out) out.textContent = e.target.value + "%";
     if (e.target.id === "beliefAfter") { try { saveBeliefAfter(+e.target.value); } catch {} }
   } else if (e.target.id === "predictedSuds") {
+    e.target.dataset.touched = "1";
     const out = document.getElementById("predictedValue");
     if (out) out.textContent = e.target.value;
+    const nudge = document.getElementById("predictNudge");
+    if (nudge) nudge.hidden = true;
   }
 });
 

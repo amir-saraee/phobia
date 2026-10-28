@@ -432,9 +432,22 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   leftWall.position.set(ROOM.x0, -1 + wallH / 2, midZ);
   const rightWall = addShell(new THREE.Mesh(new THREE.BoxGeometry(0.12, wallH, ROOM.z1 - ROOM.z0), wallMat), false);
   rightWall.position.set(ROOM.x1, -1 + wallH / 2, midZ);
-  const ceilMat = wallMat.clone(); ceilMat.color.setHex(0x2a2a2e);
-  const ceiling = addShell(new THREE.Mesh(new THREE.BoxGeometry(8.0, 0.10, 15.1), ceilMat), true);
+  // Grey plaster between timber joists, its own plain material: a clone of
+  // the wall's damp-plaster maps (repeat tuned for 2.6 m walls, stretched
+  // over 8 × 15 m) rendered as a black lid over the room.
+  const ceilMat = new THREE.MeshStandardMaterial({ color: 0x6e6961, roughness: 0.95, envMapIntensity: 0.25 });
+  // Not a shadow caster: every light is under it, and casting put its own
+  // underside in shadow (the joists, which don't receive, lit fine).
+  const ceiling = addShell(new THREE.Mesh(new THREE.BoxGeometry(8.0, 0.10, 15.1), ceilMat), false);
   ceiling.position.set(0, ROOM.ceilY, midZ);
+  const joistMat = new THREE.MeshStandardMaterial({ color: 0x5a4634, roughness: 0.9 });
+  const joistGeom = new THREE.BoxGeometry(7.88, 0.16, 0.12);
+  for (let z = ROOM.z0 + 1.1; z < ROOM.z1 - 0.4; z += 1.5) {
+    const j = new THREE.Mesh(joistGeom, joistMat);
+    j.position.set(0, ROOM.ceilY - 0.13, z);
+    j.userData.noCollide = true;
+    scene.add(j); shellPieces.push(j);
+  }
   // Front wall + door: inward-facing single-sided planes (dollhouse trick).
   const frontWall = new THREE.Mesh(new THREE.PlaneGeometry(8.0, wallH), wallMat);
   frontWall.rotation.y = Math.PI; frontWall.position.set(0, -1 + wallH / 2, ROOM.z1);

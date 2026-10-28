@@ -408,6 +408,13 @@ function openSettings() {
     </div>
     <div class="row">
       <div>
+        <label>${t("set.bigText", "Larger text")}</label>
+        <div class="small">${t("set.bigTextSub", "Bigger words on every page and in the trial's labels.")}</div>
+      </div>
+      <div class="toggle ${(() => { try { return localStorage.getItem("fobia.bigText") === "1"; } catch { return false; } })() ? "on" : ""}" id="toggleBigText"></div>
+    </div>
+    <div class="row">
+      <div>
         <label>${t("set.light", "Light mode")}</label>
         <div class="small">${t("set.lightSub", "Bright theme. Easier in daylight.")}</div>
       </div>
@@ -592,6 +599,12 @@ function openSettings() {
     e.currentTarget.classList.toggle("on", next);
     try { applyTheme(); } catch {}
   };
+  drawer.querySelector("#toggleBigText").onclick = (e) => {
+    const next = !(localStorage.getItem("fobia.bigText") === "1");
+    try { localStorage.setItem("fobia.bigText", next ? "1" : "0"); } catch {}
+    e.currentTarget.classList.toggle("on", next);
+    try { applyTheme(); } catch {}
+  };
   drawer.querySelector("#toggleMusic").onclick = (e) => {
     const next = !(localStorage.getItem("fobia.music") === "1");
     try { localStorage.setItem("fobia.music", next ? "1" : "0"); } catch {}
@@ -689,7 +702,7 @@ function openSettings() {
   if (customBtn) customBtn.onclick = () => { close(); go("custom"); };
   drawer.querySelector("#fbBtn").onclick = () => { close(); openFeedback("settings"); };
   drawer.querySelector("#replayTourBtn").onclick = (e) => {
-    try { localStorage.removeItem("fobia.tutorialSeen"); } catch {}
+    try { localStorage.removeItem("fobia.tutorialSeen"); localStorage.setItem("fobia.tourReplay", "1"); } catch {}
     const note = document.createElement("div");
     note.className = "settings-note";
     note.textContent = t("set.tourSaved", "Saved — you'll see the tour at your next rung.");
@@ -807,7 +820,7 @@ function handleAction(d, params) {
       const C = window.Character;
       let ch = C && C.loadCharacter();
       if (!ch && C) {
-        ch = Object.assign({}, C.defaultCharacter(), { name: t("tw.defaultName", "Traveler"), primaryPhobia: k });
+        ch = Object.assign({}, C.defaultCharacter(), { name: t("tw.defaultName", "Traveler"), primaryPhobia: k, autoMade: true });
         try { C.saveCharacter(ch); } catch {}
         try { activateCharacterState(); } catch {}
       } else if (ch && C && ch.primaryPhobia !== k) {
@@ -854,6 +867,7 @@ function handleAction(d, params) {
       if (!draft.primaryPhobia || !PHOBIAS[draft.primaryPhobia] || !realmOpen(draft.primaryPhobia)) draft.primaryPhobia = "dogs";
       draft.name = String(draft.name || "").trim();
       if (!draft.name) draft.name = t("tw.defaultName", "Traveler");
+      delete draft.autoMade;
       try { C.saveCharacter(draft); } catch {}
       try { localStorage.setItem("fobia.travelerMade", "1"); } catch {}
       _travelerDraft = null;
@@ -898,6 +912,7 @@ function handleAction(d, params) {
     case "try-demo": go("demo"); break;
     case "demo-end": try { showDemoEnd(); } catch {} break;
     case "open-quiz": go("quiz"); break;
+    case "quiz-rate": quizRate(document.querySelector(`.quiz-moment[data-phobia="${d.phobia}"] .quiz-lv-b[data-v="${d.v}"]`)); break;
     case "quiz-pick": {
       const k = d.phobia;
       if (PHOBIAS[k]) openFearCheckModal(k, getChecks(k).length ? "manual" : "baseline", { quiz: true });
@@ -938,7 +953,16 @@ function handleAction(d, params) {
     case "confirm-predict": {
       const lvl = parseInt(d.level, 10);
       const slider = document.getElementById("predictedSuds");
-      const predicted = slider ? parseInt(slider.value, 10) : null;
+      // No number is picked for them any more (a pre-lit 4 was a guess the
+      // player never made). The first Enter without one asks; the second
+      // goes in with none.
+      const nudge = document.getElementById("predictNudge");
+      if (slider && !slider.dataset.touched && nudge && nudge.hidden && !nudge.dataset.shown) {
+        nudge.hidden = false; nudge.dataset.shown = "1";
+        try { nudge.scrollIntoView({ block: "center", behavior: "smooth" }); } catch {}
+        break;
+      }
+      const predicted = (slider && slider.dataset.touched) ? parseInt(slider.value, 10) : null;
       pendingPrediction = { phobia: d.phobia, level: lvl, predicted, ts: Date.now() };
       // The feared outcome, when one was named (dogs). The scene reads it to
       // point the player at the test; the complete screen checks it.
@@ -1146,7 +1170,7 @@ const APP_BUILD = "2026-10-11 · lanterns";
 function feedbackDiag() {
   const lines = [
     `build: ${APP_BUILD}`,
-    `route: ${location.hash || "#/"}`,
+    `route: ${safeRoute() || "#/"}`,
     `lang: ${(window.I18n && window.I18n.currentLanguage()) || "en"} · quality: ${(() => { try { return resolveQuality(); } catch { return "?"; } })()}`,
     `screen: ${window.innerWidth}×${window.innerHeight} @${window.devicePixelRatio || 1}x · touch: ${(navigator.maxTouchPoints || 0) > 0 ? "yes" : "no"}`,
     `ua: ${navigator.userAgent}`,
@@ -1154,7 +1178,7 @@ function feedbackDiag() {
   const errs = readErrLog().slice(-5);
   if (errs.length) {
     lines.push(`recent errors (${errs.length}):`);
-    errs.forEach((e) => lines.push(`  - ${new Date(e.ts).toISOString().slice(0, 16)} ${e.route || ""} ${e.msg}${e.src ? " @" + e.src : ""}`));
+    errs.forEach((e) => lines.push(`  - ${new Date(e.ts).toISOString().slice(0, 16)} ${safeRoute(e.route || "")} ${e.msg}${e.src ? " @" + e.src : ""}`));
   }
   return lines.join("\n");
 }
@@ -1179,7 +1203,7 @@ function openFeedback(context = "") {
   const ta = overlay.querySelector("#fbText");
   const compose = () => {
     const parts = [ta.value.trim() || "(no note)"];
-    if (context) parts.push(`context: ${context}`);
+    if (context) parts.push(`context: ${safeRoute(context)}`);
     if (overlay.querySelector("#fbDiag").checked) parts.push("---", feedbackDiag());
     return parts.join("\n");
   };

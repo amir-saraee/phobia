@@ -190,6 +190,10 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   }
 
   const renderer = makeRenderer(container);
+  // A screen reader meets one labelled picture, not an anonymous canvas; the
+  // coach, captions and prompts carry what happens in it (live regions).
+  renderer.domElement.setAttribute("role", "img");
+  renderer.domElement.setAttribute("aria-label", window.t("stage.aria", "The 3D scene. The coach and captions describe what happens in it."));
   container.appendChild(renderer.domElement);
 
   // Vignette overlay for cinematic edge falloff
@@ -999,7 +1003,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
 
   // Interaction-zone hint banner — shows above the canvas when something is reachable
   const reachHint = document.createElement("div");
-  reachHint.className = "reach-hint";
+  reachHint.className = "reach-hint"; reachHint.setAttribute("aria-live", "polite");
   container.appendChild(reachHint);
 
   // Click → tell the scene to perform its action; also fire a hand pulse
@@ -2018,7 +2022,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // notices you". No buttons; informational only. The active scene calls
   // window.PhobiaFX.contextPrompt(text, durationMs) to drive it.
   const ctxPrompt = document.createElement("div");
-  ctxPrompt.className = "ctx-prompt";
+  ctxPrompt.className = "ctx-prompt"; ctxPrompt.setAttribute("aria-live", "polite");
   container.appendChild(ctxPrompt);
   let ctxPromptHideT = null;
   // Dedupe: scenes fire the same beat text every time its trigger re-fires
