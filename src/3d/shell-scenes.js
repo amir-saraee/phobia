@@ -45,6 +45,7 @@ const ShellScenes = (() => {
       // MSAA on desktops above low only: on a phone's medium tier it was 4×
       // colour + depth at DPR 1.5 for a backdrop behind the menus.
       renderer = new THREE.WebGLRenderer({ antialias: !lowTier && !(tier === "medium" && IS_MOBILE), alpha: true, powerPreference: lowTier ? "low-power" : "default" });
+      renderer.debug.checkShaderErrors = /[?&]debug=1/.test(location.search);   // compile-log readback is slow
     } catch { return null; }
     const w = container.clientWidth || 320, h = container.clientHeight || 220;
     renderer.setPixelRatio(lowTier ? 1 : Math.min(window.devicePixelRatio || 1, tier === "medium" ? 1.5 : 2));

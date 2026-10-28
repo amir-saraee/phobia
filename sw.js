@@ -1,17 +1,15 @@
-// Mira — Service worker (network-first for shell during active development)
+// Lanternwalk — service worker
 //
 // Strategy:
-//   - Same-origin requests: NETWORK-FIRST. Try the server first; if the request
-//     succeeds, refresh the cache copy and return the fresh response. Only fall
-//     back to cache when offline. This means HTML / JS / CSS updates always
-//     show on reload — no stale-cache surprise during development.
-//   - Cross-origin (CDN) requests: NETWORK-FIRST with cache fallback. Same
-//     principle for unpkg / jsdelivr.
-//
-// If you want true offline-only optimised loads, switch back to cache-first
-// later — the version bumping is in place. For now correctness > load speed.
+//   - The page and the code (HTML / JS / CSS): NETWORK-FIRST. Try the server,
+//     refresh the cache copy, fall back to the cache only when offline — so an
+//     update always shows on reload.
+//   - /assets/ (models, textures, sky, sounds): CACHE-FIRST with a background
+//     refresh — they're large and rarely change, and a phone shouldn't make a
+//     round trip for each before a trial.
+//   - Cross-origin (CDN) requests: network-first with cache fallback.
 
-const VERSION = "lanternwalk-v29";
+const VERSION = "lanternwalk-v30";
 // Installed on the first visit, in the background — so it holds only what the
 // six open realms need to boot and play offline: their code, plus the models
 // and textures of the creature realms (dogs, spiders, snakes; the place realms
@@ -78,29 +76,13 @@ const SHELL = [
   "./src/3d/realms/spiders.js",
   // Self-hosted three.js (0.160.0). The addons it pulls are runtime-cached.
   "./assets/vendor/three/three.module.min.js",
-  // Rigged dogs (Quaternius, CC0) + their photo-projected coats (JPEG ship
-  // copies — scripts/compress-textures.cjs).
-  "./assets/models/ShibaInu.glb",
-  "./assets/models/Husky.glb",
-  "./assets/models/textures/shiba_photo_albedo.jpg",
-  "./assets/models/textures/shiba_photo_normal.jpg",
-  "./assets/models/textures/shiba_photo_roughness.jpg",
-  "./assets/models/textures/husky_photo_albedo.jpg",
-  "./assets/models/textures/husky_photo_normal.jpg",
-  "./assets/models/textures/husky_photo_roughness.jpg",
-  // The cellar spider and the meadow snake (Quaternius, CC0; ~0.65 MB both).
-  "./assets/models/Spider.glb",
-  "./assets/models/Snake.glb",
-  // Meadow window backdrop + outdoor HDRI (the dog room's window light, and
-  // the snake meadow's whole sky).
-  "./assets/models/textures/meadow_window.jpg",
-  "./assets/env/meadow_1k.hdr",
-  // Recorded ambient beds + the dog vocal bank manifest (samples cache at
-  // runtime; a missing sample falls back to synthesis per-kind).
+  // Manifests only: the dog vocal bank and ambient beds list what to fetch.
   "./assets/audio/ambient/manifest.json",
-  "./assets/audio/ambient/room_soft.mp3",
-  "./assets/audio/ambient/birds.mp3",
   "./assets/audio/dog/manifest.json",
+  // Models, coats, the HDR sky and recordings are NOT precached any more —
+  // they were ~9 MB downloaded behind the title screen on every first visit,
+  // most of it for realms the visitor never opens. Each is cached the first
+  // time its realm loads it (see ASSET below) and plays offline from then on.
 ];
 
 self.addEventListener("install", (event) => {
@@ -128,8 +110,24 @@ self.addEventListener("fetch", (event) => {
   // Bypass everything else (chrome-extension://, blob://, etc.)
   if (!isSameOrigin && !isCDN) return;
 
-  // Network-first for both. Always try the server, refresh the cache, fall
-  // back to cache only on network failure.
+  // Models, textures, sky and sounds under /assets/: answer from the cache at
+  // once and refresh the copy in the background. Network-first re-checked
+  // ~80 of them on every visit — 80 round trips on a phone before a trial.
+  if (isSameOrigin && /\/assets\//.test(url.pathname)) {
+    event.respondWith(caches.open(VERSION).then((cache) => cache.match(req).then((hit) => {
+      const net = fetch(req).then((res) => {
+        if (res && res.status === 200 && res.type !== "opaque") cache.put(req, res.clone()).catch(() => {});
+        return res;
+      });
+      if (hit) { event.waitUntil(net.catch(() => {})); return hit; }
+      return net;
+    })));
+    return;
+  }
+
+  // Code and the page: network-first, so an update always shows on reload.
+  // Always try the server, refresh the cache, fall back to cache only on
+  // network failure.
   event.respondWith(
     fetch(req).then((res) => {
       if (res && res.status === 200 && res.type !== "opaque") {

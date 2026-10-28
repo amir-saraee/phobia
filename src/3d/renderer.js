@@ -178,7 +178,9 @@ function resolveQuality(probe = true) {
     let demoted = null;
     try {
       const d = JSON.parse(localStorage.getItem("fobia.autoTier") || "null");
-      if (d && d.tier && Date.now() - d.at < 14 * 864e5) demoted = d.tier;
+      // Three days, not fourteen: one bad session (a hot phone, a background
+      // download) shouldn't cost two weeks of the lower tier.
+      if (d && d.tier && Date.now() - d.at < 3 * 864e5) demoted = d.tier;
     } catch {}
     const rank = { low: 0, medium: 1, high: 2 };
     return demoted && rank[demoted] < rank[base] ? demoted : base;
@@ -231,6 +233,9 @@ function makeRenderer(container) {
     powerPreference: IS_LOW_POWER ? "low-power" : "high-performance",
     stencil: false,                    // we don't use stencil; saves bandwidth
   });
+  // Reading back every program's compile log costs ~250 ms of a trial's
+  // mount on a slow CPU. Kept for QA (?debug=1).
+  renderer.debug.checkShaderErrors = /[?&]debug=1/.test(location.search);
   renderer.setPixelRatio(IS_LOW_POWER ? 1 : Math.min(window.devicePixelRatio, isMedium ? 1.5 : 2));
   renderer.setSize(container.clientWidth || 800, container.clientHeight || 360);
   renderer.shadowMap.enabled = !IS_LOW_POWER;

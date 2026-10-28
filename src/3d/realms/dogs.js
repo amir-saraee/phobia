@@ -2290,7 +2290,12 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       // Calm/alert rungs open over the shoulder so the customised character is
       // visibly the protagonist. Barking stays first-person for direct,
       // uncluttered distance work.
-      preferredCameraMode: intensity === "barking" ? "fp" : "tp",
+      // A portrait phone starts in first person too: the room is small, you
+      // spawn under a metre from its front wall, and the over-the-shoulder
+      // shot could neither pull back nor rise — it sat on the back of your
+      // head with the dog a few pixels tall above it. (View still switches.)
+      preferredCameraMode: (intensity === "barking"
+        || (IS_COARSE_POINTER && window.innerHeight > window.innerWidth)) ? "fp" : "tp",
       // Bias the camera over the shoulder so the avatar does not mask the dog.
       tpShoulder: 0.62,
       tpDistance: 3.9,

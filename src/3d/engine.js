@@ -385,6 +385,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   let reachRing = null;      // in-world "this is reachable" ground ring (lazy)
   let _cursorPointer = false;
   let _frameEMA = 0.016;     // adaptive-resolution frame-time tracker
+  let _govQuietT = 0;        // governor ignores frames until this scene time
   // How long tick() itself runs (simulation + submitting the frame), so the
   // governor can tell a CPU-bound device — where a lower resolution buys
   // nothing and only reallocates every target — from a GPU-bound one.
@@ -1078,7 +1079,12 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     //     the tier's cap and never straight back onto a ratio that just failed.
     // All of it silent: the player is told nothing — on a weak device a
     // notice was one more thing on the screen, at the worst moment.
-    if (rawDt < 1.5 && t > 2.0) {
+    // An interruption is not slowness: a backgrounded tab, a notification, a
+    // rotation stalls one frame on a device that's otherwise fast. Two quiet
+    // seconds after one, so a single stutter can't shed effects (and demote
+    // the next scenes too).
+    if (document.hidden || (rawDt > 0.25 && _frameEMA < 0.05)) _govQuietT = t + 2;
+    if (rawDt < 1.5 && t > 2.0 && t > _govQuietT) {
       _frameEMA += (Math.min(rawDt, 0.1) - _frameEMA) * 0.05;
       _ivl[_ivlI] = rawDt; _ivlI = (_ivlI + 1) & 63; if (_ivlN < 64) _ivlN++;
       if (t >= _capCheckT && _ivlN >= 48) {

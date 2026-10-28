@@ -229,6 +229,7 @@ const AvatarPreview = (() => {
     // tier only. It rendered at DPR 2 with MSAA on every device.
     const tier = resolveQuality();
     const renderer = new THREE.WebGLRenderer({ antialias: tier === "high", alpha: true });
+    renderer.debug.checkShaderErrors = /[?&]debug=1/.test(location.search);   // compile-log readback is slow
     renderer.setPixelRatio(tier === "low" ? 1 : Math.min(window.devicePixelRatio, tier === "medium" ? 1.5 : 2));
     renderer.setSize(w, h);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
