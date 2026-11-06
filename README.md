@@ -43,7 +43,7 @@ Lanternwalk is a game shell around genuine CBT graded-exposure mechanics:
 
 ## Tech
 
-Vanilla JS + Three.js (no build step), Rapier physics, procedural + recorded audio, rigged CC0 creature models (Quaternius), installable PWA, offline-capable, English/Persian with full RTL. Three.js and Rapier are self-hosted under `assets/vendor/` — no runtime CDN.
+Vanilla JS + Three.js (no build step), Rapier physics, procedural + recorded audio, rigged CC0 creature models (Quaternius), installable PWA, offline-capable, English/Persian with full RTL (Persian set in the self-hosted Vazirmatn, SIL OFL). Three.js and Rapier are self-hosted under `assets/vendor/` — no runtime CDN.
 
 Where things live:
 
@@ -84,4 +84,11 @@ On Linux the smoke test finds Chromium itself (Playwright's, or `CHROME=/path`),
 
 ## Feedback
 
-Players can write feedback from the menu, Settings, About, and after every trial. Nothing is sent automatically. Set `FEEDBACK_URL` in `src/app/handlers.js` to a form link (Google Form, Tally…) to add an "Open the form" button; until then it's copy-only.
+Players can write feedback from the menu, Settings, About, and after every trial. Nothing is sent automatically: "Email it" opens the player's mail app with the note (and, if they keep the box ticked, the technical details) addressed to `SUPPORT_EMAIL` in `src/app/boot-guards.js`, or they copy it. Setting `FEEDBACK_URL` in `src/app/handlers.js` adds an "Open the form" button too (forms on Google are often unreachable from Iran, so email stays the default).
+
+## Publishing
+
+- `landing/` — the landing page (static, Persian first with an English section, links to the game with `../`).
+- `privacy.html` — the privacy policy (static, Persian and English, cached for offline; linked from the first-run notice, Settings and About).
+- `docs/BAZAAR.md` — Cafe Bazaar: the readiness review, the TWA values, the listing text ready to paste, the reviewer note, and the server block for hosting from Iran. Store screenshots and the icon are in `docs/store/`.
+- `?lang=fa` / `?lang=en` open the game in that language (and save it); `?source=twa`, the Android app's start URL, opens it in Persian unless the player chose English.

@@ -1,4 +1,15 @@
 /* Mira — every style the game uses (linked from index.html). */
+/* Persian type: Vazirmatn (SIL OFL 1.1, assets/fonts/OFL-Vazirmatn.txt),
+   self-hosted. The unicode-range is the Arabic-script block only, so an
+   English page never downloads it (46 KB, variable weight 100–900). */
+@font-face {
+  font-family: "Vazirmatn";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("../assets/fonts/vazirmatn-arabic-wght-normal.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
+}
 :root {
   /* ---- Color palette ---- */
   --bg: #0f1724;
@@ -4755,7 +4766,8 @@ body.light-mode .vc-stat { background: var(--panel-2); }
 .consent-list li > span:first-child { flex: 0 0 auto; font-size: 16px; margin-top: 1px; }
 .consent-list a { color: var(--accent); font-weight: 700; }
 .about-view h3 { margin-top: 18px; }
-.about-view a { color: var(--accent); }
+.about-view a, .fb-where a, .settings-links a, .consent-list a { color: var(--accent); }
+.settings-links { line-height: 2; }
 .about-credits { font-size: 13px; }
 .backup-nudge {
   max-width: 480px; margin: 14px auto 0;
@@ -4775,8 +4787,8 @@ body.light-mode .vc-stat { background: var(--panel-2); }
 .report-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
 .report-line { font-size: 13.5px; margin: 2px 0 6px; }
 .report-note {
-  font-size: 12px; color: var(--muted); border-left: 3px solid var(--border-2);
-  padding-left: 10px; margin: 10px 0 18px;
+  font-size: 12px; color: var(--muted); border-inline-start: 3px solid var(--border-2);
+  padding-inline-start: 10px; margin: 10px 0 18px;
 }
 .report-fear { margin: 18px 0 8px; }
 .report-fear h3 { margin-bottom: 2px; }
@@ -4786,10 +4798,11 @@ body.light-mode .vc-stat { background: var(--panel-2); }
   width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 6px 0 10px;
 }
 .report-table th, .report-table td {
-  text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-2);
+  text-align: start; padding: 5px 8px; border-bottom: 1px solid var(--border-2);
 }
 .report-table th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .6px; }
-.report-ws { margin: 4px 0 10px; padding-left: 18px; font-size: 12.8px; color: var(--text); }
+.report-table th:lang(fa) { letter-spacing: 0; font-size: 12px; }
+.report-ws { margin: 4px 0 10px; padding-inline-start: 18px; padding-inline-end: 0; font-size: 12.8px; color: var(--text); }
 .report-ws li { margin-bottom: 3px; }
 /* On very narrow screens the table scrolls inside the panel, never the page */
 @media (max-width: 640px) {
@@ -4798,12 +4811,13 @@ body.light-mode .vc-stat { background: var(--panel-2); }
 /* ---- RTL (Persian) ----
    <html dir="rtl"> is stamped by i18n applyLang(). Flex/grid mirror on
    their own; these overrides fix the handful of hard-coded left/right
-   positions. The 3D stage and the clinician report deliberately STAY LTR
-   (scene HUD geometry, and the report is written in English for now). */
+   positions. The 3D stage deliberately STAYS LTR (scene HUD geometry). */
 html[lang="fa"] body {
-  font-family: system-ui, -apple-system, "Segoe UI", Tahoma, "Noto Sans Arabic", sans-serif;
+  font-family: Vazirmatn, system-ui, -apple-system, "Segoe UI", Tahoma, "Noto Sans Arabic", sans-serif;
   line-height: 1.75;
 }
+/* The serif display faces have no Persian: in fa they take Vazirmatn too. */
+html[lang="fa"] :is(.gs-quote, .lw-tagline, .st-text) { font-family: inherit; }
 html[dir="rtl"] .menu-drawer { left: auto; right: 0; transform: translateX(100%); }
 html[dir="rtl"] .menu-drawer.open { transform: translateX(0); }
 html[dir="rtl"] .realm-node.side-r { margin-left: 0; margin-right: min(64px, 8%); }
@@ -4816,7 +4830,6 @@ html[dir="rtl"] .trial-link { margin-left: 0; margin-right: 27px; border-left: n
 }
 html[dir="rtl"] .you-marker { left: auto; right: 8px; }
 html[dir="rtl"] .realm-shadow, html[dir="rtl"] .realm-tamed { right: auto; left: 8px; }
-html[dir="rtl"] .report-note { border-left: none; border-right: 3px solid var(--border-2); padding-left: 0; padding-right: 10px; }
 /* Keep the 3D stage + its HUD in LTR geometry regardless of UI language */
 html[dir="rtl"] .stage, html[dir="rtl"] .stage-wrap { direction: ltr; }
 /* ...but the TEXT on it reads right-to-left. Under the LTR stage a Persian
@@ -4828,8 +4841,8 @@ html[dir="rtl"] .stage-wrap :is(.controls-hint, .reach-hint, .captions, .ctx-pro
   .dog-coach, .dc-callout, .dc-read, .exp-panel, .hold-pill, .hold-label, .stage-breath,
   .cmd-btn, .cmd-toggle, .ground-btn, .ml-toggle, .camera-toggle, .demo-chip,
   .trust-hud, .step-controls button, .scene-cmd-bar) { direction: rtl; }
-/* The report stays English/LTR until it's translated */
-html[dir="rtl"] .report-view { direction: ltr; text-align: left; }
+/* The report reads in Persian (RTL); its English version is marked
+   lang=en dir=ltr, which lays it out left to right on its own. */
 html[dir="rtl"] .lang-btn, .lang-btn { font-weight: 800; font-size: 13px; }
 
 @media print {
@@ -4842,7 +4855,7 @@ html[dir="rtl"] .lang-btn, .lang-btn { font-weight: 800; font-size: 13px; }
   }
   .report-view h2, .report-view h3, .report-view p, .report-view li,
   .report-view td, .report-view th, .report-line { color: #111 !important; }
-  .report-note { color: #444 !important; border-left-color: #999; }
+  .report-note { color: #444 !important; border-inline-start-color: #999; }
   .report-clinical { color: #0a6b60 !important; }
   .report-table th, .report-table td { border-bottom: 1px solid #ccc; }
   .report-fear { break-inside: avoid; }

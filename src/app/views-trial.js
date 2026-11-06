@@ -207,7 +207,7 @@ function viewLadder(phobiaKey) {
           <div class="goal-meter">
             <div class="goal-meter-label">
               <span>${t("oath.reach", "Oath: reach trial")}</span>
-              <strong>${goal.targetRung + 1} of ${total}</strong>
+              <strong>${tf("oath.of", "{n} of {m}", { n: goal.targetRung + 1, m: total })}</strong>
             </div>
             <div class="goal-meter-track">
               <div class="goal-meter-fill" style="width:${Math.min(100, ((prog.highestCompleted + 1) / (goal.targetRung + 1)) * 100)}%"></div>
@@ -216,7 +216,7 @@ function viewLadder(phobiaKey) {
           <div class="goal-meter">
             <div class="goal-meter-label">
               <span>${t("oath.week", "This week")}</span>
-              <strong>${wkSessions} of ${goal.perWeek} session${goal.perWeek === 1 ? "" : "s"}</strong>
+              <strong>${tf("oath.weekOf", "{n} of {m} session(s)", { n: wkSessions, m: goal.perWeek })}</strong>
             </div>
             <div class="goal-meter-track">
               <div class="goal-meter-fill" style="width:${Math.min(100, (wkSessions / goal.perWeek) * 100)}%"></div>
@@ -501,7 +501,10 @@ function bridgeBlockFor(phobiaKey, prog) {
 }
 
 // Tiny SVG line+dot chart for SUDS history. Returns an inline-SVG string.
-function drawSudsChart(sessions, w = 320, h = 100) {
+// english: labels in English whatever the UI language (the report's English
+// version inside a Persian UI).
+function drawSudsChart(sessions, w = 320, h = 100, english = false) {
+  const t = english ? (k, fb) => fb : window.t;
   if (!sessions || sessions.length === 0) {
     return `<svg viewBox="0 0 ${w} ${h}" class="insight-chart"><text x="${w/2}" y="${h/2}" text-anchor="middle" fill="#94a3b8" font-size="12">${t("chart.none", "No sessions yet")}</text></svg>`;
   }

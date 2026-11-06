@@ -1,0 +1,21 @@
+{
+  "id": "./",
+  "lang": "fa",
+  "dir": "rtl",
+  "name": "فانوس‌به‌دست — قدم‌به‌قدم با ترس‌هایت روبه‌رو شو",
+  "short_name": "فانوس‌به‌دست",
+  "description": "هر ترس راهی است که دیگر از آن نرفتی. بازی‌ای آرام دربارهٔ ترس‌های بزرگ — سگ، عنکبوت، مار، ارتفاع، تاریکی و جای تنگ — با قدم‌های کوچک و امن، و داستانی که یاد می‌دهد ترس‌ها چطور شروع می‌شوند و چطور آرام می‌گیرند. یک بازی تمرینی، نه درمان.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#050816",
+  "theme_color": "#0f1724",
+  "categories": ["health", "lifestyle", "education"],
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

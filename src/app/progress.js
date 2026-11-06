@@ -948,7 +948,7 @@ function openFearCheckModal(phobiaKey, at, mOpts = {}) {
   const items = FEAR_CHECK_ITEMS.map((it, i) => `
     <div class="fc-item" data-item="${i}">
       <p class="fc-q">${i + 1}. ${escapeHtml(t(`mirror.q${i + 1}`, it.q))}</p>
-      <div class="fc-scale" role="radiogroup" aria-label="${escapeHtml(it.q)}">
+      <div class="fc-scale" role="radiogroup" aria-label="${escapeHtml(t(`mirror.q${i + 1}`, it.q))}">
         ${FEAR_CHECK_SCALE.map((lab, v) => `
           <button type="button" class="fc-opt" data-v="${v}" role="radio" aria-checked="false" title="${t(`mirror.s${v}`, lab)}">
             <span class="fc-n">${v}</span><span class="fc-lab">${t(`mirror.s${v}`, lab)}</span>
@@ -1057,23 +1057,23 @@ function openGoalEditor(phobiaKey) {
   const overlay = document.createElement("div");
   overlay.className = "goal-modal-overlay";
   overlay.innerHTML = `
-    <div class="goal-modal">
-      <h3>Set a goal — ${p.label}</h3>
-      <p class="small">Goals are private to you. We'll show progress on the ladder page.</p>
-      <label>Target rung
+    <div class="goal-modal" role="dialog" aria-label="${escapeHtml(t("oath.aria", "Swear an oath"))}">
+      <h3>${tf("oath.h", "Swear an oath — {realm}", { realm: escapeHtml(phLabel(phobiaKey)) })}</h3>
+      <p class="small">${t("oath.private", "Your oath stays private to you. Its progress shows on this realm's page.")}</p>
+      <label>${t("oath.rung", "Reach trial")}
         <select id="goalRung">
-          ${p.levels.map((lv, i) => `<option value="${i}" ${i === existing.targetRung ? "selected" : ""}>Rung ${i+1} — ${escapeHtml(lv.title)}</option>`).join("")}
+          ${p.levels.map((lv, i) => `<option value="${i}" ${i === existing.targetRung ? "selected" : ""}>${tf("oath.rungOpt", "Trial {n} — {title}", { n: i + 1, title: escapeHtml(lvTitle(phobiaKey, i)) })}</option>`).join("")}
         </select>
       </label>
-      <label>Sessions per week
+      <label>${t("oath.perWeekL", "Sessions per week")}
         <select id="goalPerWeek">
-          ${[1,2,3,4,5,6,7].map(n => `<option value="${n}" ${n === existing.perWeek ? "selected" : ""}>${n}</option>`).join("")}
+          ${[1,2,3,4,5,6,7].map(n => `<option value="${n}" ${n === existing.perWeek ? "selected" : ""}>${fnum(n)}</option>`).join("")}
         </select>
       </label>
       <div class="actions">
-        ${getGoal(phobiaKey) ? `<button class="btn-warn" id="goalDelete">Remove goal</button>` : ""}
-        <button class="btn-ghost" id="goalCancel">Cancel</button>
-        <button class="btn-primary" id="goalSave">Save</button>
+        ${getGoal(phobiaKey) ? `<button class="btn-warn" id="goalDelete">${t("oath.remove", "Let the oath go")}</button>` : ""}
+        <button class="btn-ghost" id="goalCancel">${t("oath.cancel", "Cancel")}</button>
+        <button class="btn-primary" id="goalSave">${t("oath.save", "Swear it")}</button>
       </div>
     </div>
   `;

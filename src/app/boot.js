@@ -58,7 +58,7 @@ function showConsent(rereading, onOk) {
       <h3 style="margin:6px 0 10px">${t("consent.title", "Before you begin")}</h3>
       <ul class="consent-list">
         <li><span>🎮</span>${t("consent.game2", "Lanternwalk is a practice game about how fear works — not therapy, and no substitute for a clinician. If a fear is seriously limiting your life, a professional can help; this can start that conversation.")}</li>
-        <li><span>🔒</span>${t("consent.privacy2", "Everything stays on this device. No account, no tracking.")}</li>
+        <li><span>🔒</span>${t("consent.privacy2", "Everything stays on this device. No account, no tracking.")} <a href="${PRIVACY_URL}" target="_blank" rel="noopener">${t("legal.privacy", "Privacy policy")}</a></li>
         <li><span>🚪</span>${touch
           ? t("consent.control2m", "You're in control: leave any scene, any time — 🛟 grounds you. Stepping out is never a failure.")
           : t("consent.control2d", "You're in control: leave any scene, any time — Esc grounds you. Stepping out is never a failure.")}</li>

@@ -383,7 +383,7 @@ function openSettings() {
     <div class="row">
       <div>
         <label>${t("set.lang", "Language")}</label>
-        <div class="small">${t("set.langSub", "English or فارسی — the whole game, except the clinician report, which stays in English.")}</div>
+        <div class="small">${t("set.langSub2", "English or فارسی — the whole game, the progress report too.")}</div>
       </div>
       <select id="langSelect" class="select-pill">
         <option value="en" ${(window.I18n?.currentLanguage() === "en") ? "selected" : ""}>English</option>
@@ -524,6 +524,11 @@ function openSettings() {
     <p class="small" style="margin-top:18px">
       ${t("settings.footer", "This is a practice game, not therapy. If a phobia is interfering with your life, a trained clinician can run real exposure work with you safely.")}
     </p>
+    <p class="small settings-links">
+      <a href="${PRIVACY_URL}" target="_blank" rel="noopener">${t("legal.privacy", "Privacy policy")}</a>
+      · ${t("legal.contact", "Contact:")} <a href="mailto:${SUPPORT_EMAIL}" dir="ltr" lang="en">${SUPPORT_EMAIL}</a>
+      · ${tf("legal.version", "Version {v}", { v: APP_VERSION })}
+    </p>
   `;
   const backdrop = document.createElement("div");
   backdrop.className = "settings-backdrop";
@@ -656,12 +661,7 @@ function openSettings() {
     if (perm === "granted") {
       try { localStorage.setItem("fobia.reminders", "1"); } catch {}
       remindersBtn.classList.add("on");
-      try {
-        new Notification("Lanternwalk", {
-          body: t("set.nudgeOn", "Reminders are on. We'll nudge you once a day."),
-          icon: "icon.svg",
-        });
-      } catch {}
+      showLocalNotification(t("set.nudgeOn", "Reminders are on. We'll nudge you once a day."));
       scheduleReminders();
     } else {
       // Permission denied — show a tiny inline note
@@ -1059,6 +1059,7 @@ function handleAction(d, params) {
     case "go-camp":         go("select"); break;
     case "open-custom":     go("custom"); break;
     case "open-report":     go("report"); break;
+    case "report-lang":     reportEnglish = !reportEnglish; render("report", {}); break;
     case "do-worldstep":    openWorldstepModal(d.phobia, parseInt(d.step, 10)); break;
     case "fear-check":      openFearCheckModal(d.phobia, d.at || "manual"); break;
     case "open-about":      go("about"); break;
@@ -1163,13 +1164,13 @@ function openStageBreath(stage) {
 // The one channel back from players. Nothing is sent automatically: the note
 // is composed here and the player copies it (or, once FEEDBACK_URL is set,
 // it's copied and the form opens in a new tab to paste it into).
-// FEEDBACK_URL: paste a Google Form / Tally link here. Empty = Copy only —
-// for the playtest phase, testers send the note to whoever shared Mira.
+// FEEDBACK_URL: an optional form link (Google Forms and the like are often
+// unreachable from Iran, so the default channel is email: SUPPORT_EMAIL in
+// boot-guards.js). Set, it adds "Open the form" beside "Email it".
 const FEEDBACK_URL = "";
-const APP_BUILD = "2026-10-11 · lanterns";
 function feedbackDiag() {
   const lines = [
-    `build: ${APP_BUILD}`,
+    `build: ${APP_VERSION} (${APP_BUILD})`,
     `route: ${safeRoute() || "#/"}`,
     `lang: ${(window.I18n && window.I18n.currentLanguage()) || "en"} · quality: ${(() => { try { return resolveQuality(); } catch { return "?"; } })()}`,
     `screen: ${window.innerWidth}×${window.innerHeight} @${window.devicePixelRatio || 1}x · touch: ${(navigator.maxTouchPoints || 0) > 0 ? "yes" : "no"}`,
@@ -1192,11 +1193,12 @@ function openFeedback(context = "") {
       <p class="small">${t("fb.p", "Lanternwalk is new, and what you tell us shapes it. Anything helps — a bug, a moment you got stuck, a moment it helped. Nothing is sent automatically: you copy the note, or send it yourself.")}</p>
       <textarea id="fbText" rows="6" maxlength="4000" placeholder="${escapeHtml(t("fb.ph", "What happened? Where were you?"))}"></textarea>
       <label class="fb-diag"><input type="checkbox" id="fbDiag" checked> <span>${t("fb.diag", "Include technical details (browser, device, recent errors — nothing personal)")}</span></label>
-      ${FEEDBACK_URL ? "" : `<p class="small fb-where">${t("fb.where", "Copy it and send it to the person who shared Lanternwalk with you.")}</p>`}
+      <p class="small fb-where">${tf("fb.whereMail", "Send it to {mail} — “Email it” opens your mail app with the note already written, or copy it and paste it anywhere.", { mail: `<a href="mailto:${SUPPORT_EMAIL}" dir="ltr" lang="en">${SUPPORT_EMAIL}</a>` })}</p>
       <div class="actions" style="margin-top:12px">
         <button class="btn-ghost" id="fbClose">${t("fb.close", "Close")}</button>
-        <button class="${FEEDBACK_URL ? "btn-ghost" : "btn-primary"}" id="fbCopy">${t("fb.copy", "📋 Copy note")}</button>
-        ${FEEDBACK_URL ? `<button class="btn-primary" id="fbSend">${t("fb.send", "Open the form ↗")}</button>` : ""}
+        <button class="btn-ghost" id="fbCopy">${t("fb.copy", "📋 Copy note")}</button>
+        ${FEEDBACK_URL ? `<button class="btn-ghost" id="fbSend">${t("fb.send", "Open the form ↗")}</button>` : ""}
+        <button class="btn-primary" id="fbMail">${t("fb.mail", "✉️ Email it")}</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -1218,6 +1220,15 @@ function openFeedback(context = "") {
   const close = () => overlay.remove();
   overlay.querySelector("#fbClose").onclick = close;
   overlay.querySelector("#fbCopy").onclick = (e) => copy(e.currentTarget);
+  // A mailto: link with the note as its body. Mail apps cap a link's length,
+  // so a long note is cut (the full one is copied as well, to paste over it).
+  overlay.querySelector("#fbMail").onclick = async () => {
+    const text = compose();
+    const body = text.length > 1800 ? text.slice(0, 1800) + "\n…" : text;
+    if (text.length > 1800) await copy(null);
+    const subject = `${t("brand.name", "Lanternwalk")} — ${t("fb.subject", "feedback")} (${APP_VERSION})`;
+    location.href = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
   const send = overlay.querySelector("#fbSend");
   if (send) send.onclick = async () => { await copy(null); try { window.open(FEEDBACK_URL, "_blank", "noopener"); } catch {} };
   overlay.onclick = (e) => { if (e.target === overlay) close(); };

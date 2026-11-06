@@ -9,7 +9,7 @@
 //     round trip for each before a trial.
 //   - Cross-origin (CDN) requests: network-first with cache fallback.
 
-const VERSION = "lanternwalk-v30";
+const VERSION = "lanternwalk-v31";
 // Installed on the first visit, in the background — so it holds only what the
 // six open realms need to boot and play offline: their code, plus the models
 // and textures of the creature realms (dogs, spiders, snakes; the place realms
@@ -20,6 +20,8 @@ const VERSION = "lanternwalk-v30";
 const SHELL = [
   "./",                 // the page (manifest start_url is "./" — one copy, not two)
   "./manifest.json",
+  "./manifest.fa.json",
+  "./privacy.html",     // the privacy policy reads offline too (linked from the game)
   "./icon.svg",
   "./src/character.js",
   "./src/phobia-info.js",
@@ -140,4 +142,15 @@ self.addEventListener("fetch", (event) => {
       // start_url) fall back to the one cached copy of the page.
       hit || (req.mode === "navigate" ? caches.match("./") : undefined)))
   );
+});
+
+// The daily nudge (Settings → Reminders) is posted through this worker —
+// Android allows no other way. A tap on it brings the game to the front, or
+// opens it.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    for (const c of list) if ("focus" in c) return c.focus();
+    return self.clients.openWindow ? self.clients.openWindow("./") : undefined;
+  }));
 });

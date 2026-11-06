@@ -34,6 +34,7 @@ const PACKS = {
     "nav.menu": "منو",
     "nav.sound": "صدا",
     "nav.settings": "تنظیمات",
+    "settings.title": "تنظیمات",
     "nav.progress": "پیشرفت تو",
     "nav.lang": "Switch to English",
 
@@ -2257,6 +2258,75 @@ const PACKS = {
     "rep.print": "🖨 چاپ / ذخیره به‌صورت PDF",
     "rep.json": "⤓ دریافت داده‌ها (JSON)",
     "rep.back": "بازگشت به دره",
+    // The progress report, in clinical Persian (an Iranian clinician reads it;
+    // the page also offers the English version for one who reads English).
+    "rep.title": "گزارش تمرین مواجهه",
+    "rep.name": "نام:",
+    "rep.logged": "{n} جلسهٔ ثبت‌شده",
+    "rep.wsCount": "{n} گام در زندگی واقعی",
+    "rep.note": "این گزارش را فانوس‌به‌دست ساخته است؛ یک بازی تمرینی خودراهبر بر پایهٔ مواجههٔ تدریجی. درجه‌های اضطراب را خودِ فرد گزارش کرده است (واحدهای ذهنی ناراحتی یا SUDS، از ۰ آرام تا ۱۰ وحشت). «پیش‌بینی» پیش از هر مواجهه و «گزارش» پس از آن ثبت می‌شود و فاصلهٔ این دو نشانهٔ نقض انتظار است. «شرایط» ساعتِ روز و آب‌وهوای شبیه‌سازی‌شده را نشان می‌دهد که بازی برای کمک به تعمیم یادگیری، میان تکرارها تغییر می‌دهد. این یک سابقهٔ تمرین شخصی است، نه ارزیابی بالینی.",
+    "rep.hier": "سلسله‌مراتب مواجهه: {done} از {total} سطح کامل شده",
+    "rep.sessions": "{n} جلسه",
+    "rep.ctxLine": "تمرین در {n} شرایط متفاوت (ساعت روز / آب‌وهوا)",
+    "rep.thDate": "تاریخ",
+    "rep.thLevel": "سطح مواجهه",
+    "rep.thCond": "شرایط",
+    "rep.thPred": "اوج پیش‌بینی‌شده (۰ تا ۱۰)",
+    "rep.thPeak": "اوج واقعی (۰ تا ۱۰)",
+    "rep.thEnd": "پایان آزمون (۰ تا ۱۰)",
+    "rep.thOutcome": "نتیجه",
+    "rep.leftEarly": "زودتر خارج شد (مجاز)",
+    "rep.completed": "تا پایان ماند",
+    "rep.wsH": "گام‌های زندگی واقعی (مواجههٔ عینی)، به گزارش خودِ فرد:",
+    "rep.step": "گام {n}",
+    "rep.wsPeak": "، اوج اضطراب {n}",
+    "rep.outOf": "{n} از {m}",
+    "rep.expH": "آزمایش‌های رفتاری",
+    "rep.expSub": "(درون صحنه؛ پیش‌بینی پیش از هر آزمون ثبت شده):",
+    "rep.thLv": "سطح",
+    "rep.thExpect": "انتظارِ بیان‌شده",
+    "rep.thObserved": "پیامدِ مشاهده‌شده",
+    "rep.stBase": "خط پایه",
+    "rep.stMid": "میانهٔ سلسله‌مراتب",
+    "rep.stPost": "پایان سلسله‌مراتب",
+    "rep.stSelf": "به انتخاب خودِ فرد",
+    "rep.fcH": "خودسنجی‌های شدت ترس",
+    "rep.fcSub": "(۵ گویه، هر کدام ۰ تا ۴: اجتناب، شدت اوج، واکنش بدنی، تداخل با زندگی روزمره، باور به خطر — دربارهٔ زندگی واقعی)",
+    "rep.fcDelta": "تغییر نسبت به خط پایه:",
+    "rep.thStage": "مرحله",
+    "rep.thItems": "نمرهٔ گویه‌ها",
+    "rep.thTotal": "جمع",
+    "rep.none": "هنوز تمرینی ثبت نشده است.",
+    "rep.h.dawn": "صبح زود", "rep.h.morning": "میانهٔ صبح", "rep.h.noon": "نیمروز",
+    "rep.h.afternoon": "بعدازظهر", "rep.h.golden": "عصر", "rep.h.dusk": "غروب",
+    "rep.w.clear": "صاف", "rep.w.hazy": "مه‌آلود", "rep.w.overcast": "ابری", "rep.w.rain": "بارانی",
+    // The oath (a realm goal) editor.
+    "oath.of": "{n} از {m}",
+    "oath.weekOf": "{n} از {m} جلسه",
+    "oath.aria": "یاد کردن سوگند",
+    "oath.h": "سوگند — {realm}",
+    "oath.private": "سوگندت فقط پیش خودت می‌ماند. پیشرفتش را در صفحهٔ همین قلمرو می‌بینی.",
+    "oath.rung": "رسیدن به آزمون",
+    "oath.rungOpt": "آزمون {n} — {title}",
+    "oath.perWeekL": "چند جلسه در هفته",
+    "oath.remove": "رها کردن سوگند",
+    "oath.cancel": "انصراف",
+    "oath.save": "سوگند می‌خورم",
+    "sc.h.roofSign": "راه پشت‌بام",
+    // Contact, privacy and version (About, Settings, the feedback box).
+    "fb.whereMail": "یادداشت را به {mail} بفرست — «فرستادن با ایمیل» برنامهٔ ایمیلت را با یادداشتِ نوشته‌شده باز می‌کند، یا کپی‌اش کن و هر جا خواستی بچسبان.",
+    "fb.mail": "✉️ فرستادن با ایمیل",
+    "fb.subject": "بازخورد",
+    "legal.privacy": "سیاست حریم خصوصی",
+    "legal.contact": "تماس:",
+    "legal.version": "نسخهٔ {v}",
+    "set.langSub2": "انگلیسی یا فارسی — کل بازی، گزارش پیشرفت هم.",
+    "about.privacyLink": "متن کامل سیاست حریم خصوصی",
+    "about.contactH": "تماس و پشتیبانی",
+    "about.contact": "اشکالی دیدی، پرسشی داری، یا جایی به کارت آمد؟ به {mail} بنویس — یا از «نظرت را بگو» در پایین استفاده کن که جزئیات فنی را هم خودش اضافه می‌کند.",
+    "about.creditsFont": "قلم فارسی:",
+    "about.own": "داستان، شخصیت‌ها، صحنه‌ها، نوشته‌ها و کدِ بازی کارِ خودِ سازندگان است؛ مدل‌ها، صداهای محیط، نورپردازی آسمان و قلمی که در بالا نام برده شد با مجوزهای آزادشان به کار رفته‌اند.",
+    "about.version": "نسخهٔ {v} · {d}",
     "st.read": "خواندن صفحه",
     "st.reread": "دوباره بخوان",
     "wave.quiet": "این بار زنگِ هشدار آرام ماند.",
@@ -2449,13 +2519,31 @@ if (!_langSaved) {
     if (/^fa\b/i.test(nav) && PACKS.fa) currentLang = "fa";
   } catch {}
 }
+// A link can choose: ?lang=fa / ?lang=en (the landing page's "play" buttons
+// in each language). That is a choice like the in-game switch, so it is saved,
+// and the parameter is dropped from the address so a later switch in the game
+// isn't undone by a reload.
+// The Android app (Cafe Bazaar) opens with ?source=twa. It is a Persian store
+// and Iranian phones are often set to English, so the app starts in Persian
+// unless the player has chosen otherwise; that default is not saved.
+try {
+  const q = new URLSearchParams(location.search);
+  const want = q.get("lang");
+  if (want && PACKS[want]) {
+    currentLang = want; _langSaved = true;
+    try { localStorage.setItem("fobia.lang", want); } catch {}
+    q.delete("lang");
+    const rest = q.toString();
+    try { history.replaceState(history.state, "", location.pathname + (rest ? "?" + rest : "") + location.hash); } catch {}
+  } else if (!_langSaved && q.get("source") === "twa" && PACKS.fa) currentLang = "fa";
+} catch {}
 // Numbers as the reader writes them. The Persian strings carried Persian
 // digits but every number the game filled in stayed Latin ("آزمون 1 از 5").
 const FA_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
 function num(v) {
   const s = String(v);
   if (currentLang !== "fa") return s;
-  return s.replace(/[0-9]/g, (d) => FA_DIGITS[d]).replace(/([۰-۹])\.([۰-۹])/g, "$1٫$2");
+  return s.replace(/[0-9]/g, (d) => FA_DIGITS[d]).replace(/([۰-۹])\.(?=[۰-۹])/g, "$1٫");
 }
 // A duration in seconds: "81s" / "۸۱ ث".
 function secs(n) { return currentLang === "fa" ? num(n) + " ث" : n + "s"; }
@@ -2502,6 +2590,11 @@ function applyLang() {
     // The tab's name follows the language (it stayed English in Persian).
     if (!applyLang._enTitle) applyLang._enTitle = document.title;
     document.title = rtl ? "فانوس‌به‌دست — بازی‌ای آرام برای رو‌به‌رو شدن با ترس‌ها" : applyLang._enTitle;
+    // Start fetching the Persian face now, not when the first paragraph asks.
+    if (rtl && document.fonts && document.fonts.load) document.fonts.load("1em Vazirmatn", "فانوس").catch(() => {});
+    // The install manifest follows the language (name, description, dir).
+    const man = document.querySelector('link[rel="manifest"]');
+    if (man) { const href = rtl ? "manifest.fa.json" : "manifest.json"; if (man.getAttribute("href") !== href) man.setAttribute("href", href); }
   } catch {}
 }
 function registerLang(lang, pack) {

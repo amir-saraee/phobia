@@ -541,8 +541,10 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
     const sctx = signCanvas.getContext("2d");
     sctx.fillStyle = "#2a2a32"; sctx.fillRect(0, 0, 256, 64);
     sctx.fillStyle = "#dde1e8";
-    sctx.font = "bold 24px sans-serif"; sctx.textAlign = "center"; sctx.textBaseline = "middle";
-    sctx.fillText("ROOF ACCESS", 128, 32);
+    const faSign = !!(window.I18n && window.I18n.isRTL && window.I18n.isRTL());
+    sctx.font = faSign ? "bold 26px Vazirmatn, Tahoma, sans-serif" : "bold 24px sans-serif"; sctx.textAlign = "center"; sctx.textBaseline = "middle";
+    if (faSign) sctx.direction = "rtl";
+    sctx.fillText(window.t ? window.t("sc.h.roofSign", "ROOF ACCESS") : "ROOF ACCESS", 128, 32);
     const signTex = new THREE.CanvasTexture(signCanvas);
     signTex.colorSpace = THREE.SRGBColorSpace;
     const sign = new THREE.Mesh(

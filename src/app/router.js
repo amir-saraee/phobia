@@ -150,15 +150,19 @@ function render(view, params) {
 }
 // Persian pages: every number a view wrote with Latin digits (counts, stars,
 // "/5", seconds) is rewritten in Persian digits — text nodes only, never
-// attributes, inputs or the clinical report, which stays English by design.
+// attributes, inputs or anything marked English (the report's English
+// version carries lang=en).
 function faDigitsIn(root) {
   if (!root || typeof document.createTreeWalker !== "function") return;
-  const skip = (el) => !el || !!el.closest("script, style, textarea, input, select, code, pre, .report-view, [lang='en'], .no-fa-digits");
+  const skip = (el) => !el || !!el.closest("script, style, textarea, input, select, code, pre, [lang='en'], .no-fa-digits");
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const todo = [];
   let n;
-  while ((n = w.nextNode())) if (/[0-9]/.test(n.nodeValue) && !skip(n.parentElement)) todo.push(n);
-  for (const t of todo) t.nodeValue = fnum(t.nodeValue);
+  while ((n = w.nextNode())) if (/[0-9·]/.test(n.nodeValue) && !skip(n.parentElement)) todo.push(n);
+  // The "·" separator, set beside Persian digits, reads as a zero: «۳ · ۵»
+  // looked like «۳۰۵» (Persian ۰ is a small dot or ring). A vertical bar is
+  // the separator Persian pages use, and it can't be mistaken for a digit.
+  for (const t of todo) t.nodeValue = fnum(t.nodeValue).replace(/ ?· ?/g, " | ");
 }
 function showRenderRecovery(view) {
   const root = document.getElementById("app");

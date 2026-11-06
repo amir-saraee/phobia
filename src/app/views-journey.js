@@ -944,10 +944,24 @@ function mountJourney() {
 // PDF) or hand a therapist as JSON. Presentation only: every number comes
 // from state that already exists. Language here is deliberately CLINICAL,
 // not game-flavoured — it's written for the professional reading it.
+// The report reads in the player's language — a Persian clinician gets a
+// Persian report — and a Persian player can switch it to English for a
+// clinician who reads English (reportEnglish, flipped by data-action
+// "report-lang"). The English text is the source; Persian lives in rep.*.
+let reportEnglish = false;
+// The conditions a session ran in, stored as "hour/weather" ids; the stored
+// English label is kept for old entries that have no ids.
+const REP_HOURS = { dawn: "early morning", morning: "mid-morning", noon: "midday", afternoon: "afternoon", golden: "late afternoon", dusk: "dusk" };
+const REP_WEATHER = { clear: "clear", hazy: "hazy", overcast: "overcast", rain: "rainy" };
 function viewReport() {
   const ch = window.Character && window.Character.loadCharacter();
   const cs = activeCharSlice();
   const log = state.log || [];
+  // English when the UI is English, or when a Persian player asked for it.
+  const en = !isRtl() || reportEnglish;
+  const R = (key, fb) => en ? fb : t(key, fb);
+  const RF = (key, fb, vars) => en ? fb.replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? vars[k] : m)) : tf(key, fb, vars);
+  const plural = (n, one, many) => n === 1 ? one : many;
   const keys = Object.keys(PHOBIAS).filter(k =>
     (state.progress[k]?.highestCompleted ?? -1) >= 0 ||
     log.some(l => l.phobia === k) ||
@@ -956,7 +970,26 @@ function viewReport() {
     // report — the expectancy-violation record is clinical data on its own.
     (window.PhobiaExperiments && PhobiaExperiments.evidenceOf(k).length > 0)
   );
-  const fmtD = ts => ts ? new Date(ts).toLocaleDateString() : "—";
+  // Persian dates in the Iranian calendar ("۱۵ آبان ۱۴۰۵"); English ones
+  // spelled out ("6 Nov 2026") so day and month can't be swapped.
+  const fmtD = ts => {
+    if (!ts) return "—";
+    try { return new Date(ts).toLocaleDateString(en ? "en-GB" : "fa-IR", { year: "numeric", month: "short", day: "numeric" }); }
+    catch { return new Date(ts).toLocaleDateString(); }
+  };
+  const ctxText = (l) => {
+    if (l.ctx && typeof l.ctx === "string") {
+      const [h, w] = l.ctx.split("/");
+      if (REP_HOURS[h]) {
+        const hour = R(`rep.h.${h}`, REP_HOURS[h]);
+        if (!w || w === "clear" || !REP_WEATHER[w]) return hour;
+        return en ? `${REP_WEATHER[w]} ${hour}` : `${hour}، ${t(`rep.w.${w}`, REP_WEATHER[w])}`;
+      }
+    }
+    return l.ctxLabel || "—";
+  };
+  const outOf = (n, m) => en ? `${n} / ${m}` : tf("rep.outOf", "{n} of {m}", { n, m });
+  const signed = (d) => `<bdi dir="ltr">${d > 0 ? "+" : d < 0 ? "−" : ""}${Math.abs(d)}</bdi>`;
   const first = log[0], last = log[log.length - 1];
   const sections = keys.map(k => {
     const p = PHOBIAS[k];
@@ -967,88 +1000,105 @@ function viewReport() {
     // clinician would actually want next to the SUDS numbers.
     const ctxSet = new Set(sessions.map(l => l.ctx).filter(Boolean));
     const ctxLine = ctxSet.size > 1
-      ? ` · practised across ${ctxSet.size} distinct conditions (time of day / weather)`
+      ? " · " + RF("rep.ctxLine", "practised across {n} distinct conditions (time of day / weather)", { n: ctxSet.size })
       : "";
+    const lvName = (i) => en ? (p.levels[i]?.title || "") : lvTitle(k, i);
     const rows = sessions.map(l => `
       <tr>
         <td>${fmtD(l.ts)}</td>
-        <td>${l.level + 1}. ${escapeHtml(p.levels[l.level]?.title || "")}</td>
-        <td>${l.ctxLabel ? escapeHtml(l.ctxLabel) : "—"}</td>
+        <td>${l.level + 1}. ${escapeHtml(lvName(l.level))}</td>
+        <td>${escapeHtml(ctxText(l))}</td>
         <td>${l.predicted ?? "—"}</td>
         <td>${l.peak ?? "—"}</td>
         <td>${l.suds ?? "—"}</td>
-        <td>${l.finished === false ? "left early (allowed)" : "completed hold"}</td>
+        <td>${l.finished === false ? R("rep.leftEarly", "left early (allowed)") : R("rep.completed", "completed hold")}</td>
       </tr>`).join("");
     const ws = getWorldsteps(k);
+    const steps = en ? bridgeRaw(k) : bridgeOf(k);
     const wsRows = ws.slice().sort((a, b) => a.step - b.step).map(w => `
-      <li>${escapeHtml(bridgeRaw(k)[w.step]?.t || `Step ${w.step + 1}`)} — ${fmtD(w.ts)}${w.suds != null ? `, peak anxiety ${w.suds}/10` : ""}</li>`).join("");
+      <li>${escapeHtml(steps[w.step]?.t || RF("rep.step", "Step {n}", { n: w.step + 1 }))} — ${fmtD(w.ts)}${w.suds != null ? RF("rep.wsPeak", ", peak anxiety {n}", { n: outOf(w.suds, 10) }) : ""}</li>`).join("");
+    const title = en ? p.label : phLabel(k);
+    const clin = en ? p.name : [phName(k), p.name].filter(Boolean).join(" · ");
     return `
       <section class="report-fear">
-        <h3>${escapeHtml(p.label)} <span class="report-clinical">(${escapeHtml(p.name)})</span></h3>
-        <p class="report-line">Exposure hierarchy: ${done} of ${p.levels.length} levels completed · ${sessions.length} session${sessions.length === 1 ? "" : "s"}${ctxLine}</p>
+        <h3>${escapeHtml(title)}${clin ? ` <span class="report-clinical">(${en ? escapeHtml(clin) : `${escapeHtml(phName(k))}${p.name ? ` · <bdi lang="en">${escapeHtml(p.name)}</bdi>` : ""}`})</span>` : ""}</h3>
+        <p class="report-line">${RF("rep.hier", "Exposure hierarchy: {done} of {total} levels completed", { done, total: p.levels.length })} · ${en ? `${sessions.length} ${plural(sessions.length, "session", "sessions")}` : tf("rep.sessions", "{n} sessions", { n: sessions.length })}${ctxLine}</p>
         ${sessions.length ? `
-          <div class="report-chart">${drawSudsChart(sessions, 520, 110)}</div>
+          <div class="report-chart">${drawSudsChart(sessions, 520, 110, en)}</div>
           <table class="report-table">
-            <thead><tr><th>Date</th><th>Exposure level</th><th>Conditions</th><th>Predicted peak (0–10)</th><th>Actual peak (0–10)</th><th>End of trial (0–10)</th><th>Outcome</th></tr></thead>
+            <thead><tr><th>${R("rep.thDate", "Date")}</th><th>${R("rep.thLevel", "Exposure level")}</th><th>${R("rep.thCond", "Conditions")}</th><th>${R("rep.thPred", "Predicted peak (0–10)")}</th><th>${R("rep.thPeak", "Actual peak (0–10)")}</th><th>${R("rep.thEnd", "End of trial (0–10)")}</th><th>${R("rep.thOutcome", "Outcome")}</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>` : ""}
-        ${ws.length ? `<p class="report-line"><strong>Real-world (in-vivo) steps, self-reported:</strong></p><ul class="report-ws">${wsRows}</ul>` : ""}
+        ${ws.length ? `<p class="report-line"><strong>${R("rep.wsH", "Real-world (in-vivo) steps, self-reported:")}</strong></p><ul class="report-ws">${wsRows}</ul>` : ""}
         ${(() => {
           // Behavioural experiments — stated expectancy vs observed outcome.
           // For a clinician this is the expectancy-violation record: which
           // predictions the client tested in-scene and what they observed.
           const ev = window.PhobiaExperiments ? PhobiaExperiments.evidenceOf(k) : [];
           if (!ev.length) return "";
-          const rows3 = ev.map((l) => `
+          const rows3 = ev.map((l) => {
+            const txt = en || !PhobiaExperiments.lineText ? l : PhobiaExperiments.lineText(k, l);
+            return `
             <tr>
               <td>${fmtD(l.ts)}</td>
               <td>${l.rung + 1}</td>
-              <td>${escapeHtml(l.predicted)}</td>
-              <td>${escapeHtml(l.note)}</td>
-            </tr>`).join("");
+              <td>${escapeHtml(txt.predicted || "")}</td>
+              <td>${escapeHtml(txt.note || "")}</td>
+            </tr>`;
+          }).join("");
           return `
-            <p class="report-line"><strong>Behavioural experiments</strong> (in-scene, prediction stated before each test):</p>
+            <p class="report-line"><strong>${R("rep.expH", "Behavioural experiments")}</strong> ${R("rep.expSub", "(in-scene, prediction stated before each test):")}</p>
             <table class="report-table">
-              <thead><tr><th>Date</th><th>Level</th><th>Stated expectation</th><th>Observed outcome</th></tr></thead>
+              <thead><tr><th>${R("rep.thDate", "Date")}</th><th>${R("rep.thLv", "Level")}</th><th>${R("rep.thExpect", "Stated expectation")}</th><th>${R("rep.thObserved", "Observed outcome")}</th></tr></thead>
               <tbody>${rows3}</tbody>
             </table>`;
         })()}
         ${(() => {
           const checks = getChecks(k);
           if (!checks.length) return "";
-          const stageLabel = { baseline: "baseline", mid: "mid-hierarchy", post: "post-hierarchy", manual: "self-initiated" };
+          const stageLabel = {
+            baseline: R("rep.stBase", "baseline"), mid: R("rep.stMid", "mid-hierarchy"),
+            post: R("rep.stPost", "post-hierarchy"), manual: R("rep.stSelf", "self-initiated"),
+          };
           const rows2 = checks.map(c => `
             <tr>
               <td>${fmtD(c.ts)}</td>
-              <td>${stageLabel[c.at] || c.at}</td>
-              <td>${c.scores.join(" · ")}</td>
-              <td><strong>${c.total}</strong> / 20</td>
+              <td>${stageLabel[c.at] || escapeHtml(String(c.at))}</td>
+              <td><bdi dir="ltr">${c.scores.join(" · ")}</bdi></td>
+              <td><strong>${outOf(c.total, 20)}</strong></td>
             </tr>`).join("");
           const delta = checks.length > 1 ? checks[checks.length - 1].total - checks[0].total : null;
           return `
-            <p class="report-line"><strong>Fear-severity self-checks</strong> (5 items × 0–4: avoidance, peak intensity, physiological reaction, interference, danger belief — rated about real life)${delta != null ? ` · change since baseline: ${delta > 0 ? "+" : ""}${delta}` : ""}</p>
+            <p class="report-line"><strong>${R("rep.fcH", "Fear-severity self-checks")}</strong> ${R("rep.fcSub", "(5 items × 0–4: avoidance, peak intensity, physiological reaction, interference, danger belief — rated about real life)")}${delta != null ? ` · ${R("rep.fcDelta", "change since baseline:")} ${signed(delta)}` : ""}</p>
             <table class="report-table">
-              <thead><tr><th>Date</th><th>Stage</th><th>Item scores</th><th>Total</th></tr></thead>
+              <thead><tr><th>${R("rep.thDate", "Date")}</th><th>${R("rep.thStage", "Stage")}</th><th>${R("rep.thItems", "Item scores")}</th><th>${R("rep.thTotal", "Total")}</th></tr></thead>
               <tbody>${rows2}</tbody>
             </table>`;
         })()}
       </section>`;
   }).join("");
+  const nWs = worldstepCount();
+  const summary = en
+    ? `${log.length} logged ${plural(log.length, "session", "sessions")}${first ? ` · ${fmtD(first.ts)} – ${fmtD(last.ts)}` : ""} · ${nWs} real-world ${plural(nWs, "step", "steps")}`
+    : `${tf("rep.logged", "{n} logged sessions", { n: log.length })}${first ? ` · ${fmtD(first.ts)} تا ${fmtD(last.ts)}` : ""} · ${tf("rep.wsCount", "{n} real-world steps", { n: nWs })}`;
+  // The English version inside a Persian UI is marked lang=en/dir=ltr: it
+  // lays out left to right and keeps its Latin digits (faDigitsIn skips it).
+  const enInFa = en && isRtl();
   return `
-    <div class="panel report-view">
+    <div class="panel report-view"${enInFa ? ' lang="en" dir="ltr"' : ""}>
       <div class="report-actions">
-        <button class="btn-primary" id="reportPrint">${t("rep.print", "🖨 Print / save as PDF")}</button>
-        <button class="btn-ghost" id="reportJson">${t("rep.json", "⤓ Download data (JSON)")}</button>
-        <button class="btn-ghost" data-action="open-select">${t("rep.back", "Back to the valley")}</button>
+        <button class="btn-primary" id="reportPrint">${R("rep.print", "🖨 Print / save as PDF")}</button>
+        <button class="btn-ghost" id="reportJson">${R("rep.json", "⤓ Download data (JSON)")}</button>
+        ${isRtl() ? `<button class="btn-ghost" data-action="report-lang" lang="${enInFa ? "fa" : "en"}">${enInFa ? "نسخهٔ فارسی" : "English version"}</button>` : ""}
+        <button class="btn-ghost" data-action="open-select">${R("rep.back", "Back to the valley")}</button>
       </div>
-      <h2>Exposure practice report</h2>
+      <h2>${R("rep.title", "Exposure practice report")}</h2>
       <p class="report-line">
-        ${ch && ch.name ? `Traveler: <strong><bdi>${escapeHtml(ch.name)}</bdi></strong> · ` : ""}
-        ${log.length} logged session${log.length === 1 ? "" : "s"}${first ? ` · ${fmtD(first.ts)} – ${fmtD(last.ts)}` : ""}
-        · ${worldstepCount()} real-world step${worldstepCount() === 1 ? "" : "s"}
+        ${ch && ch.name ? `${R("rep.name", "Traveler:")} <strong><bdi>${escapeHtml(ch.name)}</bdi></strong> · ` : ""}
+        ${summary}
       </p>
-      <p class="report-note">Generated by Lanternwalk, a self-guided graded-exposure practice game. Anxiety ratings are self-reported SUDS (0 calm – 10 panic); "predicted" is rated before each exposure, "reported" after — the gap reflects expectancy violation. "Conditions" records the simulated time of day and weather, which the app varies between repetitions to support generalisation. This is a personal practice record, not a clinical assessment.</p>
-      ${sections || `<p>No practice recorded yet.</p>`}
+      <p class="report-note">${R("rep.note", "Generated by Lanternwalk, a self-guided graded-exposure practice game. Anxiety ratings are self-reported SUDS (0 calm – 10 panic); \"predicted\" is rated before each exposure, \"reported\" after — the gap reflects expectancy violation. \"Conditions\" records the simulated time of day and weather, which the app varies between repetitions to support generalisation. This is a personal practice record, not a clinical assessment.")}</p>
+      ${sections || `<p>${R("rep.none", "No practice recorded yet.")}</p>`}
     </div>`;
 }
 
@@ -1071,10 +1121,18 @@ function viewAbout() {
       <a class="crisis-link" href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a>${isRtl() ? " · اورژانس اجتماعی <b>۱۲۳</b> · صدای مشاور بهزیستی <b>۱۴۸۰</b>" : ""}</p>
 
       <h3>${t("about.privacyH", "Privacy")}</h3>
-      <p>${t("about.privacy", "Everything stays in your browser: characters, sessions, check-ins — all of it lives in this device's local storage. No account, no analytics, no server. Your data leaves only when you export it yourself (Settings → Export).")}</p>
+      <p>${t("about.privacy", "Everything stays in your browser: characters, sessions, check-ins — all of it lives in this device's local storage. No account, no analytics, no server. Your data leaves only when you export it yourself (Settings → Export).")}
+      <a href="${PRIVACY_URL}" target="_blank" rel="noopener">${t("about.privacyLink", "The full privacy policy")}</a></p>
+
+      <h3>${t("about.contactH", "Contact and support")}</h3>
+      <p>${tf("about.contact", "A bug, a question, a moment it helped? Write to {mail} — or use “Send feedback” below, which can add the technical details for you.", { mail: `<a href="mailto:${SUPPORT_EMAIL}" dir="ltr" lang="en">${SUPPORT_EMAIL}</a>` })}</p>
 
       <h3>${t("about.creditsH", "Credits")}</h3>
-      <p class="about-credits">${t("about.credits", "Built for fun with")} <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> · ${t("about.creditsPhysics", "physics by")} <a href="https://rapier.rs" target="_blank" rel="noopener">Rapier</a> · ${t("about.creditsModels", "creature models by")} <bdi><a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a> (CC0)</bdi> · ${t("about.creditsAmbient", "ambient recordings from")} <a href="https://mixkit.co" target="_blank" rel="noopener">Mixkit</a> · ${t("about.creditsHdri", "sky lighting from")} <bdi><a href="https://polyhaven.com/a/meadow" target="_blank" rel="noopener">Poly Haven</a> (CC0)</bdi> · ${t("about.creditsMade", "made with care by Amir.")}</p>
+      <p class="about-credits">${t("about.credits", "Built for fun with")} <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> · ${t("about.creditsPhysics", "physics by")} <a href="https://rapier.rs" target="_blank" rel="noopener">Rapier</a> · ${t("about.creditsModels", "creature models by")} <bdi><a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a> (CC0)</bdi> · ${t("about.creditsAmbient", "ambient recordings from")} <a href="https://mixkit.co" target="_blank" rel="noopener">Mixkit</a> · ${t("about.creditsHdri", "sky lighting from")} <bdi><a href="https://polyhaven.com/a/meadow" target="_blank" rel="noopener">Poly Haven</a> (CC0)</bdi> · ${t("about.creditsFont", "Persian type:")} <bdi><a href="https://github.com/rastikerdar/vazirmatn" target="_blank" rel="noopener">Vazirmatn</a> (SIL OFL)</bdi> · ${t("about.creditsMade", "made with care by Amir.")}</p>
+      <p class="small">${t("about.own", "The story, its characters, the scenes, the writing and the code are the makers' own work; the models, recordings, sky and font above are used under their free licences.")}</p>
+      <p class="small about-version">${tf("about.version", "Version {v} · {d}", { v: APP_VERSION, d: (() => {
+        try { return new Date(APP_BUILD + "T12:00:00").toLocaleDateString(isRtl() ? "fa-IR" : "en-GB", { year: "numeric", month: "long", day: "numeric" }); } catch { return APP_BUILD; }
+      })() })}</p>
 
       <div class="actions" style="margin-top:14px">
         <button class="btn-ghost" data-action="show-consent">${t("about.reread", "Re-read the welcome notice")}</button>

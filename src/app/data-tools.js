@@ -24,6 +24,27 @@ function applyTheme() {
   if (meta) meta.setAttribute("content", pref === "light" ? "#f0f4f9" : "#0f1724");
 }
 
+// A notification from the game itself. Android's Chrome (and so the Bazaar
+// app) refuses `new Notification()` — "Illegal constructor" — and shows only
+// what the service worker posts, so go through the worker when one runs and
+// keep the constructor for desktop browsers without one. PNG icon: Android
+// can't draw an SVG in the shade.
+function showLocalNotification(body) {
+  const title = t("brand.name", "Lanternwalk");
+  const opts = {
+    body, icon: "assets/icons/icon-192.png", badge: "assets/icons/icon-192.png",
+    tag: "lanternwalk-nudge", lang: isRtl() ? "fa" : "en", dir: isRtl() ? "rtl" : "ltr",
+  };
+  const direct = () => { try { new Notification(title, opts); } catch {} };
+  try {
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, opts)).catch(direct);
+      return;
+    }
+  } catch {}
+  direct();
+}
+
 // Daily reminder scheduler — checks every hour while the app is open. We can't
 // schedule across closed-tab time without a push server, but if the user opens
 // the app any time after 22h since the last reminder, we'll fire one.
@@ -42,10 +63,7 @@ function scheduleReminders() {
       try {
         const ch = window.Character && window.Character.loadCharacter();
         const name = ch?.name ? `, ${ch.name}` : "";
-        new Notification("Lanternwalk", {
-          body: ch?.name ? tf("remind.bodyName", "A small rung today, {name}? You don't have to climb far.", { name: ch.name }) : t("remind.body", "A small rung today? You don't have to climb far."),
-          icon: "icon.svg",
-        });
+        showLocalNotification(ch?.name ? tf("remind.bodyName", "A small rung today, {name}? You don't have to climb far.", { name: ch.name }) : t("remind.body", "A small rung today? You don't have to climb far."));
         localStorage.setItem("fobia.lastReminder", String(now));
       } catch {}
     }
@@ -309,7 +327,8 @@ function generateProgressCard() {
   const X = (x) => (RTL ? W - x : x);
   ctx.direction = RTL ? "rtl" : "ltr";
   ctx.textAlign = RTL ? "right" : "left";
-  const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, 'Noto Sans Arabic', sans-serif";
+  // Vazirmatn when it has loaded (any Persian page loads it); else the system's.
+  const FONT = (RTL ? "Vazirmatn, " : "") + "-apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, 'Noto Sans Arabic', sans-serif";
 
   // Brand
   ctx.fillStyle = "#7cd1c5";

@@ -555,10 +555,10 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
     gScr.position.set(0, BORE_Y + BORE_R + 0.42, GZ - 0.05); room.add(gScr);
     gantryPaint = (line1, line2) => {
       const g = gC.getContext("2d"); g.fillStyle = "#0e1418"; g.fillRect(0, 0, 256, 96);
-      g.fillStyle = "#8fd6ff"; g.font = "bold 30px sans-serif"; g.textAlign = "center"; g.fillText(line1, 128, 42);
+      g.fillStyle = "#8fd6ff"; g.font = "bold 30px Vazirmatn, sans-serif"; g.textAlign = "center"; g.fillText(line1, 128, 42);
       g.fillStyle = "#cfe6f2"; g.font = "24px sans-serif"; g.fillText(line2 || "", 128, 78); gT.needsUpdate = true;
     };
-    gantryPaint("● READY", "");
+    gantryPaint("● " + window.t("mri.ready", "READY"), "");
     // table pedestal (part of the room; the table top slides over it)
     const ped = mesh(rbox(0.56, -0.16 - FLOOR, 1.6, 0.05), shellMat, 0, (FLOOR - 0.16) / 2, -0.4); room.add(ped);
     // ---- the patient (fixed to the camera) ----

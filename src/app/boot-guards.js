@@ -18,6 +18,16 @@
 if (typeof window.t !== "function") {
   window.t = (key, fallback) => (fallback != null ? fallback : key);
 }
+// ---------- Release + contact ----------
+// What a player, and a store reviewer, needs to reach the makers: shown on
+// the About page, in Settings and in the feedback box, and stamped into the
+// feedback note's technical details. privacy.html (static, no JS) and the
+// landing page (landing/) carry the same address — change all three together.
+const APP_VERSION = "1.0.0";
+const APP_BUILD = "2026-11-06";
+const SUPPORT_EMAIL = "info@go2game.ir";
+const PRIVACY_URL = "privacy.html";
+
 // Right-to-left right now (Persian)? For arrows and other glyphs whose
 // direction is meaning, not decoration.
 function isRtl() { return !!(window.I18n && window.I18n.isRTL && window.I18n.isRTL()); }
