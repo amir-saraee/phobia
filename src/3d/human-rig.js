@@ -658,6 +658,20 @@ function buildHumanRig(o = {}) {
   ];
   // Chest / hip widths diverge by body type; `k` is 1 at the shoulders, 0 at
   // the seat, so one lerp shapes the whole silhouette.
+  // Cloth ease. The shirt stations were the body's own sections, so the top
+  // hugged the waist like a leotard — most visibly on the woman, whose waist
+  // factor is the strongest. A tee hangs from the bust: below it the fabric
+  // follows the waist only partly and falls a little wider toward the hem
+  // (5.5% there, 1.6× that for a hoodie). The trousers keep the body's own
+  // sections, so the hem still overhangs the waistband. Shared with the
+  // outfit block's frontZ so pockets and zips ride on the cloth, not the skin.
+  const waistPinchAt = (yAuth) => 1 - (1 - bt.waist) * 0.75 * Math.exp(-Math.pow((yAuth - 0.985) / 0.095, 2));
+  const clothPinchAt = (yAuth) => 1 - (1 - waistPinchAt(yAuth)) * 0.45;
+  const clothEaseAt = (yAuth) => {
+    const drop = _hsat((1.212 - yAuth) / (1.212 - 0.878));
+    const easeK = o.topStyle === "hoodie" ? 1.6 : (o.topStyle === "jacket" ? 1.25 : 1.0);
+    return 1 + drop * 0.055 * easeK;
+  };
   const torsoSt = torso.map((s) => {
     // `ay` stations are already in the live frame; `y` ones come from the
     // authored frame and need the remap. `k` (shoulder→seat blend) is judged in
@@ -668,12 +682,14 @@ function buildHumanRig(o = {}) {
     // Dampened: stacking the raw hip factor on top of the seat factor pushed a
     // 36 cm hip out past 44 cm, which is what made the pelvis read as a block.
     const wide = SW * k + (1 + (HW - 1) * 0.55) * (1 - k);
-    const waistPinch = 1 - (1 - bt.waist) * 0.75 * Math.exp(-Math.pow((yAuth - 0.985) / 0.095, 2));
     const seatK = 1 + (bt.seat - 1) * 0.5 * (1 - k) * (1 - k);
+    const isShirt = s.mat === shirtTop;
+    const ease = isShirt ? clothEaseAt(yAuth) : 1;
+    const pinch = isShirt ? clothPinchAt(yAuth) : waistPinchAt(yAuth);
     return {
       p: [0, s.ay != null ? s.ay : stationY(s.y), 0],
-      rx: s.rx * wide * waistPinch * seatK,
-      rz: s.rz * (0.94 + 0.06 * wide) * bt.chestZ * waistPinch * seatK,
+      rx: s.rx * wide * pinch * seatK * ease,
+      rz: s.rz * (0.94 + 0.06 * wide) * bt.chestZ * pinch * seatK * ease,
       w: s.w, mat: s.mat, sq: s.sq, cap: s.cap, capH: s.capH,
       ymod: s.ymod ? ((ang) => s.ymod(ang) * H) : null,
     };
@@ -699,9 +715,14 @@ function buildHumanRig(o = {}) {
       { y: 1.268, xr: 0.56, rx: .042, rz: .041, w: [[C, .92], [U, .08]], mat: MAT.SHIRT },
       { y: 1.266, xr: 0.73, rx: .049, rz: .047, w: [[C, .62], [U, .38]], mat: MAT.SHIRT },
       { y: 1.250, xr: 0.84, rx: .050, rz: .048, w: [[C, .26], [U, .74]], mat: MAT.SHIRT },
-      { y: 1.218, xr: 0.86, rx: .048, rz: .046, w: [[U, 1]], mat: MAT.SHIRT },
-      { y: 1.150, xr: 0.865, rx: .0440, rz: .0424, w: [[U, 1]], mat: MAT.SHIRT },
-      { y: 1.082, xr: 0.865, rx: .0400, rz: .0392, w: [[U, 1]], mat: sleeveMat },
+      { y: 1.218, xr: 0.86, rx: .049, rz: .047, w: [[U, 1]], mat: MAT.SHIRT },
+      // A sleeve is cloth, not a second skin: it hangs a few millimetres off
+      // the arm and ends in a hem that stands proud of the skin below it. A
+      // long sleeve carries the same ease down the arm with no lip.
+      { y: 1.150, xr: 0.865, rx: .0478, rz: .0460, w: [[U, 1]], mat: MAT.SHIRT },
+      { y: 1.112, xr: 0.865, rx: longSleeve ? .0450 : .0468, rz: longSleeve ? .0436 : .0452, w: [[U, 1]], mat: MAT.SHIRT },
+      { y: 1.104, xr: 0.865, rx: longSleeve ? .0442 : .0404, rz: longSleeve ? .0428 : .0396, w: [[U, 1]], mat: sleeveMat },
+      { y: 1.082, xr: 0.865, rx: longSleeve ? .0430 : .0400, rz: longSleeve ? .0418 : .0392, w: [[U, 1]], mat: sleeveMat },
       { y: 1.032, xr: 0.863, rx: .0370, rz: .0364, w: [[U, 1]], mat: sleeveMat },
       { y: 1.014, xr: 0.862, rx: .0358, rz: .0352, w: [[U, .78], [F, .22]], mat: sleeveMat },
       { y: 0.992, xr: 0.861, rx: .0348, rz: .0343, w: [[U, .50], [F, .50]], mat: sleeveMat },
@@ -888,9 +909,11 @@ function buildHumanRig(o = {}) {
         if (y <= torso[i].y && y >= torso[i + 1].y) { hi = torso[i]; lo = torso[i + 1]; break; }
       }
       const f = (y - lo.y) / Math.max(1e-4, hi.y - lo.y);
-      return (lo.rz + (hi.rz - lo.rz) * f) * (0.94 + 0.06 * SW) * bt.chestZ;
+      return (lo.rz + (hi.rz - lo.rz) * f) * (0.94 + 0.06 * SW) * bt.chestZ * clothPinchAt(y) * clothEaseAt(y);
     };
-    const cl = (y) => y * H - chestY;                 // station height → chest-local
+    // Station height → chest-local, through the same remap as the sweep. As
+    // y·H every trim sat ~10 cm below the station whose depth it had read.
+    const cl = (y) => stationY(y) - chestY;
     if (o.topStyle === "hoodie") {
       const cowl = new THREE.Mesh(new THREE.TorusGeometry(0.098 * SW, 0.030, 12, 26), foldM);
       cowl.rotation.x = Math.PI / 2;
@@ -906,7 +929,14 @@ function buildHumanRig(o = {}) {
       hood.castShadow = true;
       chest.add(hood);
       const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.21 * SW, 0.105, 0.035), foldM);
-      pocket.position.set(0, 0.978 * H - L.waistY, frontZ(0.978) * 0.92);
+      // Height goes through the SAME remap as the torso stations. It used to
+      // be the authored height × H, which on this frame is ~10 cm lower —
+      // down at the hem, where the trunk is deeper than the station whose
+      // depth frontZ had read — so the pocket sat inside the cloth and only
+      // its two top corners showed, as dark triangles. frontZ follows the
+      // eased cloth, so the patch is sewn ON the fabric however loose it is.
+      // A kangaroo pocket sits at the belly, just above the hem — not mid-rib.
+      pocket.position.set(0, stationY(0.905) - L.waistY, frontZ(0.905) - 0.010);
       spine.add(pocket);
       // Drawstrings
       for (const sx of [-1, 1]) {
