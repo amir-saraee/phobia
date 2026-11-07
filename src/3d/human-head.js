@@ -164,7 +164,16 @@ function makeHeadSurface(shape) {
     const ax = Math.abs(x);
     // --- the big masses -------------------------------------------------
     // Cranium, long front-to-back, and the rounded forehead rising out of it.
-    let d = _sdEll(x, y - 0.0200, z + 0.0060, 0.0745 + 0.0015 * sq, 0.0880, 0.0900);
+    // Measured 2026-11-07 (widths in cm by height): the old single ellipsoid
+    // was widest at EYE level (14.9) and tapered to 12.3 five centimetres
+    // above — an egg, with the face as its broadest band. A real skull is
+    // widest at the parietal eminences, well above the ears (~15.3), and the
+    // face below is narrower than the skull above it; that is what reads as
+    // "temples", and without it a face looks long whatever its thirds are.
+    // So: the cranium carries the face width, a second mass above it carries
+    // the parietal fullness.
+    let d = _sdEll(x, y - 0.0200, z + 0.0060, 0.0705 + 0.0015 * sq, 0.0880, 0.0900);
+    d = _smin(d, _sdEll(x, y - 0.0480, z + 0.0120, 0.0745 + 0.0015 * sq, 0.0500, 0.0800), 0.014);
     d = _smin(d, _sdEll(x, y - 0.0450, z - 0.0300, 0.0580, 0.0450, 0.0560), 0.020);
     // Midface — the block the eyes, cheeks and upper jaw sit in.
     d = _smin(d, _sdEll(x, y + 0.0200, z - 0.0300, 0.0590 + 0.0040 * sq, 0.0450, 0.0580), 0.032);
@@ -178,7 +187,9 @@ function makeHeadSurface(shape) {
     // Chin: a small rounded mass, set well behind the nose tip.
     d = _smin(d, _sdEll(x, y + 0.0870, z - 0.0790, 0.0190 + 0.0050 * sq, 0.0140, 0.0160), 0.014);
     // Cheekbones, and the soft apples of the cheeks under the eyes.
-    d = _smin(d, _sdEll(ax - 0.0490, y + 0.0060, z - 0.0500, 0.0130, 0.0100, 0.0180), 0.028);
+    // Zygomatic arch: further out and deeper front-to-back, so the face has a
+    // cheekbone plane (bizygomatic ~13.2 cm) instead of a smooth egg side.
+    d = _smin(d, _sdEll(ax - 0.0520, y + 0.0060, z - 0.0480, 0.0135, 0.0105, 0.0200), 0.028);
     d = _smin(d, _sdEll(ax - 0.0330, y + 0.0190, z - 0.0740, 0.0190, 0.0150, 0.0120), 0.026);
     // Buccal fullness: a young face is convex from cheekbone to jaw. Without
     // it the side of the face caves in under the cheekbone (the gaunt look).
@@ -216,14 +227,20 @@ function makeHeadSurface(shape) {
     {
       // Lips blend INTO the face (k 0.010): as a separate block set on a flat
       // muzzle they read as a bill however they were sized.
-      let lip = _sdEll(x, y + 0.0560, z - 0.0850, 0.0205, 0.0050, 0.0082);
-      lip = _smin(lip, _sdEll(x, y + 0.0688, z - 0.0842, 0.0188, 0.0056, 0.0086), 0.004);
+      // Profile (measured): subnasale 9.4, lips 9.5, chin 9.5 — a flat muzzle.
+      // Real lips stand ~3 mm proud of the subnasale and the chin sits a
+      // little behind them. The lips were a bill when they were TALL and
+      // proud; short and proud is a mouth.
+      let lip = _sdEll(x, y + 0.0560, z - 0.0850, 0.0205, 0.0050, 0.0104);
+      lip = _smin(lip, _sdEll(x, y + 0.0688, z - 0.0842, 0.0188, 0.0056, 0.0106), 0.004);
       d = _smin(d, lip, 0.010);
       // The seam — a crease, not a cavity.
       d = _smax(d, -_sdEll(x, y - FACE.mouthY, z - 0.0970, 0.0190, 0.0009, 0.0090), 0.0014);
       // Corners tuck in; the philtrum is a faint groove under the nose.
       d = _smax(d, -_sdEll(ax - 0.0198, y - FACE.mouthY, z - 0.0860, 0.0030, 0.0028, 0.0038), 0.003);
       d = _smax(d, -_sdEll(x, y + 0.0490, z - 0.0955, 0.0028, 0.0050, 0.0012), 0.004);
+      // Subnasal trough: the skin dips between the nose base and the upper lip.
+      d = _smax(d, -_sdEll(x, y + 0.0445, z - 0.0975, 0.0095, 0.0028, 0.0045), 0.004);
       // Mentolabial crease between the lower lip and the chin.
       d = _smax(d, -_sdEll(x, y + 0.0785, z - 0.0950, 0.0140, 0.0032, 0.0055), 0.004);
     }
@@ -752,7 +769,7 @@ function buildHead(o) {
   // Bust the geometry cache when the sculpt/tint changes so creator previews
   // pick up the new face immediately (old keys would serve stale morphs).
   const skull = buildHeadShell(headPoint, faceM, {
-    nu: dense.nu, nv: dense.nv, morphs: true, cacheKey: "skull|v7|" + shape + "|" + dense.nu,
+    nu: dense.nu, nv: dense.nv, morphs: true, cacheKey: "skull|v8|" + shape + "|" + dense.nu,
     // Cavity shading baked from the sculpt's own distance field: sockets, the
     // nostrils, the lip seam, the corners of the mouth and the folds read as
     // form even under flat, frontal light (which is most of this game).
@@ -765,8 +782,8 @@ function buildHead(o) {
       // its feature fires at a fraction of its strength and on the wrong side
       // of the curve, which is how a mouth turns into a brown smear.
       // Lips — upper vermilion a touch darker than the lower (it faces down).
-      const lipU = _falloff(p.x, p.y + 0.0560, p.z - 0.0932, 0.0192, 0.0058, 0.030);
-      const lipL = _falloff(p.x, p.y + 0.0688, p.z - 0.0928, 0.0175, 0.0064, 0.030);
+      const lipU = _falloff(p.x, p.y + 0.0560, p.z - 0.0952, 0.0192, 0.0058, 0.030);
+      const lipL = _falloff(p.x, p.y + 0.0688, p.z - 0.0946, 0.0175, 0.0064, 0.030);
       const lip = Math.min(1, lipU * 1.05 + lipL);
       r *= 1 + (lipTone[0] - 1) * lip; g *= 1 + (lipTone[1] - 1) * lip; b *= 1 + (lipTone[2] - 1) * lip;
       // Lip seam — darker than skin, never a void; the crease carries the rest.
@@ -1118,7 +1135,7 @@ function buildHead(o) {
     const cap = buildHeadShell(headPoint, hairShellM, {
       // Dense enough that the faded hairline does not step along grid lines.
       nu: o.lowDetail ? 72 : 120, nv: o.lowDetail ? 56 : 96, offset: thick, fade: true,
-      cacheKey: "hairF7|" + shape + "|" + style + "|" + thick,
+      cacheKey: "hairF8|" + shape + "|" + style + "|" + thick,
       mask: (th, ph) => hairlineMask(th, ph),
       thickMul: (th, ph) => {
         const a = th > Math.PI ? Math.PI * 2 - th : th;
@@ -1190,7 +1207,7 @@ function buildHead(o) {
         // the very same morphs as the skin underneath it and rides the jaw
         // instead of tearing off it.
         morphs: true,
-        cacheKey: "beardF5|" + shape + "|" + fh,
+        cacheKey: "beardF6|" + shape + "|" + fh,
         // Slightly tighter than the tinted zone so the shell's polygon edge
         // always lands on skin that is already beard-coloured.
         mask: (th, ph, p) => { const v = beardMask(p); return v > 0.30 ? (v - 0.30) / 0.70 : 0; },
@@ -1212,7 +1229,7 @@ function buildHead(o) {
     const bandM = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor).multiplyScalar(0.78), roughness: 0.94 });
     if (hw === "beanie") {
       const dome = buildHeadShell(headPoint, hwM, {
-        nu: 44, nv: 32, offset: 0.014, cacheKey: "beanie2|" + shape,
+        nu: 44, nv: 32, offset: 0.014, cacheKey: "beanie3|" + shape,
         mask: (th, ph) => _sstep(1.28, 1.12, ph),
       });
       if (dome) { dome.position.copy(skull.position); grp.add(dome); }
@@ -1226,7 +1243,7 @@ function buildHead(o) {
       grp.add(pom);
     } else {
       const dome = buildHeadShell(headPoint, hwM, {
-        nu: 44, nv: 32, offset: 0.011, cacheKey: "cap2|" + shape,
+        nu: 44, nv: 32, offset: 0.011, cacheKey: "cap3|" + shape,
         mask: (th, ph) => _sstep(1.24, 1.08, ph),
       });
       if (dome) { dome.position.copy(skull.position); grp.add(dome); }
