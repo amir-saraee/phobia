@@ -269,6 +269,10 @@ function fearCheckDue(phobiaKey, levelIdx) {
   return !checks.some(c => c.at === stage);
 }
 
+// A key that names one of OUR fears: an own property of PHOBIAS. A route or a
+// saved fear like "constructor", "__proto__" or "toString" read the members
+// every object inherits, and drew a junk page or the recovery screen.
+function isPhobiaKey(k) { return typeof k === "string" && Object.prototype.hasOwnProperty.call(PHOBIAS, k); }
 // The realms shown on the journey map: the six featured fears, plus anything
 // the traveler already carries (legacy progress, a non-featured primary fear,
 // or a forged/custom ladder) so nothing they own ever disappears.
@@ -276,11 +280,11 @@ function journeyKeys() {
   const keys = FEATURED.filter(k => PHOBIAS[k] && realmOpen(k));
   const extra = [];
   const ch = window.Character && window.Character.loadCharacter();
-  if (ch) [ch.primaryPhobia, ...(ch.additionalPhobias || [])].forEach(k => {
-    if (k && PHOBIAS[k] && realmOpen(k) && !keys.includes(k) && !extra.includes(k)) extra.push(k);
+  if (ch) [ch.primaryPhobia, ...(Array.isArray(ch.additionalPhobias) ? ch.additionalPhobias : [])].forEach(k => {
+    if (k && isPhobiaKey(k) && realmOpen(k) && !keys.includes(k) && !extra.includes(k)) extra.push(k);
   });
   Object.keys(state.progress || {}).forEach(k => {
-    if (PHOBIAS[k] && (state.progress[k].highestCompleted ?? -1) >= 0 && !keys.includes(k) && !extra.includes(k)) extra.push(k);
+    if (isPhobiaKey(k) && (state.progress[k].highestCompleted ?? -1) >= 0 && !keys.includes(k) && !extra.includes(k)) extra.push(k);
   });
   Object.keys(PHOBIAS).forEach(k => {
     if (PHOBIAS[k].isCustom && !keys.includes(k) && !extra.includes(k)) extra.push(k);
@@ -292,8 +296,8 @@ function journeyKeys() {
 function pickablePhobias(existingChar) {
   const keys = FEATURED.filter(k => PHOBIAS[k]);
   Object.keys(PHOBIAS).forEach(k => { if (PHOBIAS[k].isCustom && !keys.includes(k)) keys.push(k); });
-  if (existingChar) [existingChar.primaryPhobia, ...(existingChar.additionalPhobias || [])].forEach(k => {
-    if (k && PHOBIAS[k] && !keys.includes(k)) keys.push(k);
+  if (existingChar) [existingChar.primaryPhobia, ...(Array.isArray(existingChar.additionalPhobias) ? existingChar.additionalPhobias : [])].forEach(k => {
+    if (k && isPhobiaKey(k) && !keys.includes(k)) keys.push(k);
   });
   const out = {};
   keys.forEach(k => { out[k] = PHOBIAS[k]; });
@@ -318,25 +322,36 @@ let state = loadState();
 // global state.progress / state.log fields are kept as references to the
 // active character's data so existing code continues to work.
 function activateCharacterState() {
-  if (!state.byCharacter) state.byCharacter = {};
+  if (!_isObj(state.byCharacter)) state.byCharacter = {};
   const ch = window.Character && window.Character.loadCharacter();
-  const id = ch?.id || "default";
-  if (!state.byCharacter[id]) {
-    // Migrate any legacy global progress/log into this character on first access
-    state.byCharacter[id] = {
-      progress: state.progress && Object.keys(state.progress).length ? state.progress : {},
-      log: state.log && state.log.length ? state.log : [],
+  // An id like "constructor" or "__proto__" (a crafted import) read the
+  // prototype's member as a slice and blanked every page.
+  const id = (ch && _safeKey(ch.id)) ? ch.id : "default";
+  if (!_ownSlice(id)) {
+    // Legacy single-traveler saves kept progress/log on the root: they belong
+    // to the first traveler who loads, ONCE, and as a copy. After that the
+    // root fields are only aliases of the active traveler's slice — this used
+    // to hand every new traveler the previous one's live progress and log, by
+    // reference, so the two wrote into each other's history.
+    state.byCharacter[id] = state._charScoped ? { progress: {}, log: [] } : {
+      progress: _isObj(state.progress) ? JSON.parse(JSON.stringify(state.progress)) : {},
+      log: Array.isArray(state.log) ? JSON.parse(JSON.stringify(state.log)) : [],
     };
     // What a visitor did before they had a traveler — the self-check's
     // answers (the Mirror baseline), the story pages read — belongs to the
     // traveler they become. The quiz promised its answers seed the Mirror;
-    // they used to stay behind in the "default" slot.
-    const pre = id !== "default" && state.byCharacter.default;
+    // they used to stay behind in the "default" slot. MOVED, not shared or
+    // copied: the slot is emptied, so a second traveler made later starts
+    // with nothing of it.
+    const pre = id !== "default" && _ownSlice("default");
     if (pre) {
       const mine = state.byCharacter[id];
-      if (pre.checks && Object.keys(pre.checks).length) { mine.checks = pre.checks; delete pre.checks; }
-      if (pre.story) mine.story = JSON.parse(JSON.stringify(pre.story));
-      if (pre.primer) mine.primer = Object.assign({}, pre.primer);
+      for (const k of Object.keys(pre)) {
+        const v = pre[k];
+        const empty = v == null || (Array.isArray(v) ? !v.length : (_isObj(v) && !Object.keys(v).length));
+        if (!empty) mine[k] = v;
+      }
+      delete state.byCharacter.default;
     }
   }
   state.progress = state.byCharacter[id].progress;
@@ -355,9 +370,10 @@ function activateCharacterState() {
 // Ensures the slice + its courage/goals fields exist so gameplay writes land on
 // the right character instead of a shared global.
 function activeCharSlice() {
-  if (!state.byCharacter) state.byCharacter = {};
-  const id = (window.Character && window.Character.activeCharacterId && window.Character.activeCharacterId()) || "default";
-  if (!state.byCharacter[id]) state.byCharacter[id] = { progress: {}, log: [] };
+  if (!_isObj(state.byCharacter)) state.byCharacter = {};
+  let id = (window.Character && window.Character.activeCharacterId && window.Character.activeCharacterId()) || "default";
+  if (!_safeKey(id)) id = "default";
+  if (!_ownSlice(id)) state.byCharacter[id] = { progress: {}, log: [] };
   const s = state.byCharacter[id];
   if (s.courage == null) s.courage = 0;
   if (s.goals == null) s.goals = {};
@@ -367,8 +383,9 @@ function activeCharSlice() {
 // root state, silently wiping every OTHER character's progress, log, courage and
 // goals too.
 function resetActiveProgress() {
-  if (!state.byCharacter) state.byCharacter = {};
-  const id = (window.Character && window.Character.activeCharacterId && window.Character.activeCharacterId()) || "default";
+  if (!_isObj(state.byCharacter)) state.byCharacter = {};
+  let id = (window.Character && window.Character.activeCharacterId && window.Character.activeCharacterId()) || "default";
+  if (!_safeKey(id)) id = "default";
   state.byCharacter[id] = { progress: {}, log: [], courage: 0, goals: {}, milestones: [] };
   state.progress = state.byCharacter[id].progress;
   state.log = state.byCharacter[id].log;
@@ -436,39 +453,92 @@ function loadState() {
 // (Function declarations, not consts: loadState() runs at the top of this
 // file, before any const below it exists.)
 function _isObj(v) { return !!v && typeof v === "object" && !Array.isArray(v); }
+// A key the app can index a plain object with: not empty, and not a name
+// every object inherits ("__proto__", "constructor", "toString"…) — those
+// read Object.prototype's members instead of saved data.
+function _safeKey(k) { return typeof k === "string" && k !== "" && !(k in Object.prototype); }
+// A fear's key as the app writes them ("dogs", "custom-1730…"): it lands in
+// attributes and routes, so nothing but word characters and dashes.
+function _fearKey(k) { return _safeKey(k) && /^[\w-]+$/.test(k); }
+// The saved slice for a traveler id — an own property only, never inherited.
+function _ownSlice(id) {
+  return (_isObj(state.byCharacter) && _safeKey(id) && Object.prototype.hasOwnProperty.call(state.byCharacter, id))
+    ? state.byCharacter[id] : null;
+}
+// A number field read from storage or an import ("3", "ten", null): the
+// number it says, or undefined when it says none.
+function _num(v) { if (v == null || v === "") return undefined; const n = +v; return Number.isFinite(n) ? n : undefined; }
 function _cleanProgress(p) {
   if (!_isObj(p)) return {};
   for (const k of Object.keys(p)) {
-    if (!_isObj(p[k])) { delete p[k]; continue; }
-    if (!Number.isFinite(p[k].highestCompleted)) p[k].highestCompleted = -1;
+    if (!_fearKey(k) || !_isObj(p[k])) { delete p[k]; continue; }
+    const hc = _num(p[k].highestCompleted);
+    p[k].highestCompleted = hc == null ? -1 : hc;
   }
   return p;
 }
-function _cleanArrMap(m) {
+// Lists of records (worldsteps, checks) per fear: only objects survive — a
+// null inside one used to throw on every page that read it.
+function _cleanArrMap(m, each) {
   if (!_isObj(m)) return {};
-  for (const k of Object.keys(m)) if (!Array.isArray(m[k])) delete m[k];
+  for (const k of Object.keys(m)) {
+    if (!_fearKey(k) || !Array.isArray(m[k])) { delete m[k]; continue; }
+    m[k] = m[k].filter(_isObj);
+    if (each) m[k] = m[k].filter(each);
+  }
   return m;
+}
+// One session in the log, its numbers coerced: a string "suds" drew NaN into
+// every chart. An entry with no usable fear rating, trial or time is dropped.
+function _cleanEntry(l) {
+  if (!_isObj(l) || !_fearKey(l.phobia)) return false;
+  for (const f of ["suds", "level", "ts"]) { const n = _num(l[f]); if (n == null) return false; l[f] = n; }
+  // (A null is the app's own "none" — kept as it is.)
+  for (const f of ["peak", "heldSec", "minHold", "stars"]) { if (l[f] == null) continue; const n = _num(l[f]); if (n == null) delete l[f]; else l[f] = n; }
+  if (l.predicted != null) { const n = _num(l.predicted); l.predicted = n == null ? null : n; }
+  return true;
+}
+function _cleanWorldstep(w) {
+  const step = _num(w.step);
+  if (step == null) return false;
+  w.step = step;
+  if (w.suds != null) { const n = _num(w.suds); if (n == null) delete w.suds; else w.suds = n; }
+  if (w.ts != null) { const n = _num(w.ts); if (n == null) delete w.ts; else w.ts = n; }
+  return true;
+}
+function _cleanCheck(c) {
+  c.scores = Array.isArray(c.scores) ? c.scores.map(_num).filter((n) => n != null) : [];
+  const total = _num(c.total);
+  c.total = total == null ? c.scores.reduce((s, v) => s + v, 0) : total;
+  if (c.ts != null) { const n = _num(c.ts); if (n == null) delete c.ts; else c.ts = n; }
+  return true;
 }
 function _cleanSlice(s) {
   if (!_isObj(s)) return null;
   s.progress = _cleanProgress(s.progress);
-  s.log = Array.isArray(s.log) ? s.log.filter(_isObj) : [];
-  if (s.courage != null && !Number.isFinite(+s.courage)) s.courage = 0;
+  s.log = Array.isArray(s.log) ? s.log.filter(_cleanEntry) : [];
+  // A number, not a numeric string: "50" + 10 used to make 5010 courage.
+  if (s.courage != null) s.courage = _num(s.courage) || 0;
   if (s.goals != null && !_isObj(s.goals)) s.goals = {};
-  if (s.sparks != null && !Array.isArray(s.sparks)) s.sparks = [];
-  if (s.milestones != null && !Array.isArray(s.milestones)) s.milestones = [];
-  if (s.worldsteps != null) s.worldsteps = _cleanArrMap(s.worldsteps);
-  if (s.checks != null) s.checks = _cleanArrMap(s.checks);
+  // Ids are strings; a null in either list drew as a blank card.
+  if (s.sparks != null) s.sparks = Array.isArray(s.sparks) ? s.sparks.filter((x) => typeof x === "string") : [];
+  if (s.milestones != null) s.milestones = Array.isArray(s.milestones) ? s.milestones.filter((x) => typeof x === "string") : [];
+  if (s.worldsteps != null) s.worldsteps = _cleanArrMap(s.worldsteps, _cleanWorldstep);
+  if (s.checks != null) s.checks = _cleanArrMap(s.checks, _cleanCheck);
   if (s.story != null && !_isObj(s.story)) delete s.story;
   if (s.primer != null && !_isObj(s.primer)) delete s.primer;
   return s;
 }
 function sanitizeState(raw) {
   const s = _cleanSlice(_isObj(raw) ? raw : {}) || {};
+  for (const k of Object.keys(s)) if (!_safeKey(k)) delete s[k];
   if (s.courage == null) s.courage = 0;
   if (s.byCharacter != null) {
     if (!_isObj(s.byCharacter)) s.byCharacter = {};
     for (const id of Object.keys(s.byCharacter)) {
+      // A traveler id that names an inherited member ("__proto__",
+      // "constructor") can't be looked up as data: drop it.
+      if (!_safeKey(id)) { delete s.byCharacter[id]; continue; }
       const c = _cleanSlice(s.byCharacter[id]);
       if (c) s.byCharacter[id] = c; else delete s.byCharacter[id];
     }
@@ -479,8 +549,15 @@ function sanitizeState(raw) {
 // past a tiny quota — without the catch, the whole render thread can throw
 // when persisting after a session).
 function saveState() {
-  try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); }
+  try { localStorage.setItem(STATE_KEY, JSON.stringify(persistableState())); }
   catch { warnSaveFailed(); }
+}
+// What goes to storage and into a backup. Once state is per-traveler the root
+// progress/log are only aliases of the active traveler's slice: writing them
+// out kept a second copy of one traveler's history at the root (the copy a new
+// traveler used to start from) and doubled the save.
+function persistableState() {
+  return state._charScoped ? Object.assign({}, state, { progress: {}, log: [] }) : state;
 }
 // A full or blocked store used to drop sessions without a word. Say so once
 // per page-load, with the way out (a backup file keeps what's in memory).
@@ -796,7 +873,7 @@ function openWorldstepModal(phobiaKey, stepIdx) {
         <span class="small">${t("scale.calm", "0 calm")}</span>
         <input type="range" id="wsSuds" min="0" max="10" value="5"/>
         <span class="small">${t("scale.panic", "10 panic")}</span>
-        <div class="value" id="wsSudsValue">5</div>
+        <div class="value" id="wsSudsValue">${fnum(5)}</div>
       </div>
       <div class="actions" style="margin-top:14px">
         <button class="btn-ghost" id="wsCancel">${t("ws.notYet", "Not yet")}</button>
@@ -805,7 +882,9 @@ function openWorldstepModal(phobiaKey, stepIdx) {
     </div>`;
   document.body.appendChild(overlay);
   const slider = overlay.querySelector("#wsSuds");
-  slider.oninput = () => { overlay.querySelector("#wsSudsValue").textContent = slider.value; };
+  // The modal lives outside #app, so the page's Persian-digit pass never
+  // reaches it: write the number in the reader's digits here.
+  slider.oninput = () => { overlay.querySelector("#wsSudsValue").textContent = fnum(slider.value); };
   const close = () => overlay.remove();
   overlay.querySelector("#wsCancel").onclick = close;
   overlay.onclick = (e) => { if (e.target === overlay) close(); };
@@ -885,6 +964,8 @@ function quizRate(btn) {
          <button class="btn-primary" data-action="quick-start" data-phobia="${k}">${tf("quiz.enter", "Step into {realm}", { realm: escapeHtml(realm.realmName) })}</button>
          <button class="btn-ghost" data-action="quiz-pick" data-phobia="${k}">${t("quiz.mirror", "🪞 Five questions about it first")}</button>
        </div>`;
+  // Written after the page's buttons were wired: wire these (they were dead).
+  try { wireActions(out, {}); } catch {}
   out.hidden = false;
   try { out.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch {}
 }
@@ -945,13 +1026,15 @@ function openFearCheckModal(phobiaKey, at, mOpts = {}) {
   const realm = realmOf(phobiaKey);
   const overlay = document.createElement("div");
   overlay.className = "goal-modal-overlay";
+  // Numbers go through fnum: the modal is appended to <body>, outside the
+  // #app that the Persian-digit pass rewrites.
   const items = FEAR_CHECK_ITEMS.map((it, i) => `
     <div class="fc-item" data-item="${i}">
-      <p class="fc-q">${i + 1}. ${escapeHtml(t(`mirror.q${i + 1}`, it.q))}</p>
+      <p class="fc-q">${fnum(i + 1)}. ${escapeHtml(t(`mirror.q${i + 1}`, it.q))}</p>
       <div class="fc-scale" role="radiogroup" aria-label="${escapeHtml(t(`mirror.q${i + 1}`, it.q))}">
         ${FEAR_CHECK_SCALE.map((lab, v) => `
           <button type="button" class="fc-opt" data-v="${v}" role="radio" aria-checked="false" title="${t(`mirror.s${v}`, lab)}">
-            <span class="fc-n">${v}</span><span class="fc-lab">${t(`mirror.s${v}`, lab)}</span>
+            <span class="fc-n">${fnum(v)}</span><span class="fc-lab">${t(`mirror.s${v}`, lab)}</span>
           </button>`).join("")}
       </div>
     </div>`).join("");
@@ -1005,6 +1088,8 @@ function openFearCheckModal(phobiaKey, at, mOpts = {}) {
     // (only when the fear reads loud) the see-a-clinician line.
     let quizNext = "";
     if (mOpts.quiz) {
+      // In Persian the steps are numbered ۱. ۲. ۳. from the right edge
+      // (.quiz-steps pads only the left, and list markers default to 1. 2.).
       const steps = bridgeOf(phobiaKey).slice(0, 3).map((s) =>
         `<li>${escapeHtml(s.t)}</li>`).join("");
       const clinLine = band.tone === "hot"
@@ -1014,7 +1099,7 @@ function openFearCheckModal(phobiaKey, at, mOpts = {}) {
         <div class="quiz-next">
           <p class="quiz-next-head">${tf("quiz.realm", "This fear lives in <strong>{realm}</strong> — {epithet}.", { realm: escapeHtml(realm.realmName), epithet: escapeHtml(realm.epithet) })}</p>
           <p class="quiz-next-sub">${t("quiz.steps", "The first real-world steps people use to face it:")}</p>
-          <ol class="quiz-steps">${steps}</ol>
+          <ol class="quiz-steps"${isRtl() ? ' style="list-style-type:persian;padding-inline:20px 0"' : ""}>${steps}</ol>
           ${clinLine}
           <div class="actions" style="margin-top:10px">
             <button class="btn-primary" id="quizEnter">${realmOpen(phobiaKey)
@@ -1025,7 +1110,7 @@ function openFearCheckModal(phobiaKey, at, mOpts = {}) {
         </div>`;
     }
     res.innerHTML = `
-      <div class="fc-score band-${band.tone}"><strong>${total}</strong><span>/ 20 — ${band.label}</span></div>
+      <div class="fc-score band-${band.tone}"><strong>${fnum(total)}</strong><span>${tf("mirror.outOf", "/ {max} — {band}", { max: 20, band: band.label })}</span></div>
       ${deltaLine}
       ${quizNext}`;
     res.hidden = false;

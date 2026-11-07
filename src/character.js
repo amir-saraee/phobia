@@ -121,6 +121,11 @@ function defaultCharacter() {
 // never overwrites a name the user wrote themselves.
 const DICE_NAMES = ["Roya", "Sam", "Nika", "Ari", "Dana", "Kian", "Sara",
                     "Leo", "Mina", "Ava", "Omid", "Noor", "Rey", "Tara"];
+// In Persian the dice speaks Persian: «Mina» in Latin letters on a Persian
+// page reads as a foreign name (and the story then addresses the traveler
+// by it).
+const DICE_NAMES_FA = ["رویا", "سام", "نیکا", "آریا", "دانا", "کیان", "سارا",
+                       "نیما", "مینا", "آوا", "امید", "نور", "مهر", "تارا"];
 
 // Generate a random character (used by the "Surprise me" button in the creator)
 function randomCharacter() {
@@ -168,6 +173,14 @@ const CHARS_KEY   = "fobia.characters.v2";
 const ACTIVE_KEY  = "fobia.activeCharacter.v1";
 
 function newCharacterId() { return "c-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7); }
+// The one-tap start used to SAVE its placeholder ("Traveler" / «مسافر») as
+// the traveler's name, and the creator then offered it back as the name they
+// chose. A traveler it made who never named themselves has no name; the
+// placeholder is only how they're shown.
+function unplaceholderName(c) {
+  if (c.autoMade && (c.name === "Traveler" || c.name === "مسافر")) c.name = "";
+  return c;
+}
 
 function loadCharacters() {
   // Returns the list, migrating from legacy single-character storage if needed.
@@ -175,7 +188,9 @@ function loadCharacters() {
     const arr = JSON.parse(localStorage.getItem(CHARS_KEY));
     // Only real character objects with an id: a null or a bare string in the
     // list (a damaged save, a hand-edited import) used to blank every page.
-    if (Array.isArray(arr)) return arr.filter(c => c && typeof c === "object" && typeof c.id === "string" && c.id);
+    // An id every object inherits ("__proto__", "constructor") reads the
+    // prototype's member instead of the traveler's saved data: not a traveler.
+    if (Array.isArray(arr)) return arr.filter(c => c && typeof c === "object" && typeof c.id === "string" && c.id && !(c.id in Object.prototype)).map(unplaceholderName);
   } catch {}
   // Migrate the old single-character format into a 1-element list
   try {
@@ -222,10 +237,16 @@ function setActiveCharacter(id) {
   try { window.dispatchEvent(new CustomEvent("character-changed", { detail: { id } })); } catch {}
 }
 function deleteCharacter(id) {
+  let active = null;
+  try { active = localStorage.getItem(ACTIVE_KEY); } catch {}
   const all = loadCharacters().filter(c => c.id !== id);
   try { localStorage.setItem(CHARS_KEY, JSON.stringify(all)); } catch {}
   if (all.length > 0) {
-    try { localStorage.setItem(ACTIVE_KEY, all[0].id); } catch {}
+    // Only deleting the ACTIVE traveler moves the pointer: deleting someone
+    // else's card used to switch whoever was playing to the first in the list.
+    if (active === id || !all.some(c => c.id === active)) {
+      try { localStorage.setItem(ACTIVE_KEY, all[0].id); } catch {}
+    }
   } else {
     try { localStorage.removeItem(ACTIVE_KEY); } catch {}
   }
@@ -572,6 +593,8 @@ function shadeColor(hex, pct) {
 // data-family the creators already use, which keeps ids that repeat across
 // families ("brown" skin / hair / eyes) apart.
 const charT = (key, fallback) => (window.t ? window.t(key, fallback) : fallback);
+const charEsc = (s) => (typeof window.escapeHtml === "function" ? window.escapeHtml(s)
+  : String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"));
 function optLabel(family, item) { return item ? charT(`opt.${family}.${item.id}`, item.label) : ""; }
 
 // Build the character creator view HTML. The host page wires up event handlers
@@ -590,14 +613,16 @@ function viewCharacterCreator(existing, allPhobias) {
     ...(c.primaryPhobia ? [c.primaryPhobia] : []),
     ...(c.additionalPhobias || []),
   ]);
+  // A custom fear's key, label and clinical name are the player's own text
+  // (or an imported file's): text, never markup.
   const phobiaOptions = Object.entries(allPhobias).map(([key, p]) => `
     <label class="phobia-pick">
-      <input type="checkbox" name="phobias" value="${key}" ${allChosen.has(key) ? "checked" : ""}/>
+      <input type="checkbox" name="phobias" value="${charEsc(key)}" ${allChosen.has(key) ? "checked" : ""}/>
       <span class="pick-card">
         <span class="pick-icon">${p.icon}</span>
         <span class="pick-text">
-          <strong>${charT(`phobia.${key}.label`, p.label)}</strong>
-          <em>${charT(`phobia.${key}.name`, p.name)}</em>
+          <strong>${charEsc(charT(`phobia.${key}.label`, p.label))}</strong>
+          <em>${charEsc(charT(`phobia.${key}.name`, p.name))}</em>
           ${c.primaryPhobia === key ? `<span class="pick-primary">${charT("creator.primary", "primary")}</span>` : ""}
         </span>
         <span class="pick-check"></span>
@@ -938,7 +963,8 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
     // to arrive there as nobody.
     const nameInput = root.querySelector("#charName");
     if (nameInput && !nameInput.value.trim()) {
-      nameInput.value = DICE_NAMES[Math.floor(Math.random() * DICE_NAMES.length)];
+      const names = (window.I18n && window.I18n.isRTL && window.I18n.isRTL()) ? DICE_NAMES_FA : DICE_NAMES;
+      nameInput.value = names[Math.floor(Math.random() * names.length)];
       nameInput.dispatchEvent(new Event("input", { bubbles: true }));
     }
     root.querySelectorAll(".starter-preset").forEach(b => b.classList.remove("active"));

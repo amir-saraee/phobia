@@ -22,7 +22,7 @@ import { VRButton } from "three/addons/webxr/VRButton.js";
 // matches the user's actual hardware (Quest Touch, Vision Pro, Index, etc.).
 import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
 import { _audVec1, _audVec2, _audVec3, compileAhead } from "./assets.js";
-import { disposeObject, IS_COARSE_POINTER, demoteAutoTier, QUALITY, IS_LOW_POWER, makeRenderer, getRoomEnvMap } from "./renderer.js";
+import { disposeObject, IS_COARSE_POINTER, demoteAutoTier, QUALITY, IS_LOW_POWER, makeRenderer, getRoomEnvMap, tierPixelRatio, rebakeEnvMap } from "./renderer.js";
 import { TouchJoystick, FPControls } from "./controls.js";
 import { Body } from "./body.js";
 import { Hands } from "./hands.js";
@@ -137,6 +137,11 @@ function unmount() {
   if (active.groundingCleanup) {
     try { active.groundingCleanup(); } catch {}
   }
+  // Queued context prompts must not surface in the next trial, and a pending
+  // lost-context note belongs to this one.
+  for (const k of ["ctxPromptCleanup", "ctxLostCleanup"]) {
+    if (active[k]) { try { active[k](); } catch {} }
+  }
   // Gyro-look listener and the screen wake lock are scene-scoped.
   if (active.gyroCleanup) {
     try { active.gyroCleanup(); } catch {}
@@ -178,6 +183,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   unmount();
   const setup = SETUPS[phobiaKey];
   if (!setup) throw new Error("Realm not loaded (loadRealm first): " + phobiaKey);
+  // The stage is "ready" only once THIS scene has drawn (see the first-frame
+  // mark in tick) — the trial's hold and room sound wait for it.
+  try { delete container.dataset.sceneReady; } catch {}
 
   // Loading hint while textures/scene set up (the trial view paints its own
   // first; reuse it).
@@ -400,7 +408,18 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // controller can't oscillate between two ratios).
   let _prSlowT = 0, _prFastT = 0;
   let _prFailed = Infinity, _prFailedAt = -1e9;
-  const _prMax = renderer.getPixelRatio();
+  // How many times running that ratio has failed: each retry that fails
+  // again doubles the wait before the next (30 s, 1, 2, 4 min), so a device
+  // on the edge settles instead of stepping up and down every half minute.
+  let _prFailN = 0;
+  const _prRetryMs = () => 30000 * Math.pow(2, Math.max(0, _prFailN - 1));
+  const notePRFail = (pr, now) => {
+    _prFailN = (Math.abs(pr - _prFailed) < 1e-3 && now - _prFailedAt < _prRetryMs() + 60000) ? Math.min(4, _prFailN + 1) : 1;
+    _prFailed = pr; _prFailedAt = now;
+  };
+  // The tier's cap on this screen — re-read when the screen's density changes
+  // mid-trial (applyResize).
+  let _prMax = renderer.getPixelRatio();
   // Below DPR 1 is allowed only as a last resort on a device that is still
   // struggling with every effect off — a softer image beats a slideshow.
   const _prFloor = 0.75;
@@ -1046,6 +1065,18 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   let t0 = performance.now();
   let lastTime = t0;
   let raf;
+  // ---- "The scene is on screen" ----
+  // Set after the first frame that really drew (a lost context draws
+  // nothing, so it doesn't count), taken back while the context is lost.
+  // The trial's hold timer and room audio wait on it (exposure.js, contract
+  // 3): a stage attribute anyone can read, plus a "scene-ready" event.
+  let _drawn = false;
+  function markDrawn() {
+    try { if (renderer.getContext().isContextLost()) return; } catch {}
+    _drawn = true;
+    try { container.dataset.sceneReady = "1"; } catch {}
+    try { window.dispatchEvent(new CustomEvent("scene-ready", { detail: { container, phobia: phobiaKey, level: levelIdx } })); } catch {}
+  }
   // 120 and 144 Hz phones fire rAF twice as often as a 60 Hz screen, and every
   // frame ran the whole simulation, the shadow pass and the post chain — twice
   // the heat for motion nobody can see in a scene this slow. Frames that come
@@ -1055,6 +1086,11 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // XR compositor sets its own pace.
   function pacedTick() {
     if (!renderer.xr.isPresenting && performance.now() - lastTime < 10.5) return;
+    // A hidden tab is paused, as real browsers already pause it by stopping
+    // rAF — but not every one does (headless, some embedded views), and there
+    // the fear model and the coach's clock ran on behind another tab.
+    // (__tickNow calls tick() directly, so the QA drivers still step it.)
+    if (document.hidden && !renderer.xr.isPresenting) return;
     tick();
   }
   function tick() {
@@ -1101,15 +1137,28 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         _capped = (med > 0.0185 && med < 0.036 && steady >= _ivlN * 0.85 && _workEMA < med * 0.6) ? med : 0;
       }
       const slowAt = _capped ? _capped * 1.12 : 0.0185;
-      if (_frameEMA > slowAt) { _prSlowT += rawDt; _prFastT = 0; }
-      else if (!_capped && _frameEMA < 0.0125) { _prFastT += rawDt; _prSlowT = 0; }
+      // Headroom to climb back: frames well under budget (a 90/120 Hz screen)
+      // — or, on a vsync-locked 60 Hz screen, where the interval can never
+      // fall below 16.7 ms, frames on time AND a tick whose own work is under
+      // 40 % of the budget. The interval test alone meant a ratio dropped once
+      // (a busy moment, a hot phone) never came back on most screens. The
+      // gap between this and the slow line (on time but busy: neither) is the
+      // hysteresis; a ratio that fails again waits longer (see _prFailN).
+      const workRoom = _workEMA < Math.min(_frameEMA, 0.0167) * 0.4;
+      // Not "slow" before the cap check has had its 48 frames: a 30 Hz screen
+      // (Energy Saver, iOS Low Power) read as slow against the 60 Hz line in
+      // its first second and shed pixel ratio it never got back. And a capped
+      // screen may climb too — on work time alone, since its interval is fixed.
+      if (_frameEMA > slowAt && _ivlN >= 48) { _prSlowT += rawDt; _prFastT = 0; }
+      else if (_capped ? (_frameEMA < slowAt * 0.95 && workRoom)
+                       : (_frameEMA < 0.0125 || (_frameEMA < slowAt * 0.95 && workRoom))) { _prFastT += rawDt; _prSlowT = 0; }
       else { _prSlowT = 0; _prFastT = 0; }
       const pr = renderer.getPixelRatio();
       const cpuBound = _workEMA > _frameEMA * 0.7;
       let newPR = pr;
       if (_prSlowT > 1.0 && pr > 1.0 + 1e-3 && !cpuBound) {
         newPR = Math.max(1.0, Math.min(pr - 0.25, Math.round(pr * 0.8 * 8) / 8));
-        _prFailed = pr; _prFailedAt = now;
+        notePRFail(pr, now);
       } else if (_prSlowT > 1.5 && (pr <= 1.0 + 1e-3 || cpuBound) && shedEffect(cpuBound)) {
         // Shed one effect, then give it a moment to show.
         _prSlowT = 0; _frameEMA = Math.min(_frameEMA, slowAt * 0.92);
@@ -1117,9 +1166,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         // Nothing left to shed and still slow: the CPU read may be a GPU
         // stall surfacing inside a GL call, so try resolution after all.
         newPR = Math.max(1.0, Math.min(pr - 0.25, Math.round(pr * 0.8 * 8) / 8));
-        _prFailed = pr; _prFailedAt = now;
+        notePRFail(pr, now);
       } else if (_prFastT > 6.0 && pr < _prMax - 1e-3
-          && !(pr + 0.25 >= _prFailed - 1e-3 && now - _prFailedAt < 30000)) {
+          && !(pr + 0.25 >= _prFailed - 1e-3 && now - _prFailedAt < _prRetryMs())) {
         newPR = Math.min(_prMax, pr + 0.25);
       }
       if (newPR !== pr) {
@@ -1132,6 +1181,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     }
     if (now >= _perfHudNext) {
       _perfHudNext = now + 500;
+      // The screen's density changed under us (window moved to another
+      // display, page zoom) without a resize event: re-size for it.
+      if ((window.devicePixelRatio || 1) !== _rsDpr && !_rsQueued) applyResize(false);
       let hudOn = false;
       try { hudOn = localStorage.getItem("fobia.perfHud") === "1"; } catch {}
       if (hudOn && !_perfHudEl) {
@@ -1366,6 +1418,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       } else {
         composer.render();
       }
+      if (!_drawn) markDrawn();
     } catch (e) {
       console.warn("render:", e);
     }
@@ -1569,12 +1622,33 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // (Seeded with the size makeRenderer/sizePost already used at mount, so the
   // observer's initial callback doesn't reallocate everything a second time.)
   let _rsW = container.clientWidth, _rsH = container.clientHeight, _rsQueued = false;
+  let _rsDpr = window.devicePixelRatio || 1;
   function applyResize(force) {
     _rsQueued = false;
     const w = container.clientWidth, h = container.clientHeight;
     if (!w || !h) return;
-    if (!force && w === _rsW && h === _rsH) return;
+    const dpr = window.devicePixelRatio || 1;
+    if (!force && w === _rsW && h === _rsH && dpr === _rsDpr) return;
     _rsW = w; _rsH = h;
+    // The screen's density changed (the window dragged between a 1× and a 2×
+    // display, or the page zoomed): the canvas kept its old backing size, so
+    // a 1× → 2× move drew the scene at half resolution, blurry, and 2× → 1×
+    // paid four times the pixels for nothing. Re-read the tier's cap for this
+    // screen and carry over whatever the frame governor had taken off it.
+    if (dpr !== _rsDpr) {
+      _rsDpr = dpr;
+      const newMax = tierPixelRatio();
+      if (Math.abs(newMax - _prMax) > 1e-3) {
+        // Unreduced: the new screen's full cap. Reduced: the same ratio, which
+        // costs the same pixels per CSS pixel on any screen (never above the cap).
+        const pr = renderer.getPixelRatio();
+        const wasFull = pr >= _prMax - 1e-3;
+        _prMax = newMax;
+        renderer.setPixelRatio(wasFull ? newMax : Math.min(newMax, pr));
+        // A different screen: what failed on the last one says nothing here.
+        _prFailed = Infinity; _prFailN = 0; _prSlowT = 0; _prFastT = 0; _frameEMA = 0.0167;
+      }
+    }
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
@@ -1587,6 +1661,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     requestAnimationFrame(() => applyResize(false));
   }
   window.addEventListener("resize", onResize);
+  // (A density change with no size change can fire no resize event at all —
+  // the window's CSS size is the same on both screens — so the loop also
+  // polls devicePixelRatio twice a second; see the perf-HUD poll in tick.)
   // Container-only size changes (drawer toggle, keyboard pop, theater mode,
   // orientation lock) never fire window.resize — without an observer the
   // canvas kept rendering at the stale resolution, blurry or letterboxed.
@@ -1977,9 +2054,11 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // The reach hint is an affordance, not news: it shows only while the lane
   // is free (.lane-busy hides it). Players named five text boxes at once —
   // caption, prompt, lesson, question and hint — as the game's worst noise.
-  const LANE_RANK = { caption: 1, prompt: 2, callout: 3, read: 4 };
+  // "safety" is a context prompt marked urgent (contextPrompt opts.urgent):
+  // it outranks a lesson but still waits for an open read-the-moment question.
+  const LANE_RANK = { caption: 1, prompt: 2, callout: 3, safety: 3.5, read: 4 };
   const LANE_BREATH_MS = 900;
-  const lane = { kind: null, until: 0, quietUntil: 0, drop: null, timer: null };
+  const lane = { kind: null, since: 0, until: 0, quietUntil: 0, drop: null, timer: null, promptWaiting: null };
   const laneFree = () => {
     lane.kind = null; lane.drop = null;
     lane.quietUntil = performance.now() + LANE_BREATH_MS;
@@ -1992,13 +2071,22 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       const held = lane.kind && now < lane.until;
       if (held && lane.kind !== kind) {
         if (rank < LANE_RANK[lane.kind]) return false;
+        // A lesson doesn't knock a scene beat off in its first seconds: the
+        // beat had waited for this gap, and was cut ~0.1 s after it showed
+        // (then counted as seen). A read question still goes first.
+        if (lane.kind === "prompt" && kind === "callout" && now - lane.since < 3000) return false;
         const d = lane.drop;
         lane.drop = null;
         if (typeof d === "function") { try { d(); } catch {} }
       } else if (!held && rank <= LANE_RANK.prompt && now < lane.quietUntil) {
         return false;
+      } else if (!held && rank <= LANE_RANK.callout && kind !== "prompt" && lane.promptWaiting && lane.promptWaiting()) {
+        // A scene beat already waiting goes first into a free lane: it is
+        // about a moment, a lesson can wait a few seconds. (Lessons took
+        // every gap, so 18 of 19 queued dog beats still expired unseen.)
+        return false;
       }
-      lane.kind = kind; lane.until = now + Math.max(600, ms || 4000); lane.drop = drop || null;
+      lane.kind = kind; lane.since = now; lane.until = now + Math.max(600, ms || 4000); lane.drop = drop || null;
       container.classList.add("lane-busy");
       clearTimeout(lane.timer);
       lane.timer = setTimeout(() => { if (lane.kind === kind && performance.now() >= lane.until - 20) laneFree(); }, lane.until - now);
@@ -2051,12 +2139,36 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     if (ctxPromptHideT) { clearTimeout(ctxPromptHideT); ctxPromptHideT = null; }
     ctxPrompt.classList.remove("visible");
   };
-  function showContextPrompt(text, durationMs = 4500) {
-    const lastAt = ctxPromptSeen.get(text) || 0;
-    if (performance.now() - lastAt < 90000) return;
-    if (!window.PhobiaFX.promptGate("ctx", text)) return;
-    const ms = durationMs > 0 ? durationMs : 6000;
-    if (!window.PhobiaFX.lane.claim("prompt", ms, hideContextPrompt)) return;
+  // A line that can't have the lane right now waits for it instead of being
+  // dropped. Every one of the dog room's own beats ("It's growling — back
+  // off…", "It shook off…") lost the lane to a lesson or the breath after
+  // one: 22 of 22 never showed, and the scenes had already marked them said.
+  // Latest per text, at most CTX_QUEUE_CAP waiting, each for `ttl` ms (it
+  // was about a moment); retried whenever the lane could have freed. The
+  // queue dies with the mount, so no line leaks into the next trial.
+  const CTX_QUEUE_CAP = 4;
+  const ctxQueue = [];          // { text, ms, urgent, until }
+  let ctxRetryT = null, ctxDead = false;
+  const ctxLane = window.PhobiaFX.lane;   // this mount's lane, never the next one's
+  // A prompt counts as waiting once it has waited a beat (not the frame it was asked).
+  lane.promptWaiting = () => { const now = performance.now(); return ctxQueue.some((q) => now <= q.until && now - (q.at || 0) > 300); };
+  // Shown in the last 90 s. (A line never shown counts as never seen: the old
+  // test, now − (lastAt || 0) < 90 s, also swallowed EVERY prompt during the
+  // first 90 s after a page load, when performance.now() itself is < 90 s.)
+  const seenRecently = (text) => ctxPromptSeen.has(text) && performance.now() - ctxPromptSeen.get(text) < 90000;
+  // 1 shown, 0 the lane is taken (try again), −1 no longer wanted.
+  function tryShowContextPrompt(text, ms, urgent) {
+    if (seenRecently(text)) return -1;
+    // Not under the grounding overlay: CSS hides .ctx-prompt there, so a line
+    // "shown" then was spent unseen (five, a safety line among them).
+    if (window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding()) return 0;
+    const cur = ctxLane.kind;
+    // One message at a time, prompts included: a new prompt waits for the one
+    // on screen to finish (it used to overwrite it mid-sentence); a safety
+    // line only waits for another safety line.
+    if (cur === "safety" || (cur === "prompt" && !urgent)) return 0;
+    const kind = urgent ? "safety" : "prompt";
+    if (!ctxLane.claim(kind, ms, hideContextPrompt)) return 0;
     ctxPromptSeen.set(text, performance.now());
     if (ctxPromptHideT) { clearTimeout(ctxPromptHideT); ctxPromptHideT = null; }
     ctxPrompt.textContent = text;
@@ -2064,9 +2176,75 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     ctxPromptHideT = setTimeout(() => {
       ctxPrompt.classList.remove("visible");
       ctxPromptHideT = null;
-      window.PhobiaFX.lane.release("prompt");
+      ctxLane.release(kind);
     }, ms);
+    return 1;
   }
+  function scheduleContextPump(delay) {
+    if (ctxRetryT || ctxDead || !ctxQueue.length) return;
+    ctxRetryT = setTimeout(pumpContextQueue, Math.max(120, Math.min(1000, delay || 250)));
+  }
+  function pumpContextQueue() {
+    ctxRetryT = null;
+    if (ctxDead || !container.isConnected) { ctxQueue.length = 0; return; }
+    const now = performance.now();
+    for (let i = ctxQueue.length - 1; i >= 0; i--) if (now > ctxQueue[i].until) ctxQueue.splice(i, 1);
+    if (!ctxQueue.length) return;
+    // A safety line first, then the oldest.
+    let i = ctxQueue.findIndex((q) => q.urgent);
+    if (i < 0) i = 0;
+    const q = ctxQueue[i];
+    // A near-duplicate went up on another channel (a caption) meanwhile.
+    const r = window.PhobiaFX.promptGate("ctx", q.text) ? tryShowContextPrompt(q.text, q.ms, q.urgent) : -1;
+    if (r !== 0) ctxQueue.splice(i, 1);
+    scheduleContextPump(250);
+  }
+  // contextPrompt(text, ms, { urgent, ttl }) → true when shown now or queued
+  // to show soon, false when suppressed (seen in the last 90 s, a duplicate
+  // of a line on another channel, or the scene is gone). A caller with a
+  // show-once flag sets it only on true.
+  function showContextPrompt(text, durationMs = 4500, opts) {
+    if (ctxDead || !container.isConnected) return false;
+    text = text == null ? "" : String(text);
+    if (!text) return false;
+    const o = opts || {};
+    const urgent = !!o.urgent;
+    const ttl = o.ttl > 0 ? o.ttl : 15000;   // a lesson holds the lane ~7 s; 8 s left too little room after one
+    const ms = durationMs > 0 ? durationMs : 6000;
+    const now = performance.now();
+    if (seenRecently(text)) return false;
+    const queued = ctxQueue.find((q) => q.text === text);
+    if (queued) {
+      // Latest per text: the newest ask's duration, priority and deadline.
+      queued.ms = ms; queued.urgent = queued.urgent || urgent; queued.until = now + ttl;
+      return true;
+    }
+    if (!window.PhobiaFX.promptGate("ctx", text)) return false;
+    // Behind anything already waiting (a safety line jumps the queue).
+    if (!ctxQueue.length || urgent) {
+      const r = tryShowContextPrompt(text, ms, urgent);
+      if (r === 1) return true;
+      if (r < 0) return false;
+    }
+    if (ctxQueue.length >= CTX_QUEUE_CAP) {
+      let drop = ctxQueue.findIndex((q) => !q.urgent);
+      if (drop < 0) drop = 0;
+      ctxQueue.splice(drop, 1);
+    }
+    ctxQueue.push({ text, ms, urgent, until: now + ttl, at: now });
+    // Looked at again every quarter second until the lane frees (the line on
+    // screen ends, or the breath after it) or the line's moment has passed.
+    scheduleContextPump(250);
+    return true;
+  }
+  const contextPromptCleanup = () => {
+    ctxDead = true;
+    ctxQueue.length = 0;
+    if (ctxRetryT) { clearTimeout(ctxRetryT); ctxRetryT = null; }
+    if (ctxPromptHideT) { clearTimeout(ctxPromptHideT); ctxPromptHideT = null; }
+    // A realm that keeps a reference past unmount gets "not shown".
+    if (window.PhobiaFX && window.PhobiaFX.contextPrompt === showContextPrompt) window.PhobiaFX.contextPrompt = () => false;
+  };
   // Expose globally so scene update() callbacks can fire prompts
   window.PhobiaFX = window.PhobiaFX || {};
   window.PhobiaFX.contextPrompt = showContextPrompt;
@@ -2158,6 +2336,8 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // global grounding mode on unmount, or it speaks over — and toggles
     // grounding on — the NEXT scene.
     groundingCleanup: endGrounding,
+    // The context-prompt queue is this mount's.
+    ctxPromptCleanup: contextPromptCleanup,
   });
   // DEBUG (preview/dev only): force-render hooks so screenshots show ground
   // truth even when the rAF-driven loop is throttled (backgrounded tab). These
@@ -2232,15 +2412,64 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // black and never recover without intervention. We pause the loop on
   // loss and re-arm it on restore — and force a one-shot resize so the
   // post-process composer rebuilds its render targets correctly.
+  //
+  // While it's gone the stage is not "on screen" (the trial's hold pauses),
+  // and a context that hasn't come back within ~5 s says so, with a way out:
+  // a GPU that never returns used to leave a black stage under a HUD that
+  // kept prompting, and nothing to tell the player what to do.
+  let ctxLostNote = null, ctxLostT = null;
+  const clearCtxLost = () => {
+    if (ctxLostT) { clearTimeout(ctxLostT); ctxLostT = null; }
+    if (ctxLostNote) { try { ctxLostNote.remove(); } catch {} ctxLostNote = null; }
+  };
+  // Everything baked INTO a render target — the PMREM environments — comes
+  // back empty: three re-uploads textures it has the source of, not pixels
+  // the GPU drew. Bake them again and hand the scene the new ones (the rooms
+  // came back much darker without it: the rooftop 114 → 44, the cellar 53 → 3).
+  function rebakeAfterRestore() {
+    for (const k of ["environment", "background"]) {
+      const old = scene[k];
+      if (!old || !old.isTexture || !old.isRenderTargetTexture) continue;
+      const fresh = rebakeEnvMap(renderer, old);
+      if (fresh) scene[k] = fresh;
+    }
+    renderer.shadowMap.needsUpdate = true;
+    for (const l of _cubeShadows) { try { l.shadow.needsUpdate = true; } catch {} }
+  }
+  if (active === mountedActive) active.ctxLostCleanup = clearCtxLost;
   if (renderer.domElement && renderer.domElement.addEventListener) {
     renderer.domElement.addEventListener("webglcontextlost", (ev) => {
       ev.preventDefault();          // tells the browser we'll restore manually
       try { renderer.setAnimationLoop(null); } catch {}
       if (renderer._teardown) return;   // deliberate loss during unmount — not an error
       console.warn("WebGL context lost — pausing scene");
+      _drawn = false;
+      try { delete container.dataset.sceneReady; } catch {}
+      clearCtxLost();
+      ctxLostT = setTimeout(() => {
+        ctxLostT = null;
+        if (!container.isConnected || active !== mountedActive || renderer._teardown) return;
+        try { if (!renderer.getContext().isContextLost()) return; } catch {}
+        const note = document.createElement("div");
+        note.className = "scene-fallback-note";
+        note.setAttribute("role", "alert");
+        const msg = document.createElement("div");
+        msg.textContent = window.t("stage.ctxLost", "The 3D view stopped — the graphics card was reset. Reloading the page brings it back.");
+        const btn = document.createElement("button");
+        btn.className = "btn-ghost";
+        btn.style.cssText = "margin-top:8px;font-size:12.5px;padding:5px 14px;";
+        btn.textContent = window.t("stage.reload", "Reload");
+        btn.addEventListener("click", (e) => { e.stopPropagation(); try { location.reload(); } catch {} });
+        note.appendChild(msg); note.appendChild(btn);
+        container.appendChild(note);
+        ctxLostNote = note;
+        if (active && active.overlays) active.overlays.push(note);
+      }, 5000);
     }, false);
     renderer.domElement.addEventListener("webglcontextrestored", () => {
       console.warn("WebGL context restored — resuming scene");
+      clearCtxLost();
+      try { rebakeAfterRestore(); } catch (e) { console.warn("context restore re-bake:", e); }
       try {
         // Force a resize so the renderer + composer rebuild their targets
         if (typeof onResize === "function") onResize();

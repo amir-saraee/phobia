@@ -1217,6 +1217,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
   let _gripSteady = 0;
   // Glass-skywalk underfoot edge-detect (first-crossing jolt fires once)
   let _wasOnGlass = false;
+  const _glassDir = new THREE.Vector3();   // the camera's real gaze, for the look-down star
   // Auto-look-down animation state (driven by the "Look down" command button)
   let autoLookT = 0;
   let autoLookFrom = 0, autoLookTarget = 0;
@@ -1312,6 +1313,16 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
             if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.h.back", "Stepping back. Reset your breath."));
             break;
           case "lean":
+            // Leaning over is done AT the railing (z = -0.4). Pressed from
+            // the back of the platform it glided you 3–5 m to and over the
+            // rail in about a second — past the fear-gait and the colliders
+            // — and paid the lean star for a walk you never made. Within
+            // ~0.6 m of the rail it leans; further back it says walk up first.
+            if (c.position.z + 0.4 > 0.62) {
+              try { window.PhobiaFX && window.PhobiaFX.contextPrompt && window.PhobiaFX.contextPrompt(
+                window.t("sc.h.leanWalk", "Walk up to the railing first — then lean over."), 3200, { ttl: 4000 }); } catch {}
+              break;
+            }
             hCoach.note("lean"); setTimeout(() => hSignal("pull"), 900);
             // Lean OVER the railing: the camera tips down + slides forward
             // past the edge for a held moment, then returns. This is the
@@ -1795,15 +1806,39 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
           // (The coin stars land with the coin.)
           if (rung === 1 && hState.leanHoldT > 0.6) hCoach.goalDone("leanLook");
           if (rung === 3 && hState.leanGustT > 0.4) hCoach.goalDone("leanGust");
-          if (rung === 4) { hState.glassLookT = (_wasOnGlass && controls.pitch < -0.7) ? hState.glassLookT + dtN : hState.glassLookT; if (hState.glassLookT > 8) hCoach.goalDone("glassLook"); }
+          if (rung === 4) {
+            // "Look straight down" counts what the VIEW does. controls.pitch
+            // alone also counted in third person, where the boom camera
+            // frames the floor behind you and the star landed on a view of
+            // concrete. First person, and the camera's own gaze ~40° or more
+            // below the horizon (what pitch < -0.7 meant in first person).
+            const fpView = controls.cameraMode !== "tp";
+            camera.updateMatrixWorld(); camera.getWorldDirection(_glassDir);
+            if (_wasOnGlass && fpView && _glassDir.y < -0.64) hState.glassLookT += dtN;
+            if (hState.glassLookT > 8) hCoach.goalDone("glassLook");
+            // Looking down on the glass in third person: say how to see it.
+            else if (_wasOnGlass && !fpView && controls.pitch < -0.7 && hCoach.goalOpen("glassLook")
+                     && hState.clock - (hState.glassTpHintAt ?? -99) > 6) {
+              let shown = false;
+              try { shown = !!(window.PhobiaFX && window.PhobiaFX.contextPrompt && window.PhobiaFX.contextPrompt(IS_COARSE_POINTER
+                ? window.t("sc.h.glassFpT", "To look straight down through the glass, switch to first person — tap the View button.")
+                : window.t("sc.h.glassFp", "To look straight down through the glass, switch to first person — press V."), 4500, { ttl: 12000 })); } catch {}
+              // Retried every few seconds until it's queued; then a long rest. (It
+              // waits up to 12 s for the lane: reads and lessons held it longer
+              // than the default and the queued line expired unseen.)
+              hState.glassTpHintAt = hState.clock + (shown ? 40 : 0);
+            }
+          }
           // Diegetic completion beat: the wind drops.
           if (window.__rungHoldComplete && !hState.beat) {
             hState.beat = true;
             if (hCoach.everSettled) hCoach.goalDone("settle");
           }
-          // ...and the wind drops — once nothing is left to read in it (an
-          // open read star keeps the gusts coming, so it can still be earned).
-          if (hState.beat && !hState.calm && !hCoach.goalOpen("read")) { hState.calm = true; _nextGust = 999; }
+          // ...and the wind drops — once no open star needs it: an open read
+          // star keeps the gusts coming (its signals ride them), and so does
+          // the rooftop's "lean while the wind blows" — stopping the wind for
+          // good once the hold was met left that star unearnable.
+          if (hState.beat && !hState.calm && !hCoach.goalOpen("read") && !hCoach.goalOpen("leanGust")) { hState.calm = true; _nextGust = 999; }
         }
       }
 

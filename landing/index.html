@@ -14,7 +14,11 @@
 <meta property="og:site_name" content="فانوس‌به‌دست · Lanternwalk" />
 <meta property="og:title" content="فانوس‌به‌دست — راه‌هایی را که ترس بست، دوباره روشن کن" />
 <meta property="og:description" content="بازی‌ای آرام دربارهٔ ترس‌های بزرگ: سگ، عنکبوت، مار، ارتفاع، تاریکی و جای تنگ — قدم‌به‌قدم، با سرعت خودت. رایگان، فارسی و انگلیسی." />
-<!-- og:image must be an absolute URL: update it with the game's domain. -->
+<!-- og:url and og:image must be absolute URLs: update both with the game's
+     domain (docs/BAZAAR.md, decisions 1 and 5). The only 1200×630 card is
+     og-lanternwalk.png, English-led with the Persian name under it; a
+     Persian-led card would replace it here. -->
+<meta property="og:url" content="https://phobia-kappa.vercel.app/landing/" />
 <meta property="og:image" content="https://phobia-kappa.vercel.app/og-lanternwalk.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
@@ -27,7 +31,11 @@
   another server, so it loads anywhere a store reviewer or a slow phone opens
   it. Every link to the game is relative ("../"): served from the game's own
   host it needs no edits. To publish it elsewhere (go2game.ir/lanternwalk/),
-  point the "../" game links and the font/icon paths at the game's address.
+  point the "../" game links and the font/icon paths at the game's address,
+  and the "../landing/img/" screenshots at the new folder. (They go through
+  "../landing/" so they load at /landing as well as /landing/: some hosts
+  serve the folder's page without the trailing slash, and a bare "img/" then
+  asked for /img/.)
   The hero is the title screen's valley (valleyHeroSVG in
   src/app/views-journey.js, two lanterns lit); the screenshots are the
   Persian store shots, scaled down (docs/BAZAAR.md says how they're made).
@@ -176,7 +184,7 @@
 
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="./" aria-label="فانوس‌به‌دست، صفحهٔ اصلی"><svg class="lamp" viewBox="0 0 24 32" aria-hidden="true" focusable="false"><path d="M12 1.5v3.5M7 5h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M6.5 8h11l2 3v12l-2 3h-11l-2-3V11z" fill="rgba(255,200,110,.16)" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 12.2c3 3.3 3 6.3 0 8.8c-3-2.5-3-5.5 0-8.8z" fill="#ffc86b"/></svg>فانوس‌به‌دست</a>
+    <a class="brand" href="../landing/" aria-label="فانوس‌به‌دست، صفحهٔ اصلی"><svg class="lamp" viewBox="0 0 24 32" aria-hidden="true" focusable="false"><path d="M12 1.5v3.5M7 5h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M6.5 8h11l2 3v12l-2 3h-11l-2-3V11z" fill="rgba(255,200,110,.16)" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 12.2c3 3.3 3 6.3 0 8.8c-3-2.5-3-5.5 0-8.8z" fill="#ffc86b"/></svg>فانوس‌به‌دست</a>
     <nav aria-label="بخش‌ها">
       <a class="opt" href="#realms">قلمروها</a>
       <a class="opt" href="#how">چطور کار می‌کند</a>
@@ -249,12 +257,12 @@
       <p class="eyebrow">از درونِ بازی</p>
       <h2 id="screens-title">همان‌طور که روی گوشی می‌بینی</h2>
       <div class="shots" tabindex="0" aria-label="تصویرهای بازی">
-        <figure><img src="img/shot-title.jpg" alt="صفحهٔ آغاز: درهٔ شب با شش فانوس و پرسشِ «با کدام ترس می‌خواهی رو‌به‌رو شوی؟»" width="540" height="960" loading="lazy" decoding="async" /><figcaption>درهٔ فانوس‌ها</figcaption></figure>
-        <figure><img src="img/shot-dog.jpg" alt="آزمونِ سگ: سگی کوچک در اتاق و پرسشِ «حالش چطور است؟»" width="540" height="960" loading="lazy" decoding="async" /><figcaption>حالِ سگ را بخوان</figcaption></figure>
-        <figure><img src="img/shot-heights.jpg" alt="آزمونِ ارتفاع: لبهٔ پشت‌بامی بالای شهر" width="540" height="960" loading="lazy" decoding="async" /><figcaption>قله</figcaption></figure>
-        <figure><img src="img/shot-spider.jpg" alt="آزمونِ عنکبوت در زیرزمینی قدیمی" width="540" height="960" loading="lazy" decoding="async" /><figcaption>زیرزمینِ قدیمی</figcaption></figure>
-        <figure><img src="img/shot-ladder.jpg" alt="صفحهٔ قلمروی سگ‌ها با سگِ سه‌بعدی و پیشرفتِ آزمون‌ها" width="540" height="960" loading="lazy" decoding="async" /><figcaption>هر قلمرو، پنج آزمون</figcaption></figure>
-        <figure><img src="img/shot-report.jpg" alt="گزارش تمرین مواجهه به فارسی" width="540" height="960" loading="lazy" decoding="async" /><figcaption>گزارشِ پیشرفت</figcaption></figure>
+        <figure><img src="../landing/img/shot-title.jpg" alt="صفحهٔ آغاز: درهٔ شب با شش فانوس و پرسشِ «با کدام ترس می‌خواهی رو‌به‌رو شوی؟»" width="540" height="960" loading="lazy" decoding="async" /><figcaption>درهٔ فانوس‌ها</figcaption></figure>
+        <figure><img src="../landing/img/shot-dog.jpg" alt="آزمونِ سگ: سگی کوچک در اتاق و پرسشِ «حالش چطور است؟»" width="540" height="960" loading="lazy" decoding="async" /><figcaption>حالِ سگ را بخوان</figcaption></figure>
+        <figure><img src="../landing/img/shot-heights.jpg" alt="آزمونِ ارتفاع: لبهٔ پشت‌بامی بالای شهر" width="540" height="960" loading="lazy" decoding="async" /><figcaption>قله</figcaption></figure>
+        <figure><img src="../landing/img/shot-spider.jpg" alt="آزمونِ عنکبوت در زیرزمینی قدیمی" width="540" height="960" loading="lazy" decoding="async" /><figcaption>زیرزمینِ قدیمی</figcaption></figure>
+        <figure><img src="../landing/img/shot-ladder.jpg" alt="صفحهٔ قلمروی سگ‌ها با سگِ سه‌بعدی و پیشرفتِ آزمون‌ها" width="540" height="960" loading="lazy" decoding="async" /><figcaption>هر قلمرو، پنج آزمون</figcaption></figure>
+        <figure><img src="../landing/img/shot-report.jpg" alt="گزارش تمرین مواجهه به فارسی" width="540" height="960" loading="lazy" decoding="async" /><figcaption>گزارشِ پیشرفت</figcaption></figure>
       </div>
     </div>
   </section>
@@ -332,7 +340,7 @@
   <div class="wrap">
     <span>فانوس‌به‌دست · <span lang="en">Lanternwalk</span> — ساختهٔ <bdi lang="en">Amir Saraee</bdi></span>
     <ul>
-      <li><a href="../">بازی</a></li>
+      <li><a href="../?lang=fa">بازی</a></li>
       <li><a href="../privacy.html">حریم خصوصی</a></li>
       <li><a href="mailto:info@go2game.ir" dir="ltr" lang="en">info@go2game.ir</a></li>
     </ul>

@@ -1153,11 +1153,27 @@ class FPControls {
     }
     this._shakeAmt = Math.max(this._shakeAmt || 0, a);
   }
-  snapLookAt(x, y, z, k = 0.5) { this._snapLook = { x, y, z, k }; this._snapLookT = 0.6; }
+  snapLookAt(x, y, z, k = 0.5) {
+    // Reduce motion: no involuntary flick at all. The camera turning on its
+    // own (the spider's pounce, the snake's strike) is exactly the vestibular
+    // jolt that setting asks us to spare — the event itself still plays, and
+    // the player turns to it themselves. Read fresh here: update() only
+    // refreshes the flag once a second.
+    let rm = false;
+    try {
+      rm = localStorage.getItem("fobia.reducedMotion") === "1"
+        || !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    } catch {}
+    this._reduceMotion = rm;
+    if (rm) { this._snapLookT = 0; return; }
+    this._snapLook = { x, y, z, k }; this._snapLookT = 0.6;
+  }
   _applyStartle(dt) {
     const fpw = 1 - (this.tpBlend || 0);
     if (fpw <= 0.5) { this._shakeAmt = 0; this._snapLookT = 0; return; }
-    // Decaying look-bias toward a target (e.g. the lunging dog's head)
+    // Decaying look-bias toward a target (e.g. the lunging dog's head) —
+    // none under reduce motion, even if the setting changed mid-flick.
+    if (this._snapLookT > 0 && this._snapLook && this._reduceMotion) this._snapLookT = 0;
     if (this._snapLookT > 0 && this._snapLook) {
       const lb = this._snapLook;
       const dx = lb.x - this.camera.position.x, dz = lb.z - this.camera.position.z;

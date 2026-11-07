@@ -1717,7 +1717,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   let kExcite = 1, kRuns = 0, kLastRunAt = -99, kWarnCD = 0, kStareT = 0;
   if (intensity === "barking") nextBarkAt = 4.5;   // a beat to take the room in first
   let kClosing = 0, kGreetFor = 1.6, kArrive = null, kLay = false;
-  let kSettleTold = false, warnResolvedTold = false, kBarkWatch = null, kPressT = 0;
+  let kSettleTold = false, kSettleRetryAt = 0, warnResolvedTold = false, kBarkWatch = null, kPressT = 0;
   const kPrev = { x: 0, z: 0, t: 0 };
   // The "barking" intensity keeps the dog at distance — it doesn't follow.
   // For calm/alert rungs we DELAY the follow-the-player behaviour by ~6 s.
@@ -2623,14 +2623,17 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
             nextAutoApproach = Math.max(nextAutoApproach, t + 7);
             nextWander = Math.max(nextWander, t + 5);
             wanderSuppressUntil = Math.max(wanderSuppressUntil, t + 5);
+            // Show-once, but only once it has actually shown (or queued): the
+            // flag used to be set first, so a line the message lane dropped
+            // never came back. A safety line — it outranks a lesson.
             if (!startlePrompted && !startleRead && window.PhobiaFX?.contextPrompt) {
-              startlePrompted = true;
-              window.PhobiaFX.contextPrompt(
+              const shown = window.PhobiaFX.contextPrompt(
                 alertRung
                   ? window.tf("sc.d.fastAlert", "{dog} answered a fast approach. Slow down — let it watch you come.", { dog: dogName })
                   : window.tf("sc.d.fast", "Quick moves startle dogs. Slow, easy steps — watch {dog} stay calm.", { dog: dogName }),
-                4600
+                4600, { urgent: true }
               );
+              if (shown !== false) startlePrompted = true;
             }
           }
           // The deferred scramble: fires mid-duck, cancelling the flinch
@@ -3100,6 +3103,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           px: controls.position.x, pz: controls.position.z, dogX: dog.position.x, dogZ: dog.position.z,
           onScreen: coachOnScreen, dogGazing, trust: intensity === "barking" ? null : trust,
           anchorX: headX, anchorY: headY, stageW: sw, stageH: sh,
+          // The whole dog on screen, so the read card sits clear of its body
+          // (only measured while a card is up).
+          anchorBox: coach.screenBox(dog, camera, sw, sh),
         });
         // (The rung skill stars land where their verb completes: treatEaten,
         // the call's arrival, the ball's drop.)
@@ -4215,9 +4221,10 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
             }
             coach.pulse(0.3, "growl", distP);
             const read = coachSignal("warning");
+            // A safety line: it outranks one of Mira's lessons.
             if (!read && window.PhobiaFX?.contextPrompt) {
               window.PhobiaFX.contextPrompt(window.tf("dc.warnPrompt",
-                "{dog} stiffened and growled — a warning. Pause and soften your eyes. Growls are how dogs avoid biting.", { dog: dogName }), 5000);
+                "{dog} stiffened and growled — a warning. Pause and soften your eyes. Growls are how dogs avoid biting.", { dog: dogName }), 5000, { urgent: true });
             }
           }
         }
@@ -4233,10 +4240,12 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
             dogCtrl._shakePulse = 1;           // the shake-off: tension over
             kExcite = Math.max(0.2, kExcite - 0.1);
             nextBarkAt = t + 3 + Math.random() * 2;
+            // (Flag only once it showed or queued — a dropped line returns
+            // at the next warning instead of never.)
             if (!warnResolvedTold && window.PhobiaFX?.contextPrompt) {
-              warnResolvedTold = true;
-              window.PhobiaFX.contextPrompt(window.tf("dc.warnDone",
+              const shown = window.PhobiaFX.contextPrompt(window.tf("dc.warnDone",
                 "He shook it off — over. You read a warning and gave it a moment. That's all a warning ever asks.", { dog: dogName }), 4800);
+              if (shown !== false) warnResolvedTold = true;
             }
           }
         } else if (barkState === "watching") {
@@ -4264,7 +4273,10 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
             // while has passed): a charge in the first second, under the
             // countdown, is an ambush, not an exposure.
             const inRoom = (distP < 6.5 && t > 7) || t > 22;
-            const canBound = inRoom && distP > 2.0 && distP < 9 && kRuns < 4 && t - kLastRunAt > 8 && kExcite > 0.3;
+            // Never while you're grounding (Esc): the run-over is the rung's
+            // big moment, and it came straight through the 5-4-3-2-1.
+            const grounding = !!(window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding());
+            const canBound = !grounding && inRoom && distP > 2.0 && distP < 9 && kRuns < 4 && t - kLastRunAt > 8 && kExcite > 0.3;
             if (canBound && (kRuns === 0 || Math.random() < 0.55)) {
               // Bound over — and stop short. From across the room the stop
               // point is on the line from you to him, 1.7–2.1 m out, with a
@@ -4350,15 +4362,18 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           const moving = dogCtrl.state === "walking" || dogCtrl.state === "galloping";
           if (!moving && dogCtrl.state === "idle" && barkStateT > 0.5) { dogCtrl.sit(); coachSignal("sit"); }
           if (dogCtrl.state === "sit" && barkStateT > 7 && !kLay) { kLay = true; dogCtrl.lay(); coachSignal("lie"); }
-          if (!kSettleTold && barkStateT > 1.5 && window.PhobiaFX?.contextPrompt) {
-            kSettleTold = true;
-            window.PhobiaFX.contextPrompt(window.tf("dc.kodaTired",
+          // Flag only once it showed or queued; a suppressed try waits a
+          // couple of seconds before the next (this branch runs every frame).
+          if (!kSettleTold && barkStateT > 1.5 && t > kSettleRetryAt && window.PhobiaFX?.contextPrompt) {
+            const shown = window.PhobiaFX.contextPrompt(window.tf("dc.kodaTired",
               "{dog} has run out of steam. All that noise — and this is where it ends: a tired, friendly dog.", { dog: dogName }), 5200);
+            if (shown !== false) kSettleTold = true; else kSettleRetryAt = t + 2.5;
           }
         }
         // Held your ground through a run-over (the rung's skill goal).
         if (kArrive && t - kArrive.t > 3) {
-          if (distP < kArrive.dist + 1.0) coach.goalDone("runHeld");
+          // (Not credited while grounding: the star is for staying through it.)
+          if (distP < kArrive.dist + 1.0 && !(window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding())) coach.goalDone("runHeld");
           kArrive = null;
         }
         // Live threat handoff (avatar eye-lock, startle beats): the charge

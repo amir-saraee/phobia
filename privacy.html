@@ -41,14 +41,15 @@
   a { color: var(--accent); }
   a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
   section.en { margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.65; }
-  .back { display: inline-block; margin-top: 28px; padding: 10px 16px; border-radius: 999px; border: 1px solid var(--line); text-decoration: none; min-height: 44px; }
-  @media print { body { background: #fff; color: #111; } a { color: #111; } .box { border-color: #ccc; } .back, .lang { display: none; } }
+  .backs { margin: 28px 0 0; display: flex; flex-wrap: wrap; gap: 10px; }
+  .back { display: inline-block; padding: 10px 16px; border-radius: 999px; border: 1px solid var(--line); text-decoration: none; min-height: 44px; }
+  @media print { body { background: #fff; color: #111; } a { color: #111; } .box { border-color: #ccc; } .backs, .lang { display: none; } }
 </style>
 </head>
 <body>
 <main>
   <header class="top">
-    <a class="brand" href="./"><img src="icon.svg" alt="" width="28" height="28" />فانوس‌به‌دست</a>
+    <a class="brand" href="./?source=twa"><img src="icon.svg" alt="" width="28" height="28" />فانوس‌به‌دست</a>
     <a class="lang" href="#en" hreflang="en" lang="en">English ↓</a>
   </header>
 
@@ -63,7 +64,7 @@
   <p>بازی این‌ها را در حافظهٔ مرورگرِ همین دستگاه (localStorage) نگه می‌دارد تا دفعهٔ بعد از همان‌جا ادامه بدهی:</p>
   <ul>
     <li>مسافرهایی که می‌سازی: نامی که خودت انتخاب می‌کنی (لازم نیست نام واقعی باشد) و ظاهرشان؛</li>
-    <li>سابقهٔ تمرین: آزمون‌هایی که رفته‌ای، نمره‌هایی که به ترست داده‌ای، پیش‌بینی‌ها، ستاره‌ها، زمان‌ها، گام‌های زندگی واقعی که ثبت کرده‌ای، پاسخ‌های خودسنجی و سوگندهایت؛</li>
+    <li>سابقهٔ تمرین: آزمون‌هایی که پشتِ سر گذاشته‌ای، نمره‌هایی که به ترست داده‌ای، پیش‌بینی‌ها، ستاره‌ها، زمان‌ها، گام‌های زندگی واقعی که ثبت کرده‌ای، پاسخ‌های خودسنجی و سوگندهایت؛</li>
     <li>تنظیمات: زبان، صدا، کیفیت تصویر، یادآور روزانه و مانند این‌ها؛</li>
     <li>فهرستی کوتاه از آخرین خطاهای فنی (حداکثر ۲۵ مورد) برای پیدا کردن اشکال. این فهرست هم از دستگاهت بیرون نمی‌رود، مگر اینکه خودت آن را در بازخوردت بگذاری.</li>
   </ul>
@@ -144,7 +145,11 @@
     <p>If this policy changes, this page and its date are updated. Questions: <a href="mailto:info@go2game.ir">info@go2game.ir</a>. Made by Amir Saraee · <a href="landing/">About Lanternwalk</a></p>
   </section>
 
-  <a class="back" href="./">بازگشت به بازی · <span lang="en">Back to the game</span></a>
+  <!-- Persian links carry ?source=twa: the game then opens in Persian unless
+       the player chose English. The Android app's Persian default is never
+       saved, so a bare "./" from here opened the game in English on an
+       English-language phone. The English link keeps the browser's choice. -->
+  <p class="backs"><a class="back" href="./?source=twa">بازگشت به بازی</a> <a class="back" href="./" lang="en" dir="ltr">Back to the game</a></p>
 </main>
 </body>
 </html>

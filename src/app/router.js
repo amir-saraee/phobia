@@ -60,7 +60,8 @@ function parseRoute(hash) {
   }
   // Phobia-scoped routes (built-in or custom)
   const phobia = parts[0];
-  if (PHOBIAS[phobia]) {
+  // An own key only: "constructor" or "toString" found Object's members.
+  if (isPhobiaKey(phobia)) {
     // Clamp the level to the ladder's real range — an out-of-range / non-numeric
     // / negative index (bad deep link, or a custom ladder later trimmed shorter)
     // used to crash viewExposure/viewComplete on `lv.title` and blank the page.
@@ -90,6 +91,9 @@ function go(view, params) {
   params = params || {};
   const hash = "#" + serializeRoute(view, params);
   if (location.hash !== hash) {
+    // Remember how far down this page was, on its own history entry: Back
+    // brings the player to the same place in the list they left.
+    try { history.replaceState(Object.assign({}, history.state, { scrollY: Math.round(window.scrollY || 0) }), ""); } catch {}
     _suppressHashSync = true;
     history.pushState({ view, params }, "", hash);
     _suppressHashSync = false;
@@ -118,17 +122,35 @@ function scrollToTop() {
   if (document.body) document.body.scrollTop = 0;
 }
 
+// One render per navigation. Back / Forward between hashes fires popstate AND
+// hashchange, and both rendered — every page drew twice (a trial page built
+// its scene twice), and the second render's scroll-to-top threw away the
+// place Back was meant to restore. popstate only notes the entry it landed
+// on; hashchange renders. When the URL didn't change (no hashchange follows),
+// popstate renders itself.
+let _lastRenderedHash = null;
+let _popEntry;                // undefined: this hashchange isn't a history step
+function restoreScroll(st) {
+  const y = st && Number.isFinite(st.scrollY) ? st.scrollY : 0;
+  if (!(y > 0)) { scrollToTop(); return; }
+  const to = () => { try { window.scrollTo({ top: y, left: 0, behavior: "instant" }); } catch { window.scrollTo(0, y); } };
+  to();
+  requestAnimationFrame(to);   // once more after the page's first layout pass
+}
 window.addEventListener("hashchange", () => {
   if (_suppressHashSync) return;
+  const entry = _popEntry; _popEntry = undefined;
   const route = parseRoute(location.hash);
   render(route.view, route.params);
-  scrollToTop();
+  // A link or a typed hash starts at the top; Back / Forward returns to the
+  // place on that page the player left.
+  if (entry === undefined) scrollToTop(); else restoreScroll(entry);
 });
-window.addEventListener("popstate", () => {
+window.addEventListener("popstate", (e) => {
+  if (location.hash !== _lastRenderedHash) { _popEntry = e.state || null; return; }
   const route = parseRoute(location.hash);
   render(route.view, route.params);
-  // Don't force scroll on popstate — let the browser restore the prior
-  // scroll position so Back / Forward feels natural.
+  restoreScroll(e.state);
 });
 
 // The brand's lantern glyph — header, title screen, wordmarks. Inline SVG so
@@ -141,6 +163,7 @@ function brandLamp() {
 // out but clearing site data (and with it, everything). Catch it, log it, and
 // offer the way back: the title screen, a copy of the data, or a clean start.
 function render(view, params) {
+  _lastRenderedHash = location.hash;
   try { renderView(view, params); if (isRtl()) faDigitsIn(document.getElementById("app")); pageTitle(); }
   catch (err) {
     try { console.warn("[Lanternwalk] render failed:", err); } catch {}
@@ -213,13 +236,16 @@ function renderView(view, params) {
     window.AvatarPreview.unmount();
   }
   if (window.PhobiaVoice) window.PhobiaVoice.stop();
+  // Leaving the traveler creator drops its unsaved draft (views-journey.js):
+  // kept, it came back as the creator for whoever was active next time.
+  if (view !== "traveler") { try { _travelerDraft = null; } catch {} }
   if (window._landingAudio) {
     try { window._landingAudio.stop(); } catch {}
     window._landingAudio = null;
   }
   // A closed realm (see LAUNCH_OPEN) answers every one of its routes — map
   // link, deep link, old bookmark — with its "coming soon" page.
-  if (params && params.phobia && PHOBIAS[params.phobia] && !realmOpen(params.phobia) &&
+  if (params && params.phobia && isPhobiaKey(params.phobia) && !realmOpen(params.phobia) &&
       ["ladder", "phobia-progress", "predict", "exposure", "rate", "breathe", "complete"].includes(view)) {
     view = "soon";
   }
@@ -396,7 +422,13 @@ function pageTitle() {
   const brand = t("brand.name", "Lanternwalk");
   const app = document.getElementById("app");
   const h = app && app.querySelector("h1, h2");
-  const txt = h ? h.textContent.replace(/\s+/g, " ").trim() : "";
+  // A <br> in the heading is a space in the title («خوش برگشتی، سارا», not
+  // «خوش برگشتی،سارا»): textContent drops it.
+  let txt = "";
+  if (h) { const c = h.cloneNode(true); c.querySelectorAll("br").forEach((b) => b.replaceWith(" ")); txt = c.textContent.replace(/\s+/g, " ").trim(); }
   if (!pageTitle.base || pageTitle.lang !== isRtl()) { pageTitle.base = document.title; pageTitle.lang = isRtl(); }
-  document.title = txt && txt !== brand ? `${txt.slice(0, 60)} — ${brand}` : pageTitle.base;
+  // A heading that already names the game ("About Lanternwalk") isn't
+  // followed by the name again.
+  document.title = !txt || txt === brand ? pageTitle.base
+    : txt.includes(brand) ? txt.slice(0, 80) : `${txt.slice(0, 60)} — ${brand}`;
 }

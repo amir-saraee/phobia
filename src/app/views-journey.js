@@ -474,8 +474,12 @@ function viewArrival() {
   // A traveler the one-tap start made for them, who reloaded before a single
   // trial was logged, is still a first-time visitor: the picker, not a
   // "Welcome back, Traveler" with no history behind it.
-  const fresh = ch && ch.autoMade && !(state.log || []).length;
-  if (!named || fresh) {
+  // A traveler with a history is returning, named or not: an unnamed one got
+  // the first-visit picker on every return, and a tile tap there silently
+  // swapped their main fear.
+  const hasLog = !!(state.log || []).length;
+  const fresh = !ch || (!hasLog && (ch.autoMade || !named));
+  if (fresh) {
     const open = VALLEY_KEYS.filter((k) => PHOBIAS[k] && realmOpen(k));
     const icon = { dogs: "🐕", spiders: "🕷", snakes: "🐍", heights: "🏔", dark: "🌙", enclosed: "🚪" };
     const tiles = open.map((k) => `
@@ -513,7 +517,7 @@ function viewArrival() {
   <div class="mob-hero mob-hero-high arrive-hero">
     <p class="lw-mark-sm">${brandLamp()}<span>${t("brand.name", "Lanternwalk")}</span></p>
     <p class="mob-hero-kicker">${escapeHtml(chap ? S.chapterLabel(chap) : realm.realmName)}</p>
-    <h1 class="mob-hero-title">${tf("arrive.back", "Welcome back,<br>{name}", { name: named })}</h1>
+    <h1 class="mob-hero-title">${tf("arrive.back", "Welcome back,<br>{name}", { name: named || escapeHtml(travelerDisplayName(ch)) })}</h1>
   </div>
   <div class="mob-sheet arrive-sheet">
     ${note}
@@ -684,7 +688,7 @@ function viewSelect() {
   const campLine = !ch ? t("camp.empty", "A campfire, waiting for a traveler.")
     : facedTrials === 0 ? tf("camp.sayLine", "“{line}”", { line: curRealm.line })
     : curProg >= PHOBIAS[curKey].levels.length ? tf("camp.sayLine", "“{line}”", { line: curRealm.clearedLine })
-    : tf("camp.trialWaiting", "“Trial {n} of {realm} is waiting for me.”", { n: curProg + 1, realm: curRealm.realmName });
+    : tf("camp.trialWaiting", "“Trial {n} of {realm} is waiting for me.”", { n: curProg + 1, realm: escapeHtml(curRealm.realmName) });
 
   const nodes = keys.map((k, i) => {
     const p = PHOBIAS[k];
@@ -770,7 +774,7 @@ function viewSelect() {
       </div>` : ""}
       ${nudgeBlock()}
       <p class="camp-hint">${keys.length === 1
-        ? tf("camp.hintOne", "the path descends to {realm} ▾", { realm: realmOf(keys[0]).realmName })
+        ? tf("camp.hintOne", "the path descends to {realm} ▾", { realm: escapeHtml(realmOf(keys[0]).realmName) })
         : t("camp.hint", "the path descends through the valley — choose a realm ▾")}</p>
     </section>
     <ol class="realm-list">${nodes}</ol>
@@ -1060,11 +1064,15 @@ function viewReport() {
             baseline: R("rep.stBase", "baseline"), mid: R("rep.stMid", "mid-hierarchy"),
             post: R("rep.stPost", "post-hierarchy"), manual: R("rep.stSelf", "self-initiated"),
           };
+          // The five scores follow the item list in the heading above: left
+          // to right in English, right to left in Persian (a forced LTR run
+          // put the first item's score under the last item's name).
+          const scoreDir = !en && isRtl() ? "rtl" : "ltr";
           const rows2 = checks.map(c => `
             <tr>
               <td>${fmtD(c.ts)}</td>
               <td>${stageLabel[c.at] || escapeHtml(String(c.at))}</td>
-              <td><bdi dir="ltr">${c.scores.join(" · ")}</bdi></td>
+              <td><bdi dir="${scoreDir}">${c.scores.join(" · ")}</bdi></td>
               <td><strong>${outOf(c.total, 20)}</strong></td>
             </tr>`).join("");
           const delta = checks.length > 1 ? checks[checks.length - 1].total - checks[0].total : null;
@@ -1128,9 +1136,9 @@ function viewAbout() {
       <p>${tf("about.contact", "A bug, a question, a moment it helped? Write to {mail} — or use “Send feedback” below, which can add the technical details for you.", { mail: `<a href="mailto:${SUPPORT_EMAIL}" dir="ltr" lang="en">${SUPPORT_EMAIL}</a>` })}</p>
 
       <h3>${t("about.creditsH", "Credits")}</h3>
-      <p class="about-credits">${t("about.credits", "Built for fun with")} <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> · ${t("about.creditsPhysics", "physics by")} <a href="https://rapier.rs" target="_blank" rel="noopener">Rapier</a> · ${t("about.creditsModels", "creature models by")} <bdi><a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a> (CC0)</bdi> · ${t("about.creditsAmbient", "ambient recordings from")} <a href="https://mixkit.co" target="_blank" rel="noopener">Mixkit</a> · ${t("about.creditsHdri", "sky lighting from")} <bdi><a href="https://polyhaven.com/a/meadow" target="_blank" rel="noopener">Poly Haven</a> (CC0)</bdi> · ${t("about.creditsFont", "Persian type:")} <bdi><a href="https://github.com/rastikerdar/vazirmatn" target="_blank" rel="noopener">Vazirmatn</a> (SIL OFL)</bdi> · ${t("about.creditsMade", "made with care by Amir.")}</p>
+      <p class="about-credits">${t("about.credits", "Built for fun with")} <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> · ${t("about.creditsPhysics", "physics by")} <a href="https://rapier.rs" target="_blank" rel="noopener">Rapier</a> · ${t("about.creditsModels", "creature models by")} <bdi class="no-fa-digits"><a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a> (CC0)</bdi> · ${t("about.creditsAmbient", "ambient recordings from")} <a href="https://mixkit.co" target="_blank" rel="noopener">Mixkit</a> · ${t("about.creditsHdri", "sky lighting from")} <bdi class="no-fa-digits"><a href="https://polyhaven.com/a/meadow" target="_blank" rel="noopener">Poly Haven</a> (CC0)</bdi> · ${t("about.creditsFont", "Persian type:")} <bdi><a href="https://github.com/rastikerdar/vazirmatn" target="_blank" rel="noopener">Vazirmatn</a> (SIL OFL)</bdi> · ${t("about.creditsMade", "made with care by Amir.")}</p>
       <p class="small">${t("about.own", "The story, its characters, the scenes, the writing and the code are the makers' own work; the models, recordings, sky and font above are used under their free licences.")}</p>
-      <p class="small about-version">${tf("about.version", "Version {v} · {d}", { v: APP_VERSION, d: (() => {
+      <p class="small about-version">${tf("about.version", "Version {v} · {d}", { v: `<bdi class="no-fa-digits" dir="ltr">${APP_VERSION}</bdi>`, d: (() => {
         try { return new Date(APP_BUILD + "T12:00:00").toLocaleDateString(isRtl() ? "fa-IR" : "en-GB", { year: "numeric", month: "long", day: "numeric" }); } catch { return APP_BUILD; }
       })() })}</p>
 

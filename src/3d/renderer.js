@@ -217,6 +217,14 @@ function texAniso() { return QUALITY === "low" ? 2 : QUALITY === "medium" ? 4 : 
 // The probed GPU, for the performance overlay and the bug-report line.
 function gpuInfo() { const g = probeGPU(); return { renderer: g.renderer, software: g.software, cls: gpuClass(g.renderer), mobile: IS_MOBILE }; }
 
+// The pixel ratio the tier allows on this screen: low draws at 1:1, medium
+// caps at 1.5, high at 2. Re-read by the engine when the window moves to a
+// screen with a different density (or the page is zoomed) mid-trial.
+function tierPixelRatio() {
+  const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
+  return IS_LOW_POWER ? 1 : Math.min(dpr, QUALITY === "medium" ? 1.5 : 2);
+}
+
 function makeRenderer(container) {
   // Re-evaluate every mount so settings changes apply immediately
   QUALITY = resolveQuality();
@@ -236,7 +244,7 @@ function makeRenderer(container) {
   // Reading back every program's compile log costs ~250 ms of a trial's
   // mount on a slow CPU. Kept for QA (?debug=1).
   renderer.debug.checkShaderErrors = /[?&]debug=1/.test(location.search);
-  renderer.setPixelRatio(IS_LOW_POWER ? 1 : Math.min(window.devicePixelRatio, isMedium ? 1.5 : 2));
+  renderer.setPixelRatio(tierPixelRatio());
   renderer.setSize(container.clientWidth || 800, container.clientHeight || 360);
   renderer.shadowMap.enabled = !IS_LOW_POWER;
   // VSM (Variance Shadow Maps) give a real soft penumbra at the cost of one
@@ -285,9 +293,11 @@ function makeRenderer(container) {
 // empty texture as its environment: the camp after a language toggle went
 // near-black, and each trial after the first lost its image-based light.
 const _envMaps = new WeakMap();
-function getRoomEnvMap(renderer) {
+// `rebuild`: bake it again — after a lost-and-restored GL context the cached
+// one is an empty texture (see rebakeEnvMap).
+function getRoomEnvMap(renderer, rebuild = false) {
   if (!renderer) return null;
-  if (_envMaps.has(renderer)) return _envMaps.get(renderer);
+  if (!rebuild && _envMaps.has(renderer)) return _envMaps.get(renderer);
   let tex = null;
   try {
     const pmrem = new THREE.PMREMGenerator(renderer);
@@ -301,6 +311,52 @@ function getRoomEnvMap(renderer) {
   }
   _envMaps.set(renderer, tex);
   return tex;
+}
+
+// ---------- Re-baking after a GPU context restore ----------
+// Every PMREM bake (the room map above, a realm's meadow or sky HDR) is a
+// render target: its pixels exist only in the GL context that drew them. When
+// the context is lost and restored, three re-uploads every texture it has
+// the source of — but a render target has none, so it comes back EMPTY and
+// every env-lit surface loses its image-based light (the rooftop measured
+// 114 → 44 brightness after a restore, the cellar 53 → 3). The source the
+// bake was made from is still in memory; remember it per result, so the
+// engine can bake the same environment again on restore.
+const _pmremSrc = new WeakMap();
+try {
+  const P = THREE.PMREMGenerator && THREE.PMREMGenerator.prototype;
+  if (P && !P.__lwRemember) {
+    P.__lwRemember = true;
+    const fromEq = P.fromEquirectangular, fromCube = P.fromCubemap;
+    if (fromEq) P.fromEquirectangular = function (src, rt) {
+      const out = fromEq.call(this, src, rt);
+      try { if (out && out.texture && src) _pmremSrc.set(out.texture, { kind: "eq", src }); } catch {}
+      return out;
+    };
+    if (fromCube) P.fromCubemap = function (src, rt) {
+      const out = fromCube.call(this, src, rt);
+      try { if (out && out.texture && src) _pmremSrc.set(out.texture, { kind: "cube", src }); } catch {}
+      return out;
+    };
+  }
+} catch {}
+// A fresh bake of `tex` for `renderer` (whose context has just come back), or
+// null when it isn't a bake this module knows how to redo. The room map is
+// rebuilt from scratch; a realm's HDR bake from the source it remembered.
+function rebakeEnvMap(renderer, tex) {
+  if (!renderer || !tex || !tex.isTexture) return null;
+  try {
+    if (_envMaps.get(renderer) === tex) return getRoomEnvMap(renderer, true);
+    const rec = _pmremSrc.get(tex);
+    if (!rec) return null;
+    const gen = new THREE.PMREMGenerator(renderer);
+    const out = rec.kind === "cube" ? gen.fromCubemap(rec.src) : gen.fromEquirectangular(rec.src);
+    gen.dispose();
+    return out && out.texture ? out.texture : null;
+  } catch (e) {
+    console.warn("env re-bake failed:", e);
+    return null;
+  }
 }
 
 // Outdoor equirect HDR for scenes that want real sky/ground reflections rather
@@ -336,4 +392,4 @@ function loadMeadowHDRBase() {
   return _meadowHDR;
 }
 
-export { disposeObject, IS_COARSE_POINTER, IS_MOBILE, resolveQuality, demoteAutoTier, QUALITY, IS_LOW_POWER, syncFxLite, sceneQuality, texAniso, gpuInfo, makeRenderer, getRoomEnvMap, loadMeadowHDR };
+export { disposeObject, IS_COARSE_POINTER, IS_MOBILE, resolveQuality, demoteAutoTier, QUALITY, IS_LOW_POWER, syncFxLite, sceneQuality, texAniso, gpuInfo, makeRenderer, getRoomEnvMap, loadMeadowHDR, tierPixelRatio, rebakeEnvMap };

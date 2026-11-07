@@ -9,7 +9,7 @@
 //     round trip for each before a trial.
 //   - Cross-origin (CDN) requests: network-first with cache fallback.
 
-const VERSION = "lanternwalk-v31";
+const VERSION = "lanternwalk-v32";
 // Installed on the first visit, in the background — so it holds only what the
 // six open realms need to boot and play offline: their code, plus the models
 // and textures of the creature realms (dogs, spiders, snakes; the place realms
@@ -18,7 +18,7 @@ const VERSION = "lanternwalk-v31";
 // Keep this list lean: every byte here is paid by every first-time visitor,
 // on phone data too.
 const SHELL = [
-  "./",                 // the page (manifest start_url is "./" — one copy, not two)
+  "./",                 // the page (manifest.json's start_url; manifest.fa.json's ?source=twa start falls back to it offline)
   "./manifest.json",
   "./manifest.fa.json",
   "./privacy.html",     // the privacy policy reads offline too (linked from the game)
@@ -146,11 +146,14 @@ self.addEventListener("fetch", (event) => {
 
 // The daily nudge (Settings → Reminders) is posted through this worker —
 // Android allows no other way. A tap on it brings the game to the front, or
-// opens it.
+// opens it — in the language the nudge was written in: the Android app's
+// Persian default is never saved, so a bare "./" opened it in English on an
+// English-language phone. ?source=twa still yields to a saved English choice.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  const url = event.notification.lang === "fa" ? "./?source=twa" : "./";
   event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
     for (const c of list) if ("focus" in c) return c.focus();
-    return self.clients.openWindow ? self.clients.openWindow("./") : undefined;
+    return self.clients.openWindow ? self.clients.openWindow(url) : undefined;
   }));
 });

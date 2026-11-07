@@ -58,6 +58,27 @@ const CTX_WEATHER = [
   { id: "rain",     label: "rainy",    keyMul: 0.42, hemiMul: 1.22, beamMul: 0.15, w: 2 },
 ];
 
+const _ctxWPool = [];
+for (const w of CTX_WEATHER) for (let i = 0; i < w.w; i++) _ctxWPool.push(w);
+// The weather a visit ENDED UP with. Each visit's raw roll is the first draw
+// of its own seeded stream; when it matches the weather the previous visit
+// actually had, it steps to the next one. The old rule compared with the
+// previous visit's RAW roll — but that roll may itself have been stepped, so
+// two visits in a row could still land on the same sky (clear → clear after
+// a bumped hazy). Walking the chain from visit 0 makes "never the same as last
+// time" true by construction, and keeps it deterministic per visit. A rung is
+// visited tens of times, not thousands; the walk is a few hashes per visit.
+function _ctxWeatherAt(key, n) {
+  const P = _ctxWPool, L = CTX_WEATHER.length;
+  let prev = null;
+  for (let i = 0; i <= n; i++) {
+    let w = P[Math.floor(_mulberry32(_ctxHash(key + "|" + i))() * P.length) % P.length];
+    if (prev && w.id === prev.id) w = CTX_WEATHER[(CTX_WEATHER.indexOf(w) + 1) % L];
+    prev = w;
+  }
+  return prev;
+}
+
 // Returns the context for this visit. `advance` increments the visit counter —
 // mount() passes true exactly once, so previews and probes can read the current
 // context without burning a variant.
@@ -74,18 +95,8 @@ function sceneContext(phobiaKey, levelIdx, advance) {
   // through the day instead of re-rolling onto the same hour.
   const hour = CTX_HOURS[(n + (_ctxHash(phobiaKey) % CTX_HOURS.length)) % CTX_HOURS.length];
   // Weather is weighted-random but never the same as last visit.
-  const wPool = [];
-  for (const w of CTX_WEATHER) for (let i = 0; i < w.w; i++) wPool.push(w);
-  let weather = wPool[Math.floor(rng() * wPool.length) % wPool.length];
-  if (n > 0) {
-    // The weather draw is the FIRST rng call in this function, so replaying the
-    // previous visit's stream from scratch reproduces exactly what it rolled.
-    const prevSeed = _mulberry32(_ctxHash(key + "|" + (n - 1)));
-    const prev = wPool[Math.floor(prevSeed() * wPool.length) % wPool.length];
-    if (prev && prev.id === weather.id) {
-      weather = CTX_WEATHER[(CTX_WEATHER.indexOf(weather) + 1) % CTX_WEATHER.length];
-    }
-  }
+  rng();   // the weather draw: kept in the stream so everything after it rolls as before
+  const weather = _ctxWeatherAt(key, n);
   return {
     visit: n, seed, rng, pick, range, hour, weather,
     // Combined multipliers a scene can apply straight to its own rig.

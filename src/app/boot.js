@@ -17,6 +17,9 @@ function computeStreak() {
   // fixed 86.4M ms — a DST day is 23 or 25 hours, so the old fixed step landed
   // an hour off midnight and broke the streak across the transition.
   const cursor = new Date(dayKey(Date.now()));
+  // Today isn't over: with no trial yet today, the streak still stands from
+  // yesterday back (it read 0 every morning until the day's first trial).
+  if (!days.has(cursor.getTime())) cursor.setDate(cursor.getDate() - 1);
   while (days.has(dayKey(cursor.getTime()))) {
     n++;
     cursor.setDate(cursor.getDate() - 1);
@@ -41,8 +44,10 @@ function applyVoicePreset() {
 // therapy), that data never leaves the device, that the user is always in
 // control, and where real help lives. Re-readable from the About page.
 const CONSENT_KEY = "fobia.consent.v1";
+// prefGet / prefSet (boot-guards.js) keep the answer in memory when storage
+// is blocked — it was asked again before every scene.
 function hasConsented() {
-  try { return localStorage.getItem(CONSENT_KEY) === "1"; } catch { return false; }
+  return prefGet(CONSENT_KEY) === "1";
 }
 // Three things and a phone number, not five paragraphs: what this is (and
 // isn't), that nothing leaves the device, that every scene can be left. The
@@ -63,7 +68,7 @@ function showConsent(rereading, onOk) {
           ? t("consent.control2m", "You're in control: leave any scene, any time — 🛟 grounds you. Stepping out is never a failure.")
           : t("consent.control2d", "You're in control: leave any scene, any time — Esc grounds you. Stepping out is never a failure.")}</li>
       </ul>
-      <p class="consent-crisis">☎️ ${t("consent.crisis", "If you're in crisis right now, please reach a real person:")} <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a>${isRtl() ? " · اورژانس اجتماعی <b>۱۲۳</b> · صدای مشاور بهزیستی <b>۱۴۸۰</b>" : ""}</p>
+      <p class="consent-crisis">☎️ ${t("consent.crisis", "If you're in crisis right now, please reach a real person:")} <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a>${isRtl() ? /* «|» — a «·» beside Persian digits reads as a zero (see faDigitsIn) */ " | اورژانس اجتماعی <b>۱۲۳</b> | صدای مشاور بهزیستی <b>۱۴۸۰</b>" : ""}</p>
       <div class="actions" style="margin-top:14px">
         ${rereading ? "" : `<button class="btn-ghost" id="consentAbout">${t("consent.more", "Read more")}</button>`}
         <button class="btn-primary" id="consentOk">${rereading ? t("consent.close", "Close") : t("consent.ok", "I understand — begin")}</button>
@@ -71,7 +76,7 @@ function showConsent(rereading, onOk) {
     </div>`;
   document.body.appendChild(overlay);
   overlay.querySelector("#consentOk").onclick = () => {
-    try { localStorage.setItem(CONSENT_KEY, "1"); } catch {}
+    prefSet(CONSENT_KEY, "1");
     overlay.remove();
     try { window.dispatchEvent(new Event("consent-given")); } catch {}
     if (typeof onOk === "function") { try { onOk(); } catch (e) { console.warn("[consent]", e); } }

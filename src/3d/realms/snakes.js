@@ -1074,6 +1074,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   }
   function snPulse(strength, kind) { snCoach.pulse(strength, kind, snLastDist); }
   let snToward = 0, snPrevSX = null, snPrevSZ = 0, snPlayerSpeed = 0, snPrevPX = null, snPrevPZ = 0;
+  let snRushed = false, snBackedOff = 0;   // rung 5: a rush voids "slowly" until you back off
   let snStillMoveT = 0, snCrossT = 0, snRearT = 0, snSlowT = 0, snFreeInvited = false, snCrossNear = false, snTonguePrev = -1, snBaskT = 0, snGlideT = 0;
   const _snV = new THREE.Vector3();
 
@@ -1266,11 +1267,23 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     if (snakeCtl._ignoreT > 0) snakeCtl._ignoreT -= dtN;                   // lost interest: only a close pass re-alerts it
     const watchAt = snakeCtl._ignoreT > 0 ? 1.6 : (B.watchDist ?? 3.2);
     if (snakeCtl.state === "bask") {
-      if (controls && playerDist < watchAt) snakeEnter("watch", controls);
+      // (Same hysteresis as the wander below: having turned away from you,
+      // it doesn't re-watch you for standing where you already stood.)
+      const baskAlertAt = snakeCtl._ignoreT > 0 ? Math.min(watchAt, (snakeCtl._ignoreFrom ?? 99) - 0.4) : watchAt;
+      if (controls && playerDist < baskAlertAt) snakeEnter("watch", controls);
       else if (stillness > (B.retreatStill ?? 0.3) && controls && playerDist < 5 && !(snakeCtl._retreatCooldown > 0)) snakeEnter("retreat", controls);
       else if (!B.still && snakeCtl.stateT > snakeCtl.baskDur) snakeEnter("wander", controls);
     } else if (snakeCtl.state === "wander") {
-      if (!snakeCtl._leafErrand && controls && playerDist < (snakeCtl.crossing ? 1.6 : Math.min(watchAt, B.watchDist ?? 2.6))) snakeEnter("watch", controls);
+      let reAlertAt = snakeCtl.crossing ? 1.6 : Math.min(watchAt, B.watchDist ?? 2.6);
+      // Lost interest: a close pass re-alerts it — "close" meaning closer than
+      // you stood when it turned away. With you at 1.3 m it re-watched you the
+      // very frame it set off (the 1.6 m line was already crossed), so it
+      // never slid at all and rung 2's "hold still while it slides — close
+      // by" could not be earned near it. Stopped at your feet a while into
+      // its errand (heading your way), it does look up at you.
+      if (snakeCtl._ignoreT > 0) reAlertAt = Math.min(reAlertAt, (snakeCtl._ignoreFrom ?? 99) - 0.4);
+      const blockedAtFeet = snakeCtl.stateT > 3.5 && (snakeCtl._blockedT || 0) > 1.0;
+      if (!snakeCtl._leafErrand && controls && (playerDist < reAlertAt || blockedAtFeet)) snakeEnter("watch", controls);
       else if (snakeCtl.target) {
         const d = Math.hypot(snakeCtl.target.x - snake.position.x, snakeCtl.target.z - snake.position.z);
         if (d < 0.35 || snakeCtl.stateT > 18) {
@@ -1295,6 +1308,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
         // and only a close pass catches its attention again for a while.
         snakeCtl._watchFor = 0;
         snakeCtl._ignoreT = 6 + Math.random() * 4;
+        snakeCtl._ignoreFrom = playerDist;
         if (B.wander) { snakeCtl._forceCross = !!B.cross; snakeEnter("wander", controls); }
         else snakeEnter("bask", controls);
       }
@@ -1410,8 +1424,18 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       desiredSpeed = (snakeCtl.state === "retreat" ? 0.85 : (B.wanderSpeed ?? (0.45 + size * 0.25)));
       desiredSpeed *= Math.min(1, dist / 0.8);            // ease in on arrival
       desiredSpeed *= Math.max(0.25, 1 - Math.abs(dh) / Math.PI); // slow in tight turns
-      // Never slither into the camera: full stop just outside personal space.
-      if (controls && playerDist < 1.1) desiredSpeed = 0;
+      // Never slither into the camera: full stop just outside personal space
+      // — while it's heading your way. It used to stop whatever the heading,
+      // so a snake retreating (or wandering off) from within 1.1 m froze on
+      // the spot with its Walk clip running: it could never leave you.
+      let blocked = false;
+      if (controls && playerDist < 1.1) {
+        const towardP = (Math.sin(snakeCtl.heading) * (controls.position.x - snake.position.x)
+          + Math.cos(snakeCtl.heading) * (controls.position.z - snake.position.z)) / (playerDist || 1);
+        if (towardP > 0) { desiredSpeed = 0; blocked = true; }
+      }
+      // How long it has stood blocked at your feet (the wander branch reads it).
+      snakeCtl._blockedT = blocked ? (snakeCtl._blockedT || 0) + dtN : 0;
     } else if (snakeCtl.state === "watch" && controls) {
       // Rotate the reared body toward the player — slowly; menace is patient.
       const desired = Math.atan2(controls.position.x - snake.position.x, controls.position.z - snake.position.z);
@@ -1778,6 +1802,8 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
             px: CP.x, pz: CP.z, dogX: SP.x, dogZ: SP.z,
             onScreen: snOnScreen, dogGazing: facing && snakeCtl.state === "watch", trust: null,
             anchorX: ax, anchorY: ay, stageW: sw, stageH: shh,
+            // Its whole body on screen (not just the head), for the read card to avoid.
+            anchorBox: snCoach.screenBox(snake, camera, sw, shh),
           });
           void dxp; void dzp;
           const inZone = snCoach.engaged;
@@ -1802,7 +1828,16 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           if (snRung === 4) {
             // "Slowly" is the star: close AND not closing in fast (a rush
             // stops the clock; a strike display resets it).
-            if (snakeCtl.state === "defensive") snSlowT = 0;
+            // A rush voids it for this approach: the strike it set off only
+            // reset the clock, so standing still afterwards, right where the
+            // rush ended, still earned "slowly". It counts again once you've
+            // backed off (your own steps, not the snake leaving) and come in
+            // slowly. A rush is the strike's own trigger: inside its range,
+            // closing faster than it tolerates (also during its cooldown).
+            if (snakeCtl.state === "defensive"
+                || (distS < (B.strikeDist ?? 1.45) && approachSpeed > (B.strikeApproach ?? 0.9))) { snRushed = true; snBackedOff = 0; }
+            else if (snRushed) { snBackedOff += Math.max(0, -approachSpeed) * dtN; if (snBackedOff > 0.8) snRushed = false; }
+            if (snRushed) snSlowT = 0;
             else if (distS < (B.strikeDist ?? 1.45) + 0.8 && approachSpeed < 0.3) snSlowT += dtN;
             if (snSlowT > 8) snCoach.goalDone("slowHeld");
           }

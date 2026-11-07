@@ -33,6 +33,9 @@
   const L = (o) => (o == null ? "" : typeof o === "string" ? o : (o[lang()] != null ? o[lang()] : o.en));
   const T = (k, en) => (typeof window.t === "function" ? window.t(k, en) : en);
   const TF = (k, en, v) => (typeof window.tf === "function" ? window.tf(k, en, v) : en);
+  // Numbers in the reader's digits — for attributes (tooltips), which the
+  // page's Persian-digit pass never rewrites.
+  const N = (v) => (typeof window.fnum === "function" ? window.fnum(v) : String(v));
   const esc = (s) => String(s == null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
@@ -1146,7 +1149,7 @@
     const rows = REALM_CHAPTERS.filter((c) => { try { return PHOBIAS[c.realm] && isOpenRealm(c.realm); } catch { return false; } }).map((c) => {
       const k = c.realm, n = levelsOf(k), f = flames(k), lit = f >= n;
       const nm = (() => { try { return realmOf(k).realmName; } catch { return k; } })();
-      return `<li class="ln ${lit ? "lit" : f ? "part" : ""} ${opts.current === k ? "cur" : ""}" title="${esc(nm)} — ${f}/${n}">
+      return `<li class="ln ${lit ? "lit" : f ? "part" : ""} ${opts.current === k ? "cur" : ""}" title="${esc(nm)} — ${N(f)}/${N(n)}">
         <span class="ln-lamp" aria-hidden="true"><i style="--f:${(f / n).toFixed(2)}"></i></span>
         <span class="ln-flames" aria-hidden="true">${Array.from({ length: n }, (_, i) => `<b class="${i < f ? "on" : ""}"></b>`).join("")}</span>
         ${opts.names ? `<span class="ln-name">${esc(nm)}</span>` : ""}

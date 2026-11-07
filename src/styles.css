@@ -1451,6 +1451,9 @@ html.reduce-motion .stage .heart::before { opacity: .4; }
   transition: transform .28s ease;
   padding: 20px 18px;
   overflow-y: auto;
+  /* A swipe that reaches the end of the list stops here instead of
+     scrolling the page behind the drawer. */
+  overscroll-behavior: contain;
   display: flex; flex-direction: column;
 }
 .menu-drawer.open { transform: translateX(0); }
@@ -1500,6 +1503,9 @@ body.light-mode .menu-avatar { background: linear-gradient(180deg, #e8eef7 0%, #
   transition: opacity .25s ease;
 }
 .menu-backdrop.show { opacity: 1; pointer-events: auto; }
+/* The dimmed page behind an open drawer is not for scrolling: a swipe there
+   moved the page under the drawer. Taps still close it. */
+.menu-backdrop.show, .settings-backdrop.show { touch-action: none; }
 
 /* Settings drawer */
 .settings-drawer {
@@ -1513,6 +1519,7 @@ body.light-mode .menu-avatar { background: linear-gradient(180deg, #e8eef7 0%, #
   transition: transform .3s ease;
   padding: 20px 22px;
   overflow-y: auto;
+  overscroll-behavior: contain;   /* same as the menu: no scroll chaining */
 }
 .settings-drawer.open { transform: translateX(0); }
 .settings-drawer h3 { margin-top: 0; }
@@ -2001,6 +2008,10 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 }
 .profile-actions { display: flex; flex-direction: column; gap: 4px; }
 .profile-actions button { padding: 5px 10px; font-size: 11px; }
+/* "Play as {name}" — the card's keyboard/screen-reader way in; first, a little apart from Edit/Delete. */
+.profile-actions .profile-card-play { margin-bottom: 4px; white-space: nowrap; }
+/* The whole settings row toggles its switch (a11ySwitches) — say so to the pointer. */
+.settings-drawer .row.row-toggle { cursor: pointer; }
 
 /* Session journal on complete page */
 .journal-row {
@@ -3357,10 +3368,13 @@ body.light-mode .journal-entry p { color: var(--muted); }
 }
 .stage .grounding-exit-hint.visible { opacity: 1; }
 /* While grounding, nothing else asks for attention: no read card, no
-   "click to pet" hint, no context prompts. */
+   "click to pet" hint, no context prompts — and no lesson from Mira or the
+   intro hint either (both kept talking over the 5-4-3-2-1 text). */
 .stage:has(.grounding-overlay.active) .dc-read,
 .stage:has(.grounding-overlay.active) .reach-hint,
-.stage:has(.grounding-overlay.active) .ctx-prompt { opacity: 0 !important; pointer-events: none !important; }
+.stage:has(.grounding-overlay.active) .ctx-prompt,
+.stage:has(.grounding-overlay.active) .dc-callout,
+.stage:has(.grounding-overlay.active) .controls-hint { opacity: 0 !important; pointer-events: none !important; }
 /* Tiny pulse indicator showing fear level — small dot at top-left under
    the camera toggle. Visible to the user as biofeedback. */
 .stage .fear-meter {
@@ -5580,3 +5594,154 @@ html.big-text .stage .ctx-prompt, html.big-text .stage .dc-callout,
 html.big-text .stage .dc-read, html.big-text .stage .reach-hint,
 html.big-text .stage .exp-panel, html.big-text .stage .ml-toggle { zoom: 1.2; }
 html.big-text .settings-drawer .row, html.big-text .goal-modal { zoom: 1.12; }
+
+/* ============ Phone fit pass (QA sweep 2026-11-07) ============
+   Late in the sheet on purpose, like the Quiet HUD block: each rule here
+   settles a fight an older phone rule lost on order or specificity.
+   Measured with real rects at 390×844, 360×640, 844×390 and 768×1024. */
+
+/* A swipe that started on the stage's chrome — the coach card, Ground me,
+   the camera pill, the quick buttons — scrolled the page out from under the
+   trial (only the canvas, joystick and hotbar said no). The whole touch
+   stage belongs to the game. A tap is not a pan, so every button on it
+   still works; pages without a stage keep pinch-zoom. */
+.stage-wrap:has(.joystick) .stage { touch-action: none; overscroll-behavior: contain; }
+/* …and the row under it (Pause & breathe, Step out): stage + row fill the
+   screen exactly, so a swipe there only scrolled the trial 79 px off its top.
+   Taps are unaffected (touch-action governs panning, not clicks). */
+.exposure-panel:has(.stage-wrap .joystick) .step-controls { touch-action: none; overscroll-behavior: contain; }
+
+/* Ground me is the way out. On a 360×640 phone the read card's lowest spot
+   — just above the thumb cluster, i.e. --cmdbar-top — reached 16 px into
+   it: Ground me's top sits 162 px up, the 2×2 cluster's only 138. On
+   phones the cluster's box now reaches up to Ground me's row (an empty,
+   click-through strip over its buttons), so everything that keeps clear of
+   --cmdbar-top — the read card, the message stack — clears both thumbs. */
+@media (max-width: 600px) {
+  .stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) { padding-top: 24px; pointer-events: none; }
+  .stage-wrap:has(.joystick) .scene-cmd-bar:not(.collapsed) .cmd-btn { pointer-events: auto; }
+}
+/* ...and if a card still meets it, Ground me draws on top whatever the
+   order the realm built them in. */
+.stage-wrap .stage:has(.joystick) .dc-read { z-index: 8; }
+/* While the read card waits for an answer the intro hint steps aside too,
+   as the reach hint and context lines already do: on a sideways phone and a
+   tablet the card was placed across it. */
+.stage:has(.dc-read.show) .controls-hint { opacity: 0 !important; }
+
+/* At ≥601 px the coach card is 214 px wide, not the phone's 156, so the
+   touch intro hint has to stop short of it — on a 768 px tablet the hint
+   ran under the card. 12 (hint inset) + 214 + 10 (card inset) + 10 gap. */
+@media (min-width: 601px) {
+  .stage-wrap .stage:has(.joystick) .controls-hint,
+  .stage-wrap .stage.cmds-open:has(.joystick) .controls-hint { max-width: calc(100% - 246px); }
+}
+
+/* Phones held sideways (stage ≈ 800×320). The older landscape block lost to
+   the ≥601 px card width and to the touch message slot: the full card ran
+   down behind the thumb cluster, and Mira's lesson lay across the card and
+   the intro hint. Here the card is compact and ends above the cluster
+   (--cmdbar-top is measured by the engine), and the message slot moves to
+   the free band between the two thumbs, at the bottom. */
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
+  .stage-wrap .stage .dog-coach {
+    top: 60px; right: 8px; width: 196px; padding: 5px 9px 4px; border-radius: 12px;
+    max-height: calc(100% - var(--cmdbar-top, 140px) - 66px); overflow: hidden;
+  }
+  .stage-wrap .stage .dog-coach canvas.dc-wave { height: 20px !important; margin: 3px 0 0; }
+  .stage-wrap .dog-coach .dc-legend, .stage-wrap .dog-coach .dc-foot { display: none; }
+  /* Persian's taller line box made each of these rows 7–10 px taller. */
+  .stage-wrap .dog-coach .dc-head, .stage-wrap .dog-coach .dc-stars-row { line-height: 1.3; }
+  .stage-wrap .dog-coach .dc-title { font-size: 10.5px; letter-spacing: .06em; }
+  .stage-wrap .dog-coach .dc-goals { margin-top: 4px; padding-top: 3px; gap: 3px; font-size: 11px; }
+  /* The next goal only (a tap leaves :hover stuck on, which showed all
+     three), at most two lines. */
+  .stage-wrap .dog-coach .dc-goal { display: none; }
+  .stage-wrap .dog-coach .dc-goal.next, .stage-wrap .dog-coach.dc-open .dc-goal { display: flex; }
+  .stage-wrap .dog-coach .dc-goal > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  /* Opened by a tap on its head: every goal, one line each, and the wave
+     gives up its room for them. */
+  .stage-wrap .stage .dog-coach.dc-open canvas.dc-wave { display: none !important; }
+  .stage-wrap .dog-coach.dc-open .dc-goal > span { -webkit-line-clamp: 1; }
+  /* Captions, context lines, Mira's lessons and the reach hint: bottom
+     centre, clear of the joystick column (≈ 125 px) and the cluster
+     (≈ 162 px) on either side. */
+  .stage-wrap .stage:has(.joystick) .captions,
+  .stage-wrap .stage:has(.joystick) .ctx-prompt,
+  .stage-wrap .stage:has(.joystick) .reach-hint,
+  .stage-wrap .stage:has(.joystick) .dc-callout {
+    bottom: 10px; max-width: calc(100% - 360px);
+  }
+  .stage-wrap .stage:has(.joystick) .dc-callout { width: calc(100% - 360px); }
+  /* The intro hint keeps the top-left column: just under the camera pill
+     (no hold pill or mouse-look pill sideways), so even three lines end
+     above Ground me, and short of the card: 12 + 196 + 8 + 16 gap. */
+  .stage-wrap .stage:has(.joystick) .controls-hint,
+  .stage-wrap .stage.cmds-open:has(.joystick) .controls-hint { top: 66px; max-width: calc(100% - 232px); }
+  .stage-wrap .stage:has(.joystick):has(.exp-panel) .controls-hint { top: 104px; }
+}
+/* A sideways phone under 380 px tall has no room for the wave as well. */
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 380px) {
+  .stage-wrap .stage .dog-coach canvas.dc-wave { display: none !important; }
+}
+
+/* ---- Tap targets: 44 px at the least, like the rest of the app ---- */
+@media (max-width: 600px) {
+  /* ☰ and the language switch were 33 px wide in the phone header, the
+     traveler badge beside them 42. */
+  .brand .audio-btn { min-width: 44px; }
+  .brand .char-badge { min-width: 44px; justify-content: center; }
+}
+/* The ✕ that closes each drawer was 31 px wide. */
+.menu-drawer .close-btn, .settings-drawer .close-btn { min-width: 44px; }
+/* Settings: the two selects were 32 px pills, each switch a 40×22 strip.
+   The pills grow; the switch keeps its look and gets an invisible hit area
+   (inside the row's own padding, clear of the label). */
+.settings-drawer .select-pill { min-height: 44px; }
+.settings-drawer .toggle::before { content: ""; position: absolute; inset: -11px -4px; }
+/* 0–10 chips on a 360 px phone were 41 px wide: each one's hit area reaches
+   half-way into the 6 px gap around it, so no two overlap. */
+.suds-chips .sc::before { content: ""; position: absolute; inset: -3px; }
+/* The story book's Read buttons (story.js sets 38 px). */
+@media (max-width: 600px), (pointer: coarse) {
+  .sb-page .sb-play { min-height: 44px; }
+}
+/* "Not sure which fear?" under the title's fear tiles. */
+.arrive-pick .arrive-link { min-height: 44px; }
+/* The stage's round 🔊 / 📱 buttons: 44 px on any touch screen (they were
+   42 wide on a phone, 38 on a tablet). The gyro button, placed beside the
+   sound button on its own, moves over to keep its gap. */
+@media (pointer: coarse) {
+  .stage .stage-quick-btn { width: 44px; min-width: 44px; height: 44px; flex: 0 0 44px; }
+  .stage-wrap .stage .gyro-btn, .stage-wrap .stage:has(.dog-coach) .gyro-btn { right: 66px !important; }
+}
+@media (pointer: coarse) and (max-width: 480px) {
+  .stage-wrap .stage .gyro-btn, .stage-wrap .stage:has(.dog-coach) .gyro-btn { right: 60px !important; }
+}
+
+/* ---- Larger text on the trial page itself ----
+   It reached the overlays on the stage but skipped the page's own controls:
+   the header, the step's title, the row under the stage (Pause & breathe,
+   Step out early, the hold label and clock) and the action buttons. None
+   of these contains the canvas, so zoom is safe on them — it never goes on
+   #app while the stage is inside it. The engine measures the bar and the
+   row with real rects, so the stage and the message stack follow. */
+html.big-text #app:has(.stage) > header.brand,
+html.big-text .exposure-panel .exposure-header,
+html.big-text .exposure-panel .step-controls,
+html.big-text .stage-wrap .scene-cmd-bar { zoom: 1.15; }
+
+/* Larger text, sideways: zoomed, the card needs the top edge — it moves up
+   beside the 🔊 button (14 + 44 + 8) and ends above the zoomed cluster.
+   Lengths inside a zoomed box are scaled by its zoom, so the stage-space
+   measure is divided back out. The row under the stage stays unzoomed
+   here: zoomed, it took 40 px of a 320 px stage. */
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
+  html.big-text .stage-wrap .stage .dog-coach {
+    top: 8px; right: 66px;
+    max-height: calc(100% - (var(--cmdbar-top, 140px) + 6px) / 1.2 - 8px);
+  }
+  html.big-text .stage-wrap .stage:has(.joystick) .controls-hint,
+  html.big-text .stage-wrap .stage.cmds-open:has(.joystick) .controls-hint { max-width: calc(100% - 290px); }
+  html.big-text .exposure-panel .step-controls { zoom: 1; }
+}

@@ -635,6 +635,10 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
   window.__holdPolicy = coach.holdPolicy;
   const sig = (id) => {
     if (document.querySelector(".tour-overlay:not(.dismiss), .countdown")) return false;
+    // The scanner's reads are of lying in it: none while the table slides
+    // (in or out). A question opened mid-slide sat in front of the
+    // technician's words — the arrival line, and "sliding you out now".
+    if (MRI && mriState !== "in") return false;
     return coach.signal(id, { dist: lastDist });
   };
 
@@ -677,7 +681,7 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
     if (!humSaid) setTimeout(() => { if (!disposed && sig("hum")) humSaid = true; }, 1500);
   }
   // MRI.
-  let mriState = "out", scanOn = false, scanT = 0, scanDur = 0, nextScanAt = 0, scanHandle = null, scansDone = 0, techSaid = false;
+  let mriState = "out", scanOn = false, scanT = 0, scanDur = 0, nextScanAt = 0, scanHandle = null, scansDone = 0, techSaid = false, techAt = -99;
   function slide(inward) {
     if (!MRI) return;
     if (inward && mriState === "out") {
@@ -716,7 +720,11 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
     if (rung === 3 && cordBead) cordBead.userData.pull = 1;
   }
   function act(a) {
-    if (a === "door") setDoor(doorTarget < 0.5, true);
+    // The lift's leaves go through the panel's own open/close rules: a raw
+    // toggle opened them between floors mid-ride, and a close by hand left
+    // liftState "open", so the safety edge never reopened them on you.
+    if (a === "door" && LIFT) act(doorTarget < 0.5 ? "open" : "close");
+    else if (a === "door") setDoor(doorTarget < 0.5, true);
     else if (a === "open") { if (LIFT) liftOpen(); else setDoor(true, true); }
     else if (a === "close") { if (LIFT) { if (liftState === "open") { setDoor(false, true); liftState = "closing-idle"; } } else setDoor(false, true); }
     else if (a === "light") toggleLight();
@@ -898,12 +906,17 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
         room.position.z = -SLIDE * e3;
         if (mriState === "sliding" && slideK >= 0.999) {
           mriState = "in"; nextScanAt = clock + 5;
-          if (!techSaid) { techSaid = true; coach.teach("tech1", window.t("dc.e.tTech", "Technician, in your headphones: “All good. The scans are loud — knocking, a few seconds each. Squeeze the ball any time and I'll hear you.”"), 9000); }
+          // The technician speaks as you arrive — urgent, so it isn't queued
+          // behind Mira's lessons (it reached the screen ~40 s late, after
+          // the scans it was warning about). Body reads hold off while it's
+          // up (see the body signals below).
+          if (!techSaid) { techSaid = true; techAt = clock; coach.teach("tech1", window.t("dc.e.tTech", "Technician, in your headphones: “All good. The scans are loud — knocking, a few seconds each. Squeeze the ball any time and I'll hear you.”"), 9000, true); }
         }
         inside = slideK > 0.72; shut = inside;
         lastDist = 0.2 + (1 - e3) * 2.8;
         // scans
-        if (mriState === "in" && !scanOn && clock > nextScanAt && !window.__rungHoldComplete) startScan();
+        // After the hold, scans go on only while the "lie still through a scan" star is open: the coach's one-star-left nudge points at it.
+        if (mriState === "in" && !scanOn && clock > nextScanAt && (!window.__rungHoldComplete || coach.goalOpen("scan"))) startScan();
         if (scanOn) {
           scanT += d;
           const left = Math.max(0, Math.ceil(scanDur - scanT));
@@ -1009,7 +1022,8 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
       if (eng) {
         sigGap -= d;
         const a = coach.alarm;
-        if (sigGap <= 0 && !coach.readOpen) {
+        // (In the scanner: not while the technician's first words are up.)
+        if (sigGap <= 0 && !coach.readOpen && !(MRI && clock - techAt < 7.5)) {
           const order = [["breath", 22], ["exit", 34], ["closer", 30], ["heat", 26]];
           for (const [id, thr] of order) {
             if (bodySaid[id] || a < thr) continue;

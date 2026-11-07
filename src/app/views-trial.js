@@ -242,7 +242,10 @@ function viewLadder(phobiaKey) {
       <button class="btn-primary" data-action="start-level" data-phobia="${phobiaKey}" data-level="${nextIdx}">
         ${escapeHtml(ctaLabel)} <span class="arr">→</span>
       </button>
-      <span class="ladder-cta-sub">${tf("ladder.sub", "{n} trials · any order, your pace · Esc grounds you at any moment", { n: total })}</span>
+      <span class="ladder-cta-sub">${isCoarsePointer()
+        // A phone has no Esc: name the button it does have (as the consent does).
+        ? tf("ladder.subTouch", "{n} trials · any order, your pace · 🛟 grounds you at any moment", { n: total })
+        : tf("ladder.sub", "{n} trials · any order, your pace · Esc grounds you at any moment", { n: total })}</span>
     </div>`;
 
   const bridgeBlock = bridgeBlockFor(phobiaKey, prog);
@@ -512,35 +515,51 @@ function drawSudsChart(sessions, w = 320, h = 100, english = false) {
   const innerW = w - padX * 2;
   const innerH = h - padY * 2;
   // X-axis: session index. Y-axis: SUDS 0..10 (top is calm, bottom is panic — invert so high = up)
+  // "Actual" is the peak the player felt (feltFor, as the over-prediction
+  // stat beside the chart uses), set against the predicted peak — plotting
+  // the end-of-trial rating made every prediction look wildly pessimistic.
   const points = sessions.map((s, i) => {
     const x = padX + (sessions.length === 1 ? innerW / 2 : (i / (sessions.length - 1)) * innerW);
-    const y = padY + (1 - (s.suds / 10)) * innerH;
+    const y = padY + (1 - (feltFor(s) / 10)) * innerH;
     return [x, y, s];
   });
+  // The chart fills its box in both directions (preserveAspectRatio none: a
+  // card is 300 px wide on a phone and 1000 on a desk, always 90 tall), so
+  // nothing drawn in it may carry the stretch: strokes are non-scaling, the
+  // dots are zero-length round-capped strokes (circles turned into ellipses),
+  // and the axis labels are HTML on top (SVG text was stretched, and in
+  // Persian it ran off the left edge).
+  const NS = 'vector-effect="non-scaling-stroke"';
+  const dot = (x, y, d, col, op) => `<path d="M${x.toFixed(1)} ${y.toFixed(1)}h0" stroke="${col}" stroke-width="${d}" stroke-linecap="round"${op ? ` opacity="${op}"` : ""} ${NS}/>`;
   // Predicted dots (lighter)
   const predictedDots = sessions.map((s, i) => {
     if (s.predicted == null) return "";
     const x = padX + (sessions.length === 1 ? innerW / 2 : (i / (sessions.length - 1)) * innerW);
     const y = padY + (1 - (s.predicted / 10)) * innerH;
-    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.5" fill="#94a3b8" opacity="0.6"/>`;
+    return dot(x, y, 5, "#94a3b8", "0.6");
   }).join("");
   // Connect actual SUDS with a smooth line
   const linePts = points.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
-  const dots = points.map(p => `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3.5" fill="#7cd1c5"/>`).join("");
+  const dots = points.map(p => dot(p[0], p[1], 7, "#7cd1c5")).join("");
   // Reference grid lines at 3 and 7 (low/high SUDS thresholds)
   const grid = [3, 7].map(v => {
     const y = padY + (1 - v / 10) * innerH;
-    return `<line x1="${padX}" y1="${y}" x2="${w - padX}" y2="${y}" stroke="#25324f" stroke-width="1" stroke-dasharray="2,3"/>`;
+    return `<line x1="${padX}" y1="${y}" x2="${w - padX}" y2="${y}" stroke="#25324f" stroke-width="1" stroke-dasharray="2,3" ${NS}/>`;
   }).join("");
+  // Labels at the reading edge (right in Persian), clear of the box's
+  // margin (6px above, 4px below — .insight-chart).
+  const lab = (pos, txt) => `<span class="sc-lab" style="position:absolute;inset-inline-start:6px;${pos};font-size:10px;line-height:1;color:#64748b;pointer-events:none">${txt}</span>`;
   return `
-    <svg viewBox="0 0 ${w} ${h}" class="insight-chart" preserveAspectRatio="none" width="100%" height="${h}">
+    <div class="sc-wrap" style="position:relative;display:flow-root">
+    <svg viewBox="0 0 ${w} ${h}" class="insight-chart" preserveAspectRatio="none" width="100%" height="${h}" aria-hidden="true">
       ${grid}
-      <polyline points="${linePts}" fill="none" stroke="#7cd1c5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <polyline points="${linePts}" fill="none" stroke="#7cd1c5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" ${NS}/>
       ${predictedDots}
       ${dots}
-      <text x="${padX}" y="${padY - 2}" fill="#64748b" font-size="9">${t("scale.panic", "10 panic")}</text>
-      <text x="${padX}" y="${h - 2}" fill="#64748b" font-size="9">${t("scale.calm", "0 calm")}</text>
     </svg>
+    ${lab("top:9px", t("scale.panic", "10 panic"))}
+    ${lab("bottom:7px", t("scale.calm", "0 calm"))}
+    </div>
   `;
 }
 
@@ -631,19 +650,26 @@ function viewProfiles() {
   const activeId = window.Character.activeCharacterId();
   const cards = all.map((c, i) => {
     const isActive = c.id === activeId;
-    const sessions = (state.byCharacter && state.byCharacter[c.id] && state.byCharacter[c.id].log) || [];
+    const own = state.byCharacter && Object.prototype.hasOwnProperty.call(state.byCharacter, c.id) ? state.byCharacter[c.id] : null;
+    const sessions = (own && Array.isArray(own.log) && own.log) || [];
     const phobiaCount = c.primaryPhobia ? 1 + (c.additionalPhobias || []).length : 0;
+    // The id is stored text (an imported file can carry anything): escaped
+    // into the attribute. The card still switches on a click anywhere, but
+    // the keyboard and screen readers get a real button saying whose card it
+    // is — the card was a click-only div, and Edit/Delete didn't say whose.
+    const id = escapeHtml(c.id), nm = travelerDisplayName(c);
     return `
-      <div class="profile-card ${isActive ? "active" : ""}" data-action="select-character" data-id="${c.id}" style="--i:${i}">
+      <div class="profile-card ${isActive ? "active" : ""}" data-action="select-character" data-id="${id}" style="--i:${i}">
         <div class="profile-avatar">${window.Character.avatarSVG(c, 70)}</div>
         <div class="profile-text">
-          <strong>${escapeHtml(c.name || t("pr.unnamed", "Unnamed"))}</strong>
+          <strong>${escapeHtml(nm)}</strong>
           <span class="small">${tf("pr.counts", `{f} fear${phobiaCount === 1 ? "" : "s"} · {s} session${sessions.length === 1 ? "" : "s"}`, { f: phobiaCount, s: sessions.length })}</span>
           ${isActive ? `<span class="profile-badge">${t("pr.active", "active")}</span>` : ""}
         </div>
         <div class="profile-actions">
-          <button class="btn-ghost" data-action="edit-character-id" data-id="${c.id}" data-stop="1">${t("set.edit", "Edit")}</button>
-          ${all.length > 1 ? `<button class="btn-warn" data-action="delete-character" data-id="${c.id}" data-stop="1">${t("pr.delete", "Delete")}</button>` : ""}
+          <button class="btn-primary profile-card-play" data-action="select-character" data-id="${id}" data-stop="1">${escapeHtml(tf("pr.playAs", "Play as {name}", { name: nm }))}</button>
+          <button class="btn-ghost" data-action="edit-character-id" data-id="${id}" data-stop="1" aria-label="${escapeHtml(tf("pr.editAria", "Edit {name}", { name: nm }))}">${t("set.edit", "Edit")}</button>
+          ${all.length > 1 ? `<button class="btn-warn" data-action="delete-character" data-id="${id}" data-stop="1" aria-label="${escapeHtml(tf("pr.deleteAria", "Delete {name}", { name: nm }))}">${t("pr.delete", "Delete")}</button>` : ""}
         </div>
       </div>
     `;
@@ -1243,10 +1269,10 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
             ? tf("rc.again", "Now: if you walked into that room again, how sure would you be that “{f}”?", { f: escapeHtml(kitFearText(phobiaKey, X.fear)) })
             : tf("rc.again2", "Now: if you faced that again, how sure would you be that “{f}”?", { f: escapeHtml(kitFearText(phobiaKey, X.fear)) })}</label>
           <div class="scale-row">
-            <span class="small">0%</span>
+            <span class="small">${tf("pct", "{n}%", { n: 0 })}</span>
             <input type="range" id="beliefAfter" min="0" max="100" step="5" value="${X.beliefAfter != null ? X.beliefAfter : (X.belief != null ? X.belief : 50)}"/>
-            <span class="small">100%</span>
-            <div class="value" id="beliefAfterValue">${X.beliefAfter != null ? X.beliefAfter + "%" : "—"}</div>
+            <span class="small">${tf("pct", "{n}%", { n: 100 })}</span>
+            <div class="value" id="beliefAfterValue">${X.beliefAfter != null ? tf("pct", "{n}%", { n: X.beliefAfter }) : "—"}</div>
           </div>
           <div class="hint" id="beliefDelta">${X.beliefAfter != null ? beliefDeltaText(X.belief, X.beliefAfter)
             : X.belief != null ? tf("rc.was", "Before the trial you said {n}%. Move the slider to answer honestly.", { n: X.belief })
@@ -1504,8 +1530,12 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
   }
   // The next step, where the thumb already is. A star still open makes a
   // replay the obvious second button — coming back is how this works.
+  // With all three stars earned there's nothing left to replay FOR: after a
+  // heavy trial this is the main button, and what it offers is staying here.
+  const allThree = nStars >= 3 || bestStars(phobiaKey, levelIdx) >= 3;
   const replayBtn = `<button class="btn-ghost vc-replay" data-action="start-level" data-phobia="${phobiaKey}" data-level="${levelIdx}">${early
     ? t("vc.tryAgain", "↻ Try it again")
+    : allThree ? t("vc.stay", "↻ Stay on this trial")
     : t("vc.replay", "↻ Replay for ★★★")}</button>`;
   const nextBtn = !isLast
     ? `<button class="btn-primary" data-action="next-level" data-phobia="${phobiaKey}" data-level="${next}">${tf("complete.next", "Next trial: {t}", { t: escapeHtml(lvTitle(phobiaKey, next)) })}</button>`

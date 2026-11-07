@@ -98,6 +98,25 @@ window.addEventListener("unhandledrejection", (e) => {
   });
 });
 
+// ---------- Preferences that survive blocked storage ----------
+// With storage blocked (cookies off, some in-app browsers) every getItem
+// throws: the settings switches threw on tap and did nothing. A choice made
+// this visit is kept in memory when it can't be written, and read back from
+// there first — it lasts until the tab closes, which is the best a blocked
+// device allows.
+const _memPrefs = Object.create(null);
+function prefGet(key) {
+  if (Object.prototype.hasOwnProperty.call(_memPrefs, key)) return _memPrefs[key];
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function prefSet(key, value) {
+  const v = value == null ? null : String(value);
+  try {
+    if (v == null) localStorage.removeItem(key); else localStorage.setItem(key, v);
+    delete _memPrefs[key];
+  } catch { _memPrefs[key] = v; }
+}
+
 // Touch-first detection shared by the classic shell (the 3D module has its
 // own IS_COARSE_POINTER with the same semantics + the same dev override:
 // localStorage fobia.forceTouch = "1").
@@ -132,15 +151,39 @@ function isCoarsePointer() {
     const btn = root.querySelector('.close-btn, [data-dismiss], #fbClose, #wsCancel, #fcCancel, #goalCancel, #prClose, #kpClose');
     return btn ? () => btn.click() : null;
   }
+  // The page behind an open drawer or dialog doesn't scroll: a swipe on the
+  // menu or Settings used to scroll the page underneath (P4). Inline styles,
+  // put back exactly as they were when the last one closes; the scrollbar's
+  // width is kept as padding so the page doesn't jump sideways.
+  const open = new Set();
+  let saved = null;
+  function syncScrollLock() {
+    const de = document.documentElement, b = document.body;
+    if (!de || !b) return;
+    if (open.size && !saved) {
+      const bar = window.innerWidth - de.clientWidth;
+      saved = { h: de.style.overflow, b: b.style.overflow, p: b.style.paddingRight };
+      de.style.overflow = "hidden"; b.style.overflow = "hidden";
+      if (bar > 0) b.style.paddingRight = bar + "px";
+    } else if (!open.size && saved) {
+      de.style.overflow = saved.h; b.style.overflow = saved.b; b.style.paddingRight = saved.p;
+      saved = null;
+    }
+  }
   function wire(root) {
     if (root._dlg) return;
-    const opener = document.activeElement;
+    root._opener = document.activeElement;
     root._dlg = true;
+    open.add(root); syncScrollLock();
     const box = root.matches(".goal-modal-overlay") ? (root.querySelector('[role="dialog"], .goal-modal') || root) : root;
     if (!box.getAttribute("role")) box.setAttribute("role", "dialog");
     box.setAttribute("aria-modal", "true");
     requestAnimationFrame(() => {
       if (!root.isConnected) return;
+      // Something inside already took focus (Settings rebuilt after a
+      // language change puts it back on the Language select): leave it there
+      // — this used to win the race and move it to the first switch.
+      if (box.contains(document.activeElement) && document.activeElement !== box) return;
       const f = focusables(box);
       const first = box.querySelector(".btn-primary:not([disabled])") || f.find((el) => !el.classList.contains("close-btn")) || f[0];
       if (first) { try { first.focus({ preventScroll: true }); } catch {} }
@@ -162,6 +205,18 @@ function isCoarsePointer() {
     const mo = new MutationObserver(() => {
       if (root.isConnected) return;
       mo.disconnect();
+      open.delete(root); syncScrollLock();
+      const opener = root._opener;
+      // Another dialog opened from this one (menu → Settings, menu →
+      // Feedback) is still up: focus stays in it. The menu is removed after
+      // its slide-out, by which time Settings was open — sending focus back
+      // to ☰ put it behind the dialog. The open one inherits where to return
+      // to, since its own opener (the menu's item) left with the menu.
+      const other = [...open].find((d) => d !== root && d.isConnected);
+      if (other) {
+        if (!other._opener || !other._opener.isConnected || root.contains(other._opener)) other._opener = opener;
+        return;
+      }
       if (opener && opener.isConnected && typeof opener.focus === "function") { try { opener.focus({ preventScroll: true }); } catch {} }
     });
     mo.observe(document.body, { childList: true });

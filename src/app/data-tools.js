@@ -8,16 +8,14 @@
 // Apply the saved theme (light or dark) by toggling a body class. CSS uses
 // :root vs body.light-mode overrides for the major colour variables.
 function applyTheme() {
-  let pref = "dark";
-  try { pref = localStorage.getItem("fobia.theme") || "dark"; } catch {}
+  // (prefGet: with storage blocked, the choice made this visit still applies.)
+  const pref = prefGet("fobia.theme") || "dark";
   document.body.classList.toggle("light-mode", pref === "light");
   // The in-app "Reduce motion" switch reaches the menus too, not only the
   // camera: the same class the system setting's rules key on.
-  let rm = false;
-  try { rm = localStorage.getItem("fobia.reducedMotion") === "1"; } catch {}
+  const rm = prefGet("fobia.reducedMotion") === "1";
   document.documentElement.classList.toggle("reduce-motion", rm);
-  let big = false;
-  try { big = localStorage.getItem("fobia.bigText") === "1"; } catch {}
+  const big = prefGet("fobia.bigText") === "1";
   document.documentElement.classList.toggle("big-text", big);
   // Also keep the theme-color meta in sync so installed PWAs match
   const meta = document.querySelector('meta[name="theme-color"]');
@@ -81,6 +79,31 @@ function eraseAllLocalData() {
     for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith("fobia.")) ks.push(k); }
     ks.forEach(k => localStorage.removeItem(k));
   } catch {}
+  // …and this tab's own (the trial in flight, fobia.trialSnap): it outlived
+  // the erase and brought the last prediction back onto a blank device.
+  try {
+    const ks = [];
+    for (let i = 0; i < sessionStorage.length; i++) { const k = sessionStorage.key(i); if (k && k.startsWith("fobia.")) ks.push(k); }
+    ks.forEach(k => sessionStorage.removeItem(k));
+  } catch {}
+}
+// Every Lanternwalk key as it stands — what an import puts back if it can't
+// finish.
+function snapshotLocalData() {
+  const snap = Object.create(null);
+  for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith("fobia.")) snap[k] = localStorage.getItem(k); }
+  return snap;
+}
+// Back to the snapshot: what changed or was added goes first (that frees the
+// room), then the old values return — they fitted before. False if it can't.
+function restoreLocalData(snap) {
+  try {
+    const cur = [];
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith("fobia.")) cur.push(k); }
+    cur.forEach((k) => { if (!(k in snap) || localStorage.getItem(k) !== snap[k]) localStorage.removeItem(k); });
+    for (const k of Object.keys(snap)) if (localStorage.getItem(k) !== snap[k]) localStorage.setItem(k, snap[k]);
+    return true;
+  } catch { return false; }
 }
 
 // Keys export/import carry as their own sections (or never carry: the error
@@ -118,8 +141,12 @@ function importData() {
       // Check every section's shape BEFORE writing anything: a file that is
       // half right used to be written as-is and blank the app for good.
       const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+      // Ids and fear keys end up in attributes, routes and object lookups:
+      // word characters and dashes only, and never a name every object
+      // inherits ("__proto__", "constructor" read the prototype).
+      const okId = (k) => typeof k === "string" && /^[\w-]+$/.test(k) && !(k in Object.prototype);
       const chars = data.characters == null ? null
-        : (Array.isArray(data.characters) ? data.characters.filter(c => isObj(c) && typeof c.id === "string" && c.id) : []);
+        : (Array.isArray(data.characters) ? data.characters.filter(c => isObj(c) && okId(c.id)) : []);
       if ((data.characters != null && (!chars || !chars.length)) ||
           (data.state != null && !isObj(data.state)) ||
           (data.settings != null && !isObj(data.settings)) ||
@@ -128,27 +155,48 @@ function importData() {
         return;
       }
       if (!confirm(t("imp.confirm", "Import this file? It will replace every character, session, note and setting on this device."))) return;
-      // Restore each section if present
-      if (chars) {
-        chars.forEach(c => { if (typeof c.name !== "string") c.name = ""; c.name = c.name.slice(0, 24); });
-        localStorage.setItem("fobia.characters.v2", JSON.stringify(chars));
+      if (chars) chars.forEach(c => {
+        if (typeof c.name !== "string") c.name = "";
+        c.name = c.name.slice(0, 24);
+        if (c.primaryPhobia != null && !okId(c.primaryPhobia)) c.primaryPhobia = null;
+        c.additionalPhobias = Array.isArray(c.additionalPhobias) ? c.additionalPhobias.filter(okId) : [];
+      });
+      if (data.state && isObj(data.state.byCharacter)) {
+        for (const id of Object.keys(data.state.byCharacter)) if (!okId(id)) delete data.state.byCharacter[id];
       }
-      if (typeof data.activeCharacterId === "string" && chars && chars.some(c => c.id === data.activeCharacterId)) {
-        localStorage.setItem("fobia.activeCharacter.v1", data.activeCharacterId);
-      } else if (chars) {
-        localStorage.setItem("fobia.activeCharacter.v1", chars[0].id);
-      }
-      if (data.state) {
-        localStorage.setItem("fobia.state.v1", JSON.stringify(sanitizeState(data.state)));
-      }
-      if (data.settings) {
-        for (const [k, v] of Object.entries(data.settings)) {
-          // Settings are flat strings; anything else would be stored as "[object Object]".
-          if (v != null && typeof v !== "object" && /^[\w.-]+$/.test(k) && !EXPORT_SKIP.has(k)) localStorage.setItem("fobia." + k, String(v));
+      // All or nothing: a full (or blocked) store failing halfway used to
+      // leave the file's travelers next to this device's sessions. Every
+      // Lanternwalk key is copied first and put back if any write fails.
+      let snap = null;
+      try {
+        snap = snapshotLocalData();
+        if (chars) localStorage.setItem("fobia.characters.v2", JSON.stringify(chars));
+        if (typeof data.activeCharacterId === "string" && chars && chars.some(c => c.id === data.activeCharacterId)) {
+          localStorage.setItem("fobia.activeCharacter.v1", data.activeCharacterId);
+        } else if (chars) {
+          localStorage.setItem("fobia.activeCharacter.v1", chars[0].id);
         }
-      }
-      if (data.customPhobias) {
-        localStorage.setItem("fobia.customPhobias.v1", JSON.stringify(cleanCustomPhobias(data.customPhobias)));
+        if (data.state) {
+          const st = sanitizeState(data.state);
+          // An older backup carries the root aliases of one traveler's data.
+          if (st._charScoped) { st.progress = {}; st.log = []; }
+          localStorage.setItem("fobia.state.v1", JSON.stringify(st));
+        }
+        if (data.settings) {
+          for (const [k, v] of Object.entries(data.settings)) {
+            // Settings are flat strings; anything else would be stored as "[object Object]".
+            if (v != null && typeof v !== "object" && /^[\w.-]+$/.test(k) && !EXPORT_SKIP.has(k)) localStorage.setItem("fobia." + k, String(v));
+          }
+        }
+        if (data.customPhobias) {
+          localStorage.setItem("fobia.customPhobias.v1", JSON.stringify(cleanCustomPhobias(data.customPhobias)));
+        }
+      } catch (werr) {
+        const back = !!snap && restoreLocalData(snap);
+        alert(back
+          ? t("imp.full", "This device couldn't finish storing the import — its storage is full or blocked — so it was undone: everything here is as it was.")
+          : t("imp.fullLost", "This device couldn't finish storing the import — its storage is full or blocked — and not everything that was here could be put back. Your backup file still holds it all: free some space and import it again."));
+        return;
       }
       alert(t("imp.done", "Imported. Reloading…"));
       location.reload();
@@ -169,12 +217,21 @@ function loadCustomPhobias() {
   catch { return {}; }
 }
 // Keep only ladders the app can draw: an object per key with a rungs list.
+// The key becomes a route and an attribute, so it's a plain word-and-dash
+// key that isn't an inherited member ("__proto__", "constructor") or one of
+// the built-in fears (an imported "dogs" ladder replaced the dogs). Text
+// fields are strings, and a ladder needs at least one rung to be drawn.
 function cleanCustomPhobias(obj) {
   const out = {};
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return out;
+  const str = (v) => (typeof v === "string" ? v : v == null ? "" : String(v));
   for (const [k, c] of Object.entries(obj)) {
+    if (!_fearKey(k) || (isPhobiaKey(k) && !PHOBIAS[k].isCustom)) continue;
     if (c && typeof c === "object" && Array.isArray(c.rungs)) {
-      c.rungs = c.rungs.filter(r => r && typeof r === "object");
+      c.rungs = c.rungs.filter(r => r && typeof r === "object").map((r) => Object.assign(r, { title: str(r.title), desc: str(r.desc) }));
+      if (!c.rungs.length) continue;
+      for (const f of ["label", "clinicalName", "blurb"]) if (c[f] != null) c[f] = str(c[f]);
+      c.id = k;
       out[k] = c;
     }
   }
@@ -208,7 +265,8 @@ function mergeCustomPhobias() {
 
 function viewCustom(editingKey) {
   const all = loadCustomPhobias();
-  const c = editingKey && all[editingKey] ? all[editingKey] : {
+  // An own key only: "custom/__proto__" opened Object.prototype as a ladder.
+  const c = editingKey && Object.prototype.hasOwnProperty.call(all, editingKey) ? all[editingKey] : {
     id: "custom-" + Date.now(),
     label: "",
     clinicalName: "",
@@ -292,7 +350,7 @@ function attachCustomHandlers(editingKey) {
       return;
     }
     const all = loadCustomPhobias();
-    const id = editingKey || ("custom-" + Date.now());
+    const id = (editingKey && Object.prototype.hasOwnProperty.call(all, editingKey)) ? editingKey : ("custom-" + Date.now());
     all[id] = { id, label, clinicalName, blurb, rungs };
     saveCustomPhobias(all);
     mergeCustomPhobias();
@@ -365,31 +423,35 @@ function generateProgressCard() {
     ctx.font = `500 22px ${FONT}`;
     ctx.fillText(label, X(x), y + 36);
   }
-  drawStat( 80, 380, String(totalSessions),  t("card.sessions", "TOTAL SESSIONS"));
-  drawStat(380, 380, String(completedRungs), t("card.rungs", "RUNGS CLIMBED"));
-  drawStat(680, 380, streak >= 1 ? `🔥 ${streak}` : "—", t("card.streak", "DAY STREAK"));
-  drawStat( 80, 540, ladders > 0 ? String(ladders) : "—", t("card.valleys", "VALLEYS WALKED"));
+  // The card is drawn, not rendered into #app, so the Persian-digit pass
+  // never sees it: every number goes through fnum here.
+  drawStat( 80, 380, fnum(totalSessions),  t("card.sessions", "TOTAL SESSIONS"));
+  drawStat(380, 380, fnum(completedRungs), t("card.rungs", "RUNGS CLIMBED"));
+  drawStat(680, 380, streak >= 1 ? `🔥 ${fnum(streak)}` : "—", t("card.streak", "DAY STREAK"));
+  drawStat( 80, 540, ladders > 0 ? fnum(ladders) : "—", t("card.valleys", "VALLEYS WALKED"));
   drawStat(380, 540, avgGap == null ? "—" : (isRtl() ? "\u200e" : "") + (avgGap >= 0 ? "+" : "") + fnum(avgGap.toFixed(1)), t("card.over", "AVG OVER-PREDICTION"));
 
   // Per-phobia mini chart
   const myPhobias = ch
     ? [ch.primaryPhobia, ...(ch.additionalPhobias || [])].filter(Boolean)
     : Object.keys(state.progress || {});
-  const lineY = 700;
+  // Four fear rows fit above the footer: the block starts higher and the rows
+  // sit closer (at 800 + 60/row the fourth row's "avg" ran into the footer).
+  const lineY = 680;
   ctx.strokeStyle = "#243049";
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(80, lineY); ctx.lineTo(W - 80, lineY); ctx.stroke();
 
   ctx.fillStyle = "#fff";
   ctx.font = `600 28px ${FONT}`;
-  ctx.fillText(t("card.motion", "Your fears in motion"), X(80), 760);
+  ctx.fillText(t("card.motion", "Your fears in motion"), X(80), 740);
 
   let row = 0;
   for (const key of myPhobias.slice(0, 4)) {
     const p = PHOBIAS[key]; if (!p) continue;
     const sessions = state.log.filter(l => l.phobia === key);
     if (sessions.length === 0) continue;
-    const baseY = 800 + row * 60;
+    const baseY = 784 + row * 58;
     // Phobia label
     ctx.fillStyle = "#cbd5e1";
     ctx.font = `500 22px ${FONT}`;
@@ -401,7 +463,7 @@ function generateProgressCard() {
     ctx.beginPath();
     sessions.forEach((s, i) => {
       const x = chartX + (sessions.length === 1 ? chartW / 2 : (i / (sessions.length - 1)) * chartW);
-      const y = baseY - (s.suds / 10) * chartH;
+      const y = baseY - (feltFor(s) / 10) * chartH;   // the peak, as the in-app chart
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
     ctx.stroke();
@@ -416,7 +478,7 @@ function generateProgressCard() {
   // Footer
   ctx.fillStyle = "#5a6478";
   ctx.font = `500 20px ${FONT}`;
-  ctx.fillText(t("card.footer", "Lanternwalk · a practice game, not therapy"), X(80), H - 60);
+  ctx.fillText(t("card.footer", "Lanternwalk · a practice game, not therapy"), X(80), H - 44);
 
   // Output
   canvas.toBlob((blob) => {
@@ -446,7 +508,9 @@ function exportData() {
     exportedAt: new Date().toISOString(),
     characters: window.Character ? window.Character.loadCharacters() : [],
     activeCharacterId: window.Character ? window.Character.activeCharacterId() : null,
-    state: state,
+    // Without the root aliases of the active traveler's slice (they're
+    // rebuilt on load): the data is all in byCharacter.
+    state: persistableState(),
     customPhobias: loadCustomPhobias(),
     // Every other fobia.* key: settings, language, dog trust and names,
     // achievements — so a backup brings back the whole game, not just the log.

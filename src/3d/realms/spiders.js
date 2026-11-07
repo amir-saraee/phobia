@@ -672,6 +672,14 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   let elapsed = 0;              // scene clock
   let nextPounceAt = B.firstPounceAt ?? Infinity;
   let coilStartDist = 0, thisCoil = 0.9, pounceFired = false, recoilTicked = false;
+  // Where the spider crouched (the jump's "stay put" is measured from it).
+  let coilSX = 0, coilSZ = 0;
+  // Grounding (Esc) is the player's panic stop: no coil, pounce or dart
+  // while it runs, nor for a short grace after (it used to wind up and
+  // jump at someone doing the breathing exercise). Coils also never start
+  // in the first seconds after the cellar mounts.
+  let spCalmUntil = 0;
+  const SP_GROUND_GRACE = 3.0, SP_COIL_EARLIEST = 6.0;
   let heldCycles = 0, retreatPraised = false, holdPraised = false;
   let completionBeatDone = false;
   let arousalFloor = 0, engageDur = 0;
@@ -727,6 +735,12 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   let spiderReleased = false;
   let jarPhase = "idle"; // idle | falling | held | lifting
   let jarLifeT = 0;
+  // Glass down over it: the spider is contained, and that is a shield, not
+  // the exposure. The hold, the settle and "finished" all used to run on with
+  // it under the glass (a 0.4 m nudge kept you "in zone"), so a player could
+  // complete every rung, the wall included, without ever facing it free.
+  const spContained = () => jarPhase === "held" && !!jar && !jar.userData.staleMiss;
+  let spHeldFear = 0;   // the alarm when the glass came down — held there until it lifts
   // Release (carry outside) only after the hold — and on the glass rung only
   // once its own star is in (until then the second press just lifts it).
   const canRelease = () => !!window.__rungHoldComplete && !(spCoach.goalOpen && spCoach.goalOpen("glassLift"));
@@ -814,6 +828,9 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     placeJar(rest, 0);
     jarPhase = "falling";
     jarLifeT = 0;
+    // The alarm as the glass comes down (before its own startle): held there
+    // while the spider is contained.
+    spHeldFear = spCoach.alarm;
     // The spider sees it coming — a rear-up startle (the rig's Jump clip)
     // right before the glass lands. A creature that REACTS feels real.
     const pp = spider.userData.parts;
@@ -1028,9 +1045,28 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     ],
   });
   spCoach.setFoot(window.t("mood." + temper.id, "seems " + temper.id + " today"));
-  spCoach.teach("zoom", IS_COARSE_POINTER
-    ? window.t("dc.sp.tZoomM", "It's a real spider — small. <b>Hold 🔍</b> to lean in and look closer.")
-    : window.t("dc.sp.tZoom", "It's a real spider — small. <b>Hold Z</b> (or hold 🔍) to lean in and look closer."), 7000);
+  // "Hold Z to look closer" is taught only on the rungs whose star IS looking
+  // closer (1 and 3), once you're near enough for it to mean something, and
+  // retired when that star is in. It was queued at mount on every rung —
+  // spending one of the trial's few lessons, and landing late on rungs where
+  // the goal was the glass or a jump.
+  const spZoomRung = rung === 0 || rung === 2;
+  let spZoomTaught = false, spZoomRetired = false;
+  function spZoomLesson(distP) {
+    if (!spZoomRung || spZoomRetired) return;
+    if (!spCoach.goalOpen(spSkill.id)) {
+      spZoomRetired = true;
+      // (retire is the coach's own "a tip about a moment that has passed";
+      // a no-op until the coach exposes it.)
+      if (spZoomTaught && typeof spCoach.retire === "function") { try { spCoach.retire("zoom"); } catch {} }
+      return;
+    }
+    if (spZoomTaught || spZoomHeld || !spOnScreen || jarPhase !== "idle" || distP > spZone + 0.5) return;
+    spZoomTaught = true;
+    spCoach.teach("zoom", IS_COARSE_POINTER
+      ? window.t("dc.sp.tZoomM", "It's a real spider — small. <b>Hold 🔍</b> to lean in and look closer.")
+      : window.t("dc.sp.tZoom", "It's a real spider — small. <b>Hold Z</b> (or hold 🔍) to lean in and look closer."), 7000);
+  }
   // Look closer: a held lean-in — the field of view narrows onto it. Tap 🔍
   // still turns you to face it.
   let spZoomHeld = false, spBaseFov = null, spFovMode = null;
@@ -1044,16 +1080,25 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   window.__coach = spCoach;
   let spLastDist = 99;
   if (window.PhobiaFear && window.PhobiaFear.setDirect) {
-    window.PhobiaFear.setDirect(() => spCoach.target(), (s) => spCoach.pulse(s, "event", spLastDist));
+    // Under the glass the alarm is held where it was, not let fall: relief
+    // behind a shield isn't habituation, and an alarm that dropped there came
+    // back on the lift looking like "it came down while you stayed". Spikes
+    // (the glass's own startle) still pass and fade on top — the coach,
+    // reading it as out of the zone, carries only those while it's covered.
+    window.PhobiaFear.setDirect(() => (spContained() ? Math.min(100, spHeldFear + spCoach.target()) : spCoach.target()), (s) => spCoach.pulse(s, "event", spLastDist));
   }
   // Carried outside under the jar: the spider is gone, and so is the thing to
   // stay near — the trial finishes on time in the cellar, not on the wave.
+  // Glass down (not carried out): paused — no credit, no finish, and the
+  // label says what carries it on.
   const spPolicy = {
-    engaged: () => spiderReleased || spCoach.holdPolicy.engaged(),
-    ready: (sec, mh) => spiderReleased || spCoach.holdPolicy.ready(sec, mh),
+    engaged: () => spiderReleased || (!spContained() && spCoach.holdPolicy.engaged()),
+    ready: (sec, mh) => spiderReleased || (!spContained() && spCoach.holdPolicy.ready(sec, mh)),
     label: (sec, mh, eng, ready) => spiderReleased
       ? (sec < mh ? { label: window.tf("dc.sp.hGone", "{s} / {n}s — it's outside now. Stay a moment in the cellar.", { s: sec, n: mh }), pill: `${sec}/${mh}s` } : null)
-      : spCoach.holdPolicy.label(sec, mh, eng, ready),
+      : spContained()
+        ? { label: window.t("dc.sp.hGlass", "Paused — the glass is down. Lift it to carry on."), pill: window.t("dc.pPaused", "paused") }
+        : spCoach.holdPolicy.label(sec, mh, eng, ready),
     progress: (sec, mh) => spiderReleased ? Math.min(1, sec / mh) : spCoach.holdPolicy.progress(sec, mh),
   };
   window.__holdPolicy = spPolicy;
@@ -1308,12 +1353,25 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           spPrevPlayer.x = controls.position.x; spPrevPlayer.z = controls.position.z;
         }
 
+        // ---- Grounding: everything that comes at you waits ----
+        const grounding = !!(window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding());
+        if (grounding) {
+          spCalmUntil = elapsed + SP_GROUND_GRACE;
+          // A crouch already under way stands down (no jump), and the next
+          // one is pushed past the grace.
+          if (pounceState === "coiling") { pounceState = "idle"; pounceT = 0; spiderCtrl.setCoil(0); }
+          if (B.pounce) nextPounceAt = Math.max(nextPounceAt, elapsed + SP_GROUND_GRACE + 2 + Math.random() * 2);
+          // A dart in flight stops where it is; the next waits a full gap.
+          if (skitterState === "skittering") { skitterState = "lurking"; skitterT = 0; dartClock = 0; if (p.play) p.play("Idle", 0.12); }
+        }
+        const spCalm = elapsed < spCalmUntil;
+
         // ---- Startle: a rush triggers an immediate BACKWARD escape dart ----
         // (a spider's fastest recorded locomotion is the backward escape). It
         // keeps facing you while it shoots away — accurate, and more relieving
         // than a turn-and-run.
         startleCd = Math.max(0, startleCd - d);
-        if (B.skitter && loose && controls && pounceState === "idle" && startleCd <= 0
+        if (B.skitter && loose && controls && pounceState === "idle" && startleCd <= 0 && !spCalm
             && elapsed > (B.firstSkitterAt ?? 0) && spApproachSpeed > 0.7 && distP < 1.8) {
           startleCd = 2.2 + Math.random() * 1.5;
           skitterState = "skittering"; skitterT = 0;
@@ -1330,7 +1388,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         }
 
         // ---- Ambient skitter machine (data-driven, suppressed during a pounce) ----
-        if (B.skitter && loose && controls && pounceState === "idle" && elapsed > (B.firstSkitterAt ?? 0)) {
+        if (B.skitter && loose && controls && pounceState === "idle" && elapsed > (B.firstSkitterAt ?? 0) && !spCalm) {
           skitterT += d;
           const esc = B.escalate ? clamp01((elapsed - (B.firstSkitterAt ?? 0)) / (B.settleAfter ?? 45)) : 0;
           const baseSpd = (B.skitterSpeed ?? 1.2) * (1 + 0.4 * esc);
@@ -1476,8 +1534,10 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         if (B.pounce && loose && controls && spider.userData.ready) {
           if (pounceState === "idle") {
             spiderCtrl.setCoil(0);
-            if (elapsed > nextPounceAt && distP < (B.inZoneDist ?? 3.4) && distP > GUARD * 1.2) {
+            if (elapsed > nextPounceAt && !spCalm && elapsed > SP_COIL_EARLIEST
+                && distP < (B.inZoneDist ?? 3.4) && distP > GUARD * 1.2) {
               pounceState = "coiling"; pounceT = 0; coilStartDist = distP; pounceFired = false;
+              coilSX = spider.position.x; coilSZ = spider.position.z;
               // A coil can land mid-dart; the skitter machine is frozen while it
               // runs, so a dart left "skittering" kept the Walk loop cycling in
               // place, chased its old heading through the coil (and fought the
@@ -1486,7 +1546,19 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
               const cd = B.coilDur ?? [0.7, 1.1];
               thisCoil = cd[0] + Math.random() * (cd[1] - cd[0]);
               spPulse(0.26, "coil", distP);
-              spSignal("crouch");
+              // The warning, said in the scene (the old readout line for it,
+              // "It crouched…", was never on screen: spHudEl is unassigned).
+              // A crouch question is a warning of its own; otherwise a short
+              // line — urgent, and dropped if it can't show before the jump.
+              // Either way the crouch is held long enough to read it and
+              // still choose: stay, or give it a step (that cancels it).
+              const crouchRead = spSignal("crouch");
+              let warned = crouchRead;
+              if (!crouchRead && window.PhobiaFX && window.PhobiaFX.contextPrompt) {
+                if (spCoach.endReadResult) spCoach.endReadResult();   // a read's answer card gives way to the warning
+                warned = window.PhobiaFX.contextPrompt(window.t("sp.coiling", "It crouched — it's winding up. Hold still, or give it a step."), 2600, { urgent: true, ttl: 1000 }) !== false;
+              }
+              if (warned) thisCoil = Math.max(thisCoil, 1.7);
               if (A && A.webPluck) try { A.webPluck({ x: spider.position.x, y: spider.position.y, z: spider.position.z }, { intensity: 0.4 }); } catch {}
             }
           } else if (pounceState === "coiling") {
@@ -1570,11 +1642,24 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             if (p.play && pounceT < 0.1) p.play("Walk", 0.06);
             if (pounceT > 0.9) {
               if (Math.hypot(spider.position.x - controls.position.x, spider.position.z - controls.position.z) < 1.8) heldCycles++;
+              // Held it = it really jumped, and you didn't back off from where
+              // it crouched. A recoil also ends a coil your retreat cancelled
+              // (no jump at all), and that used to award "stay put" — the
+              // star for staying, paid for stepping back.
+              const backedOff = Math.hypot(controls.position.x - coilSX, controls.position.z - coilSZ) > coilStartDist + 0.4;
+              const heldThrough = pounceFired && !backedOff;
               // Still in the zone after it jumped and went back: you held it.
-              if (spCoach.engaged) spCoach.goalDone("pounceHeld");
+              if (heldThrough && spCoach.engaged) spCoach.goalDone("pounceHeld");
               // Rung 4's star: now step back in (the 🡒 button lights for it).
-              if (rung === 3 && spCoach.goalOpen("jumpCloser")) {
-                spJump = { px: controls.position.x, pz: controls.position.z, until: elapsed + 10 };
+              if (rung === 3 && heldThrough && spCoach.goalOpen("jumpCloser")) {
+                // The step asked for is 35 cm — or the room there is: after a
+                // jump you held through, it recoils only ~1 m off, and 🡒 stops
+                // at its guard (guard + 0.35 m), a 0.3 m step. (Recoils from a
+                // retreat-cancelled coil, which used to set this up too, left
+                // plenty of room — the star was only earnable by backing off.)
+                const room = distP - ((B.guardDist ?? 0.4) + 0.35);
+                spJump = { px: controls.position.x, pz: controls.position.z, until: elapsed + 10,
+                  need: Math.max(0.15, Math.min(0.35, room - 0.04)) };
                 spCoach.setVerb("jumpCloser", "closer");
               }
               // Back ON the face, not hovering the last few percent of an ease.
@@ -1626,9 +1711,13 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
 
         // ---- The coach, every frame ----
         {
-          // Under the glass it's contained — a shield, so the alarm reads it
-          // as a little further off until the glass is lifted.
-          spLastDist = spiderReleased ? 99 : distP + (jarPhase === "held" ? 0.4 : 0);
+          // Under the glass it's contained — a shield, not the exposure: the
+          // coach reads it as out of the zone (no settle, no habituation, no
+          // engagement) until the glass is lifted. The +0.4 m nudge this used
+          // to add kept you "in zone", so the hold ran on behind the glass.
+          // Out past the zone's own escape window (+0.8), so a player standing
+          // still while it's contained can never read as backing off.
+          spLastDist = spiderReleased ? 99 : spContained() ? Math.max(distP, spZone + 2) : distP;
           // The spider's own speed toward you (m/s), and yours.
           if (spPrevSX != null && d > 0) {
             const vx = (spider.position.x - spPrevSX) / d, vz = (spider.position.z - spPrevSZ) / d;
@@ -1668,12 +1757,15 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             px: controls.position.x, pz: controls.position.z, dogX: spider.position.x, dogZ: spider.position.z,
             onScreen: spOnScreen, dogGazing: facing, trust: null,
             anchorX: ax, anchorY: ay, stageW: sw, stageH: shh,
+            // Its whole body (legs too) on screen, for the read card to avoid.
+            anchorBox: spCoach.screenBox(spider, camera, sw, shh),
           });
           // Rung goals: looking closer (held 🔍 / Z, the spider in view, you
           // within reach of it) — on rung 3 only while it's actually moving.
           const lookingClose = spZoomHeld && spOnScreen && !spiderReleased && jarPhase === "idle" && distP < spZone + 0.3;
           if (rung === 0 && lookingClose) { spLookT += d; if (spLookT > 3) spCoach.goalDone("lookClose"); }
           if (rung === 2 && lookingClose && spMovedT > 0) { spLookT += d; if (spLookT > 2) spCoach.goalDone("watchMove"); }
+          spZoomLesson(distP);
           // After a jump: step back in. Measured from YOUR feet — toward where
           // the spider is now, from where you stood when it landed.
           if (rung === 3 && spJump) {
@@ -1681,7 +1773,10 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             else {
               const jx = spider.position.x - spJump.px, jz = spider.position.z - spJump.pz, jl = Math.hypot(jx, jz) || 1;
               const stepIn = ((controls.position.x - spJump.px) * jx + (controls.position.z - spJump.pz) * jz) / jl;
-              if (stepIn > 0.35 && distP < spZone + 0.2) { spJump = null; spCoach.goalDone("jumpCloser"); }
+              // (…or any real step that brings you all the way back in to its
+              // guard — it may have darted your way since the recoil.)
+              const backIn = stepIn > 0.1 && distP < (B.guardDist ?? 0.4) + 0.35 + 0.08;
+              if ((stepIn > spJump.need || backIn) && distP < spZone + 0.2) { spJump = null; spCoach.goalDone("jumpCloser"); }
             }
           }
           syncJarLabel();

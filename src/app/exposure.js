@@ -298,12 +298,41 @@ function mountExposure(phobiaKey, levelIdx) {
   }
   window.addEventListener("voice-line", onVoiceLine);
 
+  // ---- Is the scene on screen? (contract 3) ----
+  // The hold and the room's sound wait for the scene to actually be drawn. On
+  // a slow link the hold used to start counting — and the room tone to start
+  // — behind "Setting the scene…", so a player could be a third of the way
+  // through a hold they had not seen yet. The engine marks the stage
+  // (data-scene-ready="1" + a "scene-ready" event) after its first real
+  // frame, and takes the mark back while the GPU context is lost; the 2D
+  // stand-in counts as shown the moment it is drawn.
+  let svgShown = false;
+  let sceneShown = false, sceneShownAt = 0;
+  let sceneWaiters = [];
+  const sceneOnScreen = () => svgShown || stage.dataset.sceneReady === "1";
+  function markSceneShown() {
+    if (sceneShown) return;
+    sceneShown = true; sceneShownAt = Date.now();
+    window.removeEventListener("scene-ready", onSceneReady);
+    const w = sceneWaiters; sceneWaiters = [];
+    w.forEach((fn) => { try { fn(); } catch {} });
+  }
+  function onSceneReady(e) {
+    if (e && e.detail && e.detail.container && e.detail.container !== stage) return;
+    if (sceneOnScreen()) markSceneShown();
+  }
+  window.addEventListener("scene-ready", onSceneReady);
+
   // Try 3D first; fall back to SVG if not available or it fails
   function mountSVGFallback() {
     const sc = document.createElement("div");
     sc.className = "scene";
     stage.insertBefore(sc, stage.firstChild);
     p.render(sc, lv, levelIdx);
+    // The stand-in is the scene now: nothing is still being set.
+    stage.querySelectorAll(".loading").forEach((n) => n.remove());
+    svgShown = true;
+    markSceneShown();
   }
   function show3DFailure(err) {
     console.warn("3D scene failed, using SVG fallback:", err);
@@ -383,7 +412,14 @@ function mountExposure(phobiaKey, levelIdx) {
     }
   }
 
-  if (!mount3DIfPossible()) {
+  // A traveler's own forged ladder has no 3D room (the engine knows only the
+  // built-in realms): mounting one threw "Unknown phobia" and the trial opened
+  // on "3D scene couldn't load… Reloading usually fixes it", which it never
+  // would. Custom ladders are the simple 2D scene, on purpose.
+  if (p.isCustom) {
+    [...stage.querySelectorAll("canvas, .scene")].forEach(el => el.remove());
+    mountSVGFallback();
+  } else if (!mount3DIfPossible()) {
     if (!window.Scene3D || !window.Scene3D.ready) {
       // The 3D layer loads async and simply hasn't arrived yet (a cold deep
       // link into a trial): keep "Setting the scene…" up rather than flashing
@@ -394,7 +430,7 @@ function mountExposure(phobiaKey, levelIdx) {
       window.addEventListener("scene3d-ready", () => {
         clearTimeout(late);
         if (!stage.isConnected) return;
-        if (waited) [...stage.querySelectorAll(".scene")].forEach(el => el.remove());
+        if (waited) { [...stage.querySelectorAll(".scene")].forEach(el => el.remove()); svgShown = false; }
         if (!mount3DIfPossible()) mountSVGFallback();
       }, { once: true });
     } else {
@@ -447,6 +483,10 @@ function mountExposure(phobiaKey, levelIdx) {
   const INACTIVITY_EVENTS = ["mousemove", "mousedown", "wheel", "keydown", "touchstart", "touchmove", "pointerdown"];
   const startScene = () => {
     if (started) return;
+    // The room's sound and the scripted cues begin with the room itself, not
+    // behind the loading card (every caller — countdown, its skip button, the
+    // no-countdown start — comes through here).
+    if (!sceneShown) { if (!sceneWaiters.includes(startScene)) sceneWaiters.push(startScene); return; }
     started = true;
     // Reveal heart-rate vignette gradually
     setTimeout(() => {
@@ -673,14 +713,23 @@ function mountExposure(phobiaKey, levelIdx) {
     const now = Date.now();
     const dtMs = Math.max(0, Math.min(500, now - lastTickAt));
     lastTickAt = now;
+    // Contract 3: time counts only while the player can see the scene. A
+    // hidden tab stops drawing but this interval keeps running, so a hold
+    // credited from the last frame's state completed trials nobody watched
+    // (45 s in another tab → "held — well done"). Before the first frame —
+    // or while the GPU context is lost — there is nothing to be in yet.
+    // Skipped ticks still move lastTickAt, so coming back adds no catch-up.
+    if (!sceneShown && sceneOnScreen()) markSceneShown();
+    if (document.hidden || !sceneShown || !sceneOnScreen()) return;
     const fear = (window.PhobiaFear && window.PhobiaFear.get) ? window.PhobiaFear.get() : 0;
     peakFearSoFar = Math.max(peakFearSoFar, fear);
     lastRungPeakFear = peakFearSoFar;   // surfaced as the within-rung drop at completion
     // After 5 seconds, if fear never climbed > 25, this is a look-only scene
     // (driving, flying, speaking, needles, enclosed, storms, dark). Switch
     // to wall-clock crediting so the user can still complete the rung by
-    // simply staying present.
-    if (!isApproachScene && !isLookOnlyScene && wallElapsed > 5 && peakFearSoFar < 25) {
+    // simply staying present. (Five seconds of the scene, not of the
+    // loading card in front of it.)
+    if (!isApproachScene && !isLookOnlyScene && now - sceneShownAt > 5000 && peakFearSoFar < 25) {
       isLookOnlyScene = true;
     }
     // Credit thresholds come from the fear model — scenes with gentler fear
@@ -717,11 +766,17 @@ function mountExposure(phobiaKey, levelIdx) {
       try { polEngaged = !!pol.engaged(); } catch { polEngaged = false; }
       creditFactor = polEngaged ? 1 : 0;
     }
+    // Grounding (Esc / Ground me) is a pause, not progress: it drains the fear
+    // value on purpose, and the hold must not bank time — or let a policy
+    // read that drained value as "settled" — while the player is looking
+    // after themselves. The label says so (below).
+    const grounding = !!(window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding());
+    if (grounding) creditFactor = 0;
     facingTimeMs += dtMs * creditFactor;
     const facingSec = Math.floor(facingTimeMs / 1000);
     let polReady = true;
     if (pol && typeof pol.ready === "function") { try { polReady = !!pol.ready(facingSec, minHold); } catch { polReady = true; } }
-    if (!holdMet && facingSec >= minHold && polReady) holdMet = true;
+    if (!holdMet && !grounding && facingSec >= minHold && polReady) holdMet = true;
     // Honest outcome, written every tick: leaving at ANY moment (the
     // continue button is always live) captures held time + finished state.
     const _o = lastRungOutcome;
@@ -752,7 +807,9 @@ function mountExposure(phobiaKey, levelIdx) {
       let starTxt = "";
       const SC = window.__coach;
       if (holdMet && SC && SC.starsTotal) starTxt = "★".repeat(SC.stars) + "☆".repeat(Math.max(0, SC.starsTotal - SC.stars));
-      const pillTxt = holdMet ? (starTxt ? `🏮 ${starTxt}` : t("hold.pillDone3", "🏮 held")) : (polPill || `${fnum(facingSec)}/${fsecs(minHold)}`);
+      const pillTxt = holdMet ? (starTxt ? `🏮 ${starTxt}` : t("hold.pillDone3", "🏮 held"))
+        : grounding ? tf("hold.pillGround", "⏸ {a}/{b}", { a: facingSec, b: fsecs(minHold) })
+        : (polPill || `${fnum(facingSec)}/${fsecs(minHold)}`);
       if (hpT && hpT.textContent !== pillTxt) hpT.textContent = pillTxt;
       holdPill.classList.toggle("in-zone", inZone);
       // Held: the pill shows it (and the stars so far). It is no longer a
@@ -769,7 +826,9 @@ function mountExposure(phobiaKey, levelIdx) {
         if (!window.__demoMode) {
           continueBtn.textContent = t("hold.stepOut", "Step out early");
         }
-        if (polLabel) {
+        if (grounding) {
+          holdLabel.textContent = tf("hold.groundPause", "{a} / {b}s · paused while you ground", { a: facingSec, b: minHold });
+        } else if (polLabel) {
           holdLabel.textContent = polLabel;
         } else if (isLookOnlyScene || !hasFearInputs) {
           holdLabel.textContent = tf("hold.stay", "{a} / {b}s · stay with it", { a: facingSec, b: minHold });
@@ -861,6 +920,10 @@ function mountExposure(phobiaKey, levelIdx) {
     voiceTimers = [];
     if (window.PhobiaVoice) window.PhobiaVoice.stop();
     window.removeEventListener("voice-line", onVoiceLine);
+    // A trial left before its scene ever drew: nothing may start later, and
+    // the listener must not keep this scope alive.
+    window.removeEventListener("scene-ready", onSceneReady);
+    sceneWaiters = [];
     if (captionsTimer) clearTimeout(captionsTimer);
     // Tear down the inactivity watcher
     if (inactivityInterval) { clearInterval(inactivityInterval); inactivityInterval = null; }
@@ -1055,7 +1118,9 @@ document.addEventListener("input", (e) => {
   } else if (e.target.id === "expectBelief" || e.target.id === "beliefAfter") {
     e.target.dataset.touched = "1";
     const out = document.getElementById(e.target.id + "Value");
-    if (out) out.textContent = e.target.value + "%";
+    // Persian digits and its own percent sign («۵۰٪», not "50%").
+    const fa = !!(window.I18n && window.I18n.currentLanguage && window.I18n.currentLanguage() === "fa");
+    if (out) out.textContent = (window.fnum ? window.fnum(e.target.value) : e.target.value) + (fa ? "٪" : "%");
     if (e.target.id === "beliefAfter") { try { saveBeliefAfter(+e.target.value); } catch {} }
   } else if (e.target.id === "predictedSuds") {
     e.target.dataset.touched = "1";

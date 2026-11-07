@@ -5,6 +5,15 @@
 
 "use strict";
 
+// The name a traveler is shown by. A traveler may have none (the one-tap
+// start makes one for you, and the name is optional): they're shown as
+// "Traveler" — never saved as that, or the creator offered "Traveler" back as
+// the name they'd chosen.
+function travelerDisplayName(ch) {
+  const n = ch && typeof ch.name === "string" ? ch.name.trim() : "";
+  return n || t("tw.defaultName", "Traveler");
+}
+
 function viewCharacterPage(editing) {
   if (!window.Character) return `<div class="panel"><p>${t("loading", "Loading…")}</p></div>`;
   const existing = editing ? window.Character.loadCharacter() : null;
@@ -40,6 +49,12 @@ function attachCharacterHandlers(editing) {
     }
   );
 }
+
+// A creator draft belongs to the traveler it was started for. Left behind, it
+// made "Edit your traveler" after a profile switch edit — and save over — the
+// one before. Dropped whenever the traveler changes (and on leaving the
+// creator, in renderView).
+window.addEventListener("character-changed", () => { try { _travelerDraft = null; } catch {} });
 
 function attachHandlers(view, params) {
   if (view === "welcome") gateTitleScreenOnConsent();
@@ -182,8 +197,16 @@ function attachHandlers(view, params) {
       }
     }
   };
-  // delegated on click for any [data-action]
-  document.querySelectorAll("[data-action]").forEach(el => {
+  wireActions(document, params);
+}
+// Every [data-action] under `scope` runs handleAction on click. Markup a
+// handler writes in after the page rendered (the self-check's result) calls
+// this on itself — wired only at render time, those buttons were dead. Each
+// element is wired once, however often it's called.
+function wireActions(scope, params) {
+  scope.querySelectorAll("[data-action]").forEach(el => {
+    if (el._actWired) return;
+    el._actWired = true;
     el.addEventListener("click", (e) => {
       // Stop propagation if marked, so inner buttons don't trigger the parent card
       if (el.dataset.stop) e.stopPropagation();
@@ -206,7 +229,7 @@ function attachHandlers(view, params) {
 
 // ---------- Ambient pad (background music on non-exposure views) ----------
 function ensureAmbient(view) {
-  let wantMusic = (() => { try { return localStorage.getItem("fobia.music") === "1"; } catch { return false; } })();
+  let wantMusic = prefGet("fobia.music") === "1";
   // …but never inside a trial. A scene should sound like the place it is: your
   // feet, the room, and whatever the animal or the objects are doing. A pad
   // underneath it — however quiet — is the one voice in the mix that isn't
@@ -238,7 +261,7 @@ function openMenu() {
       <div class="menu-character">
         <div class="menu-avatar">${window.Character.avatarSVG(ch, 56)}</div>
         <div class="menu-character-text">
-          <strong>${escapeHtml(ch.name || t("card.anon", "Anonymous"))}</strong>
+          <strong>${escapeHtml(travelerDisplayName(ch))}</strong>
           <span class="small">${(() => { const f = (ch.primaryPhobia ? 1 : 0) + (ch.additionalPhobias?.length || 0), s = state.log.length;
             return tf("pr.counts", `{f} fear${f === 1 ? "" : "s"} · {s} session${s === 1 ? "" : "s"}`, { f, s }); })()}</span>
         </div>
@@ -247,8 +270,8 @@ function openMenu() {
     <ul class="menu-list">
       <li><button data-go="story">${t("menu.storyBook", "📖 The story — Mira's lanterns")}</button></li>
       <li><button data-go="select">${t("menu.camp", "🏕 Camp — the valley map")}</button></li>
-      ${ch ? `<li><button data-go="ladder" data-phobia="${(() => { try { return currentRealmKey(); } catch { return ch.primaryPhobia || ""; } })()}">${t("menu.trials", "Continue your trials")}</button></li>` : ""}
-      <li><button data-go="journal">${t("menu.sparks", "✦ Book of Sparks")}${(() => { const n = ch ? getSparks().length : 0; return n ? ` <span class="menu-count">${n}</span>` : ""; })()}</button></li>
+      ${ch ? `<li><button data-go="ladder" data-phobia="${escapeHtml((() => { try { return currentRealmKey(); } catch { return ch.primaryPhobia || ""; } })())}">${t("menu.trials", "Continue your trials")}</button></li>` : ""}
+      <li><button data-go="journal">${t("menu.sparks", "✦ Book of Sparks")}${(() => { const n = ch ? getSparks().length : 0; return n ? ` <span class="menu-count">${fnum(n)}</span>` : ""; })()}</button></li>
       <li><button data-go="insights">${t("menu.story", "📜 Your story so far")}</button></li>
       <li><button data-go="report">${t("menu.report", "📄 Progress report — print / share")}</button></li>
       ${allRealmsUnlocked() ? `<li><button data-go="custom">${t("menu.forge", "🛠 Forge a custom fear")}</button></li>` : ""}
@@ -313,17 +336,20 @@ function openSettings() {
   const audioMuted = PhobiaAudio.isMuted();
   const drawer = document.createElement("div");
   drawer.className = "settings-drawer";
-  // Read persisted preferences
-  const captionsOn = (() => { try { return localStorage.getItem("fobia.captions") !== "0"; } catch { return true; } })();
-  const reducedMotion = (() => { try { return localStorage.getItem("fobia.reducedMotion") === "1"; } catch { return false; } })();
-  const heartOn = (() => { try { return localStorage.getItem("fobia.heart") !== "0"; } catch { return true; } })();
-  const hapticsOn = (() => { try { return localStorage.getItem("fobia.haptics") !== "0"; } catch { return true; } })();
-  const perfHudOn = (() => { try { return localStorage.getItem("fobia.perfHud") === "1"; } catch { return false; } })();
-  const musicOn = (() => { try { return localStorage.getItem("fobia.music") === "1"; } catch { return false; } })();
-  const graphics = (() => { try { return localStorage.getItem("fobia.quality") || "auto"; } catch { return "auto"; } })();
-  const lightMode = (() => { try { return localStorage.getItem("fobia.theme") === "light"; } catch { return false; } })();
-  const remindersOn = (() => { try { return localStorage.getItem("fobia.reminders") === "1"; } catch { return false; } })();
-  const countdownOn = (() => { try { return localStorage.getItem("fobia.countdown") === "1"; } catch { return false; } })();
+  // Read persisted preferences. prefGet/prefSet (boot-guards.js) never throw,
+  // and keep this visit's choices in memory when storage is blocked — the
+  // switches below used to throw on every tap there.
+  const captionsOn = prefGet("fobia.captions") !== "0";
+  const reducedMotion = prefGet("fobia.reducedMotion") === "1";
+  const heartOn = prefGet("fobia.heart") !== "0";
+  const hapticsOn = prefGet("fobia.haptics") !== "0";
+  const perfHudOn = prefGet("fobia.perfHud") === "1";
+  const musicOn = prefGet("fobia.music") === "1";
+  const graphics = prefGet("fobia.quality") || "auto";
+  const lightMode = prefGet("fobia.theme") === "light";
+  const remindersOn = prefGet("fobia.reminders") === "1";
+  const countdownOn = prefGet("fobia.countdown") === "1";
+  const bigTextOn = prefGet("fobia.bigText") === "1";
   const canNotify = "Notification" in window;
 
   drawer.innerHTML = `
@@ -370,7 +396,7 @@ function openSettings() {
     <div class="settings-section">${t("set.secPerf", "Performance")}</div>
     <div class="row">
       <div>
-        <label>${t("set.gfx", "Graphics")}</label>
+        <label for="qualitySelect">${t("set.gfx", "Graphics")}</label>
         <div class="small">${t("set.gfxSub", "Lower if the scene stutters. \"Auto\" picks based on your device.")}</div>
       </div>
       <select id="qualitySelect" class="select-pill">
@@ -382,7 +408,7 @@ function openSettings() {
     </div>
     <div class="row">
       <div>
-        <label>${t("set.lang", "Language")}</label>
+        <label for="langSelect">${t("set.lang", "Language")}</label>
         <div class="small">${t("set.langSub2", "English or فارسی — the whole game, the progress report too.")}</div>
       </div>
       <select id="langSelect" class="select-pill">
@@ -411,7 +437,7 @@ function openSettings() {
         <label>${t("set.bigText", "Larger text")}</label>
         <div class="small">${t("set.bigTextSub", "Bigger words on every page and in the trial's labels.")}</div>
       </div>
-      <div class="toggle ${(() => { try { return localStorage.getItem("fobia.bigText") === "1"; } catch { return false; } })() ? "on" : ""}" id="toggleBigText"></div>
+      <div class="toggle ${bigTextOn ? "on" : ""}" id="toggleBigText"></div>
     </div>
     <div class="row">
       <div>
@@ -527,7 +553,7 @@ function openSettings() {
     <p class="small settings-links">
       <a href="${PRIVACY_URL}" target="_blank" rel="noopener">${t("legal.privacy", "Privacy policy")}</a>
       · ${t("legal.contact", "Contact:")} <a href="mailto:${SUPPORT_EMAIL}" dir="ltr" lang="en">${SUPPORT_EMAIL}</a>
-      · ${tf("legal.version", "Version {v}", { v: APP_VERSION })}
+      · ${tf("legal.version", "Version {v}", { v: `<bdi class="no-fa-digits" dir="ltr">${APP_VERSION}</bdi>` })}
     </p>
   `;
   const backdrop = document.createElement("div");
@@ -577,42 +603,42 @@ function openSettings() {
     go("character", { editing: true });
   };
   drawer.querySelector("#toggleCaptions").onclick = (e) => {
-    const next = !(localStorage.getItem("fobia.captions") !== "0");
-    try { localStorage.setItem("fobia.captions", next ? "1" : "0"); } catch {}
+    const next = !(prefGet("fobia.captions") !== "0");
+    prefSet("fobia.captions", next ? "1" : "0");
     e.currentTarget.classList.toggle("on", next);
   };
   drawer.querySelector("#toggleHaptics").onclick = (e) => {
-    const next = !(localStorage.getItem("fobia.haptics") !== "0");
-    try { localStorage.setItem("fobia.haptics", next ? "1" : "0"); } catch {}
+    const next = !(prefGet("fobia.haptics") !== "0");
+    prefSet("fobia.haptics", next ? "1" : "0");
     e.currentTarget.classList.toggle("on", next);
     // A confirming tick so turning it on is itself felt.
     if (next && navigator.vibrate) { try { navigator.vibrate(14); } catch {} }
   };
   drawer.querySelector("#togglePerfHud").onclick = (e) => {
-    const next = !(localStorage.getItem("fobia.perfHud") === "1");
-    try { localStorage.setItem("fobia.perfHud", next ? "1" : "0"); } catch {}
+    const next = !(prefGet("fobia.perfHud") === "1");
+    prefSet("fobia.perfHud", next ? "1" : "0");
     e.currentTarget.classList.toggle("on", next);
   };
   drawer.querySelector("#toggleHeart").onclick = (e) => {
-    const next = !(localStorage.getItem("fobia.heart") !== "0");
-    try { localStorage.setItem("fobia.heart", next ? "1" : "0"); } catch {}
+    const next = !(prefGet("fobia.heart") !== "0");
+    prefSet("fobia.heart", next ? "1" : "0");
     e.currentTarget.classList.toggle("on", next);
   };
   drawer.querySelector("#toggleMotion").onclick = (e) => {
-    const next = !(localStorage.getItem("fobia.reducedMotion") === "1");
-    try { localStorage.setItem("fobia.reducedMotion", next ? "1" : "0"); } catch {}
+    const next = !(prefGet("fobia.reducedMotion") === "1");
+    prefSet("fobia.reducedMotion", next ? "1" : "0");
     e.currentTarget.classList.toggle("on", next);
     try { applyTheme(); } catch {}
   };
   drawer.querySelector("#toggleBigText").onclick = (e) => {
-    const next = !(localStorage.getItem("fobia.bigText") === "1");
-    try { localStorage.setItem("fobia.bigText", next ? "1" : "0"); } catch {}
+    const next = !(prefGet("fobia.bigText") === "1");
+    prefSet("fobia.bigText", next ? "1" : "0");
     e.currentTarget.classList.toggle("on", next);
     try { applyTheme(); } catch {}
   };
   drawer.querySelector("#toggleMusic").onclick = (e) => {
-    const next = !(localStorage.getItem("fobia.music") === "1");
-    try { localStorage.setItem("fobia.music", next ? "1" : "0"); } catch {}
+    const next = !(prefGet("fobia.music") === "1");
+    prefSet("fobia.music", next ? "1" : "0");
     e.currentTarget.classList.toggle("on", next);
     PhobiaAudio.unlock();
     if (next) {
@@ -623,7 +649,7 @@ function openSettings() {
   };
   const qSel = drawer.querySelector("#qualitySelect");
   if (qSel) qSel.onchange = () => {
-    try { localStorage.setItem("fobia.quality", qSel.value); localStorage.removeItem("fobia.autoTier"); } catch {}
+    prefSet("fobia.quality", qSel.value); prefSet("fobia.autoTier", null);
     // The setting takes effect on the next scene mount — show a small confirmation
     const note = document.createElement("div");
     note.className = "settings-note";
@@ -633,14 +659,14 @@ function openSettings() {
   };
   // Pre-scene countdown toggle — off unless asked for ("1" = on).
   drawer.querySelector("#toggleCountdown").onclick = (e) => {
-    const next = localStorage.getItem("fobia.countdown") !== "1"; // next = countdown ON?
-    try { localStorage.setItem("fobia.countdown", next ? "1" : "0"); } catch {}
+    const next = prefGet("fobia.countdown") !== "1"; // next = countdown ON?
+    prefSet("fobia.countdown", next ? "1" : "0");
     e.currentTarget.classList.toggle("on", next);
   };
   // Light/dark mode toggle
   drawer.querySelector("#toggleTheme").onclick = (e) => {
-    const next = !(localStorage.getItem("fobia.theme") === "light");
-    try { localStorage.setItem("fobia.theme", next ? "light" : "dark"); } catch {}
+    const next = !(prefGet("fobia.theme") === "light");
+    prefSet("fobia.theme", next ? "light" : "dark");
     e.currentTarget.classList.toggle("on", next);
     applyTheme();
   };
@@ -648,9 +674,9 @@ function openSettings() {
   const remindersBtn = drawer.querySelector("#toggleReminders");
   if (remindersBtn) remindersBtn.onclick = async () => {
     if (!canNotify) return;
-    const isOn = localStorage.getItem("fobia.reminders") === "1";
+    const isOn = prefGet("fobia.reminders") === "1";
     if (isOn) {
-      try { localStorage.setItem("fobia.reminders", "0"); } catch {}
+      prefSet("fobia.reminders", "0");
       remindersBtn.classList.remove("on");
       return;
     }
@@ -659,7 +685,7 @@ function openSettings() {
       try { perm = await Notification.requestPermission(); } catch {}
     }
     if (perm === "granted") {
-      try { localStorage.setItem("fobia.reminders", "1"); } catch {}
+      prefSet("fobia.reminders", "1");
       remindersBtn.classList.add("on");
       showLocalNotification(t("set.nudgeOn", "Reminders are on. We'll nudge you once a day."));
       scheduleReminders();
@@ -744,6 +770,19 @@ function a11ySwitches(root) {
     sw.addEventListener("keydown", (e) => {
       if (e.key === " " || e.key === "Enter") { e.preventDefault(); sw.click(); }
     });
+    // The switch is a 40×22 target, and tapping its label or description did
+    // nothing: the whole row toggles it now. A tap ON the switch is left to
+    // the switch (no double toggle), and so is anything else in the row
+    // that has its own job (a button, a link).
+    if (row && !row._rowToggle) {
+      row._rowToggle = true;
+      row.classList.add("row-toggle");
+      row.addEventListener("click", (e) => {
+        if (sw.contains(e.target) || sw.classList.contains("disabled")) return;
+        if (e.target.closest && e.target.closest("button, a, input, select, textarea, [role='switch']")) return;
+        sw.click();
+      });
+    }
   });
 }
 function closeSettings() {
@@ -781,7 +820,7 @@ function storyGate(phobia, lvl, then) { then(); }
 // story carries the why now; the primer stays one tap away on the realm page
 // and after trial 1.)
 function startTrial(phobia, lvl) {
-  if (!PHOBIAS[phobia]) { go("select"); return; }
+  if (!isPhobiaKey(phobia)) { go("select"); return; }
   try { PhobiaAudio.ui("whoosh"); } catch {}
   const max = PHOBIAS[phobia].levels.length - 1;
   const level = Math.max(0, Math.min(max, Number.isFinite(lvl) ? lvl : 0));
@@ -816,15 +855,23 @@ function handleAction(d, params) {
     // land at the gate of that realm's first trial.
     case "quick-start": {
       const k = d.phobia;
-      if (!PHOBIAS[k] || !realmOpen(k)) { go("select"); break; }
+      if (!isPhobiaKey(k) || !realmOpen(k)) { go("select"); break; }
       const C = window.Character;
       let ch = C && C.loadCharacter();
       if (!ch && C) {
-        ch = Object.assign({}, C.defaultCharacter(), { name: t("tw.defaultName", "Traveler"), primaryPhobia: k, autoMade: true });
+        // No name: "Traveler" is how they're shown (travelerDisplayName), not
+        // what they're called — saved, it came back as their name in the creator.
+        ch = Object.assign({}, C.defaultCharacter(), { name: "", primaryPhobia: k, autoMade: true });
         try { C.saveCharacter(ch); } catch {}
         try { activateCharacterState(); } catch {}
       } else if (ch && C && ch.primaryPhobia !== k) {
-        ch = Object.assign({}, ch, { primaryPhobia: k });
+        // A traveler with no trials yet is still choosing: the fear they tap
+        // becomes theirs. One with a history keeps their main fear and this
+        // one joins their path (a tap from the self-check swapped it silently).
+        const extra = Array.isArray(ch.additionalPhobias) ? ch.additionalPhobias : [];
+        ch = (state.log || []).length
+          ? Object.assign({}, ch, { additionalPhobias: extra.includes(k) ? extra : extra.concat([k]) })
+          : Object.assign({}, ch, { primaryPhobia: k });
         try { C.saveCharacter(ch); } catch {}
       }
       startTrial(k, Math.max(0, Math.min(PHOBIAS[k].levels.length - 1, (getProgress(k).highestCompleted ?? -1) + 1)));
@@ -864,9 +911,9 @@ function handleAction(d, params) {
       if (!C) break;
       const draft = Object.assign({}, C.defaultCharacter(), _travelerDraft || {});
       // The realm they picked in the creator (an open one), else the dogs.
-      if (!draft.primaryPhobia || !PHOBIAS[draft.primaryPhobia] || !realmOpen(draft.primaryPhobia)) draft.primaryPhobia = "dogs";
+      if (!draft.primaryPhobia || !isPhobiaKey(draft.primaryPhobia) || !realmOpen(draft.primaryPhobia)) draft.primaryPhobia = "dogs";
+      // An empty name stays empty: they're shown as "Traveler", never saved as it.
       draft.name = String(draft.name || "").trim();
-      if (!draft.name) draft.name = t("tw.defaultName", "Traveler");
       delete draft.autoMade;
       try { C.saveCharacter(draft); } catch {}
       try { localStorage.setItem("fobia.travelerMade", "1"); } catch {}
@@ -915,7 +962,7 @@ function handleAction(d, params) {
     case "quiz-rate": quizRate(document.querySelector(`.quiz-moment[data-phobia="${d.phobia}"] .quiz-lv-b[data-v="${d.v}"]`)); break;
     case "quiz-pick": {
       const k = d.phobia;
-      if (PHOBIAS[k]) openFearCheckModal(k, getChecks(k).length ? "manual" : "baseline", { quiz: true });
+      if (isPhobiaKey(k)) openFearCheckModal(k, getChecks(k).length ? "manual" : "baseline", { quiz: true });
       break;
     }
     case "nudge-dismiss": {
@@ -1024,10 +1071,21 @@ function handleAction(d, params) {
     }
     case "delete-character": {
       const c = window.Character.loadCharacters().find(x => x.id === d.id);
-      if (c && confirm(tf("pr.delConfirm", "Delete the character “{name}” and all its progress?", { name: c.name || t("pr.unnamed", "Unnamed") }))) {
+      if (c && confirm(tf("pr.delConfirm", "Delete the character “{name}” and all its progress?", { name: travelerDisplayName(c) }))) {
         // Also remove their state slice
-        if (state.byCharacter) delete state.byCharacter[d.id];
+        if (state.byCharacter && Object.prototype.hasOwnProperty.call(state.byCharacter, d.id)) delete state.byCharacter[d.id];
         saveState();
+        // …and what the dogs remember of them (trust, last visit), kept per
+        // traveler under their id — these stayed behind after the delete.
+        try {
+          const pre = [`fobia.dogs.trust.${d.id}`, `fobia.dogs.lastSeen.${d.id}`];
+          const ks = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && pre.some((p) => k === p || k.startsWith(p + "."))) ks.push(k);
+          }
+          ks.forEach((k) => localStorage.removeItem(k));
+        } catch {}
         window.Character.deleteCharacter(d.id);
         activateCharacterState();
         go("profiles");
@@ -1045,11 +1103,23 @@ function handleAction(d, params) {
     }
     case "custom-edit":     go("custom", { editing: d.key }); break;
     case "custom-delete": {
-      if (confirm(t("cu.delConfirm", "Delete this custom ladder?"))) {
+      if (confirm(t("cu.delConfirm2", "Delete this custom ladder and the sessions you logged on it?"))) {
         const all = loadCustomPhobias();
         delete all[d.key];
         saveCustomPhobias(all);
         delete PHOBIAS[d.key];
+        // Its sessions go with it: left behind, they still counted on
+        // Insights, Profiles and the report ("1 session") for a ladder that
+        // was nowhere to be found. In place — state.log/progress are the
+        // active slice's own arrays.
+        try {
+          for (const sl of Object.values(state.byCharacter || {})) {
+            if (!sl) continue;
+            if (sl.progress && Object.prototype.hasOwnProperty.call(sl.progress, d.key)) delete sl.progress[d.key];
+            if (Array.isArray(sl.log)) for (let i = sl.log.length - 1; i >= 0; i--) if (sl.log[i] && sl.log[i].phobia === d.key) sl.log.splice(i, 1);
+          }
+          saveState();
+        } catch {}
         go("custom");
       }
       break;

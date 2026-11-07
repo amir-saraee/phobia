@@ -352,6 +352,11 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
   window.__holdPolicy = coach.holdPolicy;
   const sig = (id) => {
     if (document.querySelector(".tour-overlay:not(.dismiss), .countdown")) return false;
+    // A read is of the dark, met in the dark: none while the torch is held
+    // or a match burns, or before you're in it. (With the light on the
+    // whole trial — never engaged, the trial paused — the read star still
+    // landed off the house's creaks.)
+    if (flashlightHeld || matchT > 0.05 || !coach.engaged) return false;
     return coach.signal(id, { dist: lastDist });
   };
   // Night-time happenings, one at a time, each a real thing.

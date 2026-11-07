@@ -898,38 +898,38 @@ function creatureKit(key) {
   const k = CREATURE_KITS[key] ? key : "dogs";
   const T = {
     dogs: {
-      firstRead: () => t("dc.tFirstRead", "Reading the dog is half the cure. Fear treats every dog signal as <b>danger</b>; real dogs are mostly saying <b>relaxed</b> or <b>curious</b>."),
+      firstRead: () => t("dc.tFirstRead", "Reading the dog is half the work. Fear treats every dog signal as <b>danger</b>; real dogs are mostly saying <b>relaxed</b> or <b>curious</b>."),
       escape: () => t("dc.tEscape", "Backing off made the alarm drop — fast. That relief is how avoidance keeps a fear alive: the brain files it as <b>\"escaped just in time\"</b>. It never gets to learn the dog was fine. Step back in when you're ready — the alarm will be where you left it."),
       hab: () => t("dc.tBarkHab", "Look at the spikes: each bark hits a little softer than the one before. Same bark — your alarm is learning it's just noise."),
     },
     spiders: {
-      firstRead: () => t("dc.sp.tFirstRead", "Reading the spider is half the cure. Fear treats every twitch as <b>coming for you</b>; real spiders are mostly <b>resting</b> or <b>going somewhere else</b>."),
+      firstRead: () => t("dc.sp.tFirstRead", "Reading the spider is half the work. Fear treats every twitch as <b>coming for you</b>; real spiders are mostly <b>resting</b> or <b>going somewhere else</b>."),
       escape: () => t("dc.sp.tEscape", "Backing off made the alarm drop — fast. That relief is how avoidance keeps a fear alive: the brain files it as <b>\"got away just in time\"</b>. It never gets to learn the spider was busy with its own life. Step back in when you're ready — the alarm will be where you left it."),
       settled: () => t("dc.sp.tSettled", "<b>Settled.</b> Same spider, same distance — a quieter alarm. You didn't fight it or flee it. You stayed, and your body did the rest."),
       hab: () => t("dc.sp.tHab", "Look at the spikes: each sudden dash hits a little softer than the one before. Same spider, same dash — your alarm is learning that fast doesn't mean toward you."),
     },
     snakes: {
-      firstRead: () => t("dc.sn.tFirstRead", "Reading the snake is half the cure. Fear reads every flick and every movement as <b>a strike coming</b>; real snakes are mostly <b>at ease</b> or <b>curious</b>."),
+      firstRead: () => t("dc.sn.tFirstRead", "Reading the snake is half the work. Fear reads every flick and every movement as <b>a strike coming</b>; real snakes are mostly <b>at ease</b> or <b>curious</b>."),
       escape: () => t("dc.sn.tEscape", "Backing off made the alarm drop — fast. That relief is how avoidance keeps a fear alive: the brain files it as <b>\"that was close\"</b>. It never gets to learn the snake wanted nothing from you. Step back in when you're ready — the alarm will be where you left it."),
       settled: () => t("dc.sn.tSettled", "<b>Settled.</b> Same snake, same distance — a quieter alarm. You didn't fight it or flee it. You stayed, and your body did the rest."),
       hab: () => t("dc.sn.tHab", "Look at the spikes: each rear-up and each hiss hits a little softer. Same display — your alarm is learning it's a request for room, not an attack."),
     },
     heights: {
-      firstRead: () => t("dc.h.tFirstRead", "Telling a sensation from a danger is half the cure. Fear files jelly legs, a gust and a long drop all as <b>you're about to fall</b>. They're a body alarm and a high place — that's all."),
+      firstRead: () => t("dc.h.tFirstRead", "Telling a sensation from a danger is half the work. Fear files jelly legs, a gust and a long drop all as <b>you're about to fall</b>. They're a body alarm and a high place — that's all."),
       escape: () => t("dc.h.tEscape", "Stepping back made the alarm drop — fast. That relief is how avoidance keeps a fear alive: the brain files it as <b>\"got away from the edge just in time\"</b>. It never gets to learn the edge was safe. Step back in when you're ready — the alarm will be where you left it."),
       settled: () => t("dc.h.tSettled", "<b>Settled.</b> Same edge, same drop — a quieter alarm. You didn't fight it or flee it. You stayed, and your body did the rest."),
       hab: () => t("dc.h.tHab", "Look at the spikes: each gust and each look down hits a little softer than the one before. Same height — your alarm is learning it's just high, not dangerous."),
       rise: () => t("dc.h.tRise", "That rise is your alarm doing its job: <b>loud, not necessarily right</b>. Legs, stomach, the tingle — it's all the alarm. Stay, and watch the line."),
     },
     dark: {
-      firstRead: () => t("dc.d.tFirstRead", "Naming what's really there is half the cure. Fear fills the dark with <b>someone</b>; in the dark there's the house, and your mind filling in the gaps."),
+      firstRead: () => t("dc.d.tFirstRead", "Naming what's really there is half the work. Fear fills the dark with <b>someone</b>; in the dark there's the house, and your mind filling in the gaps."),
       escape: () => t("dc.d.tEscape", "Light made the alarm drop — fast. That relief is how avoidance keeps a fear alive: the brain files it as <b>\"good thing I could see\"</b>. It never learns the dark was just a room. Switch it off again when you're ready — the alarm will be where you left it."),
       settled: () => t("dc.d.tSettled", "<b>Settled.</b> Same room, same dark — a quieter alarm. You didn't fight it or light it. You stayed, and your body did the rest."),
       hab: () => t("dc.d.tHab", "Look at the spikes: each noise in the dark hits a little softer than the one before. Same house — your alarm is learning its night-time sounds."),
       newGround: () => t("dc.d.tNewGround", "Darker, or deeper in, means a fresh wave — smaller than the first. Up, then down again. That's how a ladder is climbed."),
     },
     enclosed: {
-      firstRead: () => t("dc.e.tFirstRead", "Telling a sensation from a danger is half the cure. Fear files a tight breath, a hum and a closed door all as <b>trapped</b>. They're a body alarm and a room — that's all."),
+      firstRead: () => t("dc.e.tFirstRead", "Telling a sensation from a danger is half the work. Fear files a tight breath, a hum and a closed door all as <b>trapped</b>. They're a body alarm and a room — that's all."),
       escape: () => t("dc.e.tEscape", "Opening up made the alarm drop — fast. That relief is how avoidance keeps a fear alive: the brain files it as <b>\"got out just in time\"</b>. It never gets to learn the space was safe. Close it again when you're ready — the alarm will be where you left it."),
       settled: () => t("dc.e.tSettled", "<b>Settled.</b> Same space, same walls — a quieter alarm. You didn't fight it or flee it. You stayed, and your body did the rest."),
       hab: () => t("dc.e.tHab", "Look at the spikes: each knock and hum hits a little softer than the one before. Same space — your alarm is learning it's just noise."),

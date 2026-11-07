@@ -1,6 +1,8 @@
 // The creature coach every realm runs on: the live alarm wave, read-the-moment
 // prompts and trial stars (makeDogCoach / makeCreatureCoach).
 
+import * as THREE from "three";
+
 // =============================================================================
 // ---------- The dog coach: the alarm wave, the trial card, reading the dog ----
 // =============================================================================
@@ -58,11 +60,22 @@ function makeCreatureCoach(opts) {
   let lastPulseT = -99, clock = 0;
   let fell = false;          // the alarm has come down at least once
   let peakSinceFall = 0;
+  let baseAtPeak = 0, distAtPeak = 99, fallT = 0;   // closeness + distance at that peak; how long the fall has held
   // engagement + settle
   let engaged = false, everEngaged = false, engagedSec = 0, engagedPeak = 0;
   let settledNow = false;
   const distHist = [];       // [t, dist] for escape detection
   let lastEscapeT = -99;
+  // Grounding (Esc) drains PhobiaFear toward 0 — the panic stop. That number
+  // is not a reading of the alarm: the peak, the settle, the fall beat and
+  // "nothing to settle" must never come from it, or a player who walked in
+  // mid-exercise got the settle star with the alarm never measured. A
+  // reading counts again once the value has climbed back to the model's.
+  let wasGrounding = false, groundEndT = -99;
+  let measuredSec = 0;       // engaged seconds with a trusted reading
+  const CALM_SEC = Math.min(6, o.minHold * 0.5);
+  // Measured and low (not just never measured): the trial had nothing to settle.
+  const calmMeasured = () => engagedPeak < 12 && measuredSec >= CALM_SEC;
 
   // ---------------- evidence ----------------
   const ev = {
@@ -105,6 +118,9 @@ function makeCreatureCoach(opts) {
   // the part of exposure that does the work.
   const goals = (o.goals || []).map((g) => Object.assign({ n: 0, need: 1, done: false }, g));
   const starsDone = () => goals.filter((g) => g.done).length;
+  // Skill goals with no hotbar verb that are still the player's to take
+  // after the hold (the "one star still open" nudge names them too).
+  const STILL_ON_OFFER = ["glassLook", "scan"];
   // A skill goal that names a hotbar verb (`verb: "treat"`) lights that
   // button while the goal is open, so "what do I do here?" has an answer on
   // screen without another line of text; when the star lands the button
@@ -172,7 +188,27 @@ function makeCreatureCoach(opts) {
     try { if (window.PhobiaFX && window.PhobiaFX.haptic) window.PhobiaFX.haptic(12); } catch {}
     root.classList.remove("dc-ping"); void root.offsetWidth; root.classList.add("dc-ping");
     starPop(g);
-    if (id !== "settle") retire("starsLeft");
+    // A star landing makes a queued/showing "one star still open" stale. Only
+    // then: retiring it before it was ever said marked it said, so any star
+    // earned before the hold silenced the nudge for the whole trial.
+    if (id !== "settle" && said.has("starsLeft")) retire("starsLeft");
+    // Held, and this star leaves exactly one open: that's the moment to say so
+    // (two were open at the hold, then the read landed — it never came).
+    if (heldSeen) nudgeOpen();
+  }
+  // One star still open, and it's one the animal can still give: say so,
+  // once, and leave the choice with the player.
+  // A verb goal is always still on offer — it's the player's move, not
+  // the animal's — so it gets the same one-line nudge; so do the skill
+  // goals that are the player's move without a hotbar verb (look down
+  // through the glass, lie through a scan).
+  function nudgeOpen() {
+    const open = goals.filter((x) => !x.done && x.id !== "settle");
+    if (open.length === 1 && (open[0].id === "read" || open[0].id === "threeSounds" || open[0].verb || STILL_ON_OFFER.includes(open[0].id))) {
+      teach("starsLeft", tf("dc.tStarsLeft",
+        "Trial held — continue whenever you like. <b>One star is still open:</b> {g}. Stay a little longer if you want all three.",
+        { g: esc(open[0].text) }), 8000);
+    }
   }
   function goalCount(id, n) {
     const g = goals.find((x) => x.id === id);
@@ -204,8 +240,10 @@ function makeCreatureCoach(opts) {
   let lessons = 0;
   function teach(key, html, ms = 7000, urgent = false) {
     if (said.has(key)) return false;
-    // The play invite is an offer, not a lesson — it isn't counted.
-    const counted = !urgent && key !== "play";
+    // The play invite is an offer, not a lesson — it isn't counted; nor is
+    // the "one star still open" nudge (counted, it rarely got through the cap,
+    // and never on a replay, where the cap is 0).
+    const counted = !urgent && key !== "play" && key !== "starsLeft";
     if (counted && lessons >= LESSON_CAP) { said.add(key); return false; }
     said.add(key);
     if (counted) lessons++;
@@ -216,11 +254,35 @@ function makeCreatureCoach(opts) {
     }
     if (urgent) {
       calloutQueue.unshift({ key, html, ms, urgent: true });
-      if (calloutT > 0.4) calloutT = 0.4;
+      // Cut the lesson on screen short — unless it is itself an urgent one
+      // that only just went up: "Settled" cut "See it coming down?" after
+      // under a second (two praise lines, the first lost). It goes next.
+      if (calloutT > 0.4 && !(calloutCur && calloutCur.urgent && clock - calloutShownAt < 3)) calloutT = 0.4;
+      // ...and a read's answer card steps aside for it (it held "sliding
+      // you out now" ~4.5 s). An open question still goes first.
+      if (readResultT > 0) {
+        readResultT = 0; readBox.classList.remove("show", "result");
+        const L = lane(); if (L) L.release("read");
+      }
     } else {
       calloutQueue.push({ key, html, ms });
     }
     return true;
+  }
+  // An escape (stepping back, the door, the ball) makes a pending "settled"
+  // or "fall" wrong: they praise staying for a drop that came from leaving,
+  // and being urgent they jumped ahead of the escape lesson itself. Drop a
+  // queued one — unshown, it may still come later for a real settle — and
+  // cut one short that's on screen.
+  function retireStayPraise() {
+    for (const k of ["settled", "fall"]) {
+      if (calloutQueue.some((c) => c.key === k)) {
+        calloutQueue = calloutQueue.filter((c) => c.key !== k);
+        said.delete(k);
+        if (k === "fall") { fell = false; peakSinceFall = 0; fallT = 0; }
+      }
+      if (calloutCur && calloutCur.key === k && calloutT > 0.4) calloutT = 0.4;
+    }
   }
   // Room to breathe between lessons: back-to-back they kept a text box on
   // screen for most of a trial. The urgent beats skip the wait.
@@ -231,7 +293,22 @@ function makeCreatureCoach(opts) {
     if (calloutCur && clock - calloutShownAt < 2) calloutQueue.unshift(calloutCur);
     calloutCur = null; calloutT = 0;
   };
-  function pumpCallout(dt) {
+  let groundQuietT = 0;
+  function pumpCallout(dt, grounding) {
+    // Never over the grounding exercise: the 5-4-3-2-1 is the one thing on
+    // screen. A lesson showing steps back into the queue (if it hadn't been
+    // read yet) and the queue waits until a beat after the exercise ends.
+    if (grounding) {
+      if (calloutCur) {
+        callout.classList.remove("show");
+        if (calloutT > 2) calloutQueue.unshift(calloutCur);
+        calloutCur = null; calloutT = 0;
+        const L = lane(); if (L) L.release("callout");
+      }
+      groundQuietT = 1.5;
+      return;
+    }
+    if (groundQuietT > 0) { groundQuietT -= dt; return; }
     if (calloutGap > 0) calloutGap -= dt;
     if (calloutT > 0) {
       calloutT -= dt;
@@ -354,6 +431,26 @@ function makeCreatureCoach(opts) {
     readCooldown = readStarDone() ? 30 + Math.random() * 6 : 8 + Math.random() * 3;
     if (right && ev.readsRight === 1) teach("firstRead", K.texts.firstRead(), 7500);
   }
+  // Close an open question quietly, without credit: the moment it asked
+  // about has passed (grounding began, you stepped out, the torch came on —
+  // answered then, it still counted).
+  // Let a read's answer card step aside (as an urgent lesson already makes
+  // it): the spider's crouch warning sat 4.5 s behind "✓ A sudden dash" and
+  // the jump came unannounced. An open question is left alone.
+  function endReadResult() {
+    if (!(readResultT > 0)) return false;
+    readResultT = 0; readBox.classList.remove("show", "result");
+    const L = lane(); if (L) L.release("read");
+    return true;
+  }
+  function closeRead() {
+    if (!readOpen) return false;
+    readOpen = null;
+    readBox.classList.remove("show");
+    readCooldown = Math.max(readCooldown, 8);
+    const L = lane(); if (L) L.release("read");
+    return true;
+  }
   function onKey(e) {
     if (!readOpen || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
@@ -444,7 +541,9 @@ function makeCreatureCoach(opts) {
     engaged: () => engaged,
     ready: (sec, minHold) => {
       lastHoldSec = sec;
-      if (engagedPeak < 12) return true;           // nothing to settle
+      // Nothing to settle — measured low, not merely unmeasured (a walk-in
+      // under grounding had a "peak" of 0 from the drained value).
+      if (calmMeasured()) return true;
       if (sec >= minHold * 2.4) return true;       // never hostage to a stubborn wave
       return settledNow;
     },
@@ -459,7 +558,7 @@ function makeCreatureCoach(opts) {
     },
     progress: (sec, minHold) => {
       const tp = Math.min(1, sec / minHold) * 0.72;
-      if (sec < minHold || engagedPeak < 12) return tp + (sec >= minHold ? 0.28 : 0);
+      if (sec < minHold || engagedPeak < 12) return tp + (sec >= minHold && calmMeasured() ? 0.28 : 0);
       const line = settleLine();
       const k = Math.max(0, Math.min(1, (engagedPeak - alarm) / Math.max(1, engagedPeak - line)));
       return 0.72 + 0.28 * k;
@@ -505,20 +604,60 @@ function makeCreatureCoach(opts) {
     // engagement (the hold's definition of being IN the exposure)
     // Hysteresis: in at the zone line, out only a step past it, so a dog
     // pacing at the edge doesn't flicker the hold between "paused" and not.
+    const wasEngaged = engaged;
     engaged = engaged ? dist < o.inZoneDist + 0.6 : dist < o.inZoneDist;
     if (engaged) { engagedSec += d; everEngaged = true; }
+    // Back in the zone (from outside, or the spider's glass lifted): the fall
+    // beat measures from this stretch only — a peak from out there (the
+    // glass-drop startle) read as "you stayed, it came down" on re-entry.
+    if (engaged && !wasEngaged) { peakSinceFall = 0; fallT = 0; }
     const cur = window.PhobiaFear ? window.PhobiaFear.get() : alarm;
-    if (engaged) engagedPeak = Math.max(engagedPeak, cur);
+    // Grounding: the drained value is not a reading (see wasGrounding). After
+    // the exercise PhobiaFear climbs back to the model fast (rise rate 4/s);
+    // until it has caught up — or 3 s on — nothing is read from it.
+    const grounding = !!(window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding());
+    // A question under the exercise is hidden by CSS but still answerable
+    // by key: close it quietly — the next one comes after.
+    if (grounding && !wasGrounding) closeRead();
+    if (!grounding && wasGrounding) {
+      groundEndT = clock;
+      // The fall beat starts over: a drop measured across the exercise is
+      // the exercise's, and "you didn't distract yourself" would be untrue.
+      peakSinceFall = 0; fallT = 0;
+      // A breath before the next question, too (not a quiz the instant the
+      // exercise ends).
+      readCooldown = Math.max(readCooldown, 3);
+    }
+    wasGrounding = grounding;
+    const trusted = !grounding && (clock - groundEndT > 3 || cur >= alarm - 2);
+    if (engaged && trusted) { engagedPeak = Math.max(engagedPeak, cur); measuredSec += d; }
     ev.peak = Math.max(ev.peak, Math.round(cur));
     ev.end = Math.round(cur);
     ev.engagedSec = Math.round(engagedSec);
     if (dist < ev.minDist) ev.minDist = dist;
     if (s.dogGazing && dist < 5) ev.stareSec += d;
 
+    // Your own movement over the last moments (+ = away from the animal):
+    // the escape test below, and the settle guard — the zone's hysteresis
+    // keeps you "engaged" a step past the line, so walking out could read
+    // as settling on the way (the alarm drops with every step back).
+    if (s.px != null) distHist.push([clock, s.px, s.pz, dist]);
+    while (distHist.length && clock - distHist[0][0] > 1.6) distHist.shift();
+    let backed = 0, d0 = dist;
+    if (distHist.length && s.px != null && s.dogX != null) {
+      const h0 = distHist[0];
+      d0 = h0[3];
+      const ux = s.px - s.dogX, uz = s.pz - s.dogZ, ul = Math.hypot(ux, uz) || 1;
+      backed = ((s.px - h0[1]) * ux + (s.pz - h0[2]) * uz) / ul;   // + = moved away from the dog
+    }
+
     // Settled: well under the in-zone peak, and no spike in the last moments.
+    // Not from a grounding-drained value, and — like the fall beat — not on
+    // the way out (an escape or safety step in the last 8 s, or backing off
+    // right now): that drop is relief, and "You stayed" said the opposite.
     const line = settleLine();
-    const grounding = !!(window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding());
-    settledNow = engaged && engagedPeak >= 12 && cur <= line && (clock - lastPulseT) > 2.5 && !grounding;
+    settledNow = engaged && trusted && engagedPeak >= 12 && cur <= line && (clock - lastPulseT) > 2.5
+      && clock - lastSafetyT > 8 && clock - lastEscapeT > 8 && backed < 0.5;
     if (settledNow && !settledLatched && engagedSec > 5) {
       settledLatched = true; everSettled = true;
       // In seconds of staying, the same clock as "You stayed" on the done
@@ -542,52 +681,47 @@ function makeCreatureCoach(opts) {
         sg.text = t("dc.gStayedLong", "Stayed the long way — a stubborn alarm today");
         goalDone("settle");
       }
-      // One star still open, and it's one the animal can still give: say so,
-      // once, and leave the choice with the player.
-      // A verb goal is always still on offer — it's the player's move, not
-      // the animal's — so it gets the same one-line nudge.
-      const open = goals.filter((x) => !x.done && x.id !== "settle");
-      if (open.length === 1 && (open[0].id === "read" || open[0].id === "threeSounds" || open[0].verb)) {
-        teach("starsLeft", tf("dc.tStarsLeft",
-          "Trial held — continue whenever you like. <b>One star is still open:</b> {g}. Stay a little longer if you want all three.",
-          { g: esc(open[0].text) }), 8000);
-      }
+      nudgeOpen();
     }
 
     // Rise / fall teaching beats
     if (engaged && cur > 22) teach("rise", K.texts.rise ? K.texts.rise() : t("dc.tRise",
       "That rise is your alarm doing its job: <b>loud, not necessarily right</b>. You don't have to do anything about it. Stay, and watch the line."), 7500);
-    peakSinceFall = Math.max(peakSinceFall, cur);
+    if (engaged && trusted && cur > peakSinceFall) { peakSinceFall = cur; baseAtPeak = base; distAtPeak = dist; }
     // Not while they're on the way out: a fall that comes with stepping
     // back (the MRI ball, the door) is relief, and praising it as "you
     // stayed" told the player the opposite of what just happened.
-    if (!fell && peakSinceFall >= 20 && cur < peakSinceFall * 0.7 && engaged
-        && clock - lastSafetyT > 8 && clock - lastEscapeT > 8) {
+    // And only a fall that is habituation: the closeness that raised the
+    // peak is still there (the dog trotting off after the ball dropped the
+    // alarm too — that's distance, not learning). The model's own target
+    // must agree (the smoothed value lags it on the way back up), and the
+    // drop has to hold for a second.
+    const fallNow = !fell && trusted && engaged && peakSinceFall >= 20
+      && Math.max(cur, alarm) < peakSinceFall * 0.7 && base >= baseAtPeak * 0.85
+      // …and in metres too: closeness carries the gaze term, so 85% of it still
+      // passed with the dog ~1.9 m off, galloping after the ball (verify pass).
+      && dist <= distAtPeak + 0.35
+      && clock - lastSafetyT > 8 && clock - lastEscapeT > 8;
+    fallT = fallNow ? fallT + d : 0;
+    if (fallT > 1) {
       fell = true;
       teach("fall", t("dc.tFall",
         "See it coming down? You didn't escape, argue or distract yourself — you <b>stayed</b>. That fall is habituation: your body updating, live."), 8000, true);
     }
 
     // Escape: YOU backing off fast out of the zone while the alarm is up —
-    // measured from your own movement, so a dog trotting away is not you
-    // escaping.
-    if (s.px != null) distHist.push([clock, s.px, s.pz, dist]);
-    while (distHist.length && clock - distHist[0][0] > 1.6) distHist.shift();
-    let backed = 0, d0 = dist;
-    if (distHist.length && s.px != null && s.dogX != null) {
-      const h0 = distHist[0];
-      d0 = h0[3];
-      const ux = s.px - s.dogX, uz = s.pz - s.dogZ, ul = Math.hypot(ux, uz) || 1;
-      backed = ((s.px - h0[1]) * ux + (s.pz - h0[2]) * uz) / ul;   // + = moved away from the dog
-    }
+    // measured from your own movement (`backed`, above), so a dog trotting
+    // away is not you escaping.
     // (Once the hold is met, leaving is finishing — not an escape to teach.)
     if (everEngaged && !engaged && backed > 1.1 && d0 < o.inZoneDist + 0.8 && cur > 30 && clock - lastEscapeT > 6
         && !window.__rungHoldComplete) {
       lastEscapeT = clock;
       ev.escapes++;
       h = Math.min(1, h + 0.14);          // relief without learning: it'll be back
+      closeRead();                        // a question about the moment you just left
       mark("escape");
       teach("escape", K.texts.escape(), 10000, true);
+      retireStayPraise();
     }
 
     // evidence: the dog running at you — a fast approach that started a
@@ -627,16 +761,23 @@ function makeCreatureCoach(opts) {
     // the gait. It used to sit just above the dog's head — which, with the
     // dog at your feet or the camera behind you, put it squarely over the dog
     // you were meant to be reading, and over your own character.
-    if ((readOpen || readResultT > 0) && s.anchorX != null && s.stageW) {
+    // The animal's whole projected body (contract: anchorBox, stage CSS px),
+    // when the realm sends it; the head point alone missed the body.
+    const B = s.anchorBox && s.anchorBox.r > s.anchorBox.l && s.anchorBox.b > s.anchorBox.t ? s.anchorBox : null;
+    const anchX = s.anchorX != null ? s.anchorX : (B ? (B.l + B.r) / 2 : null);
+    if ((readOpen || readResultT > 0) && anchX != null && s.stageW) {
       // Sizes are measured once per card (content change), not every frame:
       // reading layout right after this frame's style writes forced a
       // synchronous reflow 60 times a second while a question was open.
-      if (!readBox._sz) readBox._sz = { bw: readBox.offsetWidth || 420, bh: readBox.offsetHeight || 96, pw: root.offsetWidth || 0, pb: (root.offsetTop || 0) + (root.offsetHeight || 0), ch: (root.parentElement && root.parentElement.clientHeight) || 0 };
+      // …and again when the stage itself changes size: a card left open
+      // through a rotation kept the portrait height and hung below the stage.
+      if (readBox._sz && (readBox._sz.sw !== s.stageW || readBox._sz.sh !== s.stageH)) readBox._sz = null;
+      if (!readBox._sz) readBox._sz = { bw: readBox.offsetWidth || 420, bh: readBox.offsetHeight || 96, pw: root.offsetWidth || 0, pb: (root.offsetTop || 0) + (root.offsetHeight || 0), ch: (root.parentElement && root.parentElement.clientHeight) || 0, sw: s.stageW, sh: s.stageH };
       const { bw, bh } = readBox._sz;
       const panelW = (readBox._sz.pw && s.stageW > 700) ? readBox._sz.pw + 16 : 0;
       const lo = bw / 2 + 8, hi = s.stageW - bw / 2 - 8 - panelW;
-      let tx = hi > lo ? Math.max(lo, Math.min(hi, s.anchorX)) : s.stageW / 2;
-      let ty = Math.max(bh + 96, Math.min(bh + 104, s.anchorY - 16));
+      let tx = hi > lo ? Math.max(lo, Math.min(hi, anchX)) : s.stageW / 2;
+      let ty = Math.max(bh + 96, Math.min(bh + 104, (s.anchorY != null ? s.anchorY : B ? B.t : 0) - 16));
       // A narrow stage can't seat the card beside the coach panel — put it
       // under the panel instead of over it.
       if (s.stageW <= 700 && readBox._sz.pb) ty = Math.max(ty, readBox._sz.pb + 8 + bh);
@@ -651,7 +792,69 @@ function makeCreatureCoach(opts) {
       // on rung 1, almost every creature on a portrait phone) was hidden
       // behind the question. Slide beside it; else above; else below.
       const ay = s.anchorY;
-      if (ay != null && ay > 0 && s.anchorX != null) {
+      if (B) {
+        // With the body's box: beside it, else above, else below (each kept
+        // inside the stage, under the HUD band / coach panel, above an open
+        // command bar), else wherever it covers least — a big dog at your
+        // feet can fill the view. A spot that went clear stays chosen while
+        // it stays clear, so the card doesn't hop with the gait.
+        const pb = readBox._sz.pb || 0;
+        const chh = readBox._sz.ch || s.stageH || 0;
+        const maxBot = chh ? chh - (barTop > 0 ? barTop : 0) - 8 : Infinity;
+        let minBot = (s.stageW <= 700 && pb) ? pb + 8 + bh : bh + 96;
+        if (maxBot < minBot) minBot = Math.max(bh + 8, maxBot);
+        const hiFull = s.stageW - bw / 2 - 8;
+        const fit = (cx, by) => {
+          by = Math.max(minBot, Math.min(Math.max(minBot, maxBot), by));
+          // Below the coach panel the card may use the full width.
+          const h2 = (panelW && by - bh >= pb + 8) ? hiFull : hi;
+          cx = h2 > lo ? Math.max(lo, Math.min(h2, cx)) : s.stageW / 2;
+          return [cx, by];
+        };
+        const over = (p, m) => {
+          const ox = Math.min(p[0] + bw / 2, B.r + m) - Math.max(p[0] - bw / 2, B.l - m);
+          const oy = Math.min(p[1], B.b + m) - Math.max(p[1] - bh, B.t - m);
+          // (Under half a pixel is touching, not covering: a spot set exactly
+          // at the margin came out a float hair inside it.)
+          return ox > 0.5 && oy > 0.5 ? ox * oy : 0;
+        };
+        const M = 12;
+        if (readPos.x == null) readPos.kind = null;
+        // Each spot is worked out from the box as it is now, so a side spot
+        // follows the animal; the kind chosen is remembered.
+        const spot = {
+          home: () => fit(tx, ty),
+          right: () => fit(B.r + M + bw / 2, ty),
+          left: () => fit(B.l - M - bw / 2, ty),
+          above: () => fit(tx, B.t - M),
+          below: () => fit(tx, B.b + M + bh),
+        };
+        const prev = readPos.kind;
+        let kind = null;
+        // Home (following the animal across, as without a box) when clear —
+        // with a little extra room before leaving a side spot for it; else
+        // the side it already sits on, while that stays clear (half margin,
+        // so a pixel of growth in the box doesn't send it gliding across).
+        if (over(spot.home(), prev && prev !== "home" ? M + 24 : M) === 0) kind = "home";
+        else if (prev && prev !== "home" && spot[prev] && over(spot[prev](), M / 2) === 0) kind = prev;
+        else kind = ["right", "left", "above", "below"].find((k) => over(spot[k](), M) === 0) || null;
+        let pick = kind ? spot[kind]() : null;
+        if (!pick) {
+          let best = Infinity;
+          for (const x of [lo, hiFull, tx, B.r + M + bw / 2, B.l - M - bw / 2]) {
+            for (const y of [ty, B.t - M, B.b + M + bh, maxBot]) {
+              const p = fit(x, y);
+              const a = over(p, 0) + 0.01 * (Math.abs(p[0] - (readPos.x ?? tx)) + Math.abs(p[1] - (readPos.y ?? ty)));
+              if (a < best) { best = a; pick = p; }
+            }
+          }
+        }
+        readPos.kind = kind;
+        tx = pick[0]; ty = pick[1];
+        // Moving to a new spot (the animal rose, or walked under the card):
+        // jump rather than glide when the glide would pass over the body.
+        if (readPos.x != null && kind !== prev && over([(readPos.x + tx) / 2, (readPos.y + ty) / 2], 0) > 0) { readPos.x = tx; readPos.y = ty; }
+      } else if (ay != null && ay > 0 && s.anchorX != null) {
         const covers = (bot) => (bot - bh) < ay + 70 && bot > ay - 60;
         if (covers(ty) && Math.abs(tx - s.anchorX) < bw / 2 + 40) {
           const right = s.anchorX + bw / 2 + 70, left = s.anchorX - bw / 2 - 70;
@@ -678,7 +881,7 @@ function makeCreatureCoach(opts) {
       if (clock > readOpen.until) { readOpen = null; readBox.classList.remove("show"); readCooldown = readStarDone() ? 30 : 8; const L = lane(); if (L) L.release("read"); }
     }
     if (readResultT > 0) { readResultT -= d; if (readResultT <= 0) { readBox.classList.remove("show", "result"); const L = lane(); if (L) L.release("read"); } }
-    pumpCallout(d);
+    pumpCallout(d, grounding);
     if (s.trust != null) setTrust(s.trust);
   }
   // Discrete spikes, habituated per kind: the fifth bark lands at about a
@@ -708,6 +911,7 @@ function makeCreatureCoach(opts) {
   function safety(kind) {
     if (!everEngaged || clock - lastSafetyT < 4 || window.__rungHoldComplete) return;
     lastSafetyT = clock;
+    closeRead();                          // stale: the door/light/ball changed the moment
     const cur = window.PhobiaFear ? window.PhobiaFear.get() : alarm;
     ev.notes["safety_" + kind] = (ev.notes["safety_" + kind] || 0) + 1;
     if (cur < 18) return;
@@ -715,6 +919,7 @@ function makeCreatureCoach(opts) {
     h = Math.min(1, h + 0.12);
     mark("escape");
     teach("escape", K.texts.escape(), 10000, true);
+    retireStayPraise();
   }
   // A creature with no bond to track (spider, snake) shows its mood instead.
   function setFoot(txt) { trustEl.textContent = txt || ""; trustEl.classList.add("dc-note"); lastTrustN = -2; }
@@ -732,6 +937,70 @@ function makeCreatureCoach(opts) {
     if (kind === "jump") ev.jumped++;
     if (kind === "run") { ev.ranAtYou++; ev._explicitRuns = true; ev._running = false; mark("run"); }
   }
+  // The animal's box on screen, for the read card (anchorBox): the realm
+  // calls this with the creature's group and passes the result to update().
+  // The world box is pose-true — sampled skinned vertices, since these rigs'
+  // bind-pose bbox is far off — re-measured ~6×/s and kept as offsets from
+  // the group, so it follows the animal in between; its 8 corners are
+  // projected every frame. Only while a card is up: it is the only reader.
+  const _sbV = new THREE.Vector3(), _sbO = new THREE.Vector3();
+  const sb = { obj: null, t: -99, ok: false, lo: [0, 0, 0], hi: [0, 0, 0] };
+  function measureBox(obj) {
+    const root = (obj.userData && obj.userData.parts && obj.userData.parts.model) || obj;
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    let n = 0;
+    // (The rig's matrices are last render's — a frame old, fine at this rate.)
+    const add = (v) => {
+      n++;
+      if (v.x < lo[0]) lo[0] = v.x; if (v.x > hi[0]) hi[0] = v.x;
+      if (v.y < lo[1]) lo[1] = v.y; if (v.y > hi[1]) hi[1] = v.y;
+      if (v.z < lo[2]) lo[2] = v.z; if (v.z > hi[2]) hi[2] = v.z;
+    };
+    root.traverseVisible((m) => {
+      const pos = m.isMesh && m.geometry && m.geometry.attributes && m.geometry.attributes.position;
+      if (!pos) return;
+      if (m.isSkinnedMesh && m.skeleton) {
+        const step = Math.max(1, Math.floor(pos.count / 400));
+        for (let i = 0; i < pos.count; i += step) { m.getVertexPosition(i, _sbV); add(_sbV.applyMatrix4(m.matrixWorld)); }
+      } else {
+        if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+        const bb = m.geometry.boundingBox;
+        for (let k = 0; k < 8; k++) {
+          add(_sbV.set(k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z).applyMatrix4(m.matrixWorld));
+        }
+      }
+    });
+    if (!n || !isFinite(lo[0] + hi[0] + lo[1] + hi[1] + lo[2] + hi[2])) return false;
+    obj.getWorldPosition(_sbO);
+    sb.lo = [lo[0] - _sbO.x, lo[1] - _sbO.y, lo[2] - _sbO.z];
+    sb.hi = [hi[0] - _sbO.x, hi[1] - _sbO.y, hi[2] - _sbO.z];
+    return true;
+  }
+  function screenBox(obj, camera, sw, sh) {
+    if (!obj || !camera || !(sw > 0) || !(sh > 0)) return null;
+    if (!readOpen && !(readResultT > 0)) { sb.obj = null; return null; }
+    try {
+      if (sb.obj !== obj || clock - sb.t > 0.16) { sb.obj = obj; sb.t = clock; sb.ok = measureBox(obj); }
+      if (!sb.ok) return null;
+      obj.getWorldPosition(_sbO);
+      // Mid-frame the camera's matrices can still hold an earlier pass's pose.
+      camera.updateMatrixWorld();
+      const near = camera.near || 0.05;
+      let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+      for (let k = 0; k < 8; k++) {
+        _sbV.set(_sbO.x + (k & 1 ? sb.hi[0] : sb.lo[0]), _sbO.y + (k & 2 ? sb.hi[1] : sb.lo[1]), _sbO.z + (k & 4 ? sb.hi[2] : sb.lo[2]));
+        _sbV.applyMatrix4(camera.matrixWorldInverse);
+        // A corner behind the lens (the animal at your feet) is pulled onto
+        // the near plane: it then lands far off-screen and the box fills the view.
+        if (_sbV.z > -near) _sbV.z = -near;
+        _sbV.applyMatrix4(camera.projectionMatrix);
+        const x = (_sbV.x + 1) / 2 * sw, y = (1 - _sbV.y) / 2 * sh;
+        if (x < l) l = x; if (x > r) r = x; if (y < t) t = y; if (y > b) b = y;
+      }
+      l = Math.max(0, l); t = Math.max(0, t); r = Math.min(sw, r); b = Math.min(sh, b);
+      return (r - l >= 2 && b - t >= 2) ? { l, t, r, b } : null;
+    } catch { return null; }
+  }
   function evidence() {
     const out = Object.assign({}, ev);
     delete out._running; delete out._close; delete out._runFrom; delete out._lastRunT; delete out._explicitRuns;
@@ -748,15 +1017,17 @@ function makeCreatureCoach(opts) {
     try { root.remove(); callout.remove(); readBox.remove(); } catch {}
   }
   return {
-    update, pulse, signal, answer, note, teach, goalDone, goalCount, setVerb, setTrust, setFoot, safety,
+    update, pulse, signal, answer, note, teach, retire, goalDone, goalCount, setVerb, setTrust, setFoot, safety, screenBox,
+    cancelRead: closeRead, endReadResult,
     goalOpen: (id) => { const g = goals.find((x) => x.id === id); return !!g && !g.done; },
     target: () => alarm, holdPolicy, evidence, dispose,
     get engaged() { return engaged; }, get alarm() { return alarm; },
     get readOpen() { return !!readOpen; }, get settled() { return settledLatched; },
     get readId() { return readOpen ? readOpen.id : null; },
     get stars() { return starsDone(); }, get starsTotal() { return goals.length; },
-    // Did the alarm genuinely come down (or never rise far enough to need to)?
-    get everSettled() { return everSettled || engagedPeak < 12; },
+    // Did the alarm genuinely come down (or, measured, never rise far enough
+    // to need to)? A peak of 0 read off a grounding-drained value is neither.
+    get everSettled() { return everSettled || calmMeasured(); },
   };
 }
 
