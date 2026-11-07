@@ -225,6 +225,19 @@ function tierPixelRatio() {
   return IS_LOW_POWER ? 1 : Math.min(dpr, QUALITY === "medium" ? 1.5 : 2);
 }
 
+// Can this device render into half-float targets? EffectComposer, bloom, VSM
+// shadow maps and PMREM all default to HalfFloatType, and on the Android
+// drivers that lack the extension those passes fail silently (black post
+// chain, no shadows). WebGL2 exposes it as EXT_color_buffer_float (whole
+// float family) or EXT_color_buffer_half_float; WebGL1 only the latter.
+function halfFloatTargetsOK(renderer) {
+  try {
+    const ext = renderer.extensions;
+    if (renderer.capabilities.isWebGL2) return !!(ext.has("EXT_color_buffer_float") || ext.has("EXT_color_buffer_half_float"));
+    return !!ext.has("EXT_color_buffer_half_float");
+  } catch { return true; }
+}
+
 function makeRenderer(container) {
   // Re-evaluate every mount so settings changes apply immediately
   QUALITY = resolveQuality();
@@ -232,12 +245,15 @@ function makeRenderer(container) {
   syncFxLite(QUALITY);
   const isMedium = QUALITY === "medium";
   const renderer = new THREE.WebGLRenderer({
-    // No canvas MSAA on any tier. The scene is drawn into the EffectComposer's
-    // own (single-sampled) target, so a multisampled canvas only ever received
-    // the final full-screen copy: medium paid for 4× colour + depth at device
-    // resolution (~24 MB on a DPR-1.5 phone) and got no anti-aliasing for it.
-    // High anti-aliases with SMAA in the post chain.
-    antialias: false,
+    // Medium and high draw into the EffectComposer's own (single-sampled)
+    // target, so a multisampled canvas would only ever receive the final
+    // full-screen copy: medium paid for 4× colour + depth at device resolution
+    // (~24 MB on a DPR-1.5 phone) and got no anti-aliasing for it. High
+    // anti-aliases with SMAA in the post chain. The low tier has no post chain
+    // at all (engine.js) and draws straight to the canvas, where MSAA is the
+    // one anti-aliasing a tile-based phone GPU (Mali, Adreno) gives almost for
+    // free: the samples live in tile memory and resolve on the way out.
+    antialias: IS_LOW_POWER,
     powerPreference: IS_LOW_POWER ? "low-power" : "high-performance",
     stencil: false,                    // we don't use stencil; saves bandwidth
   });
@@ -246,12 +262,20 @@ function makeRenderer(container) {
   renderer.debug.checkShaderErrors = /[?&]debug=1/.test(location.search);
   renderer.setPixelRatio(tierPixelRatio());
   renderer.setSize(container.clientWidth || 800, container.clientHeight || 360);
-  renderer.shadowMap.enabled = !IS_LOW_POWER;
+  // Shadows on every tier. The low tier used to have none: the phones most
+  // of Iran plays on (Galaxy A1x, Redmi 1x — Mali-G52/G57) all grade low, and
+  // the creature's shadow on the floor is the cheapest "it is in the room with
+  // you" cue there is. There the creature realms cast one 512 PCF map from
+  // the key light only (see dogs/spiders/snakes), and the frame governor
+  // still takes it away first if the phone can't afford it.
+  renderer.shadowMap.enabled = true;
   // VSM (Variance Shadow Maps) give a real soft penumbra at the cost of one
   // extra blur pass per shadow caster — much cleaner than PCF stair-stepping.
-  // Falls back to PCF on medium and Basic on low.
-  renderer.shadowMap.type = IS_LOW_POWER ? THREE.BasicShadowMap
-                          : isMedium    ? THREE.PCFSoftShadowMap
+  // Its maps are half-float, so a device without renderable half-float
+  // targets gets PCFSoft instead (some Android WebGL2 drivers lack the
+  // extension and VSM would silently draw nothing).
+  renderer.shadowMap.type = IS_LOW_POWER ? THREE.PCFShadowMap
+                          : (isMedium || !halfFloatTargetsOK(renderer)) ? THREE.PCFSoftShadowMap
                           : THREE.VSMShadowMap;
   // ACES Filmic — the gold-standard cinematic tone mapping. Real cameras
   // and films use this curve so our output matches viewer expectations of
@@ -382,7 +406,11 @@ function loadMeadowHDRBase() {
   _meadowHDR = new Promise((resolve) => {
     try {
       new RGBELoader().load(
-        "assets/env/meadow_1k.hdr",
+        // The low tier lights from a 512×256 copy (scripts/downsample-hdr.cjs):
+        // 381 KB instead of 1.4 MB on the phones that pay per megabyte, and a
+        // shorter PMREM pass. Other tiers keep the 1k, which the snake meadow
+        // also shows as its sky.
+        QUALITY === "low" ? "assets/env/meadow_512.hdr" : "assets/env/meadow_1k.hdr",
         (tex) => resolve(tex),
         undefined,
         () => resolve(null),
@@ -392,4 +420,4 @@ function loadMeadowHDRBase() {
   return _meadowHDR;
 }
 
-export { disposeObject, IS_COARSE_POINTER, IS_MOBILE, resolveQuality, demoteAutoTier, QUALITY, IS_LOW_POWER, syncFxLite, sceneQuality, texAniso, gpuInfo, makeRenderer, getRoomEnvMap, loadMeadowHDR, tierPixelRatio, rebakeEnvMap };
+export { disposeObject, IS_COARSE_POINTER, IS_MOBILE, resolveQuality, demoteAutoTier, QUALITY, IS_LOW_POWER, syncFxLite, sceneQuality, texAniso, gpuInfo, makeRenderer, halfFloatTargetsOK, getRoomEnvMap, loadMeadowHDR, tierPixelRatio, rebakeEnvMap };

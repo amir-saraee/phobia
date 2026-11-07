@@ -24,5 +24,8 @@
     "kokoro-js": "^1.2.1",
     "pngjs": "^7.0.0",
     "puppeteer-core": "^25.5.0"
+  },
+  "devDependencies": {
+    "gltfpack": "^0.22.0"
   }
 }

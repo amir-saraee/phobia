@@ -373,9 +373,13 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   const sun = new THREE.DirectionalLight(mood.sunC, mood.sunI);
   sun.position.set(...mood.sunPos);
   sun.target.position.set(0, -1, -6);
-  sun.castShadow = !IS_LOW_POWER;
+  // The low tier casts too — one 512 PCF map from this light only (the shell
+  // stays a receiver there): the animal's shadow on the floor is what puts it
+  // in the room with you, and the frame governor sheds it first if the phone
+  // can't afford it.
+  sun.castShadow = true;
   if (sun.castShadow) {
-    const mapRes = sceneQuality() === "high" ? 2048 : 1024;
+    const mapRes = sceneQuality() === "high" ? 2048 : IS_LOW_POWER ? 512 : 1024;
     sun.shadow.mapSize.set(mapRes, mapRes);
     sun.shadow.camera.left = -9; sun.shadow.camera.right = 9; sun.shadow.camera.top = 9; sun.shadow.camera.bottom = -9;
     sun.shadow.camera.near = 0.5; sun.shadow.camera.far = 34; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02;

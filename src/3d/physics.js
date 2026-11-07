@@ -8,17 +8,23 @@ import * as THREE from "three";
 // player's hands: outside scripted moments, nothing could be picked up,
 // thrown, or knocked. This module owns a Rapier world per scene mount.
 //
-// Loading: rapier3d-compat is one self-contained 2 MB ESM with the WASM
-// inlined (self-hosted under assets/vendor/rapier) — but a direct import()
-// failed under the service worker while a plain fetch() succeeds, so it is fetched and imported
-// through a blob URL. Loaded lazily on the first scene that asks; the
+// Loading: rapier3d-compat used to be one self-contained 2 MB ESM with the
+// WASM inlined as base64; scripts/split-rapier.cjs now ships it as a 126 KB
+// script plus rapier.wasm (1.4 MB, ~520 KB gzipped against ~755 KB for the
+// whole inlined bundle), so the phone neither parses a 2 MB JS string nor
+// base64-decodes it, and the browser compiles the module off the main thread.
+// A direct import() of the script failed under the service worker while a
+// plain fetch() succeeds, so it is fetched and imported through a blob URL —
+// which is why the wasm address is handed over as an absolute URL in
+// globalThis.__rapierWasmUrl (a relative one would resolve against blob:). Loaded lazily on the first scene that asks; the
 // landing pays nothing.
 //
 // Lifecycle: begin() (re)creates the world; end() frees it — Rapier is WASM,
 // a dropped world without free() is a genuine memory leak, so unmount()
 // calls end() unconditionally.
 const PhobiaPhysics = (() => {
-  const CDN = "assets/vendor/rapier/rapier.es.js"; // self-hosted (rapier3d-compat 0.12.0)
+  const CDN = "assets/vendor/rapier/rapier.es.js"; // self-hosted (rapier3d-compat 0.12.0, wasm split out)
+  const WASM = "assets/vendor/rapier/rapier.wasm";
   let R = null, loadP = null;
   let world = null, props = [], groundY = 0;
   let pendingBoxes = null;
@@ -26,6 +32,7 @@ const PhobiaPhysics = (() => {
 
   function load() {
     if (loadP) return loadP;
+    try { globalThis.__rapierWasmUrl = new URL(WASM, location.href).href; } catch {}
     loadP = fetch(CDN)
       .then((r) => { if (!r.ok) throw new Error("rapier " + r.status); return r.text(); })
       .then((txt) => {

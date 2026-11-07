@@ -22,7 +22,7 @@ import { VRButton } from "three/addons/webxr/VRButton.js";
 // matches the user's actual hardware (Quest Touch, Vision Pro, Index, etc.).
 import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
 import { _audVec1, _audVec2, _audVec3, compileAhead } from "./assets.js";
-import { disposeObject, IS_COARSE_POINTER, demoteAutoTier, QUALITY, IS_LOW_POWER, makeRenderer, getRoomEnvMap, tierPixelRatio, rebakeEnvMap } from "./renderer.js";
+import { disposeObject, IS_COARSE_POINTER, demoteAutoTier, QUALITY, IS_LOW_POWER, makeRenderer, halfFloatTargetsOK, getRoomEnvMap, tierPixelRatio, rebakeEnvMap } from "./renderer.js";
 import { TouchJoystick, FPControls } from "./controls.js";
 import { Body } from "./body.js";
 import { Hands } from "./hands.js";
@@ -243,10 +243,25 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // 5. SMAAPass      — edge anti-aliasing, high tier below DPR 1.75 only
   // 6. fear grade    — opt-in; fused into (4) whenever (5) is off
   // SSAO and SMAA are off on low-power devices to keep the frame budget.
+  //
+  // The low tier has NO composer at all (composer === null below): it draws
+  // straight to the MSAA canvas, tone mapping and the sRGB transfer in the
+  // material shaders. Every pass above is a full-resolution render-to-texture
+  // — a tile write plus a read of the whole frame on a tile-based phone GPU —
+  // and the low tier was paying for two of them (render + output) to get no
+  // anti-aliasing and no bloom. The fear grade there falls back to the DOM
+  // vignette (see the fear subscriber), not to a canvas CSS filter.
+  //
+  // Half-float: the composer's buffers, bloom and VSM default to HalfFloatType,
+  // which some Android WebGL2 drivers cannot render into — the chain then
+  // drew black. Without the extension the composer runs on 8-bit buffers
+  // (highlights clip before tone mapping, nothing worse) and bloom is dropped.
   const w = container.clientWidth || 800;
   const h = container.clientHeight || 360;
-  const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
+  const halfOK = halfFloatTargetsOK(renderer);
+  const composer = IS_LOW_POWER ? null
+    : new EffectComposer(renderer, halfOK ? undefined : new THREE.WebGLRenderTarget(1, 1, { type: THREE.UnsignedByteType }));
+  if (composer) composer.addPass(new RenderPass(scene, camera));
   // Screen-space ambient occlusion. The single biggest "this looks like a
   // real photograph" upgrade after tone mapping — corners darken naturally
   // where two surfaces meet, grounding everything in real space. Tuned
@@ -255,7 +270,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // High tier only: SSAO re-renders scene depth+normals and then samples a
   // per-pixel kernel — three geometry passes' worth of work that phone GPUs
   // (the medium tier's main audience) can't spare.
-  if (QUALITY === "high") {
+  if (composer && QUALITY === "high") {
     try {
       ssaoPass = new SSAOPass(scene, camera, w, h);
       ssaoPass.kernelRadius = 0.45;
@@ -343,9 +358,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     0.90   // threshold — only the brightest pixels bloom; emissive bodies
            // and windows shouldn't get caught up in it.
   );
-  if (!IS_LOW_POWER) composer.addPass(bloomPass);
+  if (composer && halfOK) composer.addPass(bloomPass);
   const outputPass = new OutputPass();
-  composer.addPass(outputPass);
+  if (composer) composer.addPass(outputPass);
   // SMAA — subpixel-morphological anti-aliasing. Cheaper than FXAA, cleaner.
   // Active on high quality only; medium uses MSAA via the renderer attribute.
   // Runs AFTER OutputPass so edge detection sees display-referred sRGB and
@@ -362,7 +377,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // down); at DPR 1.5, where SMAA stays, 12.6 → 12.0.
   let smaaPass = null;
   let _smaaShed = false;   // the frame governor turned it off (see shedEffect)
-  if (QUALITY === "high") {
+  if (composer && QUALITY === "high") {
     try {
       smaaPass = new SMAAPass(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
       composer.addPass(smaaPass);
@@ -861,7 +876,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // frame — on exactly the devices least able to pay for them. Without SMAA
     // the grade is fused into the output pass (wireFinish), so here it costs
     // a few ALU ops in a pass that runs anyway.
-    if (result && result.fearGradePass) {
+    if (result && result.fearGradePass && composer) {
       gradePass = new ShaderPass(FearGradeShader);
       composer.addPass(gradePass);
       outGradePass = makeOutputGradePass(gradePass);
@@ -1413,7 +1428,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         });
       }
       if (!_shadowsOff && (++_cubeFrame & 1) === 0) for (const l of _cubeShadows) l.shadow.needsUpdate = true;
-      if (renderer.xr.isPresenting) {
+      if (renderer.xr.isPresenting || !composer) {
         renderer.render(scene, camera);
       } else {
         composer.render();
@@ -1471,7 +1486,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       _shadowEvery = 2; return true;
     } },
     { id: "bloom", cpu: false, run: () => {
-      if (!bloomPass.enabled || !composer.passes.includes(bloomPass)) return false;
+      if (!composer || !bloomPass.enabled || !composer.passes.includes(bloomPass)) return false;
       bloomPass.enabled = false; return true;
     } },
     // Shadows off, without a recompile: flipping shadowMap.enabled or a
@@ -1604,6 +1619,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // faster" step measured 2 ms SLOWER than doing nothing.
   function sizePost(w, h) {
     const pr = renderer.getPixelRatio();
+    if (!composer) return;          // low tier: the canvas is the only target
     if (composer.setPixelRatio) composer.setPixelRatio(pr);
     composer.setSize(w, h);
     // Bloom is a blur and SSAO's output is blurred: both run at half the
@@ -1844,7 +1860,11 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         // Canvas-level filter: desaturate + slight red bias as fear rises.
         // Removed outright when there is nothing to show: even an identity
         // filter makes the compositor filter the whole canvas every frame.
-        if (renderer && renderer.domElement) {
+        // Never on the low tier: the compositor filters at DEVICE resolution
+        // (2.6× the canvas's pixels on a 1080p phone drawing at DPR 1), which
+        // costs more than the post pass the tier just saved. The vignette
+        // above carries the fear there on its own.
+        if (!IS_LOW_POWER && renderer && renderer.domElement) {
           // In 2 % steps of fear, so the filter string (and the compositor's
           // filter setup) changes a few times a second, not every frame.
           const fq = Math.round(fear01 * 50) / 50;
@@ -2395,7 +2415,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     renderer.setAnimationLoop(pacedTick);
   };
   try {
-    renderer.setRenderTarget(composer.readBuffer);
+    renderer.setRenderTarget(composer ? composer.readBuffer : null);
     const ready = compileAhead(renderer, scene, camera);
     renderer.setRenderTarget(null);
     ready.then(startLoop, startLoop);

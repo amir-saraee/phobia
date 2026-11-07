@@ -107,9 +107,13 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   const key = new THREE.DirectionalLight(mood.keyC, mood.keyI);
   key.position.set(...mood.keyPos);
   key.target.position.set(0.5, -1, -1);
-  key.castShadow = !IS_LOW_POWER;
+  // The low tier casts too — one 512 PCF map from this light only (the shell
+  // stays a receiver there): the animal's shadow on the floor is what puts it
+  // in the room with you, and the frame governor sheds it first if the phone
+  // can't afford it.
+  key.castShadow = true;
   if (key.castShadow) {
-    const mapRes = sceneQuality() === "high" ? 2048 : 1024;
+    const mapRes = sceneQuality() === "high" ? 2048 : IS_LOW_POWER ? 512 : 1024;
     key.shadow.mapSize.set(mapRes, mapRes);
     key.shadow.camera.left = -8;  key.shadow.camera.right = 8;
     key.shadow.camera.top = 8;    key.shadow.camera.bottom = -8;
@@ -1589,7 +1593,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   // one presses its whole length into the floor), kept level in the room
   // rather than parented to the rolling, bobbing model.
   const dogShadow = new THREE.Group();
-  const dogShadowDisc = makeContactShadow(1, IS_LOW_POWER ? 0.5 : 0.36);
+  const dogShadowDisc = makeContactShadow(1, 0.36);   // (the low tier has a real shadow now too)
   dogShadowDisc.position.set(0, 0, 0);
   dogShadow.add(dogShadowDisc);
   dogShadow.userData.noCollide = true;
@@ -1609,7 +1613,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     dogShadow.position.set(dog.position.x - Math.sin(yaw) * back, -1 + 0.004, dog.position.z - Math.cos(yaw) * back);
     dogShadow.rotation.y = yaw;
     dogShadowDisc.scale.set(halfWid, halfLen, 1);
-    dogShadowDisc.material.opacity = (IS_LOW_POWER ? 0.5 : 0.36) * (1 + 0.35 * lie + 0.15 * sit);
+    dogShadowDisc.material.opacity = 0.36 * (1 + 0.35 * lie + 0.15 * sit);
     dogShadow.visible = !!dog.userData.ready;
   };
   // ---- Solid props the dog walks around (curated circle colliders) ----

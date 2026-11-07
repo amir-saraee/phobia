@@ -3,13 +3,21 @@
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+// The creature GLBs are meshopt-compressed (EXT_meshopt_compression, via
+// gltfpack — see scripts/pack-glb.cjs for the recipe): a third of the bytes,
+// decoded by a 25 KB WASM far faster than Draco would. The decoder is set
+// once on the shared loader; plain GLBs still load through it unchanged.
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+// KTX2 (Basis Universal) textures for the dog coats below the high tier —
+// transcoded on a worker straight to the GPU's own ETC2/ASTC format.
+import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
 // SkeletonUtils.clone() correctly deep-clones a rigged/skinned mesh (bones +
 // skin bindings). A plain Object3D.clone() shares the skeleton and breaks
 // animation, so any model we instance from the GLTF cache must use this.
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
 import { smoothCreaseNormals, applyCoatTint } from "./creature-kit.js";
 import { active } from "./live.js";
-import { texAniso } from "./renderer.js";
+import { texAniso, sceneQuality } from "./renderer.js";
 
 // Scratch vectors reused every frame for the spatial audio listener update
 // (avoids per-frame allocation in the render hot path).
@@ -19,6 +27,7 @@ const _audVec3 = new THREE.Vector3();
 
 // ---------- Asset loader cache (GLTF models from CDN) ----------
 const gltfLoader = new GLTFLoader();
+try { gltfLoader.setMeshoptDecoder(MeshoptDecoder); } catch (e) { console.warn("[assets] meshopt decoder:", e); }
 const modelCache = new Map();
 // One-time migration: clear stale "cameraModeSeen" flags from earlier builds
 // so users get the new approach-style flow with their character visible.
@@ -115,15 +124,41 @@ const DOG_COAT_MAPS = {
     normal: "assets/models/textures/shiba_photo_normal.jpg",
     roughness: "assets/models/textures/shiba_photo_roughness.jpg",
     photo: true,
+    // Flip to true once scripts/encode-coats-ktx2.cjs has written the .ktx2
+    // files next to these (needs a native gltfpack with the Basis encoder).
+    ktx2: false,
   },
   husky: {
     albedo: "assets/models/textures/husky_photo_albedo.jpg",
     normal: "assets/models/textures/husky_photo_normal.jpg",
     roughness: "assets/models/textures/husky_photo_roughness.jpg",
     photo: true,
+    ktx2: false,
   },
 };
 const _dogCoatTexCache = new Map();
+// One KTX2Loader per page (several instances each spin up their own worker
+// pool and transcoder). It needs a renderer to pick the GPU's format, so it
+// exists only once a trial has one; before that the JPEG path answers.
+let _ktx2Loader = null, _ktx2Failed = false;
+function getKTX2Loader() {
+  if (_ktx2Loader || _ktx2Failed) return _ktx2Loader;
+  const r = active && active.renderer;
+  if (!r) return null;
+  try {
+    _ktx2Loader = new KTX2Loader().setTranscoderPath("assets/vendor/three/addons/libs/basis/").detectSupport(r);
+  } catch (e) { _ktx2Failed = true; console.warn("[coats] KTX2 unavailable:", e); }
+  return _ktx2Loader;
+}
+// Below the high tier the coats come as KTX2 (scripts/encode-coats-ktx2.cjs):
+// a quarter of the GPU memory of a decoded 1K JPEG, no main-thread image
+// decode, and fewer bytes on the wire. The high tier keeps the JPEGs — ETC1S
+// is visibly blockier at desktop pixel densities. localStorage
+// fobia.noKtx2=1 forces the JPEGs everywhere (A/B in QA).
+function useKtx2Coats() {
+  try { if (localStorage.getItem("fobia.noKtx2") === "1") return false; } catch {}
+  return sceneQuality() !== "high";
+}
 let _dogTexLoader = null;
 function getDogTexLoader() {
   if (_dogTexLoader) return _dogTexLoader;
@@ -139,20 +174,36 @@ function loadDogCoatTextures(breed) {
   // maps tiled because box UVs had no breed silhouette to land on.
   const photo = !!urls.photo;
   const COAT_REPEAT = photo ? 1.0 : 3.0;
-  const loadOne = (url, srgb) => new Promise((resolve) => {
-    loader.load(url, (t) => {
-      if (photo) {
-        t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
-      } else {
-        t.wrapS = t.wrapT = THREE.RepeatWrapping;
-      }
-      t.anisotropy = texAniso();
-      t.repeat.set(COAT_REPEAT, COAT_REPEAT);
-      if (srgb) t.colorSpace = THREE.SRGBColorSpace;
-      t.needsUpdate = true;
-      resolve(t);
-    }, undefined, () => resolve(null));
+  const finish = (t, srgb) => {
+    if (photo) {
+      t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    } else {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    }
+    t.anisotropy = texAniso();
+    t.repeat.set(COAT_REPEAT, COAT_REPEAT);
+    // Set on both paths: the KTX2 loader reads a transfer function out of the
+    // file, and the normal/roughness maps must stay raw data whatever it says.
+    t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    t.needsUpdate = true;
+    return t;
+  };
+  const loadJpg = (url, srgb) => new Promise((resolve) => {
+    loader.load(url, (t) => resolve(finish(t, srgb)), undefined, () => resolve(null));
   });
+  const ktx2 = (urls.ktx2 && useKtx2Coats()) ? getKTX2Loader() : null;
+  const loadOne = (url, srgb) => {
+    if (!ktx2) return loadJpg(url, srgb);
+    // The .ktx2 sits next to its .jpg; the encoder flips the image so the
+    // un-flipped compressed texture lands on the same side-projection UVs.
+    const k = url.replace(/\.jpg$/, ".ktx2");
+    return new Promise((resolve) => {
+      ktx2.load(k, (t) => resolve(finish(t, srgb)), undefined, () => {
+        console.warn("[coats] KTX2 failed, using the JPEG:", k);
+        loadJpg(url, srgb).then(resolve);
+      });
+    });
+  };
   const p = Promise.all([
     loadOne(urls.albedo, true),
     loadOne(urls.normal, false),
@@ -293,4 +344,4 @@ function buildCreature(url, opts = {}) {
   return group;
 }
 
-export { _audVec1, _audVec2, _audVec3, loadGLTF, compileAhead, compileBeforeAdd, DOG_MODELS, DOG_COAT_MAPS, getDogTexLoader, loadDogCoatTextures, CREATURE_MODELS, buildCreature };
+export { _audVec1, _audVec2, _audVec3, loadGLTF, compileAhead, compileBeforeAdd, DOG_MODELS, DOG_COAT_MAPS, getDogTexLoader, getKTX2Loader, loadDogCoatTextures, CREATURE_MODELS, buildCreature };

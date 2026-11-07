@@ -379,9 +379,13 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   const key = new THREE.DirectionalLight(mood.keyC, mood.keyI);
   key.position.set(...mood.keyPos);
   key.target.position.set(0, -0.9, -3);
-  key.castShadow = !IS_LOW_POWER;
+  // The low tier casts too — one 512 PCF map from this light only (the shell
+  // stays a receiver there): the animal's shadow on the floor is what puts it
+  // in the room with you, and the frame governor sheds it first if the phone
+  // can't afford it.
+  key.castShadow = true;
   if (key.castShadow) {
-    const mr = sceneQuality() === "high" ? 2048 : 1024;
+    const mr = sceneQuality() === "high" ? 2048 : IS_LOW_POWER ? 512 : 1024;
     key.shadow.mapSize.set(mr, mr);
     key.shadow.camera.left = -6; key.shadow.camera.right = 6;
     key.shadow.camera.top = 6; key.shadow.camera.bottom = -6;
