@@ -6,16 +6,18 @@
 //
 //   assets/models/textures/<breed>_photo_{albedo,normal,roughness}.ktx2
 //
-// Albedo and roughness are ETC1S (small; transcodes to ETC2/ASTC on every
-// phone GPU); the normal map is UASTC (ETC1S bands on normals). `-tfy` flips
-// the images so the un-flipped compressed texture lands on the same
+// All three are ETC1S (transcodes to ETC2/ASTC on every phone GPU): a breed
+// is ~530 KB on the wire against ~590 KB of JPEG, at a quarter of the GPU
+// memory. UASTC normals would be cleaner but weigh 1.27 MB each — on a data
+// plan that is the wrong trade for fur; `--uastc-normal` opts in. `-tfy`
+// flips the images so the un-flipped compressed texture lands on the same
 // side-projection UVs the flipY JPEGs use. Re-run after any re-bake:
 //
 //   node scripts/encode-coats-ktx2.cjs            (bake-all does not chain it; then set ktx2: true in DOG_COAT_MAPS)
 //
 // Needs a NATIVE gltfpack (GLTFPACK=/path/to/gltfpack): the npm build has no
 // Basis encoder. https://github.com/zeux/meshoptimizer/releases ships one.
-//   node scripts/encode-coats-ktx2.cjs --etc1s-normal   # smaller, softer normals
+//   GLTFPACK=... node scripts/encode-coats-ktx2.cjs --uastc-normal   # 1.27 MB normals, cleaner
 "use strict";
 const fs = require("fs");
 const os = require("os");
@@ -27,7 +29,7 @@ const TEX = path.join(ROOT, "assets", "models", "textures");
 const GLTFPACK = process.env.GLTFPACK || path.join(__dirname, "node_modules", "gltfpack", "cli.js");
 const BREEDS = ["shiba", "husky"];
 const SLOTS = { albedo: "baseColorTexture", normal: "normalTexture", roughness: "metallicRoughnessTexture" };
-const etc1sNormal = process.argv.includes("--etc1s-normal");
+const uastcNormal = process.argv.includes("--uastc-normal");
 
 // A unit quad: positions (4×3 f32), uvs (4×2 f32), indices (6 u16).
 const pos = new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]);
@@ -72,8 +74,8 @@ for (const breed of BREEDS) {
   const out = path.join(tmp, "out.glb");
   const args = ["-i", path.join(tmp, "wrap.gltf"), "-o", out, "-tfy", "-tj", "4",
     "-tc", "color,attrib", "-tq", "color", "9", "-tq", "attrib", "8"];
-  if (etc1sNormal) args.push("-tc", "normal", "-tq", "normal", "10");
-  else args.push("-tu", "normal", "-tq", "normal", "7");
+  if (uastcNormal) args.push("-tu", "normal", "-tq", "normal", "7");
+  else args.push("-tc", "normal", "-tq", "normal", "10");
   if (/\.js$/.test(GLTFPACK)) execFileSync(process.execPath, [GLTFPACK, ...args], { stdio: "inherit" });
   else execFileSync(GLTFPACK, args, { stdio: "inherit" });
 

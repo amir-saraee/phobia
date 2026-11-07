@@ -169,11 +169,12 @@ Done in this pass (verified in the preview on the forced low, medium and high ti
   `rapier.wasm` (520 KB gzipped against 755 KB). `physics.js` hands the wasm URL over as `__rapierWasmUrl`.
 - **Sky**: `assets/env/meadow_512.hdr` (381 KB, `scripts/downsample-hdr.cjs`) lights the low tier; other tiers
   keep the 1k the snake meadow shows as its dome.
-- **KTX2 coats, wired but off**: `KTX2Loader` and the Basis transcoder are vendored and `loadDogCoatTextures`
-  takes `.ktx2` below the high tier, gated by `ktx2: false` in `DOG_COAT_MAPS`. The files are not made yet: the
-  npm gltfpack has no Basis encoder and Homebrew has no KTX formula. Run
-  `GLTFPACK=/path/to/native/gltfpack node scripts/encode-coats-ktx2.cjs` with a native build from
-  https://github.com/zeux/meshoptimizer/releases, then flip the two flags to `true`.
+- **KTX2 coats**: `scripts/encode-coats-ktx2.cjs` (needs a native gltfpack, `GLTFPACK=`; the npm build has no
+  Basis encoder) writes ETC1S `.ktx2` copies of the six coat maps with full mip chains; `loadDogCoatTextures`
+  takes them below the high tier (`ktx2: true` in `DOG_COAT_MAPS`, `fobia.noKtx2=1` forces the JPEGs). A breed is
+  ~530 KB on the wire against ~590 KB of JPEG at a quarter of the GPU memory; UASTC normals were 1.27 MB each and
+  are opt-in (`--uastc-normal`). Orientation verified by rendering both textures and comparing pixels (direct
+  5/255 apart, flipped 40/255).
 
 Dog realm first visit, over the wire: three.js 166 KB + game JS ~770 KB + two dogs ~250 KB gzipped + coats
-~1.2 MB (until KTX2) + physics 545 KB when a prop is reached, down from ~4.5 MB.
+~530 KB + physics 545 KB when a prop is reached, down from ~4.5 MB.

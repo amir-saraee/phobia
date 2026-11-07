@@ -124,16 +124,16 @@ const DOG_COAT_MAPS = {
     normal: "assets/models/textures/shiba_photo_normal.jpg",
     roughness: "assets/models/textures/shiba_photo_roughness.jpg",
     photo: true,
-    // Flip to true once scripts/encode-coats-ktx2.cjs has written the .ktx2
-    // files next to these (needs a native gltfpack with the Basis encoder).
-    ktx2: false,
+    // The .ktx2 copies next to these come from scripts/encode-coats-ktx2.cjs
+    // (a native gltfpack with the Basis encoder); set false if they are stale.
+    ktx2: true,
   },
   husky: {
     albedo: "assets/models/textures/husky_photo_albedo.jpg",
     normal: "assets/models/textures/husky_photo_normal.jpg",
     roughness: "assets/models/textures/husky_photo_roughness.jpg",
     photo: true,
-    ktx2: false,
+    ktx2: true,
   },
 };
 const _dogCoatTexCache = new Map();
