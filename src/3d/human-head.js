@@ -130,7 +130,10 @@ function getHairStrandTex(repU, repV) {
 
 // Rest angles of the animated lid caps (rotation.x). Positive closes the
 // upper lid and opens the lower one.
-const LID_UP0 = -0.29, LID_LO0 = 0.23;
+// Rest: the upper lid over the top ~2 mm of a 12 mm iris, the lower lid just
+// touching its bottom. (−0.29 sat the upper lid 4.9 mm above centre, which
+// exposed the whole iris once the iris was its real size.)
+const LID_UP0 = -0.20, LID_LO0 = 0.25;
 
 // Ambient occlusion of a surface point from its distance field: step out
 // along the normal and see how much of the step the solid takes back.
@@ -161,10 +164,10 @@ function makeHeadSurface(shape) {
     const ax = Math.abs(x);
     // --- the big masses -------------------------------------------------
     // Cranium, long front-to-back, and the rounded forehead rising out of it.
-    let d = _sdEll(x, y - 0.0200, z + 0.0060, 0.0725 + 0.0015 * sq, 0.0880, 0.0900);
+    let d = _sdEll(x, y - 0.0200, z + 0.0060, 0.0745 + 0.0015 * sq, 0.0880, 0.0900);
     d = _smin(d, _sdEll(x, y - 0.0450, z - 0.0300, 0.0580, 0.0450, 0.0560), 0.020);
     // Midface — the block the eyes, cheeks and upper jaw sit in.
-    d = _smin(d, _sdEll(x, y + 0.0200, z - 0.0300, 0.0570 + 0.0040 * sq, 0.0450, 0.0580), 0.032);
+    d = _smin(d, _sdEll(x, y + 0.0200, z - 0.0300, 0.0590 + 0.0040 * sq, 0.0450, 0.0580), 0.032);
     // Lower face: the maxilla's curve under the lips and the mandible body.
     d = _smin(d, _sdEll(x, y + 0.0585, z - 0.0200, 0.0375 + 0.0080 * sq, 0.0340, 0.0680), 0.034);
     // Mandible: chin → jaw angle → up the ramus toward the ear. A soft V for
@@ -195,28 +198,32 @@ function makeHeadSurface(shape) {
       d = _smin(d, Math.sqrt(ex * ex + ey * ey + ez * ez) - lidR, 0.005);
       // Fissure, tilted a few degrees up at the outer corner.
       const ty = ey - 0.09 * ex;
-      d = _smax(d, -_sdEll(ex + 0.0006, ty, ez - lidR, FACE.eyeR * 1.20, FACE.eyeR * 0.54, 0.0100), 0.0012);
+      // ~11.5 mm tall, like a real palpebral fissure. At 0.54 (14 mm) the
+      // sclera showed above and below the iris — the startled stare.
+      d = _smax(d, -_sdEll(ex + 0.0006, ty, ez - lidR, FACE.eyeR * 1.20, FACE.eyeR * 0.44, 0.0100), 0.0012);
     }
 
     // --- nose -----------------------------------------------------------
     {
-      let n = _sdCone(x, y, z, 0, 0.0040, 0.0820, 0, -0.0225, 0.1025, 0.0060, 0.0062);
+      let n = _sdCone(x, y, z, 0, 0.0040, 0.0820, 0, -0.0225, 0.1025, 0.0074, 0.0078);
       n = _smin(n, _sdEll(x, y + 0.0295, z - 0.1050, 0.0078, 0.0074, 0.0080), 0.006);
       n = _smin(n, _sdEll(ax - 0.0100, y + 0.0352, z - 0.0930, 0.0058, 0.0050, 0.0058), 0.006);
-      d = _smin(d, n, 0.010);
+      d = _smin(d, n, 0.013);
       // Nostrils: two shallow dents under the tip, so they catch their own shade.
-      d = _smax(d, -_sdEll(ax - 0.0072, y + 0.0412, z - 0.0985, 0.0030, 0.0018, 0.0038), 0.003);
+      d = _smax(d, -_sdEll(ax - 0.0072, y + 0.0412, z - 0.0985, 0.0026, 0.0015, 0.0030), 0.003);
     }
     // --- mouth ----------------------------------------------------------
     {
-      let lip = _sdEll(x, y + 0.0560, z - 0.0860, 0.0205, 0.0058, 0.0102);
-      lip = _smin(lip, _sdEll(x, y + 0.0688, z - 0.0852, 0.0188, 0.0070, 0.0104), 0.004);
-      d = _smin(d, lip, 0.006);
+      // Lips blend INTO the face (k 0.010): as a separate block set on a flat
+      // muzzle they read as a bill however they were sized.
+      let lip = _sdEll(x, y + 0.0560, z - 0.0850, 0.0205, 0.0050, 0.0082);
+      lip = _smin(lip, _sdEll(x, y + 0.0688, z - 0.0842, 0.0188, 0.0056, 0.0086), 0.004);
+      d = _smin(d, lip, 0.010);
       // The seam — a crease, not a cavity.
       d = _smax(d, -_sdEll(x, y - FACE.mouthY, z - 0.0970, 0.0190, 0.0009, 0.0090), 0.0014);
       // Corners tuck in; the philtrum is a faint groove under the nose.
       d = _smax(d, -_sdEll(ax - 0.0198, y - FACE.mouthY, z - 0.0860, 0.0030, 0.0028, 0.0038), 0.003);
-      d = _smax(d, -_sdEll(x, y + 0.0490, z - 0.0955, 0.0028, 0.0050, 0.0020), 0.003);
+      d = _smax(d, -_sdEll(x, y + 0.0490, z - 0.0955, 0.0028, 0.0050, 0.0012), 0.004);
       // Mentolabial crease between the lower lip and the chin.
       d = _smax(d, -_sdEll(x, y + 0.0785, z - 0.0950, 0.0140, 0.0032, 0.0055), 0.004);
     }
@@ -666,10 +673,10 @@ function buildHead(o) {
   // Skin: a little translucency-ish warmth in the shadows via sheen instead of
   // a flat diffuse — the cheapest thing that stops skin reading as painted clay.
   const skinM = pbrMat(o.lowDetail, {
-    color: skinCol, roughness: 0.58, metalness: 0.0,
-    sheen: 0.35, sheenRoughness: 0.85,
+    color: skinCol, roughness: 0.64, metalness: 0.0,
+    sheen: 0.20, sheenRoughness: 0.85,
     sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.55),
-    envMapIntensity: 0.45,
+    envMapIntensity: 0.40,
   });
   // Hair is fibrous, not metallic: a physical material with a light-coloured
   // sheen gives the strand highlight real hair has, so brown hair reads as
@@ -677,10 +684,10 @@ function buildHead(o) {
   // Sheen lifted every brunette to a dusty tan under the rooms' soft light —
   // the strand texture now carries the fibre read, so the sheen stays low.
   const hairM = pbrMat(o.lowDetail, {
-    color: hairCol, roughness: 0.52, metalness: 0.0,
-    sheen: 0.28, sheenRoughness: 0.55,
+    color: hairCol, roughness: 0.60, metalness: 0.0,
+    sheen: 0.20, sheenRoughness: 0.55,
     sheenColor: hairCol.clone().lerp(new THREE.Color(0xfff2e0), 0.28),
-    envMapIntensity: 0.6,
+    envMapIntensity: 0.5,
   });
   const browM = new THREE.MeshStandardMaterial({
     // Brow hair is sparser than scalp hair — skin shows through it. Straight
@@ -727,10 +734,12 @@ function buildHead(o) {
   // sheen warmth so the face stops reading as matte clay. Vertex colours still
   // drive lip / socket / blush tinting on top of the baked albedo.
   const faceM = pbrMat(o.lowDetail, {
-    color: skinCol, roughness: 0.56, metalness: 0.0,
-    sheen: 0.28, sheenRoughness: 0.80,
+    // Matte-ish: at 0.56/0.28 the cheeks and forehead took the key light as a
+    // plastic gloss. Skin's specular is broad and dim.
+    color: skinCol, roughness: 0.63, metalness: 0.0,
+    sheen: 0.16, sheenRoughness: 0.80,
     sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.58),
-    envMapIntensity: 0.52, vertexColors: true,
+    envMapIntensity: 0.42, vertexColors: true,
   });
   // The photo bake is NOT applied: it was registered to the old gaussian
   // sculpt, and on any other surface its painted nostrils, lip line and
@@ -743,7 +752,7 @@ function buildHead(o) {
   // Bust the geometry cache when the sculpt/tint changes so creator previews
   // pick up the new face immediately (old keys would serve stale morphs).
   const skull = buildHeadShell(headPoint, faceM, {
-    nu: dense.nu, nv: dense.nv, morphs: true, cacheKey: "skull|v5|" + shape + "|" + dense.nu,
+    nu: dense.nu, nv: dense.nv, morphs: true, cacheKey: "skull|v7|" + shape + "|" + dense.nu,
     // Cavity shading baked from the sculpt's own distance field: sockets, the
     // nostrils, the lip seam, the corners of the mouth and the folds read as
     // form even under flat, frontal light (which is most of this game).
@@ -756,8 +765,8 @@ function buildHead(o) {
       // its feature fires at a fraction of its strength and on the wrong side
       // of the curve, which is how a mouth turns into a brown smear.
       // Lips — upper vermilion a touch darker than the lower (it faces down).
-      const lipU = _falloff(p.x, p.y + 0.0560, p.z - 0.0960, 0.0192, 0.0060, 0.030);
-      const lipL = _falloff(p.x, p.y + 0.0688, p.z - 0.0955, 0.0175, 0.0072, 0.030);
+      const lipU = _falloff(p.x, p.y + 0.0560, p.z - 0.0932, 0.0192, 0.0058, 0.030);
+      const lipL = _falloff(p.x, p.y + 0.0688, p.z - 0.0928, 0.0175, 0.0064, 0.030);
       const lip = Math.min(1, lipU * 1.05 + lipL);
       r *= 1 + (lipTone[0] - 1) * lip; g *= 1 + (lipTone[1] - 1) * lip; b *= 1 + (lipTone[2] - 1) * lip;
       // Lip seam — darker than skin, never a void; the crease carries the rest.
@@ -770,7 +779,7 @@ function buildHead(o) {
       r *= 1 - 0.05 * inner; g *= 1 - 0.10 * inner; b *= 1 - 0.09 * inner;
       // Nostrils — two small shadowed openings.
       const nos = _falloff(ax - 0.0072, p.y + 0.0412, p.z - 0.0950, 0.0036, 0.0023, 0.014);
-      const nk = 1 - 0.72 * nos; r *= nk; g *= nk; b *= nk;
+      const nk = 1 - 0.50 * nos; r *= nk; g *= nk; b *= nk;
       // Cheek warmth, nose-tip warmth, a slightly cooler forehead and jaw —
       // skin that is not one flat paint.
       const cheek = _falloff(ax - 0.0360, p.y + 0.0240, p.z - 0.0830, 0.0180, 0.0140, 0.040);
@@ -872,18 +881,20 @@ function buildHead(o) {
     // whole visible globe in dark iris — the "dead black bead" eye — and
     // doubled up with the photographic iris the baked albedo already paints.
     const limbal = new THREE.Mesh(
-      cap(FACE.eyeR * 1.0005, 0.372),
+      cap(FACE.eyeR * 1.0005, 0.500),
       new THREE.MeshStandardMaterial({
         color: new THREE.Color(o.eyeColor).multiplyScalar(0.28), roughness: 0.3,
       })
     );
     globe.add(limbal);
-    const iris = new THREE.Mesh(cap(FACE.eyeR * 1.002, 0.345), irisM);
+    // Chord = 2·R·sin(a): on this 13.1 mm globe 0.47 rad is an 11.9 mm iris,
+    // 0.175 a 4.6 mm pupil. The old 0.345 was an 8.9 mm iris lost in white.
+    const iris = new THREE.Mesh(cap(FACE.eyeR * 1.002, 0.470), irisM);
     globe.add(iris);
-    const pupil = new THREE.Mesh(cap(FACE.eyeR * 1.010, 0.140), pupilM);
+    const pupil = new THREE.Mesh(cap(FACE.eyeR * 1.010, 0.175), pupilM);
     globe.add(pupil);
     const glint = new THREE.Mesh(
-      cap(FACE.eyeR * 1.020, 0.075),
+      cap(FACE.eyeR * 1.020, 0.085),
       new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.92 })
     );
     glint.rotation.set(-0.42, 0.38, 0);
@@ -929,12 +940,12 @@ function buildHead(o) {
       headPoint,
       // Head-on it runs from just inside the eye to past its outer corner,
       // arching over the middle and dipping at the tail.
-      (t) => [sx * (0.150 + t * 0.560), Math.PI * 0.5 - (0.235 + Math.sin(Math.pow(t, 0.8) * Math.PI) * 0.048 - t * 0.034)],
+      (t) => [sx * (0.150 + t * 0.560), Math.PI * 0.5 - (0.235 + Math.sin(Math.pow(t, 0.8) * Math.PI) * 0.034 - t * 0.030)],
       // Tapered, not a slab. A ribbon of constant half-width ends in two blunt
       // square tips, which is exactly what made the brows read as stickers
       // pressed onto the forehead. Real brows are thickest at the head, thin
       // to nothing at the tail.
-      (t) => 0.008 + Math.pow(Math.sin(Math.pow(t, 0.72) * Math.PI), 0.55) * 0.016 * (1 - 0.40 * t),
+      (t) => 0.011 + Math.pow(Math.sin(Math.pow(t, 0.72) * Math.PI), 0.60) * 0.021 * (1 - 0.50 * t),
       0.0026, browM, 30
     );
     brow.position.copy(skull.position);
@@ -1107,7 +1118,7 @@ function buildHead(o) {
     const cap = buildHeadShell(headPoint, hairShellM, {
       // Dense enough that the faded hairline does not step along grid lines.
       nu: o.lowDetail ? 72 : 120, nv: o.lowDetail ? 56 : 96, offset: thick, fade: true,
-      cacheKey: "hairF5|" + shape + "|" + style + "|" + thick,
+      cacheKey: "hairF7|" + shape + "|" + style + "|" + thick,
       mask: (th, ph) => hairlineMask(th, ph),
       thickMul: (th, ph) => {
         const a = th > Math.PI ? Math.PI * 2 - th : th;
@@ -1179,7 +1190,7 @@ function buildHead(o) {
         // the very same morphs as the skin underneath it and rides the jaw
         // instead of tearing off it.
         morphs: true,
-        cacheKey: "beardF4|" + shape + "|" + fh,
+        cacheKey: "beardF5|" + shape + "|" + fh,
         // Slightly tighter than the tinted zone so the shell's polygon edge
         // always lands on skin that is already beard-coloured.
         mask: (th, ph, p) => { const v = beardMask(p); return v > 0.30 ? (v - 0.30) / 0.70 : 0; },
@@ -1201,7 +1212,7 @@ function buildHead(o) {
     const bandM = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor).multiplyScalar(0.78), roughness: 0.94 });
     if (hw === "beanie") {
       const dome = buildHeadShell(headPoint, hwM, {
-        nu: 44, nv: 32, offset: 0.014, cacheKey: "beanie|" + shape,
+        nu: 44, nv: 32, offset: 0.014, cacheKey: "beanie2|" + shape,
         mask: (th, ph) => _sstep(1.28, 1.12, ph),
       });
       if (dome) { dome.position.copy(skull.position); grp.add(dome); }
@@ -1215,7 +1226,7 @@ function buildHead(o) {
       grp.add(pom);
     } else {
       const dome = buildHeadShell(headPoint, hwM, {
-        nu: 44, nv: 32, offset: 0.011, cacheKey: "cap|" + shape,
+        nu: 44, nv: 32, offset: 0.011, cacheKey: "cap2|" + shape,
         mask: (th, ph) => _sstep(1.24, 1.08, ph),
       });
       if (dome) { dome.position.copy(skull.position); grp.add(dome); }
@@ -1328,7 +1339,7 @@ function buildHead(o) {
       const softK = (this.soft || 0) * (1 - (this.fear || 0) * 0.85);
       for (const e of eyes) {
         const kk = Math.min(1, k * e.blinkGain);
-        e.upper.rotation.x = LID_UP0 + (1.18 - this.wide * 0.10) * kk - this.wide * 0.20
+        e.upper.rotation.x = LID_UP0 + (1.09 - this.wide * 0.10) * kk - this.wide * 0.22
           + gy * 0.45 + rl * 0.05 + softK * 0.04 + e.lidJit;
         e.lower.rotation.x = LID_LO0 - 0.13 * kk + this.wide * 0.10
           - gy * 0.25 + rl * 0.10 + softK * 0.14 - e.lidJit * 0.6;

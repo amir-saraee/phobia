@@ -617,8 +617,8 @@ function buildHumanRig(o = {}) {
     // Round through the shoulder band. `sq` squares the cross-section off, which
     // is right for a ribcage and wrong for a shoulder girdle — the corners were
     // reading as hard pointed edges where the sleeve met the yoke.
-    { ay: SHY + 0.018, rx: .1450, rz: .0955, w: [[bi(chest), 1]], mat: shirtTop, sq: .99 },
-    { ay: SHY - 0.010, rx: .1600, rz: .1030, w: [[bi(chest), 1]], mat: shirtTop, sq: .97 },
+    { ay: SHY + 0.018, rx: .1390, rz: .0955, w: [[bi(chest), 1]], mat: shirtTop, sq: .99 },
+    { ay: SHY - 0.010, rx: .1550, rz: .1030, w: [[bi(chest), 1]], mat: shirtTop, sq: .97 },
     { ay: SHY - 0.055, rx: .1955, rz: .1130, w: [[bi(chest), 1]], mat: shirtTop, sq: .93 },
     { y: 1.212, rx: .1950, rz: .1160, w: [[bi(chest), .70], [bi(breath), .30]], mat: shirtTop, sq: sqT },
     { y: 1.150, rx: .1805, rz: .1195, w: [[bi(breath), 1]], mat: shirtTop, sq: sqT },
@@ -713,8 +713,10 @@ function buildHumanRig(o = {}) {
       // Riding the axis at 1.05 with a fat tube is what made the pads.
       { y: 1.262, xr: 0.36, rx: .028, rz: .028, w: [[C, 1]], mat: MAT.SHIRT, cap: 1 },
       { y: 1.268, xr: 0.56, rx: .042, rz: .041, w: [[C, .92], [U, .08]], mat: MAT.SHIRT },
-      { y: 1.266, xr: 0.73, rx: .049, rz: .047, w: [[C, .62], [U, .38]], mat: MAT.SHIRT },
-      { y: 1.250, xr: 0.84, rx: .050, rz: .048, w: [[C, .26], [U, .74]], mat: MAT.SHIRT },
+      // The outer rings step DOWN from the crown: a deltoid is a dome off the
+      // acromion, and at one height it shelved flat into a shoulder pad.
+      { y: 1.260, xr: 0.73, rx: .049, rz: .047, w: [[C, .62], [U, .38]], mat: MAT.SHIRT },
+      { y: 1.240, xr: 0.84, rx: .048, rz: .046, w: [[C, .26], [U, .74]], mat: MAT.SHIRT },
       { y: 1.218, xr: 0.86, rx: .049, rz: .047, w: [[U, 1]], mat: MAT.SHIRT },
       // A sleeve is cloth, not a second skin: it hangs a few millimetres off
       // the arm and ends in a hem that stands proud of the skin below it. A
@@ -851,8 +853,8 @@ function buildHumanRig(o = {}) {
   const pantsCol = new THREE.Color(o.pantsColor ?? 0x2c3a52);
   const shoeCol = new THREE.Color(o.shoeColor ?? 0xe9e5de);
   const mSkin = pbrMat(o.lowDetail, {
-    color: skinCol, roughness: 0.60, metalness: 0,
-    sheen: 0.30, sheenRoughness: 0.85,
+    color: skinCol, roughness: 0.64, metalness: 0,
+    sheen: 0.20, sheenRoughness: 0.85,
     sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.5),
     envMapIntensity: 0.45,
   });
