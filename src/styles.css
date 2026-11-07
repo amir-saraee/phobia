@@ -2348,7 +2348,9 @@ input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-of
 @media (max-width: 420px) {
   .creator-section-num { width: 24px; height: 24px; font-size: var(--text-xs); }
   .creator-section-head h3 { font-size: var(--text-base); }
-  .swatch { width: 32px; height: 32px; min-height: 32px; }
+  /* Still a thumb target: 32px squares were the smallest controls in the
+     game, on the page where every tap rebuilds the figure. */
+  .swatch { width: 38px; height: 38px; min-height: 38px; }
 }
 .pick-primary {
   display: inline-block; margin-top: 4px;

@@ -801,7 +801,10 @@ function attachCreatorHandlers(existing, allPhobias, onSave, onCancel) {
     });
   }
   // Try mount on the next frame so the 3D module has a chance to load
-  if (window.AvatarPreview && window.AvatarPreview.ready) mountPreview();
+  // The SVG fallback is already in the box, so let the page PAINT it before
+  // the 3D figure is built: a cold head sculpt is a few hundred milliseconds
+  // on a phone, and spent before first paint it is a blank page that long.
+  if (window.AvatarPreview && window.AvatarPreview.ready) requestAnimationFrame(() => setTimeout(mountPreview, 0));
   else window.addEventListener("scene3d-ready", () => mountPreview(), { once: true });
 
   function rerender() {

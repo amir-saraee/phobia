@@ -5,57 +5,83 @@
 import * as THREE from "three";
 import { _hsat, _sstep, SkinGeom, _sweep, BODY_TYPES_3D, pbrMat } from "./human-base.js";
 import { _hairReach, getHairStrandTex, HEAD_LIFT, buildHead } from "./human-head.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 // ---- hands --------------------------------------------------------------
 // Four fingers and a thumb, each with three real phalanges on nested pivots.
 // `setCurl()` is what makes contact read as contact: the fingers actually
 // close around a rail or splay flat on a dog's back instead of the hand
 // staying a frozen mitt that happens to be near the object.
-// Radii are deliberately larger than the gaps between the roots (spacing is
-// ~10.3 mm, diameters ~19 mm) so adjacent fingers MERGE into one hand mass at
-// rest instead of standing apart as four separate rods — real fingers touch.
-// The splay values are the natural fan of a relaxed hand and are small; the
+//
+// Proportions: the palm is the LONG part of a hand — wrist to knuckles is
+// ~56% of hand length, the middle finger ~44%. The first build had that
+// inverted (a 0.0455 palm under a 0.070 finger), which is the whole "spidery
+// claw" read: long thick rods hanging off a stub of a palm. The knuckles sit
+// at −0.061 now, the fingers are ~16% shorter and ~12% slimmer, and
+// HAND_SCALE still lands the whole hand on the anthropometric length.
+// Radii stay a little larger than the root spacing so adjacent fingers merge
+// into one hand mass at rest instead of standing apart as four separate rods —
+// real fingers touch. `rest` is each finger's share of the relaxed curl: a
+// hanging hand cups toward the pinky and the index stays the straightest. The
+// splay values are the natural fan of a relaxed hand and are small; the
 // `spread` argument to setCurl is what opens them into a flat palm.
+//
+// CHIRALITY: buildHand(+1) is an anatomical RIGHT hand — palm −Z, fingers −Y,
+// thumb +X (hold your right hand up palm-away, fingers down: the thumb is on
+// the right). The first-person Hands put it on the camera's right, which is
+// correct. The in-scene rig faces +Z, so its +X arm is the character's LEFT
+// and takes buildHand(−1) — see the hands block in buildHumanRig. With the
+// wrong hand on an arm no wrist yaw can be right: palm to the thigh puts the
+// thumb backward, thumb forward turns the palm outward — which is what
+// shipped for months, and why the hands read as paddles from every angle.
 const FINGER_SPEC = [
-  { name: "index",  x: -0.0155, len: [0.0305, 0.0195, 0.0140], r: 0.0095, splay: -0.075 },
-  { name: "middle", x: -0.0052, len: [0.0335, 0.0215, 0.0150], r: 0.0099, splay: -0.015 },
-  { name: "ring",   x:  0.0052, len: [0.0300, 0.0200, 0.0140], r: 0.0093, splay:  0.040 },
-  { name: "pinky",  x:  0.0150, len: [0.0235, 0.0150, 0.0120], r: 0.0079, splay:  0.110 },
+  { name: "index",  x: -0.0174, len: [0.0256, 0.0164, 0.0118], r: 0.0084, splay: -0.055, rest: 0.90 },
+  { name: "middle", x: -0.0058, len: [0.0281, 0.0181, 0.0126], r: 0.0086, splay: -0.012, rest: 1.00 },
+  { name: "ring",   x:  0.0058, len: [0.0252, 0.0168, 0.0118], r: 0.0081, splay:  0.025, rest: 1.10 },
+  { name: "pinky",  x:  0.0168, len: [0.0197, 0.0126, 0.0101], r: 0.0070, splay:  0.075, rest: 1.22 },
 ];
+const KNUCKLE_Y = -0.0610;
+// Resting phalanx angles (MCP / PIP / DIP) at curl 0 — the pose a hand falls
+// into under nothing but its own tendon tension: ~19° / 41° / 11°. setCurl's
+// k = 0 is exactly this; keep the two in step through this one table.
+const REST_CURL = [0.34, 0.72, 0.20];
 
 function buildHand(side, skinM, sleeveM, opts = {}) {
   const hand = new THREE.Group();
   const S = opts.scale || 1;
   hand.scale.setScalar(S);
-  // Palm — flattened and slightly tapered, with a thenar (thumb-base) pad so
-  // the silhouette isn't a paddle.
-  const palm = new THREE.Mesh(new THREE.SphereGeometry(0.0295, 18, 14), skinM);
-  palm.scale.set(0.90, 1.08, 0.46);
-  palm.position.y = -0.0225;
-  palm.castShadow = true;
-  hand.add(palm);
-  const thenar = new THREE.Mesh(new THREE.SphereGeometry(0.0145, 12, 10), skinM);
-  thenar.scale.set(0.85, 1.15, 0.72);
-  thenar.position.set(side * 0.0165, -0.0215, 0.0045);
-  hand.add(thenar);
-  const knuckleRow = new THREE.Mesh(new THREE.SphereGeometry(0.0135, 14, 10), skinM);
-  knuckleRow.scale.set(1.85, 0.62, 0.60);
-  knuckleRow.position.set(0, -0.0435, 0.0015);
-  hand.add(knuckleRow);
+  // Palm, thenar pad, hypothenar heel, knuckle row and (on the rig) the wrist
+  // filler never move relative to each other and share one material, so they
+  // are baked into ONE mesh: four draw calls fewer per hand, which counts on a
+  // phone where the first-person pair and the body's pair can share a frame.
+  const palmParts = [];
+  const part = (geom, pos, scale) => {
+    geom.scale(scale[0], scale[1], scale[2]);
+    geom.translate(pos[0], pos[1], pos[2]);
+    palmParts.push(geom);
+  };
+  // Palm — a flattened, slightly tapered slab, long enough to own the hand.
+  part(new THREE.SphereGeometry(0.0300, 18, 14), [0, -0.0300, 0], [0.86, 1.22, 0.44]);
+  // Thenar (thumb-base) pad and hypothenar (pinky-side) heel: the two mounds
+  // that make a palm read as a palm instead of a paddle.
+  part(new THREE.SphereGeometry(0.0150, 12, 10), [side * 0.0160, -0.0290, 0.0040], [0.85, 1.35, 0.70]);
+  part(new THREE.SphereGeometry(0.0120, 12, 10), [side * -0.0150, -0.0340, 0.0030], [0.75, 1.50, 0.62]);
+  part(new THREE.SphereGeometry(0.0130, 14, 10), [0, KNUCKLE_Y + 0.0020, 0.0015], [1.90, 0.60, 0.58]);
   // Wrist: fills the join between the body's forearm tube (open at its end)
   // and the top of the palm. Without it a ring of daylight showed through —
   // the dark "watch strap" at every wrist, which was the trousers behind.
-  if (!opts.forearm) {
-    const wrist = new THREE.Mesh(new THREE.SphereGeometry(0.0182, 14, 10), skinM);
-    wrist.scale.set(1.12, 1.30, 0.78);
-    wrist.position.y = 0.0035;
-    hand.add(wrist);
-  }
+  // Sized INSIDE the forearm's end section (rx .0224 / rz .0202 before the
+  // hand scale): the old 0.0182 × 1.12 ball stood proud of the forearm as a
+  // knob on every wrist.
+  if (!opts.forearm) part(new THREE.SphereGeometry(0.0150, 14, 10), [0, 0.0030, 0], [1.08, 1.10, 0.62]);
+  const palm = new THREE.Mesh(mergeGeometries(palmParts, false), skinM);
+  palm.castShadow = true;
+  hand.add(palm);
 
   const fingers = [];
   for (const spec of FINGER_SPEC) {
     const root = new THREE.Group();
-    root.position.set(side * -spec.x, -0.0455, 0.0015);
+    root.position.set(side * -spec.x, KNUCKLE_Y, 0.0015);
     root.rotation.z = side * spec.splay;
     hand.add(root);
     const seg = [];
@@ -80,34 +106,39 @@ function buildHand(side, skinM, sleeveM, opts = {}) {
       seg.push(pivot);
       parent = pivot;
     }
-    // A relaxed hand is never straight — this is the resting curl. See the
-    // note on setCurl: these are the k = 0 pose and must match its constants.
-    seg[0].rotation.x = 0.34; seg[1].rotation.x = 0.72; seg[2].rotation.x = 0.20;
+    // A relaxed hand is never straight — this is the resting curl, cupped a
+    // little more toward the pinky. The same table drives setCurl's k = 0.
+    seg[0].rotation.x = REST_CURL[0] * spec.rest;
+    seg[1].rotation.x = REST_CURL[1] * spec.rest;
+    seg[2].rotation.x = REST_CURL[2] * spec.rest;
     fingers.push({ spec, seg });
   }
   // Thumb — rooted low on the side of the palm and rotated out of its plane.
+  // At rest it lies toward the index finger (~40° abducted, a little flexed),
+  // not stuck straight out: the 54° hitch-hiker it had was the one part of the
+  // hand that still read as a toy once the palm faced the thigh.
   const thumbRoot = new THREE.Group();
-  thumbRoot.position.set(side * 0.0215, -0.0175, 0.0055);
-  thumbRoot.rotation.z = side * 0.95;
-  thumbRoot.rotation.x = -0.42;
-  thumbRoot.rotation.y = side * -0.30;
+  thumbRoot.position.set(side * 0.0205, -0.0235, 0.0050);
+  thumbRoot.rotation.z = side * 0.52;
+  thumbRoot.rotation.x = -0.34;
+  thumbRoot.rotation.y = side * -0.48;
   hand.add(thumbRoot);
   const thumbSeg = [];
   {
     let parent = thumbRoot;
-    const lens = [0.0230, 0.0175];
+    const lens = [0.0215, 0.0165];
     for (let s = 0; s < 2; s++) {
       const pivot = new THREE.Group();
       if (s > 0) pivot.position.y = -lens[s - 1];
       parent.add(pivot);
-      const r = 0.0102 - s * 0.0014;
+      const r = 0.0096 - s * 0.0013;
       const bone = new THREE.Mesh(new THREE.CapsuleGeometry(r, lens[s] - r * 0.8, 5, 8), skinM);
       bone.position.y = -lens[s] / 2;
       pivot.add(bone);
       thumbSeg.push(pivot);
       parent = pivot;
     }
-    thumbSeg[0].rotation.x = 0.18; thumbSeg[1].rotation.x = 0.22;
+    thumbSeg[0].rotation.x = 0.34; thumbSeg[1].rotation.x = 0.38;
   }
   // Optional forearm stub, running back up +Y. First-person needs the arm to
   // come from somewhere; the in-scene rig gets its forearm from the skinned
@@ -117,8 +148,11 @@ function buildHand(side, skinM, sleeveM, opts = {}) {
     // toward the elbow. Bare skin unless the outfit has long sleeves — a tee
     // in third person with long teal sleeves in first person was two
     // different people.
+    // Closed at the elbow end: reaching down to a dog at your feet with the
+    // view pitched down, the open end of the lathe showed as a pale scroll of
+    // back-faces across the bottom of the phone screen.
     const prof = [[0.000, 0.0235], [0.030, 0.0245], [0.080, 0.0270], [0.150, 0.0315],
-                  [0.215, 0.0330], [0.262, 0.0318], [0.285, 0.0290]];
+                  [0.215, 0.0330], [0.262, 0.0318], [0.285, 0.0290], [0.296, 0.0180], [0.300, 0.0]];
     const fa = new THREE.Mesh(
       new THREE.LatheGeometry(prof.map(([yy, r]) => new THREE.Vector2(r, yy)), 18),
       opts.forearmMat || sleeveM || skinM
@@ -126,9 +160,10 @@ function buildHand(side, skinM, sleeveM, opts = {}) {
     fa.position.y = 0.004;
     fa.scale.z = 0.84;
     hand.add(fa);
-    const wristBall = new THREE.Mesh(new THREE.SphereGeometry(0.0295, 14, 10), skinM);
-    wristBall.scale.set(1.15, 0.95, 0.80);
-    wristBall.position.y = 0.010;
+    // The wrist is an oval barely wider than the forearm's end, not a ball.
+    const wristBall = new THREE.Mesh(new THREE.SphereGeometry(0.0250, 14, 10), skinM);
+    wristBall.scale.set(1.05, 0.90, 0.78);
+    wristBall.position.y = 0.008;
     hand.add(wristBall);
   }
   // Optional cuff — hides the wrist seam for long-sleeved outfits.
@@ -147,22 +182,25 @@ function buildHand(side, skinM, sleeveM, opts = {}) {
       const f = fingers[i];
       // Ring and pinky lead a natural closing sequence.
       const lead = 1 + (i >= 2 ? 0.12 : 0) - (i === 0 ? 0.06 : 0);
-      // k = 0 is now the hand's POSITION OF REST, the pose a hand falls into
-      // under nothing but its own tendon tension: MCP ~19°, PIP ~41°, DIP
-      // ~11°. It used to be 11°/14°/9°, which is not a resting hand, it is a
+      // k = 0 is the hand's POSITION OF REST (REST_CURL × the finger's own
+      // share). It used to be 11°/14°/9°, which is not a resting hand, it is a
       // hand being held open — and with the fingers fanned that is the "stop"
       // gesture, which is exactly why they read as claws hanging off the
       // wrists. Gains carry k = 1 to a real closed fist (~85°/100°/70°), so
-      // callers keep the 0..1 contract.
-      f.seg[0].rotation.x = 0.34 + k * 1.14 * lead - spread * 0.30;
-      f.seg[1].rotation.x = 0.72 + k * 1.03 * lead - spread * 0.44;
-      f.seg[2].rotation.x = 0.20 + k * 1.02 * lead - spread * 0.16;
+      // callers keep the 0..1 contract. `spread` flattens the rest curl away
+      // in the same proportion, so a palm laid on a surface goes flat for
+      // every finger, not only the index.
+      const rest = f.spec.rest;
+      f.seg[0].rotation.x = REST_CURL[0] * rest + k * 1.14 * lead - spread * 0.30 * rest;
+      f.seg[1].rotation.x = REST_CURL[1] * rest + k * 1.03 * lead - spread * 0.44 * rest;
+      f.seg[2].rotation.x = REST_CURL[2] * rest + k * 1.02 * lead - spread * 0.16 * rest;
       f.seg[0].rotation.z = side * f.spec.splay * (1 + spread * 1.9);
     }
     const tk = thumb == null ? k : thumb;
-    thumbSeg[0].rotation.x = 0.18 + tk * 0.70;
-    thumbSeg[1].rotation.x = 0.22 + tk * 0.85;
-    thumbRoot.rotation.z = side * (0.95 - tk * 0.34 + spread * 0.22);
+    thumbSeg[0].rotation.x = 0.34 + tk * 0.54;
+    thumbSeg[1].rotation.x = 0.38 + tk * 0.69;
+    // A flat palm abducts the thumb out of the way; a fist tucks it in.
+    thumbRoot.rotation.z = side * (0.52 - tk * 0.10 + spread * 0.40);
   };
   hand.userData.fingers = fingers;
   hand.userData.thumb = thumbSeg;
@@ -967,16 +1005,21 @@ function buildHumanRig(o = {}) {
   const arms = [];
   for (let i = 0; i < armBones.length; i++) {
     const a = armBones[i];
-    const hand = buildHand(a.side, mSkin, mShirt, { scale: H * LW * HAND_SCALE, cuff: longSleeve });
+    // The character faces +Z, so the arm on +X is their anatomical LEFT and
+    // takes the LEFT hand: buildHand(−side). It shipped as buildHand(side) —
+    // a right hand on the left arm and vice versa — and with mirrored hands
+    // no wrist yaw is right: +side·1.15 put the palm to the thigh with the
+    // thumb pointing BACK, −side·1.15 (the value this had) pointed the thumb
+    // forward with the palm facing OUT. Measured 2026-11-07: palm normal
+    // (+0.92, 0, −0.38) on the +X hand, i.e. away from the body. Every
+    // "paddle hands" note in the history was this.
+    const hand = buildHand(-a.side, mSkin, mShirt, { scale: H * LW * HAND_SCALE, cuff: longSleeve });
     hand.position.set(0, -0.012 * H, 0);
-    // A relaxed arm hangs in mid-pronation: palm toward the thigh, thumb
-    // forward, knuckles out. At -0.30 the palm faced backward with the fingers
-    // fanned toward the viewer — the "reaching for you" hang that made the
-    // figure read as a sleepwalker. The sign is −side: +side·1.15 (the value
-    // this once had) turned the palm OUT with the thumb pointing back —
-    // re-verified from both sides in the creator, 2026-09-27. Body's contact
-    // palm-roll reads hand.rotation.y, so it follows this value.
-    hand.rotation.y = -a.side * 1.15;
+    // A relaxed arm hangs in mid-pronation: palm toward the thigh, slightly
+    // back, thumb forward, knuckles out. With the correct hand on each arm
+    // that is +side·1.15: palm → (−0.91·side, 0, −0.41), thumb → forward.
+    // Body's contact palm-roll reads the hand's quaternion, so it follows.
+    hand.rotation.y = a.side * 1.15;
     a.wr.add(hand);
     arms.push({ root: a.sh, elbow: a.el, wrist: a.wr, hand, side: a.side });
   }

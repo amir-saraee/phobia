@@ -9,7 +9,7 @@ import { BODY_TYPES_3D } from "./human-base.js";
 import { makeConcreteMaps, makeEarthMaps, makeGrassMaps, makePlankMaps, makePlasterMaps, makeRugMaps } from "./textures.js";
 import { applySidePhotoUVs } from "./creature-kit.js";
 import { buildDog } from "./dog-model.js";
-import { buildAvatarFigure } from "./avatar.js";
+import { buildAvatarFigure, warmFigureCaches } from "./avatar.js";
 
 // ---------- Shell 3D vignettes (camp + realm heroes) ----------
 // Small always-running Three dioramas for the GAME SHELL (valley map camp,
@@ -814,6 +814,13 @@ const ShellScenes = (() => {
     };
     ctx.start();
     ctx.setCharacter = placeFigure;
+    // The traveler creator: warm the other body types and hair styles at idle
+    // so a chip tap never pays for a cold head sculpt (see warmFigureCaches).
+    if (portrait && charHexes) {
+      const stopWarm = warmFigureCaches(charHexes, () => !ctx.disposed);
+      const prevCleanup = ctx.cleanupExtra;
+      ctx.cleanupExtra = () => { stopWarm(); if (prevCleanup) prevCleanup(); };
+    }
     return ctx;
   }
 

@@ -247,6 +247,14 @@
             "تا این‌که هر کدام به چیزی برخوردند که ترساندشان — سگی، عنکبوتی، جایی بلند، دری بسته — و بی‌سروصدا دیگر از آن راه نرفتند. حسِ آسودگی داشت. اما راهی که کسی از آن نرود تاریک می‌شود، و در تاریکی ترسی کوچک بزرگ به نظر می‌رسد."),
           P("mira", "I'm Mira. I keep the lanterns. I can't walk a path for you — fear only unlearns in the person who feels it. But I'll walk beside you, one small step at a time, and you can turn back whenever you need to. Choose the path that frightens you. We'll start where it's small.",
             "من میرا هستم؛ فانوس‌بانِ این دره. نمی‌توانم به‌جای تو راهی را بروم — ترس فقط در کسی که آن را حس می‌کند از نو یاد گرفته می‌شود. اما کنارت راه می‌آیم، قدم‌به‌قدم، و هر وقت لازم بود می‌توانی برگردی. راهی را انتخاب کن که می‌ترساندت. از جایی شروع می‌کنیم که کوچک است."),
+          // The traveler's own backstory. They are not a blank camera: they
+          // walked in carrying an unlit lantern — their fear — and the valley's
+          // lanterns were lit by travelers exactly like them. The epilogue
+          // closes this loop ("look at it now").
+          P("narrator", "You came down the valley road the way most people do: with a lantern of your own, unlit, and a reason you haven't said out loud yet.",
+            "تو هم مثل بیشترِ آدم‌ها از جادهٔ دره پایین آمدی: با فانوسی از آنِ خودت، خاموش، و دلیلی که هنوز به زبان نیاورده‌ای."),
+          P("mira", "Everyone who walks in here is carrying one of those. Who do you think lit the crossings in the first place? Not heroes. Travelers — people who came back to the same gate a few more times than their fear expected. Tell me who you are, and we'll find your first gate.",
+            "هر کسی که این‌جا قدم می‌گذارد یکی از همین‌ها را با خودش دارد. فکر می‌کنی فانوس‌های سرِ دوراهی‌ها را اول‌بار چه کسی روشن کرد؟ قهرمان‌ها نه. مسافرها — آدم‌هایی که چند بار بیشتر از آنچه ترسشان انتظار داشت به همان در برگشتند. بگو کی هستی، تا اولین درِ تو را پیدا کنیم."),
         ],
       }],
     },
@@ -695,6 +703,8 @@
         panels: [
           P("narrator", "Six lanterns burn along the valley, and the paths between them are worn again by people's feet.",
             "شش فانوس در طولِ دره می‌سوزند، و راه‌های میانشان دوباره زیرِ پای مردم صاف شده."),
+          P("narrator", "And the lantern you carried in, unlit — look at it now.",
+            "و آن فانوسی که خاموش با خودت آوردی — حالا نگاهش کن."),
           P("mira", "I'll tell you a secret. I was afraid of deep water for most of my life. I still swim — slowly, on purpose, every week. The fear didn't vanish; it stopped being in charge.",
             "رازی برایت بگویم. بیشترِ عمرم از آبِ عمیق می‌ترسیدم. هنوز شنا می‌کنم — آهسته، از روی عمد، هر هفته. ترس ناپدید نشد؛ دیگر فرمانده نبود."),
           P("mira", "The lanterns stay lit by walking the paths. Come back whenever you like — and take the real steps out there, where they count most.",

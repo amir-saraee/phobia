@@ -3,6 +3,7 @@
 
 import * as THREE from "three";
 import { QUALITY, IS_LOW_POWER } from "./renderer.js";
+import { active } from "./live.js";
 import { _hsat, _sstep, _wob, _GAIT, _track, _solePitch, _legReach, _legIK, WRIST_REST_FOLD, BODY_TYPES_3D } from "./human-base.js";
 import { ANKLE_Y, KNEE_Y, HIP_Y, WAIST_Y, NECK_Y, CHEST_TOP_Y, SHOULDER_HALF, buildHumanRig, makePrivateRig, applyPrivateRig, makeContactShadow } from "./human-rig.js";
 import { HUMAN_CLIPS, _humanMotion, loadHumanMotion, RETARGET_UPPER, RETARGET_TORSO_ONLY, applyRetarget } from "./human-motion.js";
@@ -25,6 +26,7 @@ import { HUMAN_CLIPS, _humanMotion, loadHumanMotion, RETARGET_UPPER, RETARGET_TO
 const _bV1 = new THREE.Vector3(), _bV2 = new THREE.Vector3(), _bV3 = new THREE.Vector3();
 const _bV4 = new THREE.Vector3(), _bV5 = new THREE.Vector3(), _bV6 = new THREE.Vector3();
 const _bM1 = new THREE.Matrix4(), _bQ1 = new THREE.Quaternion(), _bQ2 = new THREE.Quaternion();
+const _rsHead = new THREE.Vector3(), _rsP = new THREE.Vector3();   // _rigStrength scratch
 const _bV7 = new THREE.Vector3(), _bV8 = new THREE.Vector3(), _bUP = new THREE.Vector3(0, 1, 0);   // arm-IK basis (was two allocations a call)
 
 const _thE = new THREE.Euler(), _thQ = new THREE.Quaternion();
@@ -292,16 +294,45 @@ class Body {
   // How brightly lit is the scene the avatar is standing in? Sampled at 2 Hz —
   // scenes swap their lighting on a day/night context change, so this can't be
   // measured once at mount.
+  //
+  // The rig TOPS UP what the room does not give the face, so it has to know
+  // roughly how much that is. The old estimate read only ambient/hemisphere
+  // intensities and floored at 0.42, and under physically-correct lights a
+  // 0.85 cd key 30 cm from the skin is ~9 W/m² — more than a sunlit room. So
+  // the face washed to a featureless pale glow in five of the six realms
+  // (measured 2026-11-07: with the rig OFF the dog room, cellar, meadow and
+  // tunnel all lit the face well; only the dark room needed it). This is a
+  // crude irradiance budget at the head: ambient and hemisphere as they are,
+  // a directional sun at ~half (one side of a face, unknown shadow), the
+  // environment map as a steady diffuse term, point/spot lights by inverse
+  // square from their world position, all scaled by the tone-mapping
+  // exposure. Whatever is missing from a comfortably-lit face (~2.1 in these
+  // units) the rig supplies, and never more than ~55% of its old full power.
   _rigStrength(t) {
     if (this._rigK == null || t - (this._rigT || -9) > 0.5) {
       this._rigT = t;
-      let amb = 0;
       const own = [this.keyLight, this.faceFill, this.rimLight];
+      const g = this.group.position;
+      _rsHead.set(g.x, g.y + this.opts.headY - 0.05, g.z);
+      let E = 0;
       this.scene.traverse((o) => {
-        if (!o.isLight || own.indexOf(o) >= 0) return;
-        if (o.isAmbientLight || o.isHemisphereLight) amb += o.intensity;
+        if (!o.isLight || !o.visible || own.indexOf(o) >= 0) return;
+        const I = o.intensity || 0;
+        if (I <= 0) return;
+        if (o.isAmbientLight) E += I;
+        else if (o.isHemisphereLight) E += I * 0.55;
+        else if (o.isDirectionalLight) E += I * 0.45;
+        else if (o.isPointLight || o.isSpotLight) {
+          o.getWorldPosition(_rsP);
+          const d2 = Math.max(0.3, _rsP.distanceToSquared(_rsHead));
+          if (o.distance > 0 && d2 > o.distance * o.distance) return;
+          E += Math.min(3, I / d2) * (o.isSpotLight ? 0.25 : 0.45);
+        }
       });
-      this._rigK = Math.max(0.42, Math.min(1, 1.25 - amb * 0.62));
+      if (this.scene.environment) E += 0.55;
+      const r = active && active.renderer;
+      if (r && r.toneMappingExposure) E *= r.toneMappingExposure;
+      this._rigK = Math.max(0, Math.min(1, (2.1 - E) / 2.1)) * 0.55;
     }
     return this._rigK;
   }
@@ -1749,12 +1780,12 @@ class Body {
             // normal → the wrist's parent space (direction only)
             _bM1.copy(arm.wrist.parent.matrixWorld).invert();
             nl.transformDirection(_bM1).normalize();
-            // Palm faces −Z in hand space, offset from the hand's rest yaw:
-            // this was tuned when the hand rested at side·1.15 with a −0.30
-            // palm yaw, and is kept equivalent now the rest yaw is −side·1.15
-            // (see buildHumanRig) — the palm still lands on the coat.
-            const palmLocal = _bV5.set(0, 0, -1).applyAxisAngle(
-              _bUP, (arm.hand ? arm.hand.rotation.y : arm.side * 1.15) - arm.side * 1.45);
+            // The palm faces −Z in hand space; the hand is a direct child of
+            // the wrist bone, so its quaternion maps that into the wrist's
+            // frame exactly. (This used to be a yaw constant plus a ±1.45
+            // fudge tuned against mirrored hands — see buildHumanRig.)
+            const palmLocal = _bV5.set(0, 0, -1);
+            if (arm.hand) palmLocal.applyQuaternion(arm.hand.quaternion);
             _bQ2.setFromUnitVectors(palmLocal.normalize(), nl.multiplyScalar(-1).normalize());
             arm.wrist.quaternion.slerp(_bQ2, k * 0.8);
           }

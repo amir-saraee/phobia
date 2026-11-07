@@ -218,6 +218,41 @@ function buildAvatarFigure(c, mode = "walk") {
   return group;
 }
 
+// Warm the head caches for the looks a creator is about to offer. A body-type
+// tap that needs a head shape not built yet pays for a cold SDF sculpt — ~0.6 s
+// with the CPU throttled 4×, well over a second on the phones this ships to —
+// synchronously, on the tap. Each hair style costs a shell (~0.2 s). So once
+// the first figure is up and the page has settled, build the other shapes and
+// styles one per idle slot and throw the figures away: buildHeadShell keeps
+// the baked geometry in its cache, and the next tap only has to copy it.
+// Anything tapped before its turn simply builds on the tap, as before.
+// Returns a function that cancels whatever is still queued.
+function warmFigureCaches(character, alive) {
+  const queue = [];
+  const seen = new Set();
+  const key = (c) => c.bodyType + "|" + c.hairStyle;
+  seen.add(key(character));
+  const push = (c) => { if (!seen.has(key(c))) { seen.add(key(c)); queue.push(c); } };
+  for (const bt of ["woman", "man", "girl", "boy"]) push(Object.assign({}, character, { bodyType: bt }));
+  for (const hs of ["short", "long", "curly", "pony", "buzz", "bald"]) push(Object.assign({}, character, { hairStyle: hs }));
+  const ric = window.requestIdleCallback ? (fn) => window.requestIdleCallback(fn, { timeout: 4000 }) : (fn) => setTimeout(fn, 250);
+  const cic = window.cancelIdleCallback || clearTimeout;
+  const dispose = (f) => f.traverse((o) => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose());
+  });
+  let id = 0, done = false;
+  const step = () => {
+    id = 0;
+    if (done || !alive() || !queue.length) return;
+    if (document.hidden) { id = ric(step); return; }
+    try { dispose(buildAvatarFigure(queue.shift(), "idle")); } catch {}
+    if (queue.length) id = ric(step);
+  };
+  const timer = setTimeout(() => { if (!done && alive()) id = ric(step); }, 1800);
+  return () => { done = true; clearTimeout(timer); if (id) { try { cic(id); } catch {} id = 0; } };
+}
+
 // ---------- Mountable avatar preview (used by character creator) ----------
 const AvatarPreview = (() => {
   let active = null;
@@ -284,7 +319,12 @@ const AvatarPreview = (() => {
     let dragging = false, lastX = 0, pid = null;
     const el = renderer.domElement;
     el.style.cursor = "grab";
-    el.style.touchAction = "none";
+    // pan-y, not none: on a phone this canvas sits at the top of a long form,
+    // and with touch-action none a thumb swiping up over the figure scrolled
+    // nothing — the page was stuck until the swipe started below it. Vertical
+    // swipes now scroll (the browser cancels the pointer, which onUp handles);
+    // horizontal drags still turn the figure.
+    el.style.touchAction = "pan-y";
     const onDown = (e) => { dragging = true; lastX = e.clientX; pid = e.pointerId; el.style.cursor = "grabbing"; try { el.setPointerCapture(pid); } catch {} };
     const onMove = (e) => { if (!dragging) return; figure.rotation.y += (e.clientX - lastX) * 0.012; lastX = e.clientX; };
     const onUp = () => { if (!dragging) return; dragging = false; el.style.cursor = "grab"; try { el.releasePointerCapture(pid); } catch {} };
@@ -323,10 +363,21 @@ const AvatarPreview = (() => {
       }
     });
     tick();
+    // Warm the head caches for the looks the creator is about to offer. A
+    // body-type tap that needs a head shape not built yet pays for a cold SDF
+    // sculpt — ~0.6 s with the CPU throttled 4×, well over a second on the
+    // phones this ships to — synchronously, on the tap. Hair styles cost a
+    // shell each (~0.2 s). So once the first figure is up and the page has
+    // settled, build the other shapes and styles one per idle slot and throw
+    // the figures away: buildHeadShell keeps the baked geometry in its cache,
+    // and the next tap only has to copy it. Anything the person taps before
+    // its turn simply builds on the tap as before.
+    const stopWarm = warmFigureCaches(character, () => container.isConnected);
     active = {
       renderer, scene, camera, raf,
       cleanup() {
         cancelAnimationFrame(raf);
+        stopWarm();
         if (retired) { disposeFigure(retired); retired = null; }
         el.removeEventListener("pointerdown", onDown);
         el.removeEventListener("pointermove", onMove);
@@ -364,4 +415,4 @@ const AvatarPreview = (() => {
 })();
 window.AvatarPreview = AvatarPreview;
 
-export { buildAvatarFigure };
+export { buildAvatarFigure, warmFigureCaches };
