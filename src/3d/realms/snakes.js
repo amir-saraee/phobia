@@ -11,11 +11,496 @@ import { _coachSize } from "../dog-controller.js";
 import { makeCreatureCoach } from "../coach.js";
 import { active } from "../live.js";
 
+// ---------- The lying body: a path-following spine ----------
+// Snake.glb's clips AND its bind pose are an upright cobra "S": tail flat on
+// the ground, the forebody standing straight up, the head bent forward on top
+// of it. No additive pitch lays that down (measured: every clip stands
+// 0.6–1.1 m tall), so the body bones are POSED here instead. A centreline
+// curve is built every frame and each bone's bind-pose stretch of the
+// centreline is moved rigidly onto it:
+//   - behind the rear base, the curve is the path the body actually
+//     travelled (a follow-the-leader base point drags behind the snake's
+//     position), with the lateral wave laid into the path — the body follows
+//     its own track, so nothing skates, and a coil unwinds behind the head;
+//   - at rest it eases into a loose S-coil (per-visit handedness and wind);
+//   - in front of the base it can lift: the head carriage, a look, the cobra
+//     rear, the strike's drawn-back S and the lunge.
+// The clips still drive the jaw and the tongue; the face (Mouth, a Root-level
+// bone that carries 2464 of the 3258 vertices) is placed by the curve too.
+// Eight bones can only bend a body in eight places, so the body skin itself
+// (the DarkGreen + LightGreen meshes) is drawn on the CPU along the curve
+// (skin()); the head, face, jaw, eyes and tongue stay GPU-skinned.
+const _spSegs = [   // bone, headward joint, tailward joint — parents before children (the solve needs them)
+  ["Mouth", "S", "F"], ["Chest", "N", "C"], ["Neck", "H", "N"], ["Head", "F", "H"],
+  ["Tail", "T", "T1"], ["Tail1", "T1", "T2"], ["Tail2", "T2", "T3"], ["Tail3", "T3", "E"],
+];
+const _spJoints = ["S", "F", "H", "N", "C", "T", "T1", "T2", "T3", "E"];
+const _spPar = { Neck: "Chest", Head: "Neck", Tail1: "Tail", Tail2: "Tail1", Tail3: "Tail2" };
+const _spSS = (a, b, x) => { const u = Math.max(0, Math.min(1, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
+const _spWrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const _spV1 = new THREE.Vector3(), _spV2 = new THREE.Vector3(), _spV3 = new THREE.Vector3(), _spV4 = new THREE.Vector3();
+const _spM1 = new THREE.Matrix4(), _spM2 = new THREE.Matrix4(), _spM3 = new THREE.Matrix4();
+const _spV5 = new THREE.Vector3();
+const SNAKE_SPINE_N = 72;   // centreline samples, snout → tail tip
+
+class SnakeSpine {
+  constructor(snake, model) {
+    this.snake = snake; this.model = model; this.ok = false;
+    // Inputs, written by SnakeController every frame.
+    this.state = "bask"; this.rear = 0; this.coil = 0; this.ext = 0; this.steer = 0;
+    this.headYaw = 0; this.headPitch = 0; this.jawTilt = 0; this.breath = 0;
+    this.groundLift = null;     // (x, z) → metres above the grass (the basking rock)
+    this.groundY = -1;          // the clearing's grass
+    // Resting shape, rolled once per visit: a loose S — the body looped one
+    // way (curvature rising toward the tail), the neck and head lying back
+    // the other. Loose on purpose: a tight coil is a dark knot at ten metres;
+    // the S is a snake's own outline.
+    this.hand = Math.random() < 0.5 ? 1 : -1;
+    this.coilTurn = 3.3 + Math.random() * 1.4;
+    this.headBend = -this.hand * (0.7 + Math.random() * 0.5);
+    this.carry = 0.34;          // head carriage: the neck lifts a little into the head
+    // Proportions. The pack's snake is a chunky cartoon: the body ~11 % as
+    // wide as it is long, the head (skull + face) a quarter of its length. A
+    // grass snake is a long thin line with a small head, and that line is what
+    // reads at ten metres. Each stretch of body is drawn out along the curve
+    // and slimmed across it; the head is scaled down whole (uniform, so the
+    // jaw and tongue under the face keep their shape).
+    this.headScale = 0.74;
+    this.prop = { Neck: [1.3, 0.72], Chest: [1.5, 0.64], Tail: [1.5, 0.64], Tail1: [1.5, 0.64], Tail2: [1.5, 0.64], Tail3: [1.5, 0.64] };   // [along, across]
+    this.restW = 1; this.restF = 1; this.amp = 0; this.d = 0; this.wph = Math.random() * 6.283;
+    this._B = null; this._angU = 0;
+  }
+  // Bind data in the snake's own frame (x its left, y up, z forward).
+  capture() {
+    this.ok = false;
+    const snake = this.snake, model = this.model;
+    const skins = []; model.traverse((o) => { if (o.isSkinnedMesh) skins.push(o); });
+    if (!skins.length) return false;
+    const bones = skins[0].skeleton.bones, by = {};
+    bones.forEach((b) => { by[b.name] = b; });
+    if (_spSegs.some(([n]) => !by[n])) return false;
+    const saved = bones.map((b) => [b.position.clone(), b.quaternion.clone(), b.scale.clone()]);
+    skins[0].skeleton.pose();
+    snake.updateMatrixWorld(true);
+    const gInv = new THREE.Matrix4().copy(snake.matrixWorld).invert();
+    const bind = {}, J = {};
+    for (const [n] of _spSegs) bind[n] = new THREE.Matrix4().multiplyMatrices(gInv, by[n].matrixWorld);
+    const org = (n) => new THREE.Vector3().setFromMatrixPosition(new THREE.Matrix4().multiplyMatrices(gInv, by[n].matrixWorld));
+    J.H = org("Head"); J.N = org("Neck"); J.C = org("Chest"); J.T = org("Tail");
+    J.T1 = org("Tail1"); J.T2 = org("Tail2"); J.T3 = org("Tail3");
+    // The bind skin, by dominant bone (body skin only for the shape; the
+    // snout tip from anything on the face).
+    const bindAll = {};
+    for (const b of bones) bindAll[b.name] = new THREE.Matrix4().multiplyMatrices(gInv, b.matrixWorld);
+    const v = new THREE.Vector3(), nv = new THREE.Vector3(), skin = {}, raw = [];
+    const mS = new THREE.Matrix4(), mF = new THREE.Matrix4(), nM = new THREE.Matrix3(), mT = new THREE.Matrix4();
+    let snout = null, snoutZ = -Infinity;
+    for (const sk of skins) {
+      const g = sk.geometry, pos = g.attributes.position, nor = g.attributes.normal, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+      const names = sk.skeleton.bones.map((b) => b.name);
+      const mn = sk.material && sk.material.name;
+      const body = mn === "DarkGreen" || mn === "LightGreen";
+      // The body skin is re-drawn along the curve on the CPU (see skin()):
+      // keep its bind positions, normals and weights in the snake's frame.
+      const R = body ? { mesh: sk, n: pos.count, p: new Float32Array(pos.count * 3), nr: new Float32Array(pos.count * 3), w: new Float32Array(pos.count * 4), b: [] } : null;
+      for (let i = 0; i < pos.count; i++) {
+        let wm = 0, im = 0;
+        for (let k = 0; k < 4; k++) { const w = sw.getComponent(i, k); if (w > wm) { wm = w; im = si.getComponent(i, k); } }
+        const nm = names[im];
+        sk.getVertexPosition(i, v); sk.localToWorld(v); v.applyMatrix4(gInv);
+        if (nm === "Mouth" && v.z > snoutZ) { snoutZ = v.z; snout = { mesh: sk, i }; }
+        if (!body) continue;
+        (skin[nm] || (skin[nm] = [])).push(v.clone());
+        R.p[i * 3] = v.x; R.p[i * 3 + 1] = v.y; R.p[i * 3 + 2] = v.z;
+        // Bind normal through the same skinning transform.
+        mS.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        for (let k = 0; k < 4; k++) {
+          const w = sw.getComponent(i, k), bi = si.getComponent(i, k);
+          R.w[i * 4 + k] = w; R.b.push(names[bi]);
+          if (w > 0) { mT.multiplyMatrices(sk.skeleton.bones[bi].matrixWorld, sk.skeleton.boneInverses[bi]); for (let e = 0; e < 16; e++) mS.elements[e] += mT.elements[e] * w; }
+        }
+        mF.multiplyMatrices(gInv, sk.matrixWorld).multiply(sk.bindMatrixInverse).multiply(mS).multiply(sk.bindMatrix);
+        nv.fromBufferAttribute(nor, i).applyMatrix3(nM.getNormalMatrix(mF)).normalize();
+        R.nr[i * 3] = nv.x; R.nr[i * 3 + 1] = nv.y; R.nr[i * 3 + 2] = nv.z;
+      }
+      if (R) raw.push(R);
+    }
+    bones.forEach((b, i) => { b.position.copy(saved[i][0]); b.quaternion.copy(saved[i][1]); b.scale.copy(saved[i][2]); });
+    snake.updateMatrixWorld(true);
+    const face = (skin.Mouth || []).concat(skin.LowerMouth || []);
+    if (face.length < 8 || !snout || !skin.Tail3) return false;
+    // The face is level in the bind pose, pointing +z: its axis runs through
+    // the middle of the face skin, from the back of the face to the snout.
+    const fb = new THREE.Box3().setFromPoints(face);
+    const yc = (fb.min.y + fb.max.y) / 2, xc = (fb.min.x + fb.max.x) / 2;
+    J.S = new THREE.Vector3(xc, yc, fb.max.z);
+    J.F = new THREE.Vector3(xc, yc, fb.min.z);
+    // Tail tip: as far as the Tail3 skin reaches past its bone.
+    const td = _spV1.copy(J.T3).sub(J.T2).normalize();
+    let tl = 0.01; for (const p of skin.Tail3) tl = Math.max(tl, _spV2.copy(p).sub(J.T3).dot(td));
+    J.E = J.T3.clone().addScaledVector(td, tl);
+    // Arc length of each joint from the snout, as DRAWN (stretched).
+    const hsc = this.headScale, P = this.prop;
+    const along = { S: hsc, F: hsc, H: P.Neck[0], N: P.Chest[0], C: P.Chest[0], T: P.Tail[0], T1: P.Tail1[0], T2: P.Tail2[0], T3: P.Tail3[0] };
+    const sJ = {}; let acc = 0;
+    _spJoints.forEach((k, i) => { if (i) { const pk = _spJoints[i - 1]; acc += J[k].distanceTo(J[pk]) * along[pk]; } sJ[k] = acc; });
+    this.J = J; this.sJ = sJ; this.L = acc;
+    const left = new THREE.Vector3(1, 0, 0);
+    this.segs = _spSegs.map(([n, a, b]) => {
+      const tt = J[a].clone().sub(J[b]).normalize();                     // headward
+      const uu = new THREE.Vector3().crossVectors(tt, left).normalize();  // dorsal
+      const ll = new THREE.Vector3().crossVectors(uu, tt);
+      const A = J[a].clone().add(J[b]).multiplyScalar(0.5);
+      // Belly depth: how far the skin reaches below this stretch of centreline.
+      const pts = n === "Mouth" ? face : (skin[n] || []);
+      let depth = 0;
+      for (const p of pts) depth = Math.max(depth, -_spV2.copy(p).sub(A).dot(uu));
+      // Drawn scale along (st) and across (sx) the curve; the head's is uniform.
+      const head = n === "Mouth" || n === "Head";
+      const st = head ? hsc : P[n][0], sx = head ? hsc : P[n][1];
+      return { n, sa: sJ[a], sb: sJ[b], A, t: tt, l: ll, u: uu, MbT: new THREE.Matrix4().makeBasis(tt, ll, uu).transpose(), bind: bind[n],
+        st, sx, depth: Math.max(depth * sx, 0.006 * acc), par: _spPar[n] || null, bone: by[n], W: new THREE.Matrix4() };
+    });
+    this._buildSkin(raw, bindAll, by);
+    this.faceDepth = this.segs[0].depth;
+    this.snout = snout;
+    // Sampling: the rear base sits a quarter-length behind the face; the
+    // snake's position (what the scene measures distances from) is a point
+    // dB ahead of it — about the back of the head when it lies straight.
+    this.sF = sJ.F;
+    this.N = SNAKE_SPINE_N; this.ds = this.L / this.N;
+    this.iB = Math.max(4, Math.min(this.N - 8, Math.round((sJ.F + 0.24 * this.L) / this.ds)));
+    this.sB = this.iB * this.ds;
+    this.dB = Math.max(0.05, this.sB - (sJ.F + 0.05 * this.L));
+    this.lam = 0.5 * this.L; this.kw = 2 * Math.PI / this.lam; this.thA = 0.62;   // lateral wave
+    const n1 = this.N + 1;
+    this.px = new Float32Array(n1); this.py = new Float32Array(n1); this.pz = new Float32Array(n1);
+    this.phi = new Float32Array(n1); this.lift = new Float32Array(n1);
+    this.M = Math.ceil((this.L - this.sB + 0.6 * this.L) / this.ds) + 6;
+    this.hist = new Float32Array(this.M); this.k0 = 0; this.k1 = -1;
+    this.ok = true;
+    return true;
+  }
+  // Per-vertex influences for the CPU-drawn body skin. A vertex weighted to a
+  // BODY bone (Chest, Neck, Tail…Tail3) is placed by its arc position along
+  // the curve and its offset across it, in the curve's own frame at that
+  // exact point — so the body bends smoothly between the eight bones instead
+  // of in eight rigid sticks. A vertex weighted to the head, face, jaw or
+  // tongue follows that bone rigidly (linear blend, as on the GPU).
+  _buildSkin(raw, bindAll, by) {
+    const CURVE = { Chest: 1, Neck: 1, Tail: 1, Tail1: 1, Tail2: 1, Tail3: 1 };
+    const segOf = {}; this.segs.forEach((sg) => { segOf[sg.n] = sg; });
+    const rigid = [], rIdx = {};
+    const N = SNAKE_SPINE_N, ds = this.L / N, dep = new Float32Array(N + 1).fill(-1);
+    const d = new THREE.Vector3(), nn = new THREE.Vector3();
+    this.skinData = raw.map((R) => {
+      const n = R.n, typ = new Int8Array(n * 4), ref = new Int16Array(n * 4), q = new Float32Array(n * 12), qn = new Float32Array(n * 12);
+      for (let i = 0; i < n; i++) {
+        d.set(R.p[i * 3], R.p[i * 3 + 1], R.p[i * 3 + 2]); nn.set(R.nr[i * 3], R.nr[i * 3 + 1], R.nr[i * 3 + 2]);
+        let wBest = 0, sBest = -1, cBest = 0;
+        for (let k = 0; k < 4; k++) {
+          const j = i * 4 + k, w = R.w[j], nm = R.b[j];
+          if (!(w > 1e-4)) continue;
+          if (CURVE[nm] && segOf[nm]) {
+            const sg = segOf[nm], rel = _spV1.copy(d).sub(sg.A);
+            const a = rel.dot(sg.t), b = rel.dot(sg.l), c = rel.dot(sg.u);
+            typ[j] = 1;
+            q[j * 3] = (sg.sa + sg.sb) / 2 - a * sg.st; q[j * 3 + 1] = b * sg.sx; q[j * 3 + 2] = c * sg.sx;
+            qn[j * 3] = nn.dot(sg.t) / sg.st; qn[j * 3 + 1] = nn.dot(sg.l) / sg.sx; qn[j * 3 + 2] = nn.dot(sg.u) / sg.sx;
+            if (w > wBest) { wBest = w; sBest = q[j * 3]; cBest = c * sg.sx; }
+          } else if (bindAll[nm] && by[nm]) {
+            if (rIdx[nm] == null) { rIdx[nm] = rigid.length; rigid.push({ bone: by[nm], inv: bindAll[nm].clone().invert(), M: new THREE.Matrix4(), N3: new THREE.Matrix3() }); }
+            typ[j] = 2; ref[j] = rIdx[nm];
+            q[j * 3] = d.x; q[j * 3 + 1] = d.y; q[j * 3 + 2] = d.z;
+            qn[j * 3] = nn.x; qn[j * 3 + 1] = nn.y; qn[j * 3 + 2] = nn.z;
+          }
+        }
+        // The belly line: how far below the curve the skin reaches, per arc.
+        if (sBest >= 0) { const k = Math.max(0, Math.min(N, Math.round(sBest / ds))); dep[k] = Math.max(dep[k], -cBest); }
+      }
+      return { R, n, typ, ref, q, qn };
+    });
+    this.rigid = rigid;
+    // Fill the gaps (the head end has no body-skin rings) and smooth a touch.
+    let last = -1;
+    for (let k = 0; k <= N; k++) if (dep[k] >= 0) { if (last < 0) for (let j = 0; j < k; j++) dep[j] = dep[k]; else for (let j = last + 1; j < k; j++) dep[j] = dep[last] + (dep[k] - dep[last]) * (j - last) / (k - last); last = k; }
+    for (let k = last + 1; k <= N; k++) dep[k] = last >= 0 ? dep[last] : 0.01;
+    const sm = new Float32Array(N + 1);
+    for (let k = 0; k <= N; k++) { let a = 0, c = 0; for (let j = k - 2; j <= k + 2; j++) if (j >= 0 && j <= N) { a += dep[j]; c++; } sm[k] = Math.max(dep[k], a / c); }
+    this.depthC = sm;
+  }
+  // The drawn body skin: plain meshes in the model, written every frame.
+  _makeSkinMeshes() {
+    const model = this.model;
+    model.updateMatrix();
+    const inv = new THREE.Matrix4().copy(model.matrix).invert();   // model space → the snake's frame
+    for (const S of this.skinData) {
+      const sk = S.R.mesh;
+      if (!S.mesh) {
+        // Own float buffers: the decoded GLB's normals are packed (quantized,
+        // interleaved) and can't be written as floats.
+        const g = sk.geometry.clone();
+        g.deleteAttribute("skinIndex"); g.deleteAttribute("skinWeight");
+        g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(S.n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+        g.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(S.n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+        const m = new THREE.Mesh(g, sk.material);
+        m.castShadow = sk.castShadow; m.receiveShadow = sk.receiveShadow; m.frustumCulled = false;
+        m.name = (sk.name || "snakeSkin") + "-drawn";
+        m.matrixAutoUpdate = false;
+        model.add(m);
+        S.mesh = m;
+      }
+      S.mesh.matrix.copy(inv); S.mesh.matrixWorldNeedsUpdate = true;
+      sk.visible = false;
+    }
+  }
+  // Draw the body skin for this frame (after the jaw and tongue have posed).
+  skin() {
+    if (!this.ok || !this.skinData || !this._cx) return;
+    const sn = this.snake, gInv = _spM3.copy(sn.matrixWorld).invert();
+    for (const r of this.rigid) { r.M.multiplyMatrices(gInv, r.bone.matrixWorld).multiply(r.inv); r.N3.getNormalMatrix(r.M); }
+    const N = this.N, ds = this.ds, cx = this._cx, fT = this._fT, fL = this._fL, fU = this._fU;
+    const v = _spV1, nv = _spV2;
+    for (const S of this.skinData) {
+      if (!S.mesh) continue;
+      const pa = S.mesh.geometry.attributes.position, na = S.mesh.geometry.attributes.normal, P = pa.array, NR = na.array;
+      const R = S.R;
+      for (let i = 0; i < S.n; i++) {
+        let x = 0, y = 0, z = 0, nx = 0, ny = 0, nz = 0, ws = 0;
+        for (let k = 0; k < 4; k++) {
+          const j = i * 4 + k, ty = S.typ[j];
+          if (!ty) continue;
+          const w = R.w[j];
+          if (ty === 1) {
+            const kk = Math.max(0, Math.min(N - 1e-4, S.q[j * 3] / ds)), i0 = Math.floor(kk), f = kk - i0, a = i0 * 3, b = a + 3;
+            const b1 = S.q[j * 3 + 1], c1 = S.q[j * 3 + 2];
+            for (let e = 0; e < 3; e++) {
+              const c0 = cx[a + e] + (cx[b + e] - cx[a + e]) * f;
+              const l0 = fL[a + e] + (fL[b + e] - fL[a + e]) * f, u0 = fU[a + e] + (fU[b + e] - fU[a + e]) * f, t0 = fT[a + e] + (fT[b + e] - fT[a + e]) * f;
+              const pv = c0 + l0 * b1 + u0 * c1;
+              const nvv = t0 * S.qn[j * 3] + l0 * S.qn[j * 3 + 1] + u0 * S.qn[j * 3 + 2];
+              if (e === 0) { x += pv * w; nx += nvv * w; } else if (e === 1) { y += pv * w; ny += nvv * w; } else { z += pv * w; nz += nvv * w; }
+            }
+          } else {
+            const r = this.rigid[S.ref[j]];
+            v.set(S.q[j * 3], S.q[j * 3 + 1], S.q[j * 3 + 2]).applyMatrix4(r.M);
+            nv.set(S.qn[j * 3], S.qn[j * 3 + 1], S.qn[j * 3 + 2]).applyMatrix3(r.N3).normalize();
+            x += v.x * w; y += v.y * w; z += v.z * w; nx += nv.x * w; ny += nv.y * w; nz += nv.z * w;
+          }
+          ws += w;
+        }
+        if (ws > 0) { x /= ws; y /= ws; z /= ws; }
+        const nl = Math.hypot(nx, ny, nz) || 1;
+        P[i * 3] = x; P[i * 3 + 1] = y; P[i * 3 + 2] = z;
+        NR[i * 3] = nx / nl; NR[i * 3 + 1] = ny / nl; NR[i * 3 + 2] = nz / nl;
+      }
+      pa.needsUpdate = true; na.needsUpdate = true;
+      const g = S.mesh.geometry;
+      if (!g.boundingBox) g.boundingBox = new THREE.Box3();
+      g.boundingBox.setFromBufferAttribute(pa);
+      if (!g.boundingSphere) g.boundingSphere = new THREE.Sphere();
+      g.boundingBox.getBoundingSphere(g.boundingSphere);
+    }
+  }
+  // Scale the model so the body (snout to tail tip, along the centreline) is
+  // `len` metres long, then re-measure at that size.
+  fitLength(len) {
+    if (!this.capture()) return false;
+    const f = len / this.L;
+    if (Math.abs(f - 1) > 1e-3) {
+      this.model.scale.multiplyScalar(f); this.model.position.multiplyScalar(f);
+      this.snake.updateMatrixWorld(true);
+      if (!this.capture()) return false;
+    }
+    // The spine writes these bones' matrices itself (stretched and slimmed
+    // stretches aren't a position/rotation/scale); the clips keep the rest.
+    for (const sg of this.segs) sg.bone.matrixAutoUpdate = false;
+    this._makeSkinMeshes();
+    return true;
+  }
+  _wave(u) { return this.thA * Math.cos(this.kw * u + this.wph); }
+  _histAt(u) {
+    if (this.k1 < this.k0) return this._angU;
+    let k = u / this.ds;
+    if (k >= this.k1) return this.hist[((this.k1 % this.M) + this.M) % this.M];
+    if (k < this.k0) k = this.k0;
+    const i0 = Math.floor(k), f = k - i0, M = this.M;
+    const a0 = this.hist[((i0 % M) + M) % M], a1 = this.hist[(((i0 + 1) % M) + M) % M];
+    return a0 + (a1 - a0) * f;
+  }
+  // Tail-side angle at arc s (relative to the base's direction).
+  _relTail(s) {
+    const tr = this._histAt(this.d - (s - this.sB)) - this._angU;
+    const g = (s - this.sB) / (this.L - this.sB);
+    const rest = -this.hand * this.coilTurn * (0.6 * g + 0.4 * g * g);
+    return tr + (rest - tr) * this.restW;
+  }
+  // Front angle at arc s ≤ sB: bends from the base's direction round to the
+  // heading by the face, carrying the wave forward, the steering lead, the
+  // resting head bend and the head's own look.
+  _relFront(s, turn) {
+    const g = _spSS(this.sB, this.sF, s);
+    let r = (turn + this.steer + this.restF * this.headBend) * g;
+    r += this.amp * this._wave(this.d + (this.sB - s)) * (1 - 0.55 * g);
+    r += this.headYaw * _spSS(this.sF + 0.14 * this.L, this.sF, s);
+    return r;
+  }
+  // A lift profile in front of the base: 0 at `base`, `up` along the column,
+  // back to `head` across the last bend before the face.
+  _lift(s, base, up, head) {
+    const sF = this.sF, b = Math.min(0.06 * this.L, (base - sF) * 0.4);
+    if (s >= base || s <= sF) return 0;
+    if (s > base - b) return up * _spSS(base, base - b, s);
+    if (s > sF + b) return up;
+    return head + (up - head) * _spSS(sF, sF + b, s);
+  }
+  _psi(s) {
+    if (s >= this.sB) return 0;
+    const sF = this.sF, sB = this.sB, L = this.L;
+    if (s <= sF) return this.headPitch + this.jawTilt + (this.ext * -0.28);   // the face
+    const carry = this._lift(s, sF + 0.11 * L, this.carry, 0);
+    const r = this.rear;
+    const rearP = this._lift(s, sF + (sB - sF) * (0.5 + 0.5 * r), 1.28 * r, 0);
+    const coilP = this._lift(s, sB, 1.7, -0.15);
+    const g = (sB - s) / (sB - sF);
+    const extP = 0.42 * (1 - g) - 0.32 * g;
+    let p = Math.max(carry, rearP + (coilP - rearP) * this.coil);
+    p += (extP - p) * this.ext;
+    p += this.headPitch * _spSS(sF + 0.12 * L, sF, s) + this.breath * 0.012;
+    return p;
+  }
+  _bake() {
+    // The body as it lies now becomes the track behind the base, so a coiled
+    // snake that sets off unwinds along its own coil.
+    const ds = this.ds, M = this.M;
+    const kTop = Math.floor(this.d / ds), kLow = Math.floor((this.d - (this.L - this.sB) - 0.5 * this.L) / ds);
+    for (let k = kLow; k <= kTop; k++) {
+      const s = Math.min(this.L, this.sB + (this.d - k * ds));
+      this.hist[((k % M) + M) % M] = this._angU + this._relTail(s);
+    }
+    this.k0 = kLow; this.k1 = kTop;
+    this.restW = 0;
+  }
+  update(dt, t) {
+    if (!this.ok) return;
+    const sn = this.snake, N = this.N, ds = this.ds, iB = this.iB, sB = this.sB, L = this.L;
+    const O = sn.position, h = sn.rotation.y;
+    // ---- Base point: follows the snake's position at dB (follow-the-leader) ----
+    if (!this._B) { this._B = { x: O.x - Math.sin(h) * this.dB, z: O.z - Math.cos(h) * this.dB }; this._angU = h; }
+    const B = this._B, bx0 = B.x, bz0 = B.z;
+    const vx = O.x - B.x, vz = O.z - B.z;
+    let ang = Math.hypot(vx, vz) > 1e-5 ? Math.atan2(vx, vz) : this._angU;
+    // Turned in place past what the forebody can bend: the tail swings round.
+    const gap = _spWrap(h - ang), LIM = 1.9;
+    if (Math.abs(gap) > LIM) ang = h - Math.sign(gap) * LIM;
+    B.x = O.x - Math.sin(ang) * this.dB; B.z = O.z - Math.cos(ang) * this.dB;
+    this._angU += _spWrap(ang - this._angU);
+    const angU = this._angU;
+    const dd = (B.x - bx0) * Math.sin(ang) + (B.z - bz0) * Math.cos(ang);
+    const moving = Math.abs(dd) > 0.02 * Math.max(dt, 1e-3);
+    if (moving && this.restW > 0.001) this._bake();
+    this.d += dd;
+    this.amp = moving ? Math.min(1, this.amp + Math.abs(dd) / (0.3 * L)) : Math.max(0, this.amp - dt * 0.5);
+    // Lay the travelled path (with its wave) into the track.
+    const kNow = Math.floor(this.d / ds), M = this.M;
+    while (this.k1 < kNow) {
+      this.k1++;
+      this.hist[((this.k1 % M) + M) % M] = angU + this.amp * this._wave(this.k1 * ds);
+      if (this.k1 - this.k0 >= M - 1) this.k0 = this.k1 - M + 2;
+    }
+    if (!moving && this.state === "bask") this.restW = Math.min(1, this.restW + dt / 7);
+    // The resting head curl is for basking; anything else (watching you,
+    // rearing, the strike) straightens the head onto its heading.
+    this.restF += ((moving || this.state !== "bask" ? 0 : this.restW) - this.restF) * Math.min(1, dt * 1.5);
+    // ---- The centreline (world XZ, plus height above its lying line) ----
+    const turn = Math.max(-LIM, Math.min(LIM, _spWrap(h - angU)));
+    const px = this.px, py = this.py, pz = this.pz, phi = this.phi;
+    const off = this.amp * (this.thA / this.kw) * Math.sin(this.kw * this.d + this.wph);
+    const pB = angU + this._relTail(sB);
+    px[iB] = B.x + Math.cos(pB) * off; pz[iB] = B.z - Math.sin(pB) * off; py[iB] = 0; phi[iB] = pB;
+    for (let i = iB - 1; i >= 0; i--) {
+      const sm = (i + 0.5) * ds, a = angU + this._relFront(sm, turn), p = this._psi(sm), c = Math.cos(p);
+      px[i] = px[i + 1] + Math.sin(a) * c * ds; pz[i] = pz[i + 1] + Math.cos(a) * c * ds; py[i] = py[i + 1] + Math.sin(p) * ds;
+      phi[i] = angU + this._relFront(i * ds, turn);
+    }
+    for (let i = iB + 1; i <= N; i++) {
+      const sm = (i - 0.5) * ds, a = angU + this._relTail(sm);
+      px[i] = px[i - 1] - Math.sin(a) * ds; pz[i] = pz[i - 1] - Math.cos(a) * ds; py[i] = 0;
+      phi[i] = angU + this._relTail(i * ds);
+    }
+    for (let i = 0; i <= N; i++) {
+      if (py[i] < 0) py[i] = 0;
+      this.lift[i] = this.groundLift ? this.groundLift(px[i], pz[i]) : 0;
+    }
+    // ---- Pose the bones: each bind stretch moved rigidly onto the curve ----
+    sn.updateMatrixWorld(true);
+    const gInv = _spM3.copy(sn.matrixWorld).invert();
+    const at = (s, depth, out) => {
+      const k = Math.max(0, Math.min(N - 1e-4, s / ds)), i0 = Math.floor(k), f = k - i0;
+      out.set(px[i0] + (px[i0 + 1] - px[i0]) * f,
+        this.groundY + py[i0] + (py[i0 + 1] - py[i0]) * f + depth + this.lift[i0] + (this.lift[i0 + 1] - this.lift[i0]) * f,
+        pz[i0] + (pz[i0 + 1] - pz[i0]) * f);
+      return out.applyMatrix4(gInv);
+    };
+    const segW = {};
+    for (const sg of this.segs) {
+      const Pa = at(sg.sa, sg.depth, _spV1), Pb = at(sg.sb, sg.depth, _spV2);
+      const tt = _spV3.copy(Pa).sub(Pb).normalize();
+      const k = Math.max(0, Math.min(N, Math.round((sg.sa + sg.sb) / 2 / ds))), pa = phi[k];
+      const ll = _spV4.set(Math.cos(pa), 0, -Math.sin(pa)).transformDirection(gInv);
+      const uu = _spV5.crossVectors(tt, ll).normalize();
+      ll.crossVectors(uu, tt);
+      // bind frame → curve frame, drawn out (st) along the curve and slimmed
+      // (sx) across it about the stretch's midpoint.
+      tt.multiplyScalar(sg.st); ll.multiplyScalar(sg.sx); uu.multiplyScalar(sg.sx);
+      _spM1.makeBasis(tt, ll, uu).multiply(sg.MbT);
+      const A2 = Pa.add(Pb).multiplyScalar(0.5);
+      _spV3.copy(sg.A).applyMatrix4(_spM1);
+      _spM1.setPosition(A2.sub(_spV3));
+      sg.W.multiplyMatrices(_spM1, sg.bind);
+      segW[sg.n] = sg.W;
+      // Bone local = (parent's frame)⁻¹ · wanted frame, all in the snake's frame.
+      const parW = sg.par ? segW[sg.par] : _spM2.multiplyMatrices(gInv, sg.bone.parent.matrixWorld);
+      sg.bone.matrix.copy(parW).invert().multiply(sg.W);
+      sg.bone.matrixWorldNeedsUpdate = true;
+    }
+    // The centreline in the snake's frame, with its frame at every sample, for
+    // the drawn body skin: the belly line (depthC) rests on the ground/rock.
+    if (!this._cx) { this._cx = new Float32Array((N + 1) * 3); this._fT = new Float32Array((N + 1) * 3); this._fL = new Float32Array((N + 1) * 3); this._fU = new Float32Array((N + 1) * 3); }
+    const cx = this._cx, fT = this._fT, fL = this._fL, fU = this._fU, dC = this.depthC;
+    for (let i = 0; i <= N; i++) {
+      _spV1.set(px[i], this.groundY + py[i] + dC[i] + this.lift[i], pz[i]).applyMatrix4(gInv);
+      cx[i * 3] = _spV1.x; cx[i * 3 + 1] = _spV1.y; cx[i * 3 + 2] = _spV1.z;
+    }
+    for (let i = 0; i <= N; i++) {
+      const a = Math.max(0, i - 1) * 3, b = Math.min(N, i + 1) * 3;
+      const tt = _spV1.set(cx[a] - cx[b], cx[a + 1] - cx[b + 1], cx[a + 2] - cx[b + 2]).normalize();   // headward
+      const ll = _spV2.set(Math.cos(phi[i]), 0, -Math.sin(phi[i])).transformDirection(gInv);
+      const uu = _spV3.crossVectors(tt, ll).normalize();
+      ll.crossVectors(uu, tt);
+      fT[i * 3] = tt.x; fT[i * 3 + 1] = tt.y; fT[i * 3 + 2] = tt.z;
+      fL[i * 3] = ll.x; fL[i * 3 + 1] = ll.y; fL[i * 3 + 2] = ll.z;
+      fU[i * 3] = uu.x; fU[i * 3 + 1] = uu.y; fU[i * 3 + 2] = uu.z;
+    }
+    // The face's lateral axis (world), for the tongue's fork wave.
+    const fk = Math.round((this.segs[0].sa + this.segs[0].sb) / 2 / ds), fa = phi[fk];
+    (this.faceLat || (this.faceLat = new THREE.Vector3())).set(Math.cos(fa), 0, -Math.sin(fa));
+    this.model.updateMatrixWorld(true);
+  }
+  // A point on the body (world), s as a fraction snout → tail, for colliders.
+  bodyPoint(frac, out) {
+    const k = Math.max(0, Math.min(this.N, Math.round(frac * this.N)));
+    return out.set(this.px[k], this.groundY + this.py[k], this.pz[k]);
+  }
+}
+
 // ---------- Procedural snake "alive" layer ----------
-// Runs the additive bone deltas AFTER the mixer writes each clip pose (the
-// scene owns locomotion + the behaviour brain; this owns body slither, the
-// tongue flick, jaw, and the cobra rear). Owns the SOLE mixer.update. Mirrors
-// SpiderController's _poseYOff discipline.
+// Runs AFTER the mixer writes each clip pose (the scene owns locomotion + the
+// behaviour brain; this owns the body, the tongue flick, the jaw and the
+// rear). The body is the SnakeSpine above when it took the rig (lying,
+// gliding, rearing, striking); otherwise the old additive deltas over the
+// upright clip pose. Owns the SOLE mixer.update. Mirrors SpiderController's
+// _poseYOff discipline.
 class SnakeController {
   constructor(snake, scene, camera) {
     this.snake = snake; this.scene = scene; this.camera = camera;
@@ -43,6 +528,13 @@ class SnakeController {
     // them over; applied HERE, inside the additive-layer safety net — the scene
     // used to += the neck/head bones directly, outside any protection).
     this.headYaw = 0; this.headPitch = 0;
+    // The lying body (SnakeSpine). Scene-fed: the behaviour state, the
+    // steering lead, the strike's S-coil and lunge extension, and the ground
+    // under each stretch of body (the basking rock).
+    this._spine = null;
+    this.state = "bask"; this.steer = 0; this.strikeCoil = 0; this.strikeExt = 0; this._coil = 0;
+    this.groundLift = null;
+    this.jawRest = 0.4;       // radians the jaw closes from the pack's resting gape
     this.suspend = true;
     this._q1 = new THREE.Quaternion(); this._q2 = new THREE.Quaternion();
     this._v1 = new THREE.Vector3(); this._v2 = new THREE.Vector3(); this._s = new THREE.Vector3();
@@ -54,6 +546,24 @@ class SnakeController {
   setJaw(j) { this.jawTarget = Math.max(0, Math.min(1, j)); }
   setSlither(a) { this.slitherAmt = Math.max(0, Math.min(1.4, a)); }
   requestTongueFlick(fast) { if (this._tongueT < 0) this._tongueNext = 0; this._tongueFast = !!fast; }
+  // Lay the body down: size the model by its LENGTH (snout to tail tip along
+  // the centreline) and hand the body bones to the spine. Falls back to the
+  // clip pose if the rig isn't the one this was built for.
+  initSpine(len) {
+    try {
+      const sp = new SnakeSpine(this.snake, this.parts.model);
+      if (sp.fitLength(len)) { this._spine = sp; this.baseY = -1; this._needsGround = false; }
+    } catch (e) { console.warn("[snakes] spine:", e); this._spine = null; }
+    return this._spine;
+  }
+  // Rotate `bone` by `angle` about a WORLD axis, through its pivot.
+  _rotWorld(bone, axis, angle) {
+    if (!bone || !angle) return;
+    bone.getWorldQuaternion(this._q1);
+    this._v1.copy(axis).applyQuaternion(this._q1.invert()).normalize();
+    this._q2.setFromAxisAngle(this._v1, angle);
+    bone.quaternion.multiply(this._q2);
+  }
   update(t, d) {
     const p = this.parts;
     if (!p || !p.mixer) return;
@@ -124,108 +634,127 @@ class SnakeController {
     const poseYPrev = this._poseYOff || 0;
     this._poseYOff = 0;
 
-    // Belly grounding self-calibration. It used to plant the lowest BONE
-    // origin 2 cm above the ground, but bones run down the body's centreline
-    // (Tail1 sits 0.13 model units above its own belly), so every rung's belly
-    // was buried 0.6–5 cm — measured 3.2–5.3 cm into the basking rock at rung
-    // 4. Measure the skin itself.
-    if (this._needsGround) {
-      this._needsGround = false;
-      this.snake.updateMatrixWorld(true);
-      let lowY = Infinity; const v = this._v2;
-      model.traverse((o) => {
-        if (!o.isSkinnedMesh) return;
-        const n = o.geometry.attributes.position.count;
-        for (let i = 0; i < n; i += 2) { o.getVertexPosition(i, v); o.localToWorld(v); if (v.y < lowY) lowY = v.y; }
-      });
-      // Belly on the clearing's ground (y = −1); the rock lift (surfY) rides
-      // on top of baseY. The skin's offset below the root does not depend on
-      // where the root is right now.
-      if (isFinite(lowY)) this.baseY = -1 - (lowY - this.snake.position.y);
-    }
-
-    // Clip-pose world transforms of Head and Mouth, before any delta. The FACE
-    // (eyes, snout, jaw, teeth: 2464 of 3258 vertices) is skinned to Mouth,
-    // which is a child of ROOT, not of Head; Head carries 66 vertices at the
-    // back of the skull. So every head/neck delta below moved the back of the
-    // skull while the face stayed put — a 15 cm tear under a full rear, and a
-    // hood-like bulge when tracking. Mouth is re-attached after the deltas.
-    if (rig.head && rig.mouth) {
-      rig.head.updateWorldMatrix(true, false);
-      rig.mouth.updateWorldMatrix(false, false);
-      rig.head.matrixWorld.decompose(this._hp0, this._hq0, this._s);
-      rig.mouth.matrixWorld.decompose(this._mp0, this._mq0, this._s);
-    }
-
-    // ---- Body slither ---- a small travelling wave down Chest→Body→Tail,
-    // as a lateral BEND (about the snake's up axis).
-    // (The Walk clip carries the primary undulation; this adds life at rest.)
-    this._slitherAmtSm += (this.slitherAmt - this._slitherAmtSm) * Math.min(1, d * 6);
-    this._slitherPhase += d * (2.2 + this._slitherSpeed * 3.0);
-    const SL = 0.055;
-    const chain = [rig.chest, rig.body, ...rig.tail].filter(Boolean);
-    for (let i = 0; i < chain.length; i++) {
-      const amp = SL * (0.35 + i * 0.18);
-      const ph = this._slitherPhase - i * 0.7;
-      this._rotSnake(chain[i], 0, 1, 0, Math.sin(ph) * amp * this._slitherAmtSm);
-    }
-    this._rotSnake(rig.neck, 0, 1, 0, Math.sin(this._slitherPhase + 0.4) * SL * 0.5 * this._slitherAmtSm);
-
-    // ---- Breath ---- a slow ripple down the forebody, so a settled bask is
-    // never statue-still between tongue flicks (quicker when reared/agitated).
+    // Smoothed drives, shared by the spine and the clip-pose fallback.
+    this._rear += (this.rearTarget - this._rear) * Math.min(1, d * 4);
     this._breathPhase += d * (this._rear > 0.3 ? 2.4 : 1.5);
     const br = Math.sin(this._breathPhase);
-    this._rotSnake(rig.chest, 1, 0, 0, -br * 0.008);
-    this._rotSnake(rig.body, 1, 0, 0, br * 0.005);
+    this._jaw += (this.jawTarget - this._jaw) * Math.min(1, d * (this.jawTarget > this._jaw ? 18 : 10));
 
-    // ---- Cobra rear ---- the face draws back and tilts up at you (rearK),
-    // plus a slow hypnotic weave while held. No root lift any more: it raised
-    // the WHOLE snake 10 % of its height, belly and tail off the ground.
-    this._rear += (this.rearTarget - this._rear) * Math.min(1, d * 4);
-    if (this._rear > 0.01) {
-      const r = this._rear, K = this.rearK;
-      this._rotSnake(rig.chest, 1, 0, 0, K.chest * r);
-      this._rotSnake(rig.neck, 1, 0, 0, K.neck * r);
-      this._rotSnake(rig.head, 1, 0, 0, K.head * r);
-      this._rotSnake(rig.neck, 0, 0, 1, Math.sin(t * 1.3) * 0.05 * r);
-    }
+    const spine = this._spine && this._spine.ok ? this._spine : null;
+    if (spine) {
+      // ---- The lying body ---- the spine poses Chest/Neck/Head/Tail* and
+      // the face from one centreline: it carries the slither (the travelled
+      // path's wave), the breath, the rear, the strike S and lunge, the head's
+      // look and the face's tip-up as it gapes. Nothing below re-poses those.
+      this._coil += (this.strikeCoil - this._coil) * Math.min(1, d * 12);
+      spine.state = this.state; spine.rear = this._rear; spine.coil = this._coil; spine.ext = this.strikeExt;
+      spine.steer = this.steer; spine.headYaw = this.headYaw; spine.headPitch = this.headPitch;
+      spine.jawTilt = this._jaw * 0.10; spine.breath = br; spine.groundLift = this.groundLift;
+      spine.update(d, t);
+    } else {
+      // Belly grounding self-calibration. It used to plant the lowest BONE
+      // origin 2 cm above the ground, but bones run down the body's centreline
+      // (Tail1 sits 0.13 model units above its own belly), so every rung's belly
+      // was buried 0.6–5 cm — measured 3.2–5.3 cm into the basking rock at rung
+      // 4. Measure the skin itself.
+      if (this._needsGround) {
+        this._needsGround = false;
+        this.snake.updateMatrixWorld(true);
+        let lowY = Infinity; const v = this._v2;
+        model.traverse((o) => {
+          if (!o.isSkinnedMesh) return;
+          const n = o.geometry.attributes.position.count;
+          for (let i = 0; i < n; i += 2) { o.getVertexPosition(i, v); o.localToWorld(v); if (v.y < lowY) lowY = v.y; }
+        });
+        // Belly on the clearing's ground (y = −1); the rock lift (surfY) rides
+        // on top of baseY. The skin's offset below the root does not depend on
+        // where the root is right now.
+        if (isFinite(lowY)) this.baseY = -1 - (lowY - this.snake.position.y);
+      }
 
-    // ---- Head tracking (scene-fed yaw+pitch, in the snake's frame) ----
-    // + yaw turns toward +x (the scene's atan2 convention); + pitch looks UP,
-    // which about the snake's x axis is a NEGATIVE angle.
-    if (Math.abs(this.headYaw) > 0.001) {
-      this._rotSnake(rig.neck, 0, 1, 0, this.headYaw * 0.5);
-      this._rotSnake(rig.head, 0, 1, 0, this.headYaw * 0.5);
-    }
-    if (Math.abs(this.headPitch) > 0.001) {
-      this._rotSnake(rig.neck, 1, 0, 0, -this.headPitch * 0.5);
-      this._rotSnake(rig.head, 1, 0, 0, -this.headPitch * 0.5);
-    }
+      // Clip-pose world transforms of Head and Mouth, before any delta. The FACE
+      // (eyes, snout, jaw, teeth: 2464 of 3258 vertices) is skinned to Mouth,
+      // which is a child of ROOT, not of Head; Head carries 66 vertices at the
+      // back of the skull. So every head/neck delta below moved the back of the
+      // skull while the face stayed put — a 15 cm tear under a full rear, and a
+      // hood-like bulge when tracking. Mouth is re-attached after the deltas.
+      if (rig.head && rig.mouth) {
+        rig.head.updateWorldMatrix(true, false);
+        rig.mouth.updateWorldMatrix(false, false);
+        rig.head.matrixWorld.decompose(this._hp0, this._hq0, this._s);
+        rig.mouth.matrixWorld.decompose(this._mp0, this._mq0, this._s);
+      }
 
-    // ---- Re-attach the face to the head ----
-    // Mouth keeps the clip's own motion (its rotation relative to Head varies
-    // by up to 0.78 rad in Attack) plus whatever world-space delta the layer
-    // above gave Head.
-    if (rig.head && rig.mouth) {
-      const hp1 = this._v1, hq1 = this._q1, qD = this._q2;
-      rig.head.updateWorldMatrix(true, false);
-      rig.head.matrixWorld.decompose(hp1, hq1, this._s);
-      qD.copy(this._hq0).invert().premultiply(hq1);                    // hq1 · hq0⁻¹
-      const np = this._v2.copy(this._mp0).sub(this._hp0).applyQuaternion(qD).add(hp1);
-      const par = rig.mouth.parent;
-      par.updateWorldMatrix(true, false);
-      rig.mouth.position.copy(np).applyMatrix4(this._m1.copy(par.matrixWorld).invert());
-      par.getWorldQuaternion(hq1);
-      rig.mouth.quaternion.copy(hq1.invert()).multiply(qD.multiply(this._mq0));
+      // ---- Body slither ---- a small travelling wave down Chest→Body→Tail,
+      // as a lateral BEND (about the snake's up axis).
+      // (The Walk clip carries the primary undulation; this adds life at rest.)
+      this._slitherAmtSm += (this.slitherAmt - this._slitherAmtSm) * Math.min(1, d * 6);
+      this._slitherPhase += d * (2.2 + this._slitherSpeed * 3.0);
+      const SL = 0.055;
+      const chain = [rig.chest, rig.body, ...rig.tail].filter(Boolean);
+      for (let i = 0; i < chain.length; i++) {
+        const amp = SL * (0.35 + i * 0.18);
+        const ph = this._slitherPhase - i * 0.7;
+        this._rotSnake(chain[i], 0, 1, 0, Math.sin(ph) * amp * this._slitherAmtSm);
+      }
+      this._rotSnake(rig.neck, 0, 1, 0, Math.sin(this._slitherPhase + 0.4) * SL * 0.5 * this._slitherAmtSm);
+
+      // ---- Breath ---- a slow ripple down the forebody, so a settled bask is
+      // never statue-still between tongue flicks (quicker when reared/agitated).
+      this._rotSnake(rig.chest, 1, 0, 0, -br * 0.008);
+      this._rotSnake(rig.body, 1, 0, 0, br * 0.005);
+
+      // ---- Cobra rear ---- the face draws back and tilts up at you (rearK),
+      // plus a slow hypnotic weave while held. No root lift any more: it raised
+      // the WHOLE snake 10 % of its height, belly and tail off the ground.
+      if (this._rear > 0.01) {
+        const r = this._rear, K = this.rearK;
+        this._rotSnake(rig.chest, 1, 0, 0, K.chest * r);
+        this._rotSnake(rig.neck, 1, 0, 0, K.neck * r);
+        this._rotSnake(rig.head, 1, 0, 0, K.head * r);
+        this._rotSnake(rig.neck, 0, 0, 1, Math.sin(t * 1.3) * 0.05 * r);
+      }
+
+      // ---- Head tracking (scene-fed yaw+pitch, in the snake's frame) ----
+      // + yaw turns toward +x (the scene's atan2 convention); + pitch looks UP,
+      // which about the snake's x axis is a NEGATIVE angle.
+      if (Math.abs(this.headYaw) > 0.001) {
+        this._rotSnake(rig.neck, 0, 1, 0, this.headYaw * 0.5);
+        this._rotSnake(rig.head, 0, 1, 0, this.headYaw * 0.5);
+      }
+      if (Math.abs(this.headPitch) > 0.001) {
+        this._rotSnake(rig.neck, 1, 0, 0, -this.headPitch * 0.5);
+        this._rotSnake(rig.head, 1, 0, 0, -this.headPitch * 0.5);
+      }
+
+      // ---- Re-attach the face to the head ----
+      // Mouth keeps the clip's own motion (its rotation relative to Head varies
+      // by up to 0.78 rad in Attack) plus whatever world-space delta the layer
+      // above gave Head.
+      if (rig.head && rig.mouth) {
+        const hp1 = this._v1, hq1 = this._q1, qD = this._q2;
+        rig.head.updateWorldMatrix(true, false);
+        rig.head.matrixWorld.decompose(hp1, hq1, this._s);
+        qD.copy(this._hq0).invert().premultiply(hq1);                    // hq1 · hq0⁻¹
+        const np = this._v2.copy(this._mp0).sub(this._hp0).applyQuaternion(qD).add(hp1);
+        const par = rig.mouth.parent;
+        par.updateWorldMatrix(true, false);
+        rig.mouth.position.copy(np).applyMatrix4(this._m1.copy(par.matrixWorld).invert());
+        par.getWorldQuaternion(hq1);
+        rig.mouth.quaternion.copy(hq1.invert()).multiply(qD.multiply(this._mq0));
+      }
     }
 
     // ---- Jaw ---- open the LowerMouth (hinges on local x; bind ~-0.38); the
     // face tips UP a little as it gapes (it used to pitch the whole face down:
     // Mouth IS the face).
-    this._jaw += (this.jawTarget - this._jaw) * Math.min(1, d * (this.jawTarget > this._jaw ? 18 : 10));
+    // (The pack's rest pose gapes — fine on a rearing cartoon cobra, a dead
+    // snake's look on one lying down. Lying, the mouth rests shut and opens
+    // from there.)
+    if (spine && rig.lowerMouth) rig.lowerMouth.rotation.x += this.jawRest * Math.max(0, 1 - this._jaw * 2.5);
     if (this._jaw > 0.01) {
       if (rig.lowerMouth) rig.lowerMouth.rotation.x -= this._jaw * 0.6;
-      this._rotSnake(rig.mouth, 1, 0, 0, -this._jaw * 0.10);
+      if (!spine) this._rotSnake(rig.mouth, 1, 0, 0, -this._jaw * 0.10);
     }
 
     // ---- Tongue flick ---- self-scheduling (d-driven, no timer).
@@ -290,13 +819,19 @@ class SnakeController {
       if (fork > 0) {
         // Fork waves up and down, fast, about the snake's left-right axis.
         const w = Math.sin(u * 44) * fork;
-        this._rotSnake(tg[1], 1, 0, 0, w * 0.22);
-        this._rotSnake(tg[2], 1, 0, 0, w * 0.30);
+        if (spine && spine.faceLat) { this._rotWorld(tg[1], spine.faceLat, w * 0.22); this._rotWorld(tg[2], spine.faceLat, w * 0.30); }
+        else { this._rotSnake(tg[1], 1, 0, 0, w * 0.22); this._rotSnake(tg[2], 1, 0, 0, w * 0.30); }
       }
     }
 
     // ---- Single absolute y-write (belly plant + pose offset + surface lift) ----
-    this.snake.position.y += (this.baseY + poseYPrev + this.surfY - this.snake.position.y) * Math.min(1, d * 6);
+    // (Under the spine the root stays on the grass: the rock lifts each
+    // stretch of body it lies on, not the whole snake.)
+    const yWant = spine ? this.baseY : this.baseY + poseYPrev + this.surfY;
+    this.snake.position.y += (yWant - this.snake.position.y) * Math.min(1, d * 6);
+    // The body skin is drawn along the curve last, once the jaw and tongue
+    // have moved the face's bones for this frame.
+    if (spine) { this.snake.updateMatrixWorld(true); spine.skin(); }
 
     // ---- Additive-layer safety net (bookend) ----
     for (const r of this._lifeBones) {
@@ -539,6 +1074,27 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   rock.position.set(0, -1.0, _snakeZ); rock.rotation.y = Math.random() * Math.PI * 2;
   rock.receiveShadow = true; rock.castShadow = true; rock.userData.noCollide = true;
   scene.add(rock); shellPieces.push(rock);
+  // The slab's top above the grass at a world point: the lathe profile under
+  // the same broken outline as the mesh. The lying snake drapes over the rim
+  // a stretch at a time (the root-level lift raised all of it, so the half
+  // hanging off the slab floated).
+  const _rockProfR = rockProf.map((p) => p.x).reverse(), _rockProfY = rockProf.map((p) => p.y).reverse();
+  function rockLiftAt(x, z) {
+    const dx = x - rock.position.x, dz = z - rock.position.z;
+    const r = Math.hypot(dx, dz);
+    if (r > 2.0) return 0;
+    const c = Math.cos(rock.rotation.y), s = Math.sin(rock.rotation.y);
+    const a = Math.atan2(dx * s + dz * c, dx * c - dz * s);       // rock-local angle
+    let r0 = r;
+    for (let k = 0; k < 2; k++) {
+      const edge = Math.min(1, Math.max(0, (r0 - 0.9) / 0.7));
+      r0 = r / (1 + edge * (0.10 * Math.sin(a * 3 + 0.7) + 0.06 * Math.sin(a * 7 + 2.1) + 0.035 * Math.sin(a * 13)));
+    }
+    if (r0 >= _rockProfR[_rockProfR.length - 1]) return 0;
+    let i = 1; while (i < _rockProfR.length - 1 && _rockProfR[i] < r0) i++;
+    const f = (r0 - _rockProfR[i - 1]) / (_rockProfR[i] - _rockProfR[i - 1]);
+    return Math.max(0, _rockProfY[i - 1] + (_rockProfY[i] - _rockProfY[i - 1]) * f + 0.004);
+  }
 
   // Fallen log: bark along its length, sawn rings on the ends, a slightly
   // uneven girth.
@@ -743,10 +1299,14 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   // old procedural tube. It lies along the path; the model animates a constant
   // slither in idle. `size` drives both distance and the snake length.
   const distance = 9 - size * 8;
-  // The model's idle is a coiled, reared (cobra-like) pose, so it's tall — size
-  // it by overall height to a modest world height that scales with the rung.
+  // Sized by BODY LENGTH, snout to tail tip along the centreline: a grass
+  // snake of 1.32 m on the first rung to 1.60 m on the last. (It used to be
+  // sized by its reared height, 0.61–1.05 m — the clips' upright cobra.) The
+  // pack's bind pose is ~1.9× longer than it is tall; the spine measures the
+  // real centreline in onReady and corrects the scale exactly.
+  const SNAKE_LEN = 1.25 + size * 0.35;
   const snake = buildCreature(CREATURE_MODELS.snake, {
-    targetSize: 0.5 + size * 0.55,   // reared height in world units (~0.6 -> ~1.05)
+    targetSize: SNAKE_LEN / 1.9,
     axis: "y",
     coat: coatFor("snake", SNAKE_COATS),
   });
@@ -809,7 +1369,26 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
         pp.model.traverse(o => {
           if (!o.isMesh || !o.material) return;
           const nm = o.material.name;
-          if (nm === "Yellow") { o.material.color.setHex(0x17110a); o.material.roughness = 0.14; o.material.envMapIntensity = 1.0; o.material.needsUpdate = true; }
+          if (nm === "Yellow") {
+            o.material.color.setHex(0x17110a); o.material.roughness = 0.3; o.material.envMapIntensity = 0.55; o.material.needsUpdate = true;
+            // The pack's eyes are two big cartoon balls on top of the head (a
+            // frog's, lying down). A grass snake's are small beads: shrink
+            // each about its own centre (the two sit apart along the mesh's
+            // longest axis).
+            try {
+              const g = o.geometry, pa = g.attributes.position;
+              if (!g.boundingBox) g.computeBoundingBox();
+              const bs = g.boundingBox.getSize(new THREE.Vector3()), bc = g.boundingBox.getCenter(new THREE.Vector3());
+              const ax = bs.x >= bs.y && bs.x >= bs.z ? "x" : bs.y >= bs.z ? "y" : "z";
+              const cen = [new THREE.Vector3(), new THREE.Vector3()], cnt = [0, 0], e = new THREE.Vector3();
+              for (let i = 0; i < pa.count; i++) { e.fromBufferAttribute(pa, i); const k = e[ax] >= bc[ax] ? 1 : 0; cen[k].add(e); cnt[k]++; }
+              if (cnt[0] && cnt[1]) {
+                cen[0].divideScalar(cnt[0]); cen[1].divideScalar(cnt[1]);
+                for (let i = 0; i < pa.count; i++) { e.fromBufferAttribute(pa, i); const c = cen[e[ax] >= bc[ax] ? 1 : 0]; e.sub(c).multiplyScalar(0.6).add(c); pa.setXYZ(i, e.x, e.y, e.z); }
+                pa.needsUpdate = true; g.computeBoundingBox(); g.computeBoundingSphere();
+              }
+            } catch {}
+          }
           if (nm === "Purple") { o.material.color.setHex(0x2b1d22); o.material.roughness = 0.35; o.material.needsUpdate = true; }
           if (nm === "LightGreen") { o.material.color.copy(bellyC); o.material.needsUpdate = true; }
         });
@@ -862,7 +1441,12 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
             col[i * 3] = _c2.r; col[i * 3 + 1] = _c2.g; col[i * 3 + 2] = _c2.b;
           }
           g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-          skin.material.color.setRGB(1, 1, 1); skin.material.vertexColors = true; skin.material.roughness = 0.46; skin.material.needsUpdate = true;
+          // Matte, with a faint sheen: at 0.46 the faceted skin mirrored the
+          // sky in flat panes (the "glassy tube" from across the clearing)
+          // and the olive back and its bars were lost under it.
+          skin.material.color.setRGB(1, 1, 1); skin.material.vertexColors = true; skin.material.roughness = 0.68; skin.material.envMapIntensity = 0.22;
+          if (skin.material.normalScale) skin.material.normalScale.set(0.3, 0.3);
+          skin.material.needsUpdate = true;
         }
       } catch (e) { console.warn("[snakes] markings:", e); }
       pp.play("Idle");
@@ -878,6 +1462,13 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
         snakeCtl.ctrl.suspend = false;
         snakeCtl.ctrl._needsGround = true;
         snakeCtl.ctrl.tongueRest = B.tongueEvery || [2.2, 5.0];
+        // Lay it down: the spine re-scales the model to SNAKE_LEN and takes
+        // the body bones (the clip pose stays as the fallback).
+        const spn = snakeCtl.ctrl.initSpine(SNAKE_LEN);
+        if (spn) {
+          snakeCtl.ctrl.groundLift = rockLiftAt;
+          pp.span = spn.L; pp.height = 2 * spn.faceDepth; pp.footOffset = 0;
+        }
         snakeCtl.ctrl.height = pp.height || 0.6;
         snakeCtl.ctrl.span = pp.span || 0.6;
       }
@@ -918,7 +1509,9 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     state: "bask",
     stateT: 0,
     baskDur: 3.0 + Math.random() * 4.0,
-    heading: 0,                  // facing, radians (+Z forward like the spider)
+    // facing, radians (+Z forward like the spider). It lies at an angle to
+    // the path, so you first see it side-on, the S of its body — not end-on.
+    heading: (V.range(0, 1) < 0.5 ? -1 : 1) * V.range(0.7, 1.7),
     speed: 0,                    // current ground speed (m/s)
     target: null,                // wander/retreat destination {x, z}
     crossing: false,             // current wander leg crosses the path
@@ -942,6 +1535,8 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   };
   snakeCtl.ctrl = new SnakeController(snake, scene, camera);
   snake.userData.ctrl = snakeCtl.ctrl;   // observability for scene-verification hooks
+  // QA handle: the brain + a state setter, for harnesses that measure a pose per state.
+  snake.userData.qa = { ctl: snakeCtl, enter: (s) => snakeEnter(s, snakesControls) };
   const SNAKE_BOUNDS = { minX: -3.4, maxX: 3.4, minZ: -9.3, maxZ: 1.2 };
   // ---- Creature readout (trust-hud pattern; see the spider's) ----
   // The five states + the strike phases were all machine and no window: a
@@ -989,6 +1584,11 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   }
   function snoutTip(out) {
     const pp = snake.userData.parts;
+    if (_snoutIdx === null && snakeCtl.ctrl && snakeCtl.ctrl._spine && snakeCtl.ctrl._spine.snout) {
+      // The spine picked it in the bind pose, where the face points straight
+      // down +z (lying curled, "most forward" can land on a cheek).
+      _snoutIdx = snakeCtl.ctrl._spine.snout;
+    }
     if (_snoutIdx === null) {
       _snoutIdx = false;
       // Most forward (snake-frame +z) vertex skinned to the face bone.
@@ -1013,6 +1613,8 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     return out;
   }
   let slitherSound = null;       // lazy spatial rustle handle
+  const SN_COLL_AT = [0.1, 0.3, 0.5, 0.7, 0.88];
+  const SN_COLL = SN_COLL_AT.map((f) => ({ x: 0, z: 0, r: f < 0.2 ? 0.16 : 0.13 }));
   let prevPlayerDist = null, approachSpeed = 0;  // radial m/s toward the snake
   let prevPlayerPos = null;                      // last player XZ (own-velocity approach calc)
   let arousalFloor = 0, engageDur = 0;           // honest-credit state
@@ -1425,6 +2027,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       dh = Math.atan2(Math.sin(dh), Math.cos(dh));
       const turnRate = snakeCtl.state === "retreat" ? 2.6 : 1.6;
       snakeCtl.heading += Math.max(-turnRate * dtN, Math.min(turnRate * dtN, dh));
+      snakeCtl._steerWant = Math.max(-0.6, Math.min(0.6, dh));   // the head leads the turn
       desiredSpeed = (snakeCtl.state === "retreat" ? 0.85 : (B.wanderSpeed ?? (0.45 + size * 0.25)));
       desiredSpeed *= Math.min(1, dist / 0.8);            // ease in on arrival
       desiredSpeed *= Math.max(0.25, 1 - Math.abs(dh) / Math.PI); // slow in tight turns
@@ -1501,6 +2104,22 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       snakeCtl.ctrl.surfY = rockD < 1.55 ? 0.10 * clamp01((1.55 - rockD) / 0.35) : 0; }
     snakeCtl.ctrl.setJaw(snakeCtl.jawTarget || 0);
     snakeCtl.ctrl._tongueFast = sniffing || st === "watch" || snakeCtl.striking;
+    // The body's shape for the spine: the state (basking eases it into a
+    // coil), the head leading a turn, and the strike — drawn back into the S
+    // through the telegraph, unrolling at you through the lunge, gathering
+    // back through the recoil.
+    snakeCtl.ctrl.state = st;
+    snakeCtl._steer = (snakeCtl._steer || 0) + ((moving ? snakeCtl._steerWant || 0 : 0) - (snakeCtl._steer || 0)) * Math.min(1, dtN * 4);
+    snakeCtl.ctrl.steer = snakeCtl._steer;
+    {
+      const ph = snakeCtl.strikePhase, k = snakeCtl.strikeT;
+      let coil = 0, ext = 0;
+      if (ph === "telegraph") coil = 1;
+      else if (ph === "lunge") { const u = Math.min(1, k / 0.22); coil = 1; ext = 1 - (1 - u) * (1 - u); }
+      else if (ph === "recoil" && snakeCtl._lungeFrom) { coil = 1; ext = Math.max(0, 1 - k / 0.22); }
+      else if (ph === "recoil") coil = Math.max(0, 1 - k / 0.35);
+      snakeCtl.ctrl.strikeCoil = coil; snakeCtl.ctrl.strikeExt = ext;
+    }
     if (hasRig) snakeCtl.ctrl.update(t, dtN);
     // Pick the snout-tip vertex in the IDLE pose, before any strike: picked on
     // the first lunge frame, the Attack clip had already pitched the head and
@@ -1513,6 +2132,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       snoutIdx: _snoutIdx ? _snoutIdx.i : null,
       speed: +snakeCtl.speed.toFixed(2), playerDist: +(playerDist || 0).toFixed(2),
       approachSpeed: +(approachSpeed || 0).toFixed(2), crossing: !!snakeCtl.crossing,
+      palmDist: snakeCtl._palmDist != null ? +snakeCtl._palmDist.toFixed(2) : null,
     };
     // Creature readout — strike phrases may override the dwell (a telegraph
     // must never wait 0.9 s behind "it noticed you").
@@ -1741,7 +2361,15 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       // Small no-overlap collider around the coiled snake — you can still get
       // close enough to extend a hand, just can't walk through it.
       if (controls && controls.setObstacles) {
-        controls.setObstacles([{ x: snake.position.x, z: snake.position.z, r: 0.35 }]);
+        const spn = snakeCtl.ctrl && snakeCtl.ctrl._spine;
+        if (spn && spn.ok && spn._B) {
+          // Lying, it's a body 1.2–1.5 m long: one small circle per stretch.
+          for (let i = 0; i < SN_COLL.length; i++) {
+            spn.bodyPoint(SN_COLL_AT[i], _snkV1);
+            SN_COLL[i].x = _snkV1.x; SN_COLL[i].z = _snkV1.z;
+          }
+          controls.setObstacles(SN_COLL);
+        } else controls.setObstacles([{ x: snake.position.x, z: snake.position.z, r: 0.35 }]);
       }
       const dtN = dt || 0.016;
       // ---- Feed the fear model (honest, non-inverted gaze) ----
@@ -1961,11 +2589,16 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       // (reuse closure temps — this runs every frame).
       sPalm.getWorldPosition(_snkPalm);
       headAnchor.getWorldPosition(_snkHead2);
-      const headWorldDist = _snkPalm.distanceTo(_snkHead2);
-      // Sniff trust builds when the palm is within ~0.7 m of the snake head
-      // AND the user is holding the extend button (active gesture, not by
-      // accident). Decays slowly otherwise.
-      const sniffing = extendHeld && extension > 0.6 && headWorldDist < 0.9 && !moving;
+      // A lying snake's head is a long reach below an outstretched palm (a
+      // hand held out while looking down gains little ground): scent drifts
+      // down to it, so the vertical gap counts for a third, and it tastes
+      // the hand from a little further than the old 0.9 m it had reared to.
+      const headWorldDist = Math.hypot(_snkPalm.x - _snkHead2.x, (_snkPalm.y - _snkHead2.y) * 0.35, _snkPalm.z - _snkHead2.z);
+      // Sniff trust builds when the palm is near the snake's head AND the
+      // user is holding the extend button (active gesture, not by accident).
+      // Decays slowly otherwise.
+      const sniffing = extendHeld && extension > 0.6 && headWorldDist < 1.2 && !moving;
+      snakeCtl._palmDist = headWorldDist;
       snakeCtl.sniffing = sniffing;   // published for the fear feed + tongue cadence
       if (sniffing) {
         sniffT = Math.min(1, sniffT + dtN * 0.30);
