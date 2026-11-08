@@ -342,7 +342,7 @@ function handleRateSubmit(d, params) {
   window.__lastTrialEvidence = null;
   clearTrialSnap();
   markCompleted(phobia, level, suds, predicted, peak, outcome, extra);
-  go("complete", { phobia, level, suds, predicted, peak });
+  goReplace("complete", { phobia, level, suds, predicted, peak });
 }
 
 // ---------- Views ----------
@@ -438,97 +438,118 @@ function valleyHeroSVG({ lit = [], next = null } = {}) {
   </svg>`;
 }
 
+// Home: the one hub, for a first visit and every return.
+//
+// Before, a first visit read a paragraph, picked a fear, met the notice and
+// then a "gate" page; a return opened "Welcome back" → Camp (a valley map
+// with ranks, a quest card, stats and a realm list) → the realm (a page of
+// twelve sections) → the gate → the trial. Now there is this page, and a
+// trial: the fear you want, one tap. Returning, the next step of your story
+// sits on top, one tap. Everything else — the story book, progress, the real
+// steps, the traveler, settings — is in ☰, never in the way.
+const FEAR_ICON = { dogs: "🐕", spiders: "🕷", snakes: "🐍", heights: "🏔", dark: "🌙", enclosed: "🚪" };
+function homePips(n, m) {
+  return `<span class="hp-pips" aria-hidden="true">${Array.from({ length: m }, (_, i) => `<i class="${i < n ? "on" : ""}"></i>`).join("")}</span>`;
+}
 function viewArrival() {
   const ch = window.Character && window.Character.loadCharacter();
   const named = ch && ch.name ? escapeHtml(ch.name) : null;
   const S = window.Story;
-  let lit = [], next = null;
-  if (ch) {
-    try {
-      lit = VALLEY_KEYS.filter((k) => PHOBIAS[k] && realmStatus(k).tamed);
-      next = continueTarget().key;
-    } catch {}
-  }
-  const top = `
-  <div class="mob-stage mob-valley" aria-hidden="true">${valleyHeroSVG({ lit, next })}</div>
-  <div class="mob-top">
-    <span class="mob-spacer"></span>
-    ${(() => {
-      // The language switch, on the first screen and in the other language's
-      // own script — a Persian speaker can't be expected to find "Language"
-      // in an English settings drawer.
-      const fa = window.I18n && window.I18n.currentLanguage() === "fa";
-      return `<button class="mob-lang-chip" data-action="toggle-lang" lang="${fa ? "en" : "fa"}" aria-label="${fa ? "Switch to English" : "تغییر زبان به فارسی"}">${fa ? "English" : "فارسی"}</button>`;
-    })()}
-    <button class="mob-icon-btn" data-action="open-settings" aria-label="${t("a11y.settings", "Settings")}">⚙</button>
-  </div>`;
-  const wordmark = `
-    <h1 class="lw-mark">${brandLamp()}<span>${t("brand.name", "Lanternwalk")}</span></h1>`;
-  // First visit: the name, the line — and the choice they came for. Each
-  // lantern is a fear; one tap (and the one-time notice) puts them in that
-  // fear's first trial. It used to be "Begin the walk" → a four-page
-  // prologue → a character creator with the fear buried in its first row
-  // (dogs pre-selected) → a four-page chapter → a long form: twelve taps and
-  // ~700 words before the thing they chose. The prologue and the creator are
-  // still there — after the first trial, when they mean something.
-  // A traveler the one-tap start made for them, who reloaded before a single
-  // trial was logged, is still a first-time visitor: the picker, not a
-  // "Welcome back, Traveler" with no history behind it.
-  // A traveler with a history is returning, named or not: an unnamed one got
-  // the first-visit picker on every return, and a tile tap there silently
-  // swapped their main fear.
+  // A traveler the one-tap start made, who reloaded before a single trial
+  // was logged, is still a first-time visitor. A traveler with a history is
+  // returning, named or not.
   const hasLog = !!(state.log || []).length;
   const fresh = !ch || (!hasLog && (ch.autoMade || !named));
-  if (fresh) {
-    const open = VALLEY_KEYS.filter((k) => PHOBIAS[k] && realmOpen(k));
-    const icon = { dogs: "🐕", spiders: "🕷", snakes: "🐍", heights: "🏔", dark: "🌙", enclosed: "🚪" };
-    const tiles = open.map((k) => `
-      <button class="fear-tile" data-action="quick-start" data-phobia="${k}">
-        <span class="ft-icon" aria-hidden="true">${icon[k] || "🏮"}</span>
-        <span class="ft-name">${escapeHtml(t(`phobia.${k}.label`, PHOBIAS[k].label))}</span>
-        <span class="ft-realm">${escapeHtml(realmOf(k).realmName)}</span>
-      </button>`).join("");
+  let lit = [], tgt = null;
+  if (!fresh) {
+    try { lit = VALLEY_KEYS.filter((k) => PHOBIAS[k] && realmStatus(k).tamed); tgt = continueTarget(); } catch {}
+  }
+  const fa = window.I18n && window.I18n.currentLanguage() === "fa";
+  const top = `
+  <div class="home-bg" aria-hidden="true">${valleyHeroSVG({ lit, next: tgt ? tgt.key : null })}</div>
+  <div class="home-top">
+    <span class="home-mark">${brandLamp()}<span>${t("brand.name", "Lanternwalk")}</span></span>
+    <span class="home-top-r">
+      <button class="home-chip" data-action="toggle-lang" lang="${fa ? "en" : "fa"}" aria-label="${fa ? "Switch to English" : "تغییر زبان به فارسی"}">${fa ? "English" : "فارسی"}</button>
+      <button class="tb-icon home-menu" data-action="open-menu" aria-label="${t("a11y.openMenu", "Open menu")}">${menuGlyph()}</button>
+    </span>
+  </div>`;
+  const open = VALLEY_KEYS.filter((k) => PHOBIAS[k] && realmOpen(k));
+  const tiles = open.map((k, ti) => {
+    let n = 0, m = 5;
+    try { const rs = realmStatus(k); n = rs.trials; m = rs.totalTrials; } catch {}
+    const cur = !!(tgt && !tgt.allWalked && tgt.key === k);
+    const done = n >= m;
+    return `
+      <button class="fear-tile${cur ? " cur" : ""}${done ? " done" : ""}" style="--k:${ti}" data-action="quick-start" data-phobia="${k}"
+              aria-label="${escapeHtml(phLabel(k) + " — " + realmOf(k).realmName + (fresh ? "" : " · " + tf("home.tileAria", "{n} of {m} trials", { n, m })))}">
+        <span class="ft-icon" aria-hidden="true">${FEAR_ICON[k] || "🏮"}</span>
+        <span class="ft-text">
+          <span class="ft-name">${escapeHtml(phLabel(k))}</span>
+          <span class="ft-realm">${escapeHtml(realmOf(k).realmName)}</span>
+        </span>
+        ${!fresh && n > 0 ? homePips(n, m) : ""}
+      </button>`;
+  }).join("");
+  if (fresh || !tgt) {
     return `${top}
-  <div class="mob-hero arrive-hero">
-    ${wordmark}
-    <p class="lw-tagline">${t("arrive.title2", "Every fear is a path<br>you stopped walking.")}</p>
-    <p class="lw-sub">${t("brand.sub", "Light it again — one small step at a time.")}</p>
-  </div>
-  <div class="mob-sheet arrive-sheet arrive-pick">
-    <p class="arrive-story">${t("arrive.copy4", "Six lanterns went dark in this valley, one for each fear. Mira, the lantern-keeper, will walk beside you — you choose every step, and you can turn back any time.")}</p>
-    <h2 class="arrive-q">${t("arrive.pickQ", "Which fear do you want to face?")}</h2>
-    <div class="fear-tiles">${tiles}</div>
-    <p class="arrive-promise">${t("arrive.promise", "You'll start where it's small — far away, and only as close as you choose.")}</p>
-    <button class="arrive-link" data-action="open-quiz">${t("arrive.quiz2", "Not sure which fear? Take the 1-minute check")}</button>
+  <div class="home-main">
+    <header class="home-hero">
+      <h1 class="home-title">${t("arrive.title2", "Every fear is a path<br>you stopped walking.")}</h1>
+      <p class="home-sub">${t("home.story", "Six lanterns went dark in this valley — one for each fear. Mira, the lantern-keeper, walks beside you. Light them again, one small step at a time.")}</p>
+    </header>
+    <section class="home-sheet" aria-labelledby="homeQ">
+      <h2 class="home-q" id="homeQ">${t("arrive.pickQ", "Which fear do you want to face?")}</h2>
+      <div class="fear-tiles">${tiles}</div>
+      <p class="home-note">${t("home.promise", "You start where it's small and far away. You choose every step — and you can stop any time.")}</p>
+      <button class="home-link" data-action="open-quiz">${t("arrive.quiz2", "Not sure which fear? Take the 1-minute check")}</button>
+    </section>
   </div>`;
   }
-  // Returning: where the story is, what happened last time, and the one
-  // button that picks it up. It used to say "Continue" and always open the
-  // dog realm, whatever fear the traveler had chosen.
-  const tgt = continueTarget();
+  // Returning: the next step of the story, one tap; the six fears below it.
   const realm = realmOf(tgt.key);
   const chap = S && S.chapterOfRealm(tgt.key);
-  const recap = S ? S.recapLine() : "";
   const note = S ? S.morningNoteHTML() : "";
-  const nextLine = tgt.allWalked
-    ? t("arrive.allWalked", "Every lantern is lit. Come back for a booster walk — or take a real step out there.")
-    : tf("arrive.next", "Next: {realm} · trial {n} — {title}", { realm: escapeHtml(realm.realmName), n: tgt.level + 1, title: escapeHtml(lvTitle(tgt.key, tgt.level)) });
+  const recap = S && !note ? S.recapLine() : "";
+  let rs = { trials: 0, totalTrials: 5 };
+  try { rs = realmStatus(tgt.key); } catch {}
+  const cont = tgt.allWalked ? `
+      <section class="home-next all" aria-label="${t("home.nextAria", "Your next step")}">
+        <span class="hn-kicker">🕊 ${t("home.allK", "Every lantern is lit")}</span>
+        <p class="hn-body">${t("arrive.allWalked", "Every lantern is lit. Come back for a booster walk — or take a real step out there.")}</p>
+        <button class="home-btn-primary" data-action="story-continue">${t("home.allGo", "Walk one again")}</button>
+      </section>` : `
+      <section class="home-next" aria-label="${t("home.nextAria", "Your next step")}">
+        <span class="hn-kicker">${FEAR_ICON[tgt.key] || "🏮"} ${escapeHtml(chap ? S.chapterLabel(chap) : realm.realmName)}</span>
+        <strong class="hn-title">${escapeHtml(lvTitle(tgt.key, tgt.level))}</strong>
+        <span class="hn-meta">${escapeHtml(realm.realmName)} · ${tf("home.trialOf", "trial {n} of {m}", { n: tgt.level + 1, m: rs.totalTrials })} ${homePips(rs.trials, rs.totalTrials)}</span>
+        <button class="home-btn-primary" data-action="story-continue">${t("home.continue", "Continue")} <span aria-hidden="true">${isRtl() ? "←" : "→"}</span></button>
+        <button class="home-link hn-all" data-action="select-phobia" data-phobia="${tgt.key}">${t("home.allTrials", "All trials and real-world steps")}</button>
+      </section>`;
+  // This journey lives only in this browser's storage — one cleanup deletes
+  // months of it. Gentle, dismissable, and only once there's something to lose.
+  const num = (k) => parseInt(prefGet(k) || "0", 10) || 0;
+  const needBackup = (state.log || []).length >= 5 && Date.now() - num("fobia.lastExportAt") > 14 * 864e5 && Date.now() - num("fobia.backupSnooze") > 7 * 864e5;
+  const backup = needBackup ? `
+      <div class="backup-nudge home-backup">
+        <span>💾 ${t("camp.backup", "Your whole journey lives only on this device. One browser cleanup could erase it — take a copy?")}</span>
+        <span class="backup-nudge-btns">
+          <button class="btn-ghost" data-action="backup-now">${t("camp.backupNow", "Download backup")}</button>
+          <button class="backup-later" data-action="backup-later">${t("camp.backupLater", "later")}</button>
+        </span>
+      </div>` : "";
   return `${top}
-  <div class="mob-hero mob-hero-high arrive-hero">
-    <p class="lw-mark-sm">${brandLamp()}<span>${t("brand.name", "Lanternwalk")}</span></p>
-    <p class="mob-hero-kicker">${escapeHtml(chap ? S.chapterLabel(chap) : realm.realmName)}</p>
-    <h1 class="mob-hero-title">${tf("arrive.back", "Welcome back,<br>{name}", { name: named || escapeHtml(travelerDisplayName(ch)) })}</h1>
-  </div>
-  <div class="mob-sheet arrive-sheet">
-    ${note}
-    ${recap && !note ? `<p class="arrive-recap"><span>${t("arrive.prev", "Previously")}</span> ${escapeHtml(recap)}</p>` : ""}
-    <p class="arrive-next">${nextLine}</p>
-    <div class="mob-thumb">
-      <button class="mob-btn mob-btn-primary" data-action="story-continue">${t("arrive.ctaStory", "Continue the story")}</button>
-    </div>
-    <div class="mob-thumb">
-      <button class="mob-btn mob-btn-ghost" data-action="go-camp">${t("arrive.camp", "🏕 Camp")}</button>
-      <button class="mob-btn mob-btn-ghost" data-action="open-story">${t("arrive.story", "📖 The story")}</button>
+  <div class="home-main">
+    <header class="home-hero">
+      <h1 class="home-title">${tf("arrive.back", "Welcome back,<br>{name}", { name: named || escapeHtml(travelerDisplayName(ch)) })}</h1>
+      ${recap ? `<p class="home-sub">${escapeHtml(recap)}</p>` : ""}
+    </header>
+    <div class="home-sheet">
+      ${note}
+      ${cont}
+      <h2 class="home-q">${t("home.fearsQ2", "Or choose any fear")}</h2>
+      <div class="fear-tiles">${tiles}</div>
+      ${backup}
     </div>
   </div>`;
 }
@@ -608,340 +629,9 @@ function viewTraveler() {
   </div>`;
 }
 
-function viewThreshold() {
-  const ch = window.Character && window.Character.loadCharacter();
-  if (!ch) {
-    // Deep-link with no traveler — send them to create one.
-    setTimeout(() => go("character", { editing: false }), 0);
-    return `<div class="landing"><div class="landing-hud"><p class="landing-copy">${t("story.needTraveler", "First, become someone.")}</p></div></div>`;
-  }
-  const realm = realmOf(ch.primaryPhobia);
-  const fear = PHOBIAS[ch.primaryPhobia];
-  // The name is optional in the creator (and "🎲 Surprise me" doesn't fill it
-  // in), so plenty of travellers arrive here unnamed. Substituting the generic
-  // fallback made the headline read "traveler, you named your fear." — an
-  // address to nobody, lowercase, at the most personal beat in the game. When
-  // there's no name, use a headline that doesn't need one.
-  const rawName = ((ch.name || "") + "").trim();
-  const name = escapeHtml(rawName);
-  const whisper = (realm.whispers && realm.whispers[0]) || "";
-  return `
-  <div class="landing" id="thresholdRoot">
-    <div class="landing-stage" id="landing3d" aria-hidden="true"></div>
-    <div class="landing-hud">
-      <p class="landing-kicker">${t("story.thresholdKicker", "the path opens")}</p>
-      <h1 class="landing-title">${rawName
-        ? tf("story.thresholdTitle", "{name}, you named your fear.", { name })
-        : t("story.thresholdTitleAnon", "You named your fear.")}</h1>
-      <p class="landing-copy">${tf("story.thresholdCopy", "The way to <em>{realm}</em> is waiting — {epithet}. {whisper}", {
-        realm: escapeHtml(realm.realmName),
-        epithet: escapeHtml(realm.epithet || ""),
-        whisper: escapeHtml(whisper),
-      })}</p>
-      <div class="landing-actions">
-        <button class="btn-primary btn-xl" data-action="enter-path">${tf("story.enterPath", "Step into {realm}", { realm: escapeHtml(realm.realmName) })}</button>
-        <button class="btn-ghost" data-action="open-select">${t("story.seeValley", "See the whole valley")}</button>
-      </div>
-      ${fear ? `<p class="landing-hint">${escapeHtml(phLabel(ch.primaryPhobia))} · ${escapeHtml(phName(ch.primaryPhobia))}</p>` : ""}
-    </div>
-  </div>`;
-}
+// (The threshold page, the camp map and its quest card were folded into
+// Home — viewArrival above — when the main path became Home → Trial → Debrief.)
 
-function mountThresholdHUD() {
-  // Audio unlock on first gesture; the 3D mount starts the night bed.
-  const root = document.getElementById("thresholdRoot");
-  if (!root) return;
-  const unlock = () => { try { PhobiaAudio.unlock(); } catch {} };
-  root.addEventListener("pointerdown", unlock, { once: true });
-}
-
-// The journey map: a night valley the traveler scrolls down through — the
-// campfire at the top, realms along a winding dotted path, a dawn glow at the
-// far end. This IS the fear menu, drawn as a place instead of a grid; each
-// realm's shadow blob shrinks as its trials are faced. Route stays "#/fears".
-function viewSelect() {
-  const ch = window.Character && window.Character.loadCharacter();
-  const keys = journeyKeys();
-  const curKey = currentRealmKey();
-  const totalTrials = keys.reduce((s, k) => s + PHOBIAS[k].levels.length, 0);
-  const facedTrials = keys.reduce((s, k) => s + Math.min(PHOBIAS[k].levels.length, (getProgress(k).highestCompleted ?? -1) + 1), 0);
-  const sparks = ch ? getSparks().length : 0;
-  // Gamification surface: rank + next-goal bar, streak flame, and the daily
-  // quest ("Today's step") — one obvious, low-friction action per day.
-  const courage = getCourage();
-  const rank = courageRank(courage);
-  const rankPct = rank.next ? Math.min(100, Math.round(((courage - rank.min) / (rank.next.min - rank.min)) * 100)) : 100;
-  const streak = computeStreak();
-  const doneToday = state.log.some(l => l.finished !== false && isSameLocalDay(l.ts));
-  // Backup nudge: this journey lives only in localStorage — one browser
-  // cleanup deletes months of work. Gentle, dismissable, and only once the
-  // traveler has something worth losing.
-  const _lastExport = parseInt((() => { try { return localStorage.getItem("fobia.lastExportAt") || "0"; } catch { return "0"; } })(), 10);
-  const _backupSnooze = parseInt((() => { try { return localStorage.getItem("fobia.backupSnooze") || "0"; } catch { return "0"; } })(), 10);
-  const needBackup = state.log.length >= 5 &&
-    (Date.now() - _lastExport > 14 * 864e5) &&
-    (Date.now() - _backupSnooze > 7 * 864e5);
-
-  // Campfire line: the character speaks about where they are on the journey.
-  const curRealm = realmOf(curKey);
-  const curProg = (getProgress(curKey).highestCompleted ?? -1) + 1;
-  const campLine = !ch ? t("camp.empty", "A campfire, waiting for a traveler.")
-    : facedTrials === 0 ? tf("camp.sayLine", "“{line}”", { line: curRealm.line })
-    : curProg >= PHOBIAS[curKey].levels.length ? tf("camp.sayLine", "“{line}”", { line: curRealm.clearedLine })
-    : tf("camp.trialWaiting", "“Trial {n} of {realm} is waiting for me.”", { n: curProg + 1, realm: escapeHtml(curRealm.realmName) });
-
-  const nodes = keys.map((k, i) => {
-    const p = PHOBIAS[k];
-    const realm = realmOf(k);
-    const prog = getProgress(k);
-    const done = Math.min(p.levels.length, prog.highestCompleted + 1);
-    const total = p.levels.length;
-    const cleared = done >= total;
-    const isCurrent = k === curKey;
-    const remaining = 1 - done / total;   // drives the card's mist, not a monster
-    const pips = Array.from({ length: total }, (_, j) =>
-      `<i class="pip ${j < done ? "lit" : ""}" title="${j < done ? tf("node.pipDone", "Trial {n} — faced", { n: j + 1 }) : tf("node.pip", "Trial {n}", { n: j + 1 })}"></i>`).join("");
-    // The card used to report the guardian's health ("the Hound Shadow is
-    // weakening"). Nothing in the realm weakens — the traveller advances. Say
-    // that instead, in their own terms, so the map and the ladder agree.
-    // A realm only reads as finished once the real steps are walked too;
-    // clearing five rehearsals and never meeting a dog is not the same thing.
-    const rs = realmStatus(k);
-    const stateLine = rs.tamed ? realm.clearedLine
-      : rs.walked ? tf("node.walkedOnly", "All {total} trials faced. {n} of {s} real steps taken.", { total, n: rs.steps, s: rs.totalSteps })
-      : done > 0 ? tf("node.faced", `You've faced {n} of {total} here.`, { n: done, total })
-      : t("node.untouched", "You haven't set foot here yet.");
-    return `
-      <li class="realm-node ${i % 2 ? "side-r" : "side-l"} ${cleared ? "cleared" : ""} ${isCurrent ? "current" : ""}"
-          data-action="select-phobia" data-phobia="${k}" tabindex="0" role="button"
-          aria-label="${escapeHtml(tf("node.aria", "{realm} — {name}, {n} of {total} trials faced", { realm: realm.realmName, name: phName(k), n: done, total }))}">
-        <div class="realm-thumb" aria-hidden="true">${phobiaThumbnail(k)}
-          ${rs.tamed ? `<span class="realm-tamed">${t("node.tamed", "🕊 tamed")}</span>` : `<span class="realm-shadow" style="--rem:${remaining.toFixed(2)}" aria-hidden="true"><i class="eye"></i><i class="eye"></i></span>`}
-          ${isCurrent && ch ? `<span class="you-marker" title="${t("node.youHere", "You are here")}">${window.Character.avatarSVG(ch, 40)}<span>${t("node.you", "you")}</span></span>` : ""}
-        </div>
-        <div class="realm-body">
-          <span class="realm-kicker">${t("realmWord", "Realm")} ${realmNum(i)} · ${escapeHtml(phName(k))}</span>
-          <h3 class="realm-name">${escapeHtml(realm.realmName)}</h3>
-          <p class="realm-epithet">${escapeHtml(realm.epithet)}</p>
-          <div class="realm-pips">${pips}${(() => { const rsS = realmStars(k); return rsS.stars > 0 ? `<span class="realm-stars" title="${escapeHtml(tf("stars.aria", "{n} of {m} stars", { n: rsS.stars, m: rsS.total }))}">★ ${rsS.stars}<i>/${rsS.total}</i></span>` : ""; })()}</div>
-          <p class="realm-state">${escapeHtml(stateLine)}</p>
-          <span class="realm-cta">${done === 0 ? t("node.enter", "Enter the realm") : cleared ? t("node.again", "Walk it again") : t("node.continue", "Continue")} <span class="arr">→</span></span>
-        </div>
-      </li>`;
-  }).join(`<li class="path-seg" aria-hidden="true"><i></i><i></i><i></i></li>`);
-
-  // The valley literally brightens as shadows are tamed: a dawn glow scales
-  // with the tamed-realm count — progress you can SEE in the world itself.
-  // Tamed means what the realm card means by it: every trial AND every real
-  // step. Counting trials alone said "1 of 6 tamed" beside a realm whose Real
-  // Path was still open.
-  const tamedCount = keys.filter(k => realmStatus(k).tamed).length;
-  return `
-  <div class="jworld" id="journeyRoot">
-    <div class="jw-dawnglow" aria-hidden="true" style="opacity:${(tamedCount / Math.max(1, keys.length)).toFixed(2)}"></div>
-    <div class="jw-stars" aria-hidden="true">${starfieldHTML(60)}</div>
-    <section class="camp">
-      <div class="camp-scene" aria-hidden="true">
-        <div class="camp-3d" id="camp3d"></div>
-        <div class="camp-2d">
-          ${ch ? `<div class="camp-char">${window.Character.avatarSVG(ch, 104)}</div>` : ""}
-          <div class="campfire"><i class="flame f1"></i><i class="flame f2"></i><i class="flame f3"></i><span class="logs"></span><span class="fire-glow"></span></div>
-        </div>
-      </div>
-      <div class="camp-bubble">${campLine}</div>
-      <div class="rank-row" title="${t("rank.tip", "Courage builds your traveler rank — every trial adds to it")}">
-        <span class="rank-chip">${rank.icon} ${rank.title}</span>
-        <div class="rank-bar" aria-hidden="true"><div class="rank-fill" style="width:${rankPct}%"></div></div>
-        <span class="rank-next">${rank.next ? tf("rank.to", "{a}/{b} ⚡ to {title}", { a: courage, b: rank.next.min, title: rank.next.title }) : t("rank.max", "highest rank reached")}</span>
-      </div>
-      <div class="camp-stats">
-        <span class="camp-stat" title="${t("hud.courage", "Courage — earned every time you face a trial")}">${tf("camp.courage", "⚡ {n} courage", { n: courage })}</span>
-        <span class="camp-stat" title="${t("camp.trialsTip", "Trials faced across the valley")}">${tf("camp.trials", "🛡 {a}/{b} trials", { a: facedTrials, b: totalTrials })}</span>
-        ${(() => { const st = keys.reduce((a, k) => { const r = realmStars(k); return { s: a.s + r.stars, m: a.m + r.total }; }, { s: 0, m: 0 });
-          return st.s > 0 ? `<span class="camp-stat stars-stat" title="${t("camp.starsTip", "Trial stars — three in every trial, for its skill, reading the moment, and staying")}">${tf("camp.stars", "★ {a}/{b} stars", { a: st.s, b: st.m })}</span>` : ""; })()}
-        <button class="camp-stat as-btn" data-action="open-journal" title="${t("camp.sparksTip", "Book of Sparks — the wisdom you've collected")}">${tf("camp.sparks", "✦ {a}/{b} sparks", { a: sparks, b: INSIGHT_CARDS.length })}</button>
-        ${streak >= 2 ? `<span class="camp-stat streak" title="${t("camp.streakTip", "Days in a row you've practiced")}">${tf("camp.streak", "🔥 {n}-day flame", { n: streak })}</span>` : ""}
-        ${worldstepCount() > 0 ? `<span class="camp-stat worldsteps" title="${t("camp.realTip", "Real-world steps faced outside the game — the ones that count double")}">${tf("camp.realsteps", `🌍 {n} real step${worldstepCount() === 1 ? "" : "s"}`, { n: worldstepCount() })}</span>` : ""}
-      </div>
-      ${ch ? storyCampCard() : ""}
-      ${needBackup ? `
-      <div class="backup-nudge">
-        <span>💾 ${t("camp.backup", "Your whole journey lives only on this device. One browser cleanup could erase it — take a copy?")}</span>
-        <span class="backup-nudge-btns">
-          <button class="btn-ghost" data-action="backup-now">${t("camp.backupNow", "Download backup")}</button>
-          <button class="backup-later" data-action="backup-later">${t("camp.backupLater", "later")}</button>
-        </span>
-      </div>` : ""}
-      ${nudgeBlock()}
-      <p class="camp-hint">${keys.length === 1
-        ? tf("camp.hintOne", "the path descends to {realm} ▾", { realm: escapeHtml(realmOf(keys[0]).realmName) })
-        : t("camp.hint", "the path descends through the valley — choose a realm ▾")}</p>
-    </section>
-    <ol class="realm-list">${nodes}</ol>
-    ${(() => {
-      const soon = FEATURED.filter((k) => PHOBIAS[k] && !keys.includes(k));
-      if (!soon.length) return "";
-      return `
-      <section class="jw-soon" aria-labelledby="jwSoonH">
-        <h3 id="jwSoonH">${t("soon.mapH", "Further down the valley")}</h3>
-        <p>${t("soon.mapP2", "More realms are being built to the same standard. Each opens here when it's ready.")}</p>
-        <ul class="jw-soon-row">
-          ${soon.map((k) => `<li class="jw-soon-chip"><strong>${escapeHtml(realmOf(k).realmName)}</strong><span>${escapeHtml(t(`phobia.${k}.label`, PHOBIAS[k].label))}</span><em>${t("soon.chip", "coming soon")}</em></li>`).join("")}
-        </ul>
-      </section>`;
-    })()}
-    ${(allRealmsUnlocked() || tamedCount > 0 || state.log.length) ? `<section class="jw-dawn">
-      <h3>${t("dawn.h", "Beyond the valley")}</h3>
-      ${tamedCount > 0 ? `<p class="jw-dawn-count">${tf("dawn.tamed", "🕊 {a} of {b} shadows tamed — the dawn is closer.", { a: tamedCount, b: keys.length })}</p>` : ""}
-      ${(() => {
-        // The six non-featured fears were reachable only by deep link — code
-        // that works, hidden like it doesn't. They're bonus paths now: named,
-        // discoverable, honestly framed as less-traveled (lighter scenes, no
-        // experiment decks). journeyKeys() already promotes any of them the
-        // traveler actually works on.
-        const faint = allRealmsUnlocked() ? ["water", "flying", "needles", "speaking", "driving", "storms"]
-          .filter((k) => PHOBIAS[k] && !keys.includes(k)) : [];
-        if (!faint.length) return "";
-        return `
-          <p class="jw-faint-head">${t("dawn.faintP", "Six fainter paths also cross these hills — less traveled, still real:")}</p>
-          <div class="jw-faint-row">
-            ${faint.map((k) => `<button class="jw-faint" data-action="select-phobia" data-phobia="${k}">${escapeHtml(t(`phobia.${k}.label`, PHOBIAS[k].label))}</button>`).join("")}
-          </div>`;
-      })()}
-      ${allRealmsUnlocked() ? `<p>${t("dawn.p", "Fears the map doesn't know yet — forge your own path for them.")}</p>` : ""}
-      <div class="actions" style="justify-content:center">
-        ${allRealmsUnlocked() ? `<button class="btn-ghost" data-action="open-custom">${t("dawn.forge", "🛠 Forge a custom fear")}</button>` : ""}
-        ${state.log.length ? `<button class="btn-ghost" data-action="open-insights">${t("dawn.story", "📜 Your story so far")}</button>` : ""}
-      </div>
-    </section>` : ""}
-  </div>`;
-}
-
-// The camp's one obvious next action: where the story is (six lanterns, the
-// current chapter), the trial that turns its next page, and today's ember.
-// It replaces "Today's step", which pointed at the same trial without saying
-// why it mattered.
-function storyCampCard() {
-  const S = window.Story;
-  const tgt = continueTarget();
-  const doneToday = state.log.some(l => l.finished !== false && isSameLocalDay(l.ts));
-  const chap = S && S.chapterOfRealm(tgt.key);
-  const waiting = S && S.nextUnread(tgt.key);
-  const realm = realmOf(tgt.key);
-  const body = tgt.allWalked
-    ? t("camp.storyAll", "All six lanterns are lit. Booster walks and real steps keep them that way.")
-    : waiting
-      ? tf("camp.pageWaiting", "📖 A new page is waiting: “{t}”.", { t: escapeHtml(S.titleOf(waiting)) })
-      : (doneToday ? t("quest.doneP", "You showed up today — the flame is lit. Another step is always welcome.")
-        : t("camp.storyP", "Every finished trial turns a page of the story. You can step out of any trial at any moment."));
-  return `
-      <div class="quest-card story-quest ${doneToday ? "done" : ""}">
-        <div class="quest-head">
-          <span class="quest-flag">${chap ? escapeHtml(S.chapterLabel(chap)) : t("quest.flag", "🪧 Today's step")}</span>
-          ${doneToday ? `<span class="quest-chip done-chip">${t("quest.earned", "🔥 ember earned")}</span>` : `<span class="quest-chip">${t("quest.bonus", "+15 ember for the first trial today")}</span>`}
-        </div>
-        ${S ? S.lanternsHTML({ current: tgt.key }) : ""}
-        <div class="quest-body">
-          ${tgt.allWalked ? "" : `<strong>${tf("camp.storyNext", "{realm} · trial {n}: {title}", { realm: escapeHtml(realm.realmName), n: tgt.level + 1, title: escapeHtml(lvTitle(tgt.key, tgt.level)) })}</strong>`}
-          <p>${body}</p>
-        </div>
-        <div class="actions quest-actions">
-          ${waiting && !tgt.allWalked && !(S.pendingBefore(tgt.key, tgt.level) === waiting)
-            ? `<button class="btn-ghost" data-action="story-play" data-beat="${escapeHtml(waiting)}">${t("st.read", "Read the page")}</button>` : ""}
-          <button class="${doneToday && !waiting ? "btn-ghost" : "btn-primary"}" data-action="story-continue">${tgt.allWalked ? t("camp.storyCtaAll", "Choose a booster walk ↓") : doneToday ? t("camp.storyCtaDone", "Take another step") : t("camp.storyCta", "Continue the story")}</button>
-        </div>
-      </div>`;
-}
-
-function mountJourney() {
-  const rootEl = document.getElementById("journeyRoot");
-  if (!rootEl) return;
-  const nodes = rootEl.querySelectorAll(".realm-node, .jw-dawn");
-  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if ("IntersectionObserver" in window && !reduce) {
-    const io = new IntersectionObserver((entries) => {
-      entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add("lit"); io.unobserve(e.target); } });
-    }, { threshold: 0.18 });
-    nodes.forEach(n => io.observe(n));
-  } else {
-    nodes.forEach(n => n.classList.add("lit"));
-  }
-  // Gentle star parallax while the valley scrolls. Self-removing: the listener
-  // detaches itself the first time it fires after this view is torn down.
-  const stars = rootEl.querySelector(".jw-stars");
-  if (stars && !reduce) {
-    let raf = 0;
-    const onScroll = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        if (!stars.isConnected) { window.removeEventListener("scroll", onScroll); return; }
-        stars.style.transform = `translateY(${window.scrollY * 0.35}px)`;
-      });
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-  }
-  // The game remembers where you are: bring the current realm into view once
-  // the traveler has actually started walking (fresh travelers see the camp).
-  const cur = rootEl.querySelector(".realm-node.current");
-  if (cur && state.log && state.log.length) {
-    requestAnimationFrame(() => {
-      try { cur.scrollIntoView({ block: "center", behavior: "instant" }); }
-      catch { cur.scrollIntoView(); }
-    });
-  }
-  // The traveler keeps talking at the fire: rotate through a small pool of
-  // lines (guardian voice, rank pride, tamed-count hope) so the camp feels
-  // inhabited rather than rendered. Interval self-clears with the view.
-  const bubble = rootEl.querySelector(".camp-bubble");
-  const chB = window.Character && window.Character.loadCharacter();
-  if (bubble && chB && !reduce) {
-    const curKey = currentRealmKey();
-    const realm = realmOf(curKey);
-    const tamed = journeyKeys().filter(k => realmStatus(k).tamed).length;
-    const rank = courageRank(getCourage());
-    const pool = [
-      bubble.textContent,
-      tf("camp.sayLine", "“{line}”", { line: realm.line }),
-      t("camp.say1", "“Small steps. That's the whole secret.”"),
-      t("camp.say2", "“The fire helps. So does coming back tomorrow.”"),
-    ];
-    if (tamed > 0) pool.push(tf(tamed === 1 ? "camp.sayTamed1" : "camp.sayTamed", `“{n} shadow${tamed === 1 ? "" : "s"} tamed. The dawn is closer.”`, { n: tamed }));
-    if (rank.idx > 0) pool.push(tf("camp.sayRank", "“They call me {rank} now.”", { rank: rank.title }));
-    const pals = campCompanions();
-    if (pals.length) pool.push(tf(pals.length > 1 ? "camp.sayPals" : "camp.sayPal", pals.length > 1
-      ? "“{a} and {b} by my fire. I used to cross the street.”"
-      : "“{a} dozes by my fire now. I used to cross the street.”", { a: pals[0].name, b: pals[1] ? pals[1].name : "" }));
-    const lines = [...new Set(pool)];
-    let li = 0;
-    const iv = setInterval(() => {
-      if (!bubble.isConnected) { clearInterval(iv); return; }
-      li = (li + 1) % lines.length;
-      bubble.classList.add("swap");
-      setTimeout(() => {
-        if (!bubble.isConnected) return;
-        bubble.textContent = lines[li];
-        bubble.classList.remove("swap");
-      }, 350);
-    }, 8000);
-  }
-  // Pointer tilt on the realm art (fine pointers only): a light 3D lean that
-  // follows the cursor — the map itself answers your hand.
-  const finePointer = window.matchMedia && window.matchMedia("(pointer: fine)").matches;
-  if (finePointer && !reduce) {
-    rootEl.querySelectorAll(".realm-node").forEach(node => {
-      const art = node.querySelector(".realm-thumb");
-      if (!art) return;
-      node.addEventListener("pointermove", (e) => {
-        const r = node.getBoundingClientRect();
-        const px = (e.clientX - r.left) / r.width - 0.5;
-        const py = (e.clientY - r.top) / r.height - 0.5;
-        art.style.transform = `perspective(600px) rotateY(${(px * 7).toFixed(2)}deg) rotateX(${(-py * 5).toFixed(2)}deg) scale(1.03)`;
-      });
-      node.addEventListener("pointerleave", () => { art.style.transform = ""; });
-    });
-  }
-}
 
 // ---------- Progress report (clinician-readable export) ----------
 // Turns the session log into something a user can print (browser print →

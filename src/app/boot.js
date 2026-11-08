@@ -99,7 +99,7 @@ function gateTitleScreenOnConsent() {
   const onTap = (e) => {
     if (hasConsented()) { v.removeEventListener("click", onTap, true); return; }
     const btn = e.target && e.target.closest && e.target.closest("button[data-action]");
-    if (!btn || btn.dataset.action === "open-settings" || btn.dataset.action === "toggle-lang") return;
+    if (!btn || ["open-settings", "open-menu", "toggle-lang"].includes(btn.dataset.action)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     showConsent(false, () => { v.removeEventListener("click", onTap, true); btn.click(); });

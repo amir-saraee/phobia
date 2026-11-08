@@ -343,8 +343,14 @@ function makeCreatureCoach(opts) {
   }
 
   // The player's own prediction, named back to them as the trial opens —
-  // the trial is the test of it.
-  if (o.expect && o.expect.fear) {
+  // the trial is the test of it. The trial's opening card asks for it while
+  // the scene is already mounted behind the card, so it can also arrive
+  // later, through setExpect(), the moment the player steps in.
+  let expectNamed = false;
+  function nameThePrediction(e) {
+    if (expectNamed || !e || !e.fear) return;
+    expectNamed = true;
+    o.expect = e;
     try {
       if (K.place) teach("prediction", tf("dc.tPredictPlace",
         "Your alarm's prediction: <b>“{f}”</b>{b}. This trial is the test — notice what actually happens.",
@@ -354,6 +360,7 @@ function makeCreatureCoach(opts) {
         { f: esc(K.fearText(o.expect.fear)), b: o.expect.belief != null ? tf("dc.tPredictSure", " — {n}% sure", { n: o.expect.belief }) : "", dog: nameH }), 9000);
     } catch {}
   }
+  if (o.expect && o.expect.fear) nameThePrediction(o.expect);
 
   // ---------------- reading the dog ----------------
   let readOpen = null;       // { id, t0, until }
@@ -1018,7 +1025,7 @@ function makeCreatureCoach(opts) {
   }
   return {
     update, pulse, signal, answer, note, teach, retire, goalDone, goalCount, setVerb, setTrust, setFoot, safety, screenBox,
-    cancelRead: closeRead, endReadResult,
+    cancelRead: closeRead, endReadResult, setExpect: nameThePrediction,
     goalOpen: (id) => { const g = goals.find((x) => x.id === id); return !!g && !g.done; },
     target: () => alarm, holdPolicy, evidence, dispose,
     get engaged() { return engaged; }, get alarm() { return alarm; },

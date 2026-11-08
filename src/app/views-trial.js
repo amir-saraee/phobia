@@ -417,6 +417,18 @@ function viewLadder(phobiaKey) {
         </div>
       </header>
       ${guardian}
+      ${heroCta}
+      ${tabs}
+      <section class="path-block">
+        <div class="bridge-head">
+          <h3>${t("valley.head", "🏕 The Valley")}</h3>
+          <span class="bridge-sub">${t("valley.sub", "Five trials in here, at your pace. This is the rehearsal — safe, repeatable, and yours to stop at any moment.")}</span>
+        </div>
+        <ol class="trial-path">${items}</ol>
+      </section>
+      ${bridgeBlock}
+      <details class="realm-more">
+        <summary>${t("realm.more", "More about this realm — the story, the method, your notes")}</summary>
       ${(() => {
         // This realm's chapter of the story. A page waiting here — before the
         // first trial, the resident's own account of how their fear began —
@@ -431,17 +443,7 @@ function viewLadder(phobiaKey) {
       })()}
       ${pathStrip}
       ${ch ? `<div class="realm-bubble"><span class="realm-bubble-avatar" aria-hidden="true">${window.Character.avatarSVG(ch, 40)}</span><span>${tf("camp.sayLine", "“{line}”", { line: escapeHtml(cleared ? realm.clearedLine : realm.line) })}</span></div>` : ""}
-      ${tabs}
       ${mirrorBlock}
-      ${heroCta}
-      <section class="path-block">
-        <div class="bridge-head">
-          <h3>${t("valley.head", "🏕 The Valley")}</h3>
-          <span class="bridge-sub">${t("valley.sub", "Five trials in here, at your pace. This is the rehearsal — safe, repeatable, and yours to stop at any moment.")}</span>
-        </div>
-        <ol class="trial-path">${items}</ol>
-      </section>
-      ${bridgeBlock}
       ${(() => {
         // The evidence log: every experiment run in this realm, newest first.
         // This is the realm's collected proof — the thing the numbers panel
@@ -467,6 +469,7 @@ function viewLadder(phobiaKey) {
       ${goalBlock}
       ${progressLink}
       ${infoBlock}
+      </details>
     </div>
   `;
 }
@@ -824,60 +827,46 @@ function viewInsights() {
   `;
 }
 
-function viewPredict(phobiaKey, levelIdx) {
+
+// The trial's opening card. It replaces the "gate" page that stood between
+// the realm and the room: the story's beat (when a page belongs here), the
+// trial, and one question — how scared do you expect to be? Tapping a number
+// is stepping in. Creature and place realms also ask, optionally, what the
+// alarm predicts will happen; the debrief checks it against what did.
+function trialIntroHTML(phobiaKey, levelIdx) {
   const p = PHOBIAS[phobiaKey];
-  const lv = p.levels[levelIdx];
-  // A neutral rung-based starting point. Deliberately NOT seeded from the last
-  // actual SUDS — that made a repeat prediction just echo what happened, which
-  // hollows out the predict-vs-actual signal the whole mechanic depends on.
-  const suggested = Math.min(8, 4 + levelIdx);
-  // The gate: the story's beat (one card), what's behind the door, one
-  // number, one big button. It used to open with two paragraphs on how fear
-  // makes predictions, a practice box, seven chips with their own
-  // explanation, and a scale with its own — the longest read in the game,
-  // standing between a visitor and the thing they came to face.
-  const focus = window.Story && !window.__demoMode ? window.Story.focusFor(phobiaKey, levelIdx) : null;
+  if (!p) return "";
   const kit = hasCreatureKit(phobiaKey);
+  const firstTime = (getProgress(phobiaKey).highestCompleted ?? -1) < levelIdx;
+  const focus = window.Story && firstTime ? window.Story.focusFor(phobiaKey, levelIdx) : null;
+  const icon = { dogs: "🐕", spiders: "🕷", snakes: "🐍", heights: "🏔", dark: "🌙", enclosed: "🚪" }[phobiaKey] || "🏮";
+  const story = window.Story ? window.Story.gateHTML(phobiaKey, levelIdx) : "";
   return `
-    <div class="panel gate-panel">
-      ${window.Story ? window.Story.gateHTML(phobiaKey, levelIdx) : ""}
-      <div class="gate-trial">
-        <span class="badge">${tf("predict.badge", "Trial {n} of {m} — {realm}", { n: levelIdx + 1, m: p.levels.length, realm: escapeHtml(realmOf(phobiaKey).realmName) })}</span>
-        <h2>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</h2>
-        ${lv.desc ? `<p class="gate-desc">${escapeHtml(lvDesc(phobiaKey, levelIdx))}</p>` : ""}
-        ${focus && focus.text ? `<p class="gate-focus">${tf("gate.focus", "🎯 Today's practice: {t}", { t: escapeHtml(focus.text) })}</p>` : ""}
-      </div>
-
-      <div class="suds gate-suds">
-        <label id="lbl-predictedSuds">${t("predict.label2", "How scared do you expect to feel in there?")}</label>
-        ${sudsScale("predictedSuds", suggested, { valueId: "predictedValue" })}
-        <div class="hint" id="predictNudge" hidden>${t("predict.nudge", "Pick a number first — it's the guess the trial tests. Or tap Enter again to go in without one.")}</div>
-      </div>
-${kit ? `
-      <div class="expect-block gate-expect">
-        <div class="expect-q">${expectQ(phobiaKey)} <span class="gate-opt">${t("gate.optional", "optional")}</span></div>
-        <div class="expect-chips" role="radiogroup" aria-label="${escapeHtml(expectQ(phobiaKey))}">
-          ${CREATURE_KITS[phobiaKey].fears.map((f) => `<button type="button" class="expect-chip" role="radio" aria-checked="false" data-action="pick-fear" data-fear="${f.id}">${escapeHtml(kitFearText(phobiaKey, f.id))}</button>`).join("")}
-          <button type="button" class="expect-chip expect-none" role="radio" aria-checked="false" data-action="pick-fear" data-fear="none">${t("expect.none", "Nothing specific — just the feeling")}</button>
+    <div class="trial-intro" id="trialIntro" role="dialog" aria-labelledby="tiTitle">
+      <div class="ti-card">
+        <div class="ti-head">
+          <span class="ti-kicker">${icon} ${escapeHtml(realmOf(phobiaKey).realmName)} · ${tf("ti.trialOf", "trial {n} of {m}", { n: levelIdx + 1, m: p.levels.length })}</span>
+          <button type="button" class="ti-x" data-action="go-home" aria-label="${t("ti.leave", "Not now — back home")}">✕</button>
         </div>
-        <div class="suds expect-belief" id="expectBeliefBox" hidden>
-          <label for="expectBelief">${t("expect.belief", "How sure are you that it'll happen?")}</label>
-          <div class="scale-row">
-            <span class="small">${t("expect.lo", "0% no way")}</span>
-            <input type="range" id="expectBelief" min="0" max="100" step="5" value="50"/>
-            <span class="small">${t("expect.hi", "100% certain")}</span>
-            <div class="value" id="expectBeliefValue">—</div>
+        ${story ? `<div class="ti-story">${story}</div>` : ""}
+        <h2 class="ti-title" id="tiTitle" tabindex="-1">${escapeHtml(lvTitle(phobiaKey, levelIdx))}</h2>
+        ${p.levels[levelIdx] && p.levels[levelIdx].desc ? `<p class="ti-desc">${escapeHtml(lvDesc(phobiaKey, levelIdx))}</p>` : ""}
+        ${focus && focus.text ? `<p class="ti-focus">${tf("gate.focus", "🎯 Today's practice: {t}", { t: escapeHtml(focus.text) })}</p>` : ""}
+        ${kit ? `
+        <div class="ti-block">
+          <div class="ti-q">${expectQ(phobiaKey)} <span class="ti-opt">${t("gate.optional", "optional")}</span></div>
+          <div class="expect-chips ti-chips" role="radiogroup" aria-label="${escapeHtml(expectQ(phobiaKey))}">
+            ${CREATURE_KITS[phobiaKey].fears.map((f) => `<button type="button" class="expect-chip" role="radio" aria-checked="false" data-action="pick-fear" data-fear="${f.id}">${escapeHtml(kitFearText(phobiaKey, f.id))}</button>`).join("")}
           </div>
+        </div>` : ""}
+        <div class="ti-block ti-guess">
+          <div class="ti-q" id="lbl-predictedSuds">${t("predict.label2", "How scared do you expect to feel in there?")}</div>
+          ${sudsScale("predictedSuds", Math.min(8, 4 + levelIdx), { valueId: "predictedValue" })}
+          <p class="ti-hint">${t("ti.tapHint", "0 is calm, 10 is panic. Tap a number to step in — afterwards you'll see how close you were.")}</p>
         </div>
-      </div>` : ""}
-
-      <div class="actions gate-actions">
-        <button class="btn-primary btn-xl gate-enter" data-action="confirm-predict" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("predict.enter2", "Enter the trial →")}</button>
-        <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">${t("complete.back", "Back to the realm")}</button>
+        <button type="button" class="ti-skip" data-action="ti-begin">${t("ti.noGuess", "Step in without a guess")}</button>
       </div>
-      <p class="gate-note">${t("gate.note", "Afterwards you'll say how it really was. The gap between the guess and the real thing is where fear unlearns.")}</p>
-    </div>
-  `;
+    </div>`;
 }
 
 function viewExposure(phobiaKey, levelIdx) {
@@ -1034,8 +1023,12 @@ function viewExposure(phobiaKey, levelIdx) {
   if (cmdBar && (cmdBar.match(/cmd-btn/g) || []).length <= 4) {
     cmdBar = cmdBar.replace('class="scene-cmd-bar collapsed"', 'class="scene-cmd-bar"');
   }
+  // The opening card: the story's beat, what's in the room, and the guess —
+  // over the room itself, which loads behind it and holds still until the
+  // player steps in (engine.js, .pre-start). Not in the demo.
+  const intro = window.__demoMode ? "" : trialIntroHTML(phobiaKey, levelIdx);
   return `
-    <div class="panel exposure-panel">
+    <div class="panel exposure-panel${intro ? " pre-start" : ""}">
       <div class="exposure-header">
         <div class="badge">${tf("exp.stepBadge", "Step {n} of {m}", { n: levelIdx + 1, m: p.levels.length })} · ${escapeHtml(t(`phobia.${phobiaKey}.label`, p.label))}</div>
         <h2>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</h2>
@@ -1050,12 +1043,12 @@ function viewExposure(phobiaKey, levelIdx) {
         })()}
       </div>
       <div class="stage-wrap">
-        <div class="stage ${p.sceneClass}" id="stage" data-min-hold="${minHold}" data-level="${levelIdx}"><div class="loading">${t("stage.loading", "Setting the scene…")}</div></div>
+        <div class="stage ${p.sceneClass}${intro ? " pre-start" : ""}" id="stage" data-min-hold="${minHold}" data-level="${levelIdx}"><div class="loading">${t("stage.loading", "Setting the scene…")}</div>${intro}</div>
         ${cmdBar}
       </div>
       <div class="step-controls">
-        <button class="btn-warn" data-action="do-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("stage.breathe", "Pause &amp; breathe")}</button>
-        <button class="btn-primary holding" id="continueBtn" data-action="to-rate" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("hold.stepOut", "Step out early")}</button>
+        <button class="btn-warn sc-breathe" data-action="do-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("stage.breathe2", "🌬 Breathe")}</button>
+        <button class="btn-primary holding" id="continueBtn" data-action="to-rate" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("hold.stepOut2", "Step out")}</button>
         <div class="hold-bar"><div id="holdBarFill"></div></div>
         <span class="hold-label" id="holdLabel">${fnum(0)} / ${fsecs(minHold)}</span>
         <span class="timer" id="timer">00:00</span>
@@ -1130,31 +1123,29 @@ function viewRate(phobiaKey, levelIdx) {
   // The scene's evidence is written as it unmounts — keep it with the rest
   // of the trial, in case this page is reloaded before it's saved.
   saveTrialSnap();
-  const earlyNote = (lastRungOutcome && lastRungOutcome.finished === false)
-    ? `<p class="small" style="opacity:.75">${t("rate.early", "You stepped out before the hold finished — that is always allowed. Rate how it felt anyway.")}</p>`
-    : "";
+  const early = lastRungOutcome && lastRungOutcome.finished === false;
+  // The stars the room just counted, before anything is asked.
+  const ev = window.__lastTrialEvidence;
+  const hasStars = !!(ev && ev.phobia === phobiaKey && ev.level === levelIdx && Array.isArray(ev.goals) && ev.goals.length);
+  const n = hasStars ? Math.max(0, Math.min(3, ev.stars | 0)) : 0;
+  const icon = { dogs: "🐕", spiders: "🕷", snakes: "🐍", heights: "🏔", dark: "🌙", enclosed: "🚪" }[phobiaKey] || "🏮";
+  const guessed = pendingPrediction && pendingPrediction.phobia === phobiaKey && pendingPrediction.level === levelIdx && typeof pendingPrediction.predicted === "number";
   return `
-    <div class="panel">
-      <h2>${t("rate.h2", "The trial is behind you. How loud was it?")}</h2>
-      ${earlyNote}
-      <p>${t("rate.p", "Two readings on the <strong>SUDS</strong> scale — Subjective Units of Distress. Be honest; the journal is only for you.")}</p>
-      <div class="suds">
-        <label id="lbl-sudsPeak">${t("rate.peakLabel", "At its worst, in there")}</label>
+    <div class="debrief">
+      <span class="db-kicker">${icon} ${escapeHtml(realmOf(phobiaKey).realmName)} · ${tf("ti.trialOf", "trial {n} of {m}", { n: levelIdx + 1, m: PHOBIAS[phobiaKey].levels.length })}</span>
+      <h2 class="db-title">${early ? t("db.earlyH", "You stepped out — and that's always allowed.") : t("db.doneH", "You stayed. The trial is behind you.")}</h2>
+      ${hasStars ? `<div class="db-stars" role="img" aria-label="${escapeHtml(tf("stars.aria", "{n} of {m} stars", { n, m: 3 }))}">${[0, 1, 2].map((i) => `<i class="${i < n ? "on" : ""}" style="--i:${i}">★</i>`).join("")}</div>` : ""}
+      <div class="db-card suds">
+        <label class="db-q" id="lbl-sudsPeak">${t("db.peakQ", "At its worst in there, how scared did you feel?")}</label>
         ${sudsScale("sudsPeak", 5, { aria: t("rate.peakAria", "Anxiety level at its worst during the trial, 0 calm to 10 panic"), valueId: "sudsPeakValue" })}
-        <div class="hint" id="sudsPeakHint">${t("rate.peakHint", "The highest it got while you were in the scene — this is the number your prediction was about.")}</div>
-        ${(pendingPrediction && pendingPrediction.phobia === phobiaKey && pendingPrediction.level === levelIdx && typeof pendingPrediction.predicted === "number")
-          ? `<div class="hint pred-echo" id="predEcho" data-p="${pendingPrediction.predicted}" hidden></div>` : ""}
-      </div>
-      <div class="suds">
-        <label id="lbl-suds">${t("rate.nowLabel", "Right now")}</label>
+        ${guessed ? `<div class="hint pred-echo" id="predEcho" data-p="${pendingPrediction.predicted}" hidden></div>` : ""}
+        <label class="db-q" id="lbl-suds">${t("db.nowQ", "And right now?")}</label>
         ${sudsScale("suds", 5, { aria: t("rate.nowAria", "Anxiety level right now, 0 calm to 10 panic"), valueId: "sudsValue" })}
-        <div class="hint" id="sudsHint">${t("rate.hintTap", "Tap a number for how it actually felt — there's no right answer.")}</div>
-        <div class="hint">${t("rate.bands", "Low (0–3): you're ready to climb. &nbsp; Mid (4–6): a breath break helps. &nbsp; High (7–10): stay here, breathe, repeat.")}</div>
+        <span id="sudsPeakHint" hidden></span><span id="sudsHint" hidden></span>
       </div>
-      <div class="actions">
-        <button class="btn-warn" data-action="do-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("rate.breathe", "Take a breath first")}</button>
-        <button class="btn-primary" id="rateSubmit" data-action="submit-rate" data-phobia="${phobiaKey}" data-level="${levelIdx}" disabled>${t("rate.save", "Save &amp; continue")}</button>
-      </div>
+      <button class="db-primary" id="rateSubmit" data-action="submit-rate" data-phobia="${phobiaKey}" data-level="${levelIdx}" disabled>${t("db.see", "See how it went")} <span aria-hidden="true">${isRtl() ? "←" : "→"}</span></button>
+      <button class="db-link" data-action="do-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("db.breathe", "🌬 Take a breath first")}</button>
+      <p class="db-note">${t("db.note", "Two honest numbers — only you see them. They show your fear getting quieter over time.")}</p>
     </div>
   `;
 }
@@ -1192,7 +1183,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
   // asked how loud it would get while you were in there, so that is the only
   // number that can answer it honestly. See handleRateSubmit for why the old
   // predicted-vs-now comparison was systematically flattering.
-  let predictionBlock = "";
+  let predictionBlock = "", predictionLesson = "", predictionTone = "";
   const peakForPrediction = (peak == null || Number.isNaN(+peak)) ? suds : +peak;
   if (predicted != null && !Number.isNaN(predicted)) {
     const diff = predicted - peakForPrediction;
@@ -1211,6 +1202,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       tone = "neutral";
       lesson = t("lesson.close", "Your prediction was close to what you felt. That's a sign you're getting accurate at reading your own body.");
     }
+    predictionLesson = lesson; predictionTone = tone;
     predictionBlock = `
       <div class="prediction-card prediction-${tone}">
         <div class="prediction-meters">
@@ -1487,7 +1479,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     const head = nStars >= 3 ? t("vc.s3", "All three stars")
       : nStars === 2 ? t("vc.s2", "Two stars")
       : nStars === 1 ? t("vc.s1", "One star")
-      : t("vc.s0", "No stars this time — showing up still counts");
+      : t("vc.s0b", "No stars this time");
     starHero = `
       <div class="vc-stars-wrap${nStars >= 3 ? " all" : ""}">
         <div class="vc-stars" role="img" aria-label="${escapeHtml(tf("stars.aria", "{n} of {m} stars", { n: nStars, m: 3 }))}">
@@ -1581,100 +1573,92 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     }
   }
 
+  // One short page: what happened (stars, the numbers, the lantern), the
+  // next step, then — only if you want them — the longer lessons. It used to
+  // run to fourteen blocks with the same "Next trial" button twice.
+  const firstNext = (() => {
+    // After the FIRST trial in a creature or place realm: the primer, the
+    // Mirror baseline and the traveler's look, offered now that the player
+    // has an alarm of their own to refer to. All optional.
+    if (early || !hasCreatureKit(phobiaKey) || levelIdx !== 0) return "";
+    const needPrimer = !primerSeen(phobiaKey), needMirror = !getChecks(phobiaKey).length;
+    const needLook = (() => { try { return localStorage.getItem("fobia.travelerMade") !== "1"; } catch { return false; } })();
+    if (!needPrimer && !needMirror && !needLook) return "";
+    return `
+      <div class="mirror-invite first-next">
+        <span class="bridge-invite-kicker">${t("first.kicker", "🧭 A few minutes, whenever you like")}</span>
+        <strong>${t("first.title", "Why staying works — and where you're starting from")}</strong>
+        <div class="actions" style="margin-top:8px">
+          ${needPrimer ? `<button class="btn-ghost" data-action="open-primer" data-phobia="${phobiaKey}">${t("first.primer", "🧭 The one-minute primer")}</button>` : ""}
+          ${needMirror ? `<button class="btn-ghost" data-action="fear-check" data-phobia="${phobiaKey}" data-at="baseline">${t("first.mirror", "🪞 Hold up the Mirror")}</button>` : ""}
+          ${needLook ? `<button class="btn-ghost" data-action="edit-character">${t("first.look", "🎨 Make the traveler yours")}</button>` : ""}
+        </div>
+      </div>`;
+  })();
+  const storyCards = (() => {
+    // The page this trial turned — the story moving on is part of the reward.
+    const S = window.Story;
+    if (!S || early) return "";
+    const id = S.pendingAfter(phobiaKey, levelIdx);
+    const out = id ? [S.cardHTML(id)] : [];
+    if (S.isUnlocked("epilogue") && !S.isSeen("epilogue")) out.push(S.cardHTML("epilogue", { kicker: t("st.cardEpi", "🌅 Every lantern is lit — the last page of the story") }));
+    return out.join("");
+  })();
+  const experiments = (() => {
+    const ses = window.PhobiaExperiments && PhobiaExperiments.lastSessionFor(phobiaKey, levelIdx);
+    if (!ses || !ses.results.length) return "";
+    return `
+      <div class="evidence-block">
+        <h3>${t("exp.sessionH", "🧪 What you tested")}</h3>
+        ${ses.results.map((r) => `
+          <div class="evidence-line">
+            <strong>${escapeHtml(r.title)}</strong>
+            <span class="ev-note">${escapeHtml(r.note)}</span>
+            <span class="ev-vs">${tf("exp.vs2", "You expected: “{p}”", { p: escapeHtml(r.predicted) })}</span>
+          </div>`).join("")}
+      </div>`;
+  })();
+  const icon = { dogs: "🐕", spiders: "🕷", snakes: "🐍", heights: "🏔", dark: "🌙", enclosed: "🚪" }[phobiaKey] || "🏮";
   return `
-    <div class="panel victory-panel">
+    <div class="debrief victory-panel">
       <div class="vc-hero">
-        <span class="badge">${early ? tf("complete.early", "Trial {n} · stepped back", { n: levelIdx + 1 }) : tf("complete.faced", "Trial {n} faced", { n: levelIdx + 1 })} · ${escapeHtml(realmOf(phobiaKey).realmName)}</span>
-        <h2 style="margin-top: 10px;">${early ? t("complete.h2early", "You stepped back — showing up still counts.") : t("complete.h2", "Trial faced. That's ground you hold now.")}</h2>
+        <span class="db-kicker">${icon} ${escapeHtml(realmOf(phobiaKey).realmName)} · ${early ? tf("complete.early", "Trial {n} · stepped back", { n: levelIdx + 1 }) : tf("complete.faced", "Trial {n} faced", { n: levelIdx + 1 })}</span>
+        <h2 class="db-title">${early ? t("complete.h2early", "You stepped back — showing up still counts.") : t("complete.h2", "Trial faced. That's ground you hold now.")}</h2>
         ${celebration}
         ${starHero}
         ${statsRow}
-        ${rankRow || rewardStrip}
+        ${predictionLesson ? `<p class="db-lesson db-${predictionTone}">${predictionLesson}</p>` : ""}
+        ${shadowStrip}
+        ${rankRow ? `<div class="vc-chips-only">${rankRow}</div>` : rewardStrip}
         ${heroCta}
       </div>
       ${checkInBlock}
-      ${(() => {
-        // The page this trial turned — right under the next step, since the
-        // next step plays it anyway if it's still unread.
-        const S = window.Story;
-        if (!S || early) return "";
-        const id = S.pendingAfter(phobiaKey, levelIdx);
-        const out = id ? [S.cardHTML(id)] : [];
-        if (S.isUnlocked("epilogue") && !S.isSeen("epilogue")) out.push(S.cardHTML("epilogue", { kicker: t("st.cardEpi", "🌅 Every lantern is lit — the last page of the story") }));
-        return out.join("");
-      })()}
-      ${companionBlock}
-      ${shadowStrip}
+      ${storyCards}
       ${realityBlock}
-      ${sparkBlock}
-      ${waveBlock}
-      ${(() => {
-        // After the FIRST dog: the two things that used to stand in front of
-        // it — the primer and the Mirror baseline — offered now, when the
-        // player has an alarm of their own to refer to. Both optional.
-        if (early || !hasCreatureKit(phobiaKey) || levelIdx !== 0) return "";
-        const needPrimer = !primerSeen(phobiaKey), needMirror = !getChecks(phobiaKey).length;
-        // A traveler made for them by the title screen's one-tap start gets
-        // the creator offered here — after the first trial, not before it.
-        const needLook = (() => { try { return localStorage.getItem("fobia.travelerMade") !== "1"; } catch { return false; } })();
-        if (!needPrimer && !needMirror && !needLook) return "";
-        return `
-          <div class="mirror-invite first-next">
-            <span class="bridge-invite-kicker">${t("first.kicker", "🧭 A few minutes, whenever you like")}</span>
-            <strong>${t("first.title", "Why staying works — and where you're starting from")}</strong>
-            <p>${t("first.p", "You just watched an alarm climb and then fall without leaving. The primer shows why that matters and what escaping does instead. The Mirror takes five questions about the fear in <em>real life</em>, so later you can see it get quieter in numbers.")}</p>
-            <div class="actions" style="margin-top:8px">
-              ${needPrimer ? `<button class="btn-ghost" data-action="open-primer" data-phobia="${phobiaKey}">${t("first.primer", "🧭 The one-minute primer")}</button>` : ""}
-              ${needMirror ? `<button class="btn-ghost" data-action="fear-check" data-phobia="${phobiaKey}" data-at="baseline">${t("first.mirror", "🪞 Hold up the Mirror")}</button>` : ""}
-              ${needLook ? `<button class="btn-ghost" data-action="edit-character">${t("first.look", "🎨 Make the traveler yours")}</button>` : ""}
-            </div>
-          </div>`;
-      })()}
       ${bridgeInvite}
-      ${mirrorPrompt}
+      ${firstNext}
       <details class="vc-more">
-        <summary>${t("vc.more", "More about this trial — what you felt, and a note to yourself")}</summary>
-      ${(() => {
-        // Experiments run this session — the prediction vs what happened, at
-        // the moment the comparison lands hardest.
-        const ses = window.PhobiaExperiments && PhobiaExperiments.lastSessionFor(phobiaKey, levelIdx);
-        if (!ses || !ses.results.length) return "";
-        return `
-          <div class="evidence-block">
-            <h3>${t("exp.sessionH", "🧪 What you tested")}</h3>
-            ${ses.results.map((r) => `
-              <div class="evidence-line">
-                <strong>${escapeHtml(r.title)}</strong>
-                <span class="ev-note">${escapeHtml(r.note)}</span>
-                <span class="ev-vs">${tf("exp.vs2", "You expected: “{p}”", { p: escapeHtml(r.predicted) })}</span>
-              </div>`).join("")}
-          </div>`;
-      })()}
-      <p>${early
-        ? tf("complete.stood", "You stood with {t} and rated your fear at {n}.", { t: `<strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>`, n: `<strong>${suds}/10</strong>` })
-        : tf("complete.facedLine", "You faced {t} and rated your fear at {n}.", { t: `<strong>${escapeHtml(lvTitle(phobiaKey, levelIdx))}</strong>`, n: `<strong>${suds}/10</strong>` })}</p>
-      ${habituationBlock}
-      ${acrossBlock}
-      ${predictionBlock}
-      <p>${advice}</p>
-
-      <div class="journal-row">
-        <label for="journalNote">${t("journal.q", "Anything to remember?")} <span class="small">${t("journal.qSub", "(optional — what helped, what surprised you)")}</span></label>
-        <textarea id="journalNote" rows="2" maxlength="500" placeholder="${phobiaKey === "dogs"
-          ? escapeHtml(t("journal.phDogs", "It barked and I didn't step back. My alarm went 7 → 4 in about half a minute."))
-          : escapeHtml(t("journal.ph", "What helped? What surprised you? e.g. my SUDS dropped from 7 to 4 after about 30 seconds."))}"></textarea>
-        <button class="btn-ghost" id="saveJournal" style="font-size:12px; padding:6px 12px;">${t("journal.save", "Save note")}</button>
-        <span class="small" id="journalSaved" style="opacity:0; transition:opacity .25s; color:var(--ok)">${t("journal.saved", "saved")}</span>
-      </div>
+        <summary>${t("vc.more2", "More about this trial")}</summary>
+        ${waveBlock}
+        ${habituationBlock}
+        ${acrossBlock}
+        ${predictionBlock}
+        <p>${advice}</p>
+        ${sparkBlock}
+        ${mirrorPrompt}
+        ${experiments}
+        <div class="journal-row">
+          <label for="journalNote">${t("journal.q", "Anything to remember?")} <span class="small">${t("journal.qSub", "(optional — what helped, what surprised you)")}</span></label>
+          <textarea id="journalNote" rows="2" maxlength="500" placeholder="${phobiaKey === "dogs"
+            ? escapeHtml(t("journal.phDogs", "It barked and I didn't step back. My alarm went 7 → 4 in about half a minute."))
+            : escapeHtml(t("journal.ph", "What helped? What surprised you? e.g. my SUDS dropped from 7 to 4 after about 30 seconds."))}"></textarea>
+          <button class="btn-ghost" id="saveJournal" style="font-size:12px; padding:6px 12px;">${t("journal.save", "Save note")}</button>
+          <span class="small" id="journalSaved" style="opacity:0; transition:opacity .25s; color:var(--ok)">${t("journal.saved", "saved")}</span>
+        </div>
       </details>
-
-      <div class="actions">
-        ${!isLast
-          ? `<button class="btn-primary" data-action="next-level" data-phobia="${phobiaKey}" data-level="${next}">${tf("complete.next", "Next trial: {t}", { t: escapeHtml(lvTitle(phobiaKey, next)) })}</button>`
-          : `<button class="btn-primary" data-action="back-ladder" data-phobia="${phobiaKey}">${realmStatus(phobiaKey).tamed
-              ? t("complete.tamed", "🕊 The realm is behind you — see it")
-              : t("complete.walked", "🌍 The valley is walked — see the Real Path")}</button>`}
-        <button class="btn-ghost" data-action="back-ladder" data-phobia="${phobiaKey}">${t("complete.back", "Back to the realm")}</button>
+      <div class="db-foot">
+        <button class="db-link" data-action="go-home">${t("db.home", "🏮 Home")}</button>
+        <button class="db-link" data-action="back-ladder" data-phobia="${phobiaKey}">${t("db.allTrials", "All trials in this realm")}</button>
       </div>
       <p class="fb-after"><button type="button" class="linklike" data-action="open-feedback" data-context="${escapeHtml(`${phobiaKey} trial ${levelIdx + 1}${early ? " (stepped out)" : ""}`)}">${t("fb.after", "Got a minute? Tell us how this trial went →")}</button></p>
     </div>

@@ -934,7 +934,7 @@ function viewQuiz() {
       <div class="quiz-result" id="quizResult" hidden></div>
       <p class="small quiz-note">${t("quiz.note", "Private to this device — nothing is sent anywhere.")}</p>
       <div class="actions">
-        <button class="btn-ghost" data-action="begin">${t("quiz.skip", "Skip — take me to the valley")}</button>
+        <button class="btn-ghost" data-action="go-home">${t("quiz.skip", "Skip — take me to the valley")}</button>
       </div>
     </div>`;
 }
@@ -958,7 +958,7 @@ function quizRate(btn) {
   const realm = realmOf(k);
   out.innerHTML = +best.dataset.v === 0
     ? `<p>${t("quiz.none", "None of these got loud — lucky you. Any realm is open if you'd like to look around.")}</p>
-       <div class="actions"><button class="btn-primary" data-action="begin">${t("quiz.valley", "🗺 See the whole valley")}</button></div>`
+       <div class="actions"><button class="btn-primary" data-action="go-home">${t("quiz.valley", "🗺 See the whole valley")}</button></div>`
     : `<p>${tf("quiz.start", "Start with <strong>{fear}</strong> — it lives in {realm}.", { fear: escapeHtml(t(`phobia.${k}.label`, PHOBIAS[k].label)), realm: escapeHtml(realm.realmName) })}</p>
        <div class="actions">
          <button class="btn-primary" data-action="quick-start" data-phobia="${k}">${tf("quiz.enter", "Step into {realm}", { realm: escapeHtml(realm.realmName) })}</button>
@@ -982,42 +982,6 @@ function markNudgeDone(id) {
     const d = nudgesDone();
     if (!d.includes(id)) { d.push(id); localStorage.setItem("fobia.nudges.v1", JSON.stringify(d)); }
   } catch {}
-}
-function nudgeBlock() {
-  // The choice is STICKY for the page-load, not consumed by it: the camp view
-  // renders more than once per navigation (shell re-renders), and a
-  // consume-once flag meant render #1 got the nudge and render #2 — the one
-  // that stays on screen — got nothing. "" = decided that this load shows none.
-  const done = nudgesDone();
-  if (window.__nudgeThisLoad !== undefined && (window.__nudgeThisLoad === "" || done.includes(window.__nudgeThisLoad))) {
-    if (window.__nudgeThisLoad !== "" ) return "";   // acted on mid-load — gone
-    return "";
-  }
-  let n = null;
-  const pick = (id) => window.__nudgeThisLoad === undefined || window.__nudgeThisLoad === id;
-  if (pick("report") && !done.includes("report") && Object.keys(PHOBIAS).some((k) => { try { return realmStatus(k).walked; } catch { return false; } })) {
-    n = { id: "report", icon: "📄", act: "open-report",
-      txt: t("nudge.report", "A realm is fully walked. The printable report is something you could hand a therapist."),
-      btn: t("nudge.reportBtn", "See the report") };
-  } else if (pick("evidence") && !done.includes("evidence") && window.PhobiaExperiments && PhobiaExperiments.evidenceCount() >= 1) {
-    const ch = window.Character && window.Character.loadCharacter();
-    n = { id: "evidence", icon: "🧾", act: "select-phobia", phobia: (ch && ch.primaryPhobia) || "dogs",
-      txt: t("nudge.evidence", "Your first experiment is in the evidence file — the realm page keeps your proof."),
-      btn: t("nudge.evidenceBtn", "See the evidence") };
-  } else if (pick("insights") && !done.includes("insights") && state.log.length >= 3) {
-    n = { id: "insights", icon: "📈", act: "open-insights",
-      txt: t("nudge.insights", "Three sessions in — your fear curve has started drawing itself."),
-      btn: t("nudge.insightsBtn", "See the curve") };
-  }
-  if (!n) { if (window.__nudgeThisLoad === undefined) window.__nudgeThisLoad = ""; return ""; }
-  window.__nudgeThisLoad = n.id;
-  return `
-    <div class="nudge-card" data-nudge="${n.id}">
-      <span class="nudge-icon">${n.icon}</span>
-      <span class="nudge-txt">${n.txt}</span>
-      <button class="btn-ghost nudge-go" data-action="${n.act}" ${n.phobia ? `data-phobia="${n.phobia}"` : ""} data-nudge-id="${n.id}">${n.btn}</button>
-      <button class="nudge-x" data-action="nudge-dismiss" data-id="${n.id}" aria-label="${t("nudge.dismiss", "Dismiss")}">✕</button>
-    </div>`;
 }
 
 function openFearCheckModal(phobiaKey, at, mOpts = {}) {

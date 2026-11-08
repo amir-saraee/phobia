@@ -38,6 +38,34 @@ function mountExposure(phobiaKey, levelIdx) {
   const lv = p.levels[levelIdx];
   const stage = document.getElementById("stage");
   const minHold = parseInt(stage.dataset.minHold, 10) || 6;
+  // The opening card (views-trial.js trialIntroHTML): the scene mounts behind
+  // it and holds still (engine.js, .pre-start); nothing about the trial —
+  // its clock, its hold, its sound, its keys — starts until the player steps
+  // in by making their guess.
+  const intro = document.getElementById("trialIntro");
+  let begunAt = 0;
+  let unblockKeys = () => {};
+  if (intro) {
+    // The scene's own keys (E settle, T treat, W walk…) must not act on a
+    // room that is holding still behind the card. Capture phase on window:
+    // this runs before any listener the scene adds.
+    // Key-down only: a key-up for a key the room never saw go down is
+    // harmless, and passing them all means no key can stick "held" into the
+    // trial. A story page, a menu or a field typed into keeps its keys.
+    const blockKeys = (e) => {
+      if (!stage.isConnected) { window.removeEventListener("keydown", blockKeys, true); return; }
+      if (!stage.classList.contains("pre-start")) return;
+      // (Esc too: under the card it started the grounding exercise behind
+      // it. A story page or a menu over the card still gets its Esc below.)
+      if (e.key === "Tab" || e.key === "Enter" || e.key === " ") return;
+      const tg = e.target;
+      if (tg && tg.closest && tg.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (document.querySelector(".story-ov, .goal-modal-overlay, .settings-drawer, .menu-drawer")) return;
+      e.stopImmediatePropagation();
+    };
+    window.addEventListener("keydown", blockKeys, true);
+    unblockKeys = () => { window.removeEventListener("keydown", blockKeys, true); };
+  }
   // The experiment deck for this realm/rung (renders nothing when the realm
   // has no deck). Torn down by unmount() via PhobiaExperiments.end().
   // Not on a realm's very first trial: that one is for meeting the room and
@@ -488,6 +516,7 @@ function mountExposure(phobiaKey, levelIdx) {
     // no-countdown start — comes through here).
     if (!sceneShown) { if (!sceneWaiters.includes(startScene)) sceneWaiters.push(startScene); return; }
     started = true;
+    begunAt = Date.now();
     // Reveal heart-rate vignette gradually
     setTimeout(() => {
       heart.style.setProperty("--heart-opacity", String(heartIntensity));
@@ -615,6 +644,7 @@ function mountExposure(phobiaKey, levelIdx) {
   const cdNum = countdown.querySelector("#cdNum");
   let cdTimers = [];
   let cdDone = false;
+  const kickoff = () => {
   if (countdownOff) {
     // User opted out of the countdown — start right away (one tick later so
     // the scene mount settles before audio/voice kick in).
@@ -634,6 +664,8 @@ function mountExposure(phobiaKey, levelIdx) {
       setTimeout(() => countdown.remove(), 600);
     }, 2400));
   }
+  };
+  if (intro) armTrialIntro(kickoff); else kickoff();
   // Manual override: skip the rest of the count if the user is ready early.
   // Doing so remembers the preference — future scenes start instantly
   // (Settings → "Pre-scene countdown" turns it back on).
@@ -649,6 +681,56 @@ function mountExposure(phobiaKey, levelIdx) {
       startScene();
       setTimeout(() => countdown.remove(), 600);
     };
+  }
+
+  // ---- The opening card ----
+  // A number tapped is the guess, and stepping in. "Step in without a guess"
+  // goes in with none. What the gate page's Enter used to record is recorded
+  // here: the guess, the fear the alarm named (if one was picked), the
+  // chapter's opening page as read.
+  function armTrialIntro(kick) {
+    let begun = false;
+    const begin = (predicted) => {
+      if (begun || !intro.isConnected) return;
+      begun = true;
+      window.__trialBegin = null;
+      unblockKeys();
+      pendingPrediction = { phobia: phobiaKey, level: levelIdx, predicted: Number.isFinite(predicted) ? predicted : null, ts: Date.now() };
+      const chip = intro.querySelector(".expect-chip.on");
+      pendingExpect = (chip && chip.dataset.fear && chip.dataset.fear !== "none")
+        ? { phobia: phobiaKey, level: levelIdx, fear: chip.dataset.fear, belief: null, ts: Date.now() } : null;
+      window.__pendingExpect = pendingExpect;
+      try { if (pendingExpect && window.__coach && window.__coach.setExpect) window.__coach.setExpect(pendingExpect); } catch {}
+      lastRungOutcome = { heldSec: 0, minHold, finished: false, phobia: phobiaKey, level: levelIdx };
+      saveTrialSnap();
+      // The chapter's opening counts as read only if it was on the card to be
+      // seen (a short landscape screen may not have room for it).
+      try {
+        const st = intro.querySelector(".ti-story");
+        if (st && st.offsetParent !== null && window.Story && !window.Story.isSeen(`${phobiaKey}.open`)) window.Story.markSeen(`${phobiaKey}.open`);
+      } catch {}
+      try { PhobiaAudio.unlock(); } catch {}
+      intro.classList.add("gone");
+      stage.classList.remove("pre-start");
+      const panel = stage.closest(".exposure-panel");
+      if (panel) panel.classList.remove("pre-start");
+      try { window.dispatchEvent(new CustomEvent("trial-begin", { detail: { phobia: phobiaKey, level: levelIdx } })); } catch {}
+      setTimeout(() => { try { intro.remove(); } catch {} }, 450);
+      try { stage.focus({ preventScroll: true }); } catch {}
+      kick();
+    };
+    window.__trialBegin = begin;
+    intro.addEventListener("click", (e) => {
+      const sc = e.target && e.target.closest && e.target.closest('.suds-chips[data-for="predictedSuds"] .sc');
+      // A beat for the number to light before the card goes.
+      if (sc) setTimeout(() => begin(parseInt(sc.dataset.v, 10)), 180);
+    });
+    // Keyboard: the first number chip gets focus, so Tab/arrows/Enter work.
+    setTimeout(() => {
+      if (!intro.isConnected) return;
+      const first = intro.querySelector('.suds-chips .sc');
+      try { (intro.querySelector(".ti-title") || first).focus({ preventScroll: true }); } catch {}
+    }, 60);
   }
 
   // ---- Hold timer ----
@@ -679,8 +761,17 @@ function mountExposure(phobiaKey, levelIdx) {
   let holdMet = false;
   // From the first moment, so leaving before the first tick still rates
   // this trial (as an early step-out) rather than "no trial to rate".
-  lastRungOutcome = { heldSec: 0, minHold, finished: false, phobia: phobiaKey, level: levelIdx };
-  saveTrialSnap();
+  // (Under the opening card there is no trial yet: leaving from the card
+  // rates nothing. armTrialIntro writes it when the player steps in.)
+  if (!intro) {
+    lastRungOutcome = { heldSec: 0, minHold, finished: false, phobia: phobiaKey, level: levelIdx };
+    saveTrialSnap();
+  } else {
+    // …and in the reload snapshot: one left by a trial reloaded mid-way
+    // brought its outcome back on the next load, rateable as a phantom.
+    lastRungOutcome = null;
+    saveTrialSnap();
+  }
   window.__rungHoldComplete = false;
   const timer = document.getElementById("timer");
   const continueBtn = document.getElementById("continueBtn");
@@ -698,7 +789,7 @@ function mountExposure(phobiaKey, levelIdx) {
   // when they are. Communicates "you're earning credit right now".
   const interval = setInterval(() => {
     if (!timer || !timer.isConnected) {
-      clearInterval(interval); stopAllAudio();
+      clearInterval(interval); stopAllAudio(); unblockKeys();
       // go() navigates with pushState, which fires no hashchange — so the
       // immersion listeners (chrome wake, goImmersive, fullscreenchange)
       // used to leak into every later page. The stage leaving the DOM is the
@@ -706,7 +797,10 @@ function mountExposure(phobiaKey, levelIdx) {
       try { releaseImmersion(); } catch {}
       return;
     }
-    const wallElapsed = Math.floor((Date.now() - t0) / 1000);
+    // Before the player steps in there is no trial to time or credit (the
+    // scene's first frame is still noticed, or the start would wait on it).
+    if (!started) { if (!sceneShown && sceneOnScreen()) markSceneShown(); lastTickAt = Date.now(); return; }
+    const wallElapsed = Math.floor((Date.now() - (begunAt || t0)) / 1000);
     timer.textContent = fnum(String(Math.floor(wallElapsed / 60)).padStart(2, "0") + ":" + String(wallElapsed % 60).padStart(2, "0"));
 
     // Compute credit based on current fear value
@@ -824,7 +918,7 @@ function mountExposure(phobiaKey, levelIdx) {
         // This button is the always-live EXIT. It used to read "Stay with
         // it · 6s", so the one control that leaves said to stay.
         if (!window.__demoMode) {
-          continueBtn.textContent = t("hold.stepOut", "Step out early");
+          continueBtn.textContent = t("hold.stepOut2", "Step out");
         }
         if (grounding) {
           holdLabel.textContent = tf("hold.groundPause", "{a} / {b}s · paused while you ground", { a: facingSec, b: minHold });
@@ -1106,7 +1200,7 @@ document.addEventListener("input", (e) => {
     // it beside the guess made at the gate.
     const echo = isPeak && document.getElementById("predEcho");
     if (echo) {
-      echo.textContent = tf("rate.predEcho", "At the gate you predicted {p}. It peaked at {v}.", { p: +echo.dataset.p, v: +e.target.value });
+      echo.textContent = tf("rate.predEcho2", "Before you stepped in, you guessed {p}. It peaked at {v}.", { p: +echo.dataset.p, v: +e.target.value });
       echo.hidden = false;
     }
     const submit = document.getElementById("rateSubmit");

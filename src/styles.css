@@ -5747,3 +5747,566 @@ html.big-text .stage-wrap .scene-cmd-bar { zoom: 1.15; }
   html.big-text .stage-wrap .stage.cmds-open:has(.joystick) .controls-hint { max-width: calc(100% - 290px); }
   html.big-text .exposure-panel .step-controls { zoom: 1; }
 }
+
+/* ============================================================================
+   One path (v4): Home → Trial → Debrief.
+   The home hub, the slim top bar, the full-screen trial with its opening
+   card, and the one-page debrief. Later rules here win over the older
+   screens' styles above, which these pages no longer use.
+   ========================================================================= */
+:root {
+  --g-bg: rgba(14, 19, 40, .74);
+  --g-bg-2: rgba(255, 255, 255, .045);
+  --g-line: rgba(255, 255, 255, .09);
+  --g-line-2: rgba(255, 255, 255, .16);
+  --lamp: #ffcf6e;
+  --lamp-2: #f3a95c;
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+}
+
+/* ---- Slim top bar (every page but home and the trial) ---- */
+header.brand.topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 0 0 18px; min-height: 48px;
+}
+.tb-home {
+  display: inline-flex; align-items: center; gap: 9px; min-height: 44px;
+  padding: 4px 10px 4px 4px; margin-inline-start: -4px;
+  background: none; border: 0; border-radius: 12px; cursor: pointer;
+  color: var(--text); font: inherit; font-weight: 750; font-size: 17px; letter-spacing: .2px;
+}
+.tb-home .lw-lamp { width: 20px; height: 26px; color: var(--lamp); }
+.tb-home:hover { background: var(--g-bg-2); }
+.tb-icon {
+  display: inline-grid; place-items: center; width: 44px; height: 44px; padding: 0;
+  border-radius: 14px; cursor: pointer; color: var(--text);
+  background: var(--g-bg-2); border: 1px solid var(--g-line);
+  transition: background .15s ease, border-color .15s ease;
+}
+.tb-icon:hover { background: rgba(255, 255, 255, .08); border-color: var(--g-line-2); }
+.tb-glyph { width: 22px; height: 22px; }
+body.light-mode .tb-icon { background: #fff; border-color: var(--border); }
+
+/* ---- Home ---- */
+body.home-mode { background: #050816; }
+body.home-mode header.brand { display: none !important; }
+body.home-mode .app { max-width: none; padding: 0; }
+body.home-mode #view.view-enter { animation: none; }
+.home-bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.home-bg .valley-hero { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.home-bg::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(5, 8, 22, .25) 0%, rgba(5, 8, 22, 0) 30%, rgba(5, 8, 22, .35) 62%, rgba(5, 8, 22, .82) 100%);
+}
+/* Home is always the night valley, whatever the page theme. */
+#view:has(> .home-bg) {
+  --text: #eef2f9; --muted: #a3afc4; --border: rgba(255, 255, 255, .12);
+  color: var(--text);
+  position: relative; min-height: 100dvh; display: flex; flex-direction: column;
+}
+.home-top {
+  position: relative; z-index: 2; width: 100%; max-width: 1120px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: max(12px, env(safe-area-inset-top)) 16px 0;
+}
+.home-mark { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; letter-spacing: .2px; color: #fbf1dc;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif; }
+html[lang="fa"] .home-mark { font-family: inherit; }
+.home-mark .lw-lamp { width: 20px; height: 26px; color: var(--lamp); }
+.home-top-r { display: inline-flex; align-items: center; gap: 8px; }
+.home-chip {
+  min-height: 40px; padding: 0 14px; border-radius: 999px; cursor: pointer;
+  background: rgba(255, 255, 255, .07); border: 1px solid var(--g-line-2); color: var(--text);
+  font: inherit; font-size: 14px; font-weight: 600;
+}
+.home-chip:hover { background: rgba(255, 255, 255, .12); }
+.home-main {
+  position: relative; z-index: 1; flex: 1;
+  width: 100%; max-width: 600px; margin: 0 auto;
+  display: flex; flex-direction: column; justify-content: space-between; gap: 22px;
+  padding: clamp(18px, 6vh, 64px) 16px max(20px, env(safe-area-inset-bottom));
+}
+.home-hero { text-align: center; }
+.home-title {
+  margin: 0; font-size: clamp(30px, 7.2vw, 48px); line-height: 1.08; font-weight: 780; letter-spacing: -.6px;
+  text-shadow: 0 4px 30px rgba(0, 0, 0, .55);
+}
+.home-sub {
+  margin: 14px auto 0; max-width: 34em; font-size: clamp(15px, 2.2vw, 17px); line-height: 1.55;
+  color: #c9d2e3; text-shadow: 0 2px 16px rgba(0, 0, 0, .6);
+}
+.home-sheet {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 18px; border-radius: 26px;
+  background: var(--g-bg); border: 1px solid var(--g-line);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2);
+}
+.home-q { margin: 2px 0 0; font-size: 17px; font-weight: 700; text-align: center; opacity: 1; color: #fbf1dc; letter-spacing: 0; }
+.home-sheet .fear-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.home-sheet .fear-tile {
+  position: relative; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  min-height: 96px; padding: 12px 6px 10px; border-radius: 18px;
+  background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .1);
+}
+.home-sheet .fear-tile:hover, .home-sheet .fear-tile:focus-visible {
+  background: rgba(255, 196, 104, .1); border-color: rgba(255, 207, 110, .6);
+  box-shadow: 0 0 0 1px rgba(255, 207, 110, .25), 0 10px 28px rgba(255, 170, 80, .14);
+}
+.home-sheet .fear-tile.cur { border-color: rgba(255, 207, 110, .45); }
+.home-sheet .fear-tile.done .ft-icon { filter: drop-shadow(0 0 12px rgba(255, 200, 100, .7)); }
+.home-sheet .ft-icon { font-size: 28px; }
+.home-sheet .ft-text { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.home-sheet .ft-name { font-size: 15px; font-weight: 700; }
+.home-sheet .ft-realm { font-size: 11.5px; color: var(--muted); }
+.hp-pips { display: inline-flex; gap: 3px; vertical-align: middle; }
+.hp-pips i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, .18); }
+.hp-pips i.on { background: var(--lamp); box-shadow: 0 0 6px rgba(255, 207, 110, .7); }
+.home-sheet .fear-tile .hp-pips { margin-top: 3px; }
+.home-note { margin: 2px 0 0; font-size: 13.5px; line-height: 1.5; text-align: center; color: var(--muted); }
+.home-link {
+  align-self: center; min-height: 40px; padding: 6px 10px; border: 0; background: none; cursor: pointer;
+  color: var(--accent); font: inherit; font-size: 14px; text-decoration: underline; text-underline-offset: 3px;
+  text-decoration-color: rgba(124, 209, 197, .4);
+}
+.home-link:hover { text-decoration-color: currentColor; }
+.home-next {
+  display: flex; flex-direction: column; gap: 6px; padding: 16px; border-radius: 20px;
+  background: linear-gradient(160deg, rgba(255, 207, 110, .12), rgba(255, 255, 255, .03));
+  border: 1px solid rgba(255, 207, 110, .3);
+}
+.hn-kicker { font-size: 12.5px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--lamp); }
+.hn-title { font-size: 21px; line-height: 1.25; font-weight: 750; }
+.hn-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13.5px; color: var(--muted); }
+.hn-body { margin: 0; font-size: 15px; color: #d7deeb; }
+.home-btn-primary {
+  margin-top: 8px; min-height: 52px; width: 100%; padding: 12px 18px; border: 0; border-radius: 16px; cursor: pointer;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #0b1020;
+  font: inherit; font-size: 17px; font-weight: 750; letter-spacing: .2px;
+  box-shadow: 0 10px 26px rgba(124, 209, 197, .22);
+  transition: transform .12s ease, box-shadow .15s ease;
+}
+.home-btn-primary:hover { box-shadow: 0 12px 32px rgba(124, 209, 197, .34); transform: translateY(-1px); }
+.home-btn-primary:active { transform: translateY(1px); }
+.hn-all { align-self: center; margin-top: 2px; font-size: 13.5px; }
+.home-sheet .mira-note { margin: 0; }
+@media (max-width: 420px) {
+  .home-sheet { padding: 14px; border-radius: 22px; }
+  .home-sheet .fear-tiles { gap: 8px; }
+  .home-sheet .fear-tile { min-height: 88px; border-radius: 16px; }
+}
+@media (max-height: 700px) and (max-width: 700px) {
+  .home-main { gap: 14px; padding-top: 12px; }
+  .home-sub { margin-top: 8px; font-size: 14px; }
+  .home-sheet .fear-tile { min-height: 74px; padding: 8px 4px; }
+  .home-sheet .ft-realm { display: none; }
+}
+@media (min-width: 960px) {
+  .home-main { max-width: 640px; }
+  .home-sheet { padding: 22px; }
+}
+/* Landscape phones: title beside the sheet. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .home-main { max-width: 980px; flex-direction: row; align-items: center; gap: 24px; }
+  .home-hero { flex: 1 1 0; text-align: start; }
+  .home-sheet { flex: 1.2 1 0; max-height: calc(100dvh - 80px); overflow-y: auto; }
+  .home-title { font-size: 28px; }
+}
+.app:has(.home-sheet .fear-tile[data-phobia="dogs"]:is(:hover, :focus-visible)) .vh-lantern[data-k="dogs"] .vh-glow { opacity: .9; }
+
+/* ---- The trial: the room, full screen ---- */
+body.trial-mode header.brand { display: none !important; }
+body.trial-mode .app { max-width: none; padding: 0; }
+body.trial-mode #view.view-enter { animation: none; }
+body.trial-mode .exposure-panel { border: 0; border-radius: 0; box-shadow: none; background: #070a14; }
+body.trial-mode .exposure-header { display: none; }
+body.trial-mode .stage-wrap { margin: 0; }
+body.trial-mode .stage { border-radius: 0; border-left: 0; border-right: 0; border-top: 0; }
+body.trial-mode .exposure-panel .step-controls {
+  border-top: 1px solid rgba(255, 255, 255, .07); background: #0b0f1d;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+}
+
+/* Before the player steps in: only the room (holding still) and the card. */
+.stage.pre-start > :not(canvas):not(.trial-intro):not(.loading) { visibility: hidden !important; }
+.stage.pre-start > .loading { opacity: 0; }
+.stage.pre-start canvas { filter: saturate(.85) brightness(.82); transition: filter .5s ease; }
+.exposure-panel.pre-start .step-controls,
+.exposure-panel.pre-start .scene-cmd-bar { visibility: hidden !important; }
+.trial-intro .suds-range { display: none; }
+/* Fixed, not absolute: the card owns the whole screen, the empty controls
+   row under the stage included. */
+.trial-intro {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  padding: max(14px, env(safe-area-inset-top)) 14px 14px;
+  background: radial-gradient(ellipse 90% 80% at 50% 55%, rgba(5, 8, 20, .35) 0%, rgba(5, 8, 20, .72) 100%);
+  overflow-y: auto; overscroll-behavior: contain;
+  animation: tiIn .45s var(--ease-out) both;
+}
+.trial-intro.gone { animation: tiOut .4s ease forwards; pointer-events: none; }
+@keyframes tiIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tiOut { to { opacity: 0; } }
+.ti-card {
+  --text: #eef2f9; --muted: #a3afc4; --panel: rgba(255, 255, 255, .05); --border: rgba(255, 255, 255, .12);
+  color: var(--text);
+  width: min(560px, 100%); margin: auto;
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 18px 18px 14px; border-radius: 26px;
+  background: rgba(12, 16, 32, .84); border: 1px solid var(--g-line);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .55);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2); backdrop-filter: blur(18px) saturate(1.2);
+  animation: tiCard .5s var(--ease-out) both;
+}
+@keyframes tiCard { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .trial-intro, .ti-card { animation: none; } }
+.ti-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ti-kicker { font-size: 12.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--lamp); }
+.ti-x {
+  flex: none; width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 12px; cursor: pointer;
+  background: rgba(255, 255, 255, .06); border: 1px solid var(--g-line); color: var(--muted); font-size: 15px;
+}
+.ti-x:hover { color: var(--text); background: rgba(255, 255, 255, .1); }
+.ti-title { margin: 0; font-size: clamp(22px, 4.6vw, 28px); line-height: 1.2; font-weight: 760; opacity: 1; letter-spacing: -.3px; }
+.ti-desc { margin: -4px 0 0; font-size: 15px; line-height: 1.5; color: #c9d2e3; }
+.ti-focus { margin: 0; font-size: 14px; line-height: 1.45; color: #f6dca4; }
+.ti-story .gate-story, .ti-story .story-card { margin: 0; }
+.ti-story .gate-story { padding: 12px 14px 6px; border-radius: 18px; }
+.ti-story .gs-kicker { font-size: 11.5px; }
+.ti-story .gs-row { gap: 12px; }
+.ti-story .gs-face { flex-basis: 44px; width: 44px; height: 44px; }
+.ti-story .gs-face img, .ti-story .gs-face svg { width: 44px; height: 44px; }
+.ti-story .gs-quote { font-size: 15px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ti-story .gs-who { font-size: 12.5px; }
+.ti-story .gs-mira { margin-top: 8px; font-size: 13.5px; }
+.ti-story .gs-read { min-height: 36px; font-size: 13px; }
+.ti-story .story-card { padding: 12px 14px; gap: 10px; }
+.ti-block { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--g-line); }
+.ti-q { font-size: 15.5px; font-weight: 700; line-height: 1.35; }
+.ti-opt { margin-inline-start: 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.ti-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ti-chips .expect-chip {
+  min-height: 38px; padding: 7px 12px; border-radius: 999px; cursor: pointer;
+  background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .14); color: var(--text);
+  font: inherit; font-size: 13.5px; line-height: 1.25; text-align: start;
+}
+.ti-chips .expect-chip.on, .ti-chips .expect-chip[aria-checked="true"] {
+  background: rgba(124, 209, 197, .16); border-color: var(--accent); color: #fff;
+}
+.ti-guess .suds-chips .sc { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .14); }
+.ti-guess .suds-chips .sc:hover { background: rgba(255, 255, 255, .1); }
+.ti-hint { margin: 0; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.trial-intro .suds-ends { display: none; }
+.ti-skip {
+  align-self: center; min-height: 40px; padding: 4px 10px; border: 0; background: none; cursor: pointer;
+  color: var(--muted); font: inherit; font-size: 13.5px; text-decoration: underline; text-underline-offset: 3px;
+}
+.ti-skip:hover { color: var(--text); }
+@media (max-width: 600px) {
+  .trial-intro { align-items: flex-end; padding: 10px; }
+  .ti-card { padding: 16px 14px 10px; border-radius: 24px; gap: 10px; margin: auto 0 0; }
+  .ti-story .gs-mira { display: none; }
+  .ti-story .gate-story { padding: 10px 12px 4px; }
+  .ti-story .gs-quote { font-size: 14px; -webkit-line-clamp: 2; }
+  .ti-title { font-size: 22px; }
+  .ti-desc { font-size: 14.5px; }
+  .ti-focus { font-size: 13.5px; }
+  .ti-block { padding-top: 10px; gap: 7px; }
+  .ti-q { font-size: 15px; }
+  .ti-chips .expect-chip { font-size: 13px; padding: 5px 11px; min-height: 34px; }
+}
+@media (max-height: 560px) {
+  .trial-intro { align-items: flex-start; }
+  .ti-story { display: none; }
+}
+
+/* ---- Debrief: the rating, then the results — one short page each ---- */
+.debrief {
+  max-width: 620px; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 14px;
+  padding: clamp(18px, 4vw, 30px); border-radius: 28px;
+  background: linear-gradient(180deg, var(--panel), var(--bg-2));
+  border: 1px solid var(--border-2); box-shadow: var(--shadow);
+}
+.debrief > * { margin-top: 0; margin-bottom: 0; }
+.db-kicker { font-size: 12.5px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--accent); }
+.debrief .vc-hero { display: flex; flex-direction: column; gap: 10px; text-align: center; padding: 0; }
+.debrief .vc-hero .db-kicker { align-self: center; }
+.db-title { margin: 0; font-size: clamp(22px, 4.6vw, 30px); line-height: 1.2; font-weight: 780; letter-spacing: -.4px; opacity: 1; }
+.debrief > .db-title, .debrief > .db-kicker { text-align: center; }
+.db-stars { display: flex; justify-content: center; gap: 8px; font-size: 40px; line-height: 1; }
+.db-stars i { font-style: normal; color: var(--star-dim); }
+.db-stars i.on { color: var(--star); text-shadow: 0 0 18px rgba(252, 211, 77, .45); animation: dbStar .5s var(--ease-out) both; animation-delay: calc(var(--i) * .12s); }
+@keyframes dbStar { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+.db-card.suds { display: flex; flex-direction: column; gap: 10px; padding: 16px; margin: 0; border-radius: 20px; background: var(--panel-2); border: 1px solid var(--border); }
+.db-q { display: block; font-size: 15.5px; font-weight: 700; color: var(--text); }
+.db-card .db-q + * { margin-top: 0; }
+.db-card .db-q:not(:first-child) { margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+.db-card .pred-echo { margin: 0; font-size: 13.5px; color: var(--accent); }
+.db-primary {
+  min-height: 54px; width: 100%; padding: 12px 18px; border: 0; border-radius: 16px; cursor: pointer;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #0b1020;
+  font: inherit; font-size: 17px; font-weight: 760;
+  box-shadow: 0 10px 26px rgba(124, 209, 197, .2);
+  transition: transform .12s ease, box-shadow .15s ease, opacity .15s ease;
+}
+.db-primary:disabled { opacity: .38; cursor: default; box-shadow: none; }
+.db-primary:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(124, 209, 197, .32); }
+.db-link {
+  align-self: center; min-height: 40px; padding: 6px 12px; border: 0; background: none; cursor: pointer;
+  color: var(--muted); font: inherit; font-size: 14px;
+}
+.db-link:hover { color: var(--text); }
+.db-note { font-size: 13px; color: var(--muted); text-align: center; line-height: 1.5; }
+.db-lesson { margin: 2px auto 0; max-width: 34em; font-size: 15px; line-height: 1.5; color: #d9e1ee; }
+body.light-mode .db-lesson { color: var(--text); }
+.db-lesson strong { color: var(--text); }
+.debrief .vc-stars { font-size: 46px; margin: 2px 0 4px; }
+.debrief .vc-stars i:nth-child(2) { font-size: 56px; }
+.debrief .vc-statrow { margin: 4px 0 0; }
+.debrief .ground-gain { margin: 4px 0 0; }
+.debrief .vc-chips-only .vc-rank, .debrief .vc-chips-only .reward-milestone { display: none; }
+.debrief .vc-chips-only .vc-chips { margin: 0; }
+.debrief .vc-cta { flex-direction: column; align-items: stretch; gap: 8px; margin-top: 6px; }
+.debrief .vc-cta .btn-primary { min-height: 54px; border-radius: 16px; font-size: 16.5px; font-weight: 760; }
+.debrief .vc-cta .btn-ghost { min-height: 46px; border-radius: 14px; }
+.debrief .story-card, .debrief .reality-card, .debrief .bridge-invite, .debrief .mirror-invite, .debrief .vc-checkin { margin: 0; border-radius: 20px; }
+.debrief .vc-more { margin: 0; border-radius: 18px; }
+.debrief .vc-more > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 650; color: var(--muted); }
+.db-foot { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 14px; padding-top: 4px; border-top: 1px solid var(--border); }
+.debrief .fb-after { margin: 0; text-align: center; }
+@media (max-width: 600px) {
+  .debrief { border-radius: 24px; padding: 18px 14px; gap: 12px; }
+  .db-card.suds { padding: 14px 12px; }
+}
+
+/* A guided breath over any page (the rating, the results' check-in). */
+.page-breath { position: fixed; inset: 0; z-index: 300; background: rgba(5, 8, 20, .62); }
+.page-breath .stage-breath {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%) scale(.96); opacity: 0;
+  width: min(280px, calc(100% - 32px)); padding: 20px 18px 14px; border-radius: 22px; text-align: center;
+  background: rgba(10, 14, 28, .92); border: 1px solid rgba(124, 209, 197, .35); color: #eef2f9;
+  transition: opacity .35s ease, transform .35s ease;
+}
+.page-breath .stage-breath.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.page-breath .stage-breath.gone { opacity: 0; }
+.page-breath .sb-close { color: #eef2f9; border-color: rgba(255, 255, 255, .2); }
+
+/* ---- Realm page: the trials first; everything else folded ---- */
+.realm-more { margin: 18px 0 0; border: 1px solid var(--border-2); border-radius: 18px; padding: 0 16px; background: rgba(255, 255, 255, .02); }
+.realm-more > summary { cursor: pointer; min-height: 48px; display: flex; align-items: center; font-size: 14px; font-weight: 650; color: var(--muted); list-style: none; }
+.realm-more > summary::-webkit-details-marker { display: none; }
+.realm-more > summary::before { content: "▸"; display: inline-block; margin-inline-end: 10px; transition: transform .2s ease; }
+[dir="rtl"] .realm-more > summary::before { transform: scaleX(-1); }
+.realm-more[open] > summary::before { transform: rotate(90deg); }
+.realm-more[open] { padding-bottom: 14px; }
+.realm-more > :not(summary) { margin-top: 12px; }
+/* The opening card sits in the (LTR-geometry) stage but is a page of text. */
+html[dir="rtl"] .stage .trial-intro { direction: rtl; }
+
+/* The first-visit notice: on a phone, one clear button under the text. */
+.consent-modal .actions { justify-content: flex-end; }
+@media (max-width: 600px) {
+  .consent-modal .actions { flex-direction: column-reverse; align-items: stretch; gap: 8px; }
+  .consent-modal .actions .btn-primary { min-height: 52px; border-radius: 16px; font-size: 16px; }
+  .consent-modal .actions .btn-ghost { min-height: 44px; border-radius: 14px; }
+}
+.home-backup { margin: 2px 0 0; border-radius: 16px; font-size: 13px; }
+
+/* ---- Light mode: the debrief's and the realm page's framed cards ----
+   These are drawn as dark panels (hard-coded gradients), and in light mode
+   they inherited the page's dark ink: unreadable. The small result cards
+   stay dark islands with the dark theme's ink; the realm page's big framed
+   sections become light ones. */
+body.light-mode :is(.reality-card, .wave-card, .prediction-card, .mirror-invite, .bridge-invite, .ground-gain, .evidence-block) {
+  --text: #e8eef7; --muted: #a8b4c9; --accent: #7cd1c5; --border: #2f3c5c; --border-2: #2f3c5c;
+  --panel: #1a2238; --panel-2: rgba(255, 255, 255, .04); --panel-3: #15192c;
+  color: var(--text);
+}
+body.light-mode :is(.reality-card, .wave-card) .suds { background: rgba(255, 255, 255, .04); border-color: rgba(255, 255, 255, .1); }
+body.light-mode .info-card :is(p, ul li) { color: var(--text); }
+body.light-mode :is(.reality-card, .wave-card, .prediction-card, .mirror-invite, .bridge-invite, .ground-gain) .btn-ghost {
+  color: var(--text); border-color: rgba(255, 255, 255, .24);
+}
+body.light-mode :is(.path-block, .bridge-block, .companion-block) {
+  background: var(--panel); border-color: var(--border); box-shadow: var(--shadow-sm);
+}
+body.light-mode .bridge-block { border-color: #9fd3c1; }
+body.light-mode .bridge-head h3, body.light-mode .path-block .bridge-head h3, body.light-mode .companion-block .bridge-head h3 { color: var(--text); }
+body.light-mode :is(.tp-step button, .fg-card) { background: var(--panel-2); border-color: var(--border); }
+body.light-mode .ground-title { color: var(--muted); }
+
+/* A link styled as a button lays out like one (the helpline link sat glued
+   to the top-left of an empty box). */
+a.btn-ghost, a.btn-primary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  text-decoration: none; padding: 10px 16px; border-radius: 12px; font-size: 14px; font-weight: 600;
+}
+
+/* Phone portrait home: the moon sat under the last line of the intro text. */
+@media (max-aspect-ratio: 1/1) and (max-width: 560px) {
+  .home-bg .vh-moon-n { transform: translateY(80px); }
+}
+
+/* Short landscape screens: the card in two columns — the story and the
+   trial on the left, the questions on the right — instead of hiding the
+   story and pushing the numbers below the fold. */
+@media (max-height: 560px) and (min-width: 640px) {
+  .trial-intro { align-items: center; }
+  .ti-story { display: block; }
+  .ti-card {
+    width: min(920px, 100%); display: grid; grid-template-columns: 1fr 1.1fr; grid-auto-flow: row dense;
+    column-gap: 18px; row-gap: 8px; align-items: start; padding: 12px 16px 8px;
+  }
+  .ti-card > .ti-head, .ti-card > .ti-story, .ti-card > .ti-title, .ti-card > .ti-desc, .ti-card > .ti-focus { grid-column: 1; }
+  .ti-card > .ti-block, .ti-card > .ti-skip { grid-column: 2; }
+  .ti-story .gs-mira, .ti-story .gs-who { display: none; }
+  .ti-story .gs-quote { -webkit-line-clamp: 2; font-size: 13.5px; }
+  .ti-title { font-size: 20px; }
+  .ti-desc, .ti-focus { font-size: 13px; }
+  .ti-chips .expect-chip { min-height: 30px; padding: 4px 10px; font-size: 12.5px; }
+  .trial-intro .suds-chips { grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 4px; }
+  .trial-intro .suds-chips .sc { min-height: 40px; font-size: 14px; }
+  .ti-hint { font-size: 12px; }
+  .ti-skip { min-height: 34px; }
+}
+/* Right to left, a range's 0 is on the right: so is its calm end. */
+html[dir="rtl"] .suds input[type=range] { background: linear-gradient(270deg, #34d399, #fbbf24, #ef4444); }
+
+/* ---- The trial's control dock ----
+   One slim bar under the room: Breathe at one end, the way out (which
+   becomes "I'm ready — continue" once the hold is met) at the other, and
+   between them the hold — its bar over the line that says what's next.
+   On a phone the bar runs along the dock's top edge and the floating hold
+   pill in the room goes: one place to look for progress, not two. */
+body.trial-mode .exposure-panel .step-controls {
+  display: grid; align-items: center;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "breathe bar timer exit" "breathe label timer exit";
+  column-gap: 16px; row-gap: 7px;
+  padding: 10px max(18px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  background: linear-gradient(180deg, #0c1121, #080b16);
+  border-top: 1px solid rgba(255, 255, 255, .07);
+}
+body.trial-mode .step-controls > .sc-breathe { grid-area: breathe; }
+body.trial-mode .step-controls > #continueBtn { grid-area: exit; }
+body.trial-mode .step-controls > .hold-bar { grid-area: bar; align-self: end; display: block; width: 100%; max-width: none; height: 5px; margin: 0; background: rgba(255, 255, 255, .1); }
+body.trial-mode .step-controls > .hold-label { grid-area: label; align-self: start; margin: 0; font-size: 12.5px; color: #a3afc4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.trial-mode .step-controls > .timer { grid-area: timer; margin: 0; font-size: 12.5px; color: #7f8aa3; }
+body.trial-mode .step-controls > button {
+  min-height: 44px; padding: 0 20px; border-radius: 999px;
+  font-size: 15px; font-weight: 650; letter-spacing: .1px; white-space: nowrap;
+  transition: background .2s ease, border-color .2s ease, color .2s ease, transform .12s ease;
+}
+body.trial-mode .step-controls > button:active { transform: scale(.97); }
+body.trial-mode .step-controls > .sc-breathe {
+  background: rgba(245, 176, 75, .1); border: 1px solid rgba(245, 176, 75, .32); color: #f6d58f;
+}
+body.trial-mode .step-controls > .sc-breathe:hover { background: rgba(245, 176, 75, .16); }
+body.trial-mode .step-controls > #continueBtn.holding {
+  background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .16); color: #dfe6f2; opacity: 1;
+}
+body.trial-mode .step-controls > #continueBtn.holding:hover { background: rgba(255, 255, 255, .1); }
+body.trial-mode .step-controls > #continueBtn:not(.holding) {
+  border: 0; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #0b1020;
+  box-shadow: 0 8px 22px rgba(124, 209, 197, .25);
+}
+@media (max-width: 600px) {
+  body.trial-mode .exposure-panel .step-controls {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: "bar bar" "label label" "breathe exit";
+    column-gap: 10px; row-gap: 8px;
+    padding-top: 0; padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right));
+  }
+  body.trial-mode .step-controls > .hold-bar { height: 3px; border-radius: 0; margin: 0 calc(-1 * max(12px, env(safe-area-inset-left))); width: auto; align-self: start; }
+  body.trial-mode .exposure-panel .step-controls > .hold-label { display: block; text-align: center; font-size: 12px; }
+  body.trial-mode .exposure-panel .step-controls > .timer { display: none; }
+  body.trial-mode .step-controls > button { min-height: 46px; padding: 0 12px; font-size: 15px; }
+  body.trial-mode .stage .hold-pill { display: none !important; }
+}
+/* Big text keeps the dock on one screen. */
+html.big-text body.trial-mode .step-controls > .hold-label { white-space: normal; }
+
+/* ---- Motion: arrivals and departures ----
+   Fill-mode "backwards" only, so a finished entrance never pins a transform
+   that a hover or a press wants to change. */
+.stage.leaving, .exposure-panel.leaving .step-controls, .exposure-panel.leaving .scene-cmd-bar { opacity: 0; transition: opacity .24s ease; }
+@keyframes lwRise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes lwFade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: no-preference) {
+  .home-bg { animation: lwFade .6s ease both; }
+  .home-hero { animation: lwRise .6s var(--ease-out) backwards; }
+  .home-sheet { animation: lwRise .6s var(--ease-out) .08s backwards; }
+  .home-sheet .fear-tile { animation: lwRise .5s var(--ease-out) backwards; animation-delay: calc(.16s + var(--k, 0) * .045s); }
+  .home-next { animation: lwRise .55s var(--ease-out) .12s backwards; }
+  .debrief > :not(.vc-hero), .debrief .vc-hero > * { animation: lwRise .5s var(--ease-out) backwards; }
+  .debrief > :nth-child(2), .debrief .vc-hero > :nth-child(2) { animation-delay: .05s; }
+  .debrief > :nth-child(3), .debrief .vc-hero > :nth-child(3) { animation-delay: .1s; }
+  .debrief > :nth-child(4), .debrief .vc-hero > :nth-child(4) { animation-delay: .15s; }
+  .debrief > :nth-child(5), .debrief .vc-hero > :nth-child(5) { animation-delay: .2s; }
+  .debrief > :nth-child(6), .debrief .vc-hero > :nth-child(6) { animation-delay: .25s; }
+  .debrief > :nth-child(n+7), .debrief .vc-hero > :nth-child(n+7) { animation-delay: .3s; }
+  /* The debrief brings its own entrance; the page-wide fade under it doubled it. */
+  #view.view-enter:has(> .debrief) { animation: none; }
+}
+
+/* ---- Results: one primary button; everything after it light ----
+   "Next trial" is the only filled button on the page. The story page, the
+   real step and the first-trial extras read as rows you can take or leave. */
+.debrief .vc-stars-head { font-size: 15px; margin-bottom: 4px; }
+.debrief .vc-goals li { font-size: 13px; }
+.debrief .vc-statrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 6px; max-width: 520px; margin-inline: auto; width: 100%; }
+.debrief .vc-stat { min-width: 0; padding: 8px 4px; text-align: center; }
+.debrief .vc-sv { font-size: 16px; }
+.debrief .vc-sl { font-size: 9.5px; letter-spacing: .04em; white-space: normal; line-height: 1.25; display: block; }
+.debrief .ground-gain { padding: 10px 12px; border-radius: 14px; gap: 6px; }
+.debrief .story-card { grid-template-columns: auto 1fr auto; padding: 12px; gap: 10px; }
+.debrief .story-card .sc-portrait, .debrief .story-card .sc-portrait svg, .debrief .story-card .sc-portrait img { width: 44px; height: 44px; }
+.debrief .story-card .sc-title { font-size: 15px; }
+.debrief .story-card .sc-quote { font-size: 13px; }
+.debrief .story-card .sc-read, .debrief .bridge-invite .btn-ghost, .debrief .first-next .btn-ghost, .debrief .mirror-invite .btn-ghost {
+  background: transparent; box-shadow: none; animation: none;
+  min-height: 38px; padding: 0 14px; border-radius: 999px; font-size: 13.5px; font-weight: 650;
+  border: 1px solid rgba(255, 207, 110, .45); color: #f6dca4;
+}
+.debrief .bridge-invite .btn-ghost { border-color: rgba(110, 231, 183, .45); color: #b9f0da; }
+.debrief :is(.first-next, .mirror-invite) .btn-ghost { border-color: rgba(195, 184, 236, .45); color: #ddd6f7; }
+body.light-mode .debrief .story-card .sc-read { color: var(--text); border-color: rgba(180, 120, 20, .5); }
+.debrief .bridge-invite, .debrief .mirror-invite { padding: 12px 14px; gap: 4px; }
+.debrief .bridge-invite p, .debrief .mirror-invite p { font-size: 12.5px; margin: 0 0 6px; }
+.debrief .bridge-invite strong, .debrief .first-next strong { font-size: 14.5px; }
+.debrief .first-next .actions { gap: 6px; margin-top: 6px !important; }
+@media (max-width: 600px) {
+  .debrief .vc-stars { font-size: 40px; }
+  .debrief .vc-stars i:nth-child(2) { font-size: 50px; }
+  .debrief .story-card { grid-template-columns: auto 1fr; }
+  .debrief .story-card .sc-read { grid-column: 2; justify-self: start; width: auto; }
+}
+
+/* ---- Realm page on a phone: the trial cards get the width ---- */
+@media (max-width: 600px) {
+  .realm-view .trial { gap: 10px; }
+  .realm-view .trial-marker { flex: 0 0 34px; width: 34px; height: 34px; font-size: 14px; border-width: 2px; }
+  .realm-view .trial.done .trial-marker { font-size: 16px; }
+  .realm-view .trial-link { height: 14px; margin-left: 0; margin-inline-start: 16px; }
+  .realm-view .trial-card { padding: 10px 12px; border-radius: 16px; }
+  .realm-view .trial-whisper.misty { display: none; }
+  .realm-view .trial-foot .btn-ghost, .realm-view .trial-foot .btn-primary { min-height: 40px; padding: 0 14px; border-radius: 999px; font-size: 14px; }
+  .realm-view .path-block, .realm-view .bridge-block { padding: 14px 12px; border-radius: 20px; }
+}
+
+/* ---- Touch scenes with no joystick (the MRI: you lie still) ----
+   They fell through to the desktop rules: the intro hint was centred with a
+   340 px gutter (≈50 px wide on a phone — one word per line), and the
+   message slot sat on top of Ground me. Same places as the joystick scenes. */
+@media (max-width: 600px) {
+  .stage-wrap .stage:not(:has(.joystick)):has(.ground-btn) .controls-hint {
+    top: 66px; bottom: auto; left: 12px; transform: none;
+    max-width: calc(100% - 188px); text-align: start; font-size: 11px;
+  }
+}
+.stage-wrap .stage:not(:has(.joystick)):has(.ground-btn) :is(.captions, .ctx-prompt, .reach-hint, .dc-callout) {
+  bottom: max(164px, calc(var(--cmdbar-top, 0px) + 12px));
+}
+.stage-wrap .stage:not(:has(.joystick)):has(.ground-btn) .dc-callout { width: calc(100% - 20px); max-width: calc(100% - 20px); }

@@ -7,9 +7,10 @@
 //      precache exists (one 404 fails the whole install, so no offline play),
 //      and index.html's modulepreload links match src/3d/main.js's static
 //      import graph (a drift only costs load time, but it's free to catch)
-//   1. first run: the Lanternwalk title asks which fear (six tiles, no notice
-//      over them) → tap Dogs → consent → straight to trial 1's gate, which
-//      tells the chapter's opening as one card (no slideshow, no creator)
+//   1. first run: home asks which fear (six tiles, no notice over them) →
+//      tap Dogs → consent → straight into trial 1: its opening card stands
+//      over the room (holding still), tells the chapter's opening as one
+//      card, and a tapped number is the guess and the step in
 //   2. trial 1: no orientation card and no blinking chrome; walk to the dog,
 //      stay until the alarm settles (never two messages on screen at once),
 //      rate (tap the two readings), complete — with its trial stars logged and
@@ -26,8 +27,8 @@
 //      scroll, in English and in Persian (right-to-left); a real tap works
 //      the MRI's controls and never sends the scene fullscreen
 //   7. the story: the book renders every chapter; a returning traveler gets
-//      "Continue the story" and Mira's note; continuing lands on the next
-//      trial's gate with the waiting page offered on it
+//      "Continue" and Mira's note on home; continuing lands in the next
+//      trial, its card offering the page that's waiting
 // Without a GPU (software WebGL) the high tier crawls at a few fps — too slow
 // to walk anywhere in time — so off macOS the run uses the low graphics tier.
 // Override with SMOKE_QUALITY=auto|low|medium|high.
@@ -117,26 +118,42 @@ async function storyPage(page, beat, ms = 3000) {
   return shown;
 }
 
+// The trial's opening card: name a fear (optional), tap a number — that is
+// stepping in. Returns once the card is gone and the room is live.
+async function stepIn(page, v = 6, fear = true) {
+  await page.evaluate((fear) => {
+    if (!fear) return;
+    const c = document.querySelector('#trialIntro [data-action="pick-fear"][data-fear="bite"]') || document.querySelector("#trialIntro .expect-chip");
+    c && c.click();
+  }, fear);
+  await page.evaluate((v) => { const pc = document.querySelector(`#trialIntro .suds-chips[data-for="predictedSuds"] .sc[data-v="${v}"]`); pc && pc.click(); }, v);
+  return waitFor(page, () => !document.getElementById("trialIntro") && !document.querySelector("#stage.pre-start"), 4000);
+}
+
 async function firstRunAndTrial(browser, base) {
   const { ctx, page } = await newPage(browser);
   await page.goto(base + "/", { waitUntil: "load" });
-  check("landing: the Lanternwalk title asks which fear, nothing over it", await waitFor(page, () =>
-    /Lanternwalk/.test((document.querySelector(".lw-mark") || {}).textContent || "") && !!document.querySelector(".valley-hero")
+  check("landing: home asks which fear, nothing over it", await waitFor(page, () =>
+    /Lanternwalk/.test((document.querySelector(".home-mark") || {}).textContent || "") && !!document.querySelector(".valley-hero")
     && document.querySelectorAll(".fear-tile[data-action='quick-start']").length === 6 && !document.querySelector(".consent-overlay"), 8000));
   await click(page, ".fear-tile[data-phobia='dogs']");
   check("landing: the first tap asks for consent", await waitFor(page, () => !!document.querySelector(".consent-overlay"), 3000));
   await click(page, "I understand");
-  check("first run: one tap lands on trial 1's gate — no slideshow, no creator", await waitFor(page, () => location.hash === "#/dogs/predict/0", 4000)
+  check("first run: one tap lands in trial 1 — no gate page, no slideshow, no creator", await waitFor(page, () => location.hash === "#/dogs/exposure/0" && !!document.getElementById("trialIntro"), 4000)
     && !(await page.evaluate(() => !!document.querySelector(".story-ov"))), await hash(page));
-  check("gate: the chapter's opening told as one card", await page.evaluate(() =>
-    !!document.querySelector('.gate-story [data-action="story-play"][data-beat="dogs.open"]') && !!document.querySelector(".gate-enter")));
+  check("card: the chapter's opening told as one card", await page.evaluate(() =>
+    !!document.querySelector('#trialIntro .gate-story [data-action="story-play"][data-beat="dogs.open"]')));
+  check("card: the room mounts behind it and holds still", await waitFor(page, async () => {
+    const A = window.__active; if (!A || !A.renderer || document.getElementById("stage").dataset.sceneReady !== "1") return false;
+    await new Promise((r) => setTimeout(r, 1800));
+    const f0 = A.renderer.info.render.frame; await new Promise((r) => setTimeout(r, 900));
+    return A.renderer.info.render.frame === f0 && lastRungOutcome === null;
+  }, 20000));
   check("first run: a traveler was made for the chosen fear", await page.evaluate(() => { const c = window.Character.loadCharacter(); return !!c && c.primaryPhobia === "dogs"; }));
   await shot(page, "01-gate");
-  await page.evaluate(() => { const c = document.querySelector('[data-action="pick-fear"][data-fear="bite"]') || document.querySelector('[data-action="pick-fear"]'); c && c.click(); });
-  await page.evaluate(() => { const pc = document.querySelector('.suds-chips[data-for="predictedSuds"] .sc[data-v="6"]'); pc && pc.click(); });   // the gate no longer picks a guess for them
-  await click(page, "Enter the trial");
+  check("card: a tapped number steps in", await stepIn(page, 6));
   check("trial 1: scene mounts", await waitFor(page, () => !!(window.__active && window.__active.scene && window.__dogCoach), 15000));
-  check("gate: walking in turns the chapter's opening", await page.evaluate(() => window.Story.isSeen("dogs.open")));
+  check("card: stepping in turns the chapter's opening, keeps the guess", await page.evaluate(() => window.Story.isSeen("dogs.open") && pendingPrediction && pendingPrediction.predicted === 6));
   // Quiet trial: the intro hint is the one orientation line — no tour card,
   // no countdown, no Show/Hide toggle (the hotbar is simply open), and the
   // chrome never auto-hides. A watcher counts how many transient messages
@@ -245,9 +262,8 @@ async function hardestTrial(browser, base) {
   });
   await page.goto(base + "/#/dogs/predict/4", { waitUntil: "load" });
   await sleep(800);
-  await click(page, "Skip for now");            // primer may open for a traveler with no dog history
-  await page.evaluate(() => { const pc = document.querySelector('.suds-chips[data-for="predictedSuds"] .sc[data-v="6"]'); pc && pc.click(); });   // the gate no longer picks a guess for them
-  await click(page, "Enter the trial");
+  check("trial 5: the old gate address opens the trial", await waitFor(page, () => location.hash === "#/dogs/exposure/4" && !!document.getElementById("trialIntro"), 4000), await hash(page));
+  await stepIn(page, 6, false);
   check("trial 5: scene mounts", await waitFor(page, () => !!(window.__active && window.__active.scene), 15000));
   await page.keyboard.down("KeyW"); await sleep(2500); await page.keyboard.up("KeyW");
   await sleep(4000);
@@ -260,7 +276,7 @@ async function hardestTrial(browser, base) {
   await page.goto(base + "/#/heights", { waitUntil: "load" }); await sleep(900);
   check("heights is open", await page.evaluate(() => !document.querySelector(".soon-panel")));
   await page.goto(base + "/#/fears", { waitUntil: "load" }); await sleep(1500);
-  check("map: six open realms, no coming-soon strip", await page.evaluate(() => document.querySelectorAll(".realm-node").length === 6 && !document.querySelector(".jw-soon")));
+  check("the old map address is home: six open realms", await page.evaluate(() => location.hash === "#/" && document.querySelectorAll(".fear-tile").length === 6));
   await page.goto(base + "/?all=1#/water", { waitUntil: "load" }); await sleep(900);
   check("?all=1 opens closed realms for QA", await page.evaluate(() => !document.querySelector(".soon-panel") && !!document.querySelector(".realm-view, .trial")));
   // Persian
@@ -272,8 +288,9 @@ async function hardestTrial(browser, base) {
   // Scene entry in Persian: the countdown and the intro hint are translated
   // and read right-to-left (key names like Esc / W stay Latin).
   await page.evaluate(() => localStorage.setItem("fobia.countdown", "1"));   // opt-in since the launch pass
-  await page.goto(base + "/#/heights/predict/0", { waitUntil: "load" }); await sleep(900);
-  await page.evaluate(() => { const c = document.querySelector(".expect-chip"); c && c.click(); const pc = document.querySelector('.suds-chips[data-for="predictedSuds"] .sc[data-v="6"]'); pc && pc.click(); document.querySelector('[data-action="confirm-predict"]').click(); });
+  await page.goto(base + "/#/heights/exposure/0", { waitUntil: "load" }); await sleep(900);
+  check("Persian: the trial card reads right to left", await page.evaluate(() => { const c = document.querySelector("#trialIntro .ti-card"); return !!c && getComputedStyle(c).direction === "rtl" && /[؀-ۿ]/.test(c.textContent); }));
+  await stepIn(page, 6);
   await waitFor(page, () => !!document.querySelector(".countdown .label"), 8000);
   const cd = await page.evaluate(() => (document.querySelector(".countdown .label") || {}).textContent || "");
   await waitFor(page, () => ((document.querySelector(".controls-hint") || {}).textContent || "").length > 10, 8000);
@@ -298,9 +315,9 @@ async function creatures(browser, base) {
     localStorage.setItem("fobia.tutorialSeen", "1");
   });
   for (const [realm, rung, stop] of [["spiders", 1, 1.2], ["snakes", 1, 3.0]]) {
-    await page.goto(`${base}/?r=${Date.now()}#/${realm}/predict/${rung}`, { waitUntil: "load" }); await sleep(800);
-    check(`${realm}: predict asks what the ${realm === "spiders" ? "spider" : "snake"} will do`, await page.evaluate(() => document.querySelectorAll(".expect-chip").length >= 6));
-    await page.evaluate(() => { const c = document.querySelector(".expect-chip"); c && c.click(); const pc = document.querySelector('.suds-chips[data-for="predictedSuds"] .sc[data-v="6"]'); pc && pc.click(); document.querySelector('[data-action="confirm-predict"]').click(); });
+    await page.goto(`${base}/?r=${Date.now()}#/${realm}/exposure/${rung}`, { waitUntil: "load" }); await sleep(800);
+    check(`${realm}: the card asks what the ${realm === "spiders" ? "spider" : "snake"} will do`, await page.evaluate(() => document.querySelectorAll("#trialIntro .expect-chip").length >= 6));
+    await stepIn(page, 6);
     check(`${realm}: scene + coach mount`, await waitFor(page, () => !!(window.__active && window.__active.scene && window.__coach && document.querySelector(".dog-coach")), 15000));
     await sleep(2500);
     await page.keyboard.down("KeyW");
@@ -356,9 +373,9 @@ async function places(browser, base) {
     localStorage.setItem("fobia.tutorialSeen", "1");
   });
   for (const [realm, rung, walk] of [["heights", 1, 3000], ["dark", 0, 2200], ["enclosed", 0, 3000]]) {
-    await page.goto(`${base}/?r=${Date.now()}#/${realm}/predict/${rung}`, { waitUntil: "load" }); await sleep(800);
-    check(`${realm}: predict asks what the alarm predicts`, await page.evaluate(() => document.querySelectorAll(".expect-chip").length >= 6 && /alarm predicting/i.test((document.querySelector(".expect-q") || {}).textContent || "")));
-    await page.evaluate(() => { const c = document.querySelector(".expect-chip"); c && c.click(); const pc = document.querySelector('.suds-chips[data-for="predictedSuds"] .sc[data-v="6"]'); pc && pc.click(); document.querySelector('[data-action="confirm-predict"]').click(); });
+    await page.goto(`${base}/?r=${Date.now()}#/${realm}/exposure/${rung}`, { waitUntil: "load" }); await sleep(800);
+    check(`${realm}: the card asks what the alarm predicts`, await page.evaluate(() => document.querySelectorAll("#trialIntro .expect-chip").length >= 6 && /alarm predicting/i.test((document.querySelector("#trialIntro .ti-q") || {}).textContent || "")));
+    await stepIn(page, 6);
     check(`${realm}: scene + coach mount`, await waitFor(page, () => !!(window.__active && window.__active.scene && window.__coach && document.querySelector(".dog-coach")), 15000));
     await sleep(2500);
     await page.keyboard.down("KeyW"); await sleep(walk); await page.keyboard.up("KeyW");
@@ -394,9 +411,9 @@ async function phone(browser, base) {
   check("phone: all six fears on the first screen, no sideways scroll", land.n === 6 && land.onScreen && land.sideways <= 1, JSON.stringify(land));
   await click(page, ".fear-tile[data-phobia='spiders']"); await sleep(400);
   await click(page, "I understand"); await sleep(1500);
-  const g = await page.evaluate(() => { const b = document.querySelector(".gate-enter"); const r = b && b.getBoundingClientRect(); return { route: location.hash, enterVisible: !!r && r.bottom <= innerHeight + 1 && r.top >= 0, sideways: document.documentElement.scrollWidth - window.innerWidth }; });
-  check("phone: a fear tile lands on its gate, Enter in reach, no sideways scroll", g.route === "#/spiders/predict/0" && g.enterVisible && g.sideways <= 1, JSON.stringify(g));
-  await shot(page, "07-phone-gate");
+  const g = await page.evaluate(() => { const ns = [...document.querySelectorAll('#trialIntro .suds-chips .sc')]; return { route: location.hash, numbersVisible: ns.length === 11 && ns.every((b) => { const r = b.getBoundingClientRect(); return r.bottom <= innerHeight + 1 && r.top >= 0; }), sideways: document.documentElement.scrollWidth - window.innerWidth }; });
+  check("phone: a fear tile lands in its trial, the guess in reach, no sideways scroll", g.route === "#/spiders/exposure/0" && g.numbersVisible && g.sideways <= 1, JSON.stringify(g));
+  await shot(page, "07-phone-card");
   await page.goto(base + "/?r=2#/traveler", { waitUntil: "load" }); await sleep(2500);
   const m = await page.evaluate(() => ({ route: location.hash, sideways: document.documentElement.scrollWidth - window.innerWidth, stage: !!document.querySelector("#travelerStage canvas") }));
   check("phone: creator renders, no sideways scroll", m.route === "#/traveler" && m.stage && m.sideways <= 1, JSON.stringify(m));
@@ -426,8 +443,8 @@ async function phoneTouch(browser, base) {
     localStorage.setItem("fobia.tutorialSeen", "1");
     localStorage.setItem("fobia.skipCountdown", "1");
   });
-  await page.goto(base + "/#/enclosed/predict/4", { waitUntil: "load" }); await sleep(900);
-  await page.evaluate(() => { document.querySelector(".expect-chip").click(); const pc = document.querySelector('.suds-chips[data-for="predictedSuds"] .sc[data-v="6"]'); pc && pc.click(); document.querySelector('[data-action="confirm-predict"]').click(); });
+  await page.goto(base + "/#/enclosed/exposure/4", { waitUntil: "load" }); await sleep(900);
+  await stepIn(page, 6);
   check("phone MRI: scene + coach mount", await waitFor(page, () => !!(window.__active && window.__active.scene && window.__coach), 15000));
   await sleep(2000);
   // The stage grows and the page scrolls it into view as the scene starts;
@@ -476,16 +493,16 @@ async function story(browser, base) {
   const book = await page.evaluate(() => ({ chapters: document.querySelectorAll(".sb-chapter").length, read: document.querySelectorAll(".sb-page.read").length }));
   check("story: the book renders every chapter", book.chapters >= 8 && book.read === 3, JSON.stringify(book));
   await page.goto(base + "/?r=1#/", { waitUntil: "load" }); await sleep(1500);
-  const home = await page.evaluate(() => ({ cont: !!document.querySelector('[data-action="story-continue"]'), note: !!document.querySelector(".mira-note"), kicker: (document.querySelector(".mob-hero-kicker") || {}).textContent }));
+  const home = await page.evaluate(() => ({ cont: !!document.querySelector('.home-next [data-action="story-continue"]'), note: !!document.querySelector(".mira-note"), kicker: (document.querySelector(".hn-kicker") || {}).textContent }));
   check("story: returning traveler — continue + Mira's note", home.cont && home.note && /Sahar/.test(home.kicker || ""), JSON.stringify(home));
   await shot(page, "08-returning");
   await click(page, '[data-action="story-continue"]');
-  check("story: continuing lands on the next trial's gate (no slideshow first)", await waitFor(page, () => location.hash === "#/heights/predict/2", 4000)
+  check("story: continuing lands in the next trial (no slideshow first)", await waitFor(page, () => location.hash === "#/heights/exposure/2" && !!document.getElementById("trialIntro"), 4000)
     && !(await page.evaluate(() => !!document.querySelector(".story-ov"))), await hash(page));
-  check("story: the page trial 2 turned is offered on the gate", await page.evaluate(() => !!document.querySelector('.gate-panel .story-card[data-beat="heights.a1"]')));
-  check("story: today's practice on the gate", await page.evaluate(() => !!document.querySelector(".gate-focus")));
-  await click(page, '.gate-panel .story-card [data-action="story-play"]');
-  check("story: the waiting page plays from the gate", await storyPage(page, "heights.a1"));
+  check("story: the page trial 2 turned is offered on its card", await page.evaluate(() => !!document.querySelector('#trialIntro .story-card[data-beat="heights.a1"]')));
+  check("story: today's practice on the card", await page.evaluate(() => !!document.querySelector("#trialIntro .ti-focus")));
+  await click(page, '#trialIntro .story-card [data-action="story-play"]');
+  check("story: the waiting page plays from the card", await storyPage(page, "heights.a1"));
   check("story: no page errors", page.errors.length === 0, page.errors.slice(0, 5).join(" | "));
   await ctx.close();
 }

@@ -14,9 +14,11 @@ let _suppressHashSync = false;
 
 function serializeRoute(view, params = {}) {
   switch (view) {
+    // Home is the one hub: the camp map and the threshold page it replaced
+    // answer at "/" too (old links to /fears and /begin still land home).
     case "welcome":   return "/";
-    case "select":    return "/fears";
-    case "threshold": return "/begin";
+    case "select":    return "/";
+    case "threshold": return "/";
     case "traveler":  return "/traveler";
     case "demo":      return "/try";
     case "quiz":      return "/check";
@@ -30,7 +32,9 @@ function serializeRoute(view, params = {}) {
     case "custom":    return "/custom" + (params.editing ? "/" + encodeURIComponent(params.editing) : "");
     case "ladder":    return "/" + encodeURIComponent(params.phobia || "");
     case "phobia-progress": return "/" + encodeURIComponent(params.phobia) + "/progress";
-    case "predict":   return "/" + encodeURIComponent(params.phobia) + "/predict/" + (params.level ?? 0);
+    // The guess is asked on the trial's own opening card now — "predict"
+    // is the trial's address.
+    case "predict":   return "/" + encodeURIComponent(params.phobia) + "/exposure/" + (params.level ?? 0);
     case "exposure":  return "/" + encodeURIComponent(params.phobia) + "/exposure/" + (params.level ?? 0);
     case "rate":      return "/" + encodeURIComponent(params.phobia) + "/rate/" + (params.level ?? 0);
     case "breathe":   return "/" + encodeURIComponent(params.phobia) + "/breathe/" + (params.level ?? 0);
@@ -44,8 +48,8 @@ function parseRoute(hash) {
   const parts = path.replace(/^\//, "").split("/").filter(Boolean).map((x) => { try { return decodeURIComponent(x); } catch { return x; } });
   if (parts.length === 0) return { view: "welcome", params: {} };
   switch (parts[0]) {
-    case "fears":    return { view: "select",    params: {} };
-    case "begin":    return { view: "threshold", params: {} };
+    case "fears":    return { view: "welcome",   params: {} };
+    case "begin":    return { view: "welcome",   params: {} };
     case "try":      return { view: "demo",      params: {} };
     case "check":    return { view: "quiz",      params: {} };
     case "about":    return { view: "about",     params: {} };
@@ -69,7 +73,7 @@ function parseRoute(hash) {
     const maxLvl = ((PHOBIAS[phobia].levels && PHOBIAS[phobia].levels.length) || 5) - 1;
     const lvl = Math.max(0, Math.min(maxLvl, Number.isFinite(rawLvl) ? rawLvl : 0));
     if (parts[1] === "progress") return { view: "phobia-progress", params: { phobia } };
-    if (parts[1] === "predict")  return { view: "predict",  params: { phobia, level: lvl } };
+    if (parts[1] === "predict")  return { view: "exposure", params: { phobia, level: lvl } };
     if (parts[1] === "exposure") return { view: "exposure", params: { phobia, level: lvl } };
     if (parts[1] === "rate")     return { view: "rate",     params: { phobia, level: lvl } };
     if (parts[1] === "breathe")  return { view: "breathe",  params: { phobia, level: lvl } };
@@ -104,6 +108,18 @@ function go(view, params) {
   // scroll halfway down the home grid, click a phobia, and land mid-ladder
   // unable to see its title). `instant` skips smooth-scroll so users don't
   // see a fly-by.
+  scrollToTop();
+}
+
+// The same, in place of the current history entry. The trial loop — trial,
+// its rating, its results, the next trial — is one stretch of play: Back from
+// any of it goes home, never to a rating page with nothing behind it or into
+// a trial that would start over.
+function goReplace(view, params) {
+  params = params || {};
+  const hash = "#" + serializeRoute(view, params);
+  try { history.replaceState({ view, params }, "", hash); } catch {}
+  render(view, params);
   scrollToTop();
 }
 
@@ -159,10 +175,26 @@ function brandLamp() {
   return `<svg class="lw-lamp" viewBox="0 0 24 32" aria-hidden="true" focusable="false"><path d="M12 1.5v3.5M7 5h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M6.5 8h11l2 3v12l-2 3h-11l-2-3V11z" fill="rgba(255,200,110,.16)" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path class="lw-lamp-flame" d="M12 12.2c3 3.3 3 6.3 0 8.8c-3-2.5-3-5.5 0-8.8z" fill="#ffc86b"/></svg>`;
 }
 
+// Three lines, drawn — the "☰" character sits off-centre in half the fonts
+// a phone falls back to.
+function menuGlyph() {
+  return `<svg class="tb-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+}
+
 // A page that throws while drawing used to leave the screen blank with no way
 // out but clearing site data (and with it, everything). Catch it, log it, and
 // offer the way back: the title screen, a copy of the data, or a clean start.
+// Screens that became part of another one. The URL is rewritten in place,
+// so Back never returns to an address that only redirects.
+const VIEW_ALIAS = { select: "welcome", threshold: "welcome", predict: "exposure" };
 function render(view, params) {
+  if (VIEW_ALIAS[view]) view = VIEW_ALIAS[view];
+  // An old address (a bookmark to /fears, /begin or a trial's /predict/ page)
+  // is rewritten to the one it now opens.
+  if (/^#\/(fears|begin)(\/|$)|^#\/[^/]+\/predict\//.test(location.hash || "")) {
+    const h = "#" + serializeRoute(view, params || {});
+    if (location.hash !== h) { try { history.replaceState(history.state, "", h); } catch {} }
+  }
   _lastRenderedHash = location.hash;
   try { renderView(view, params); if (isRtl()) faDigitsIn(document.getElementById("app")); pageTitle(); }
   catch (err) {
@@ -254,49 +286,33 @@ function renderView(view, params) {
   if (params && params.phobia && view !== "soon" && window.Scene3D && window.Scene3D.preload) {
     window.Scene3D.preload(params.phobia);
   }
-  const isLanding = view === "welcome" || view === "threshold";
-  document.body.classList.toggle("landing-mode", isLanding);
+  // Three kinds of page. Home draws its own top bar over the valley; a trial
+  // is the room, full screen, with nothing of the site around it; every
+  // other page wears the slim bar (the lantern goes home, ☰ holds the rest).
+  const isHome = view === "welcome";
+  const isTrial = view === "exposure" || view === "demo";
+  document.body.classList.toggle("home-mode", isHome);
+  document.body.classList.toggle("trial-mode", isTrial);
+  document.body.classList.remove("landing-mode");
   const appEl = document.getElementById("app");
-  if (appEl) appEl.classList.toggle("landing-mode", isLanding);
+  if (appEl) appEl.classList.remove("landing-mode");
   // Immersive views draw their own full-bleed 3D stage and own the whole
   // screen, so the document behind must not scroll — on iOS a scrollable body
   // under a fixed stage means every drag fights the address bar.
-  const isImmersive = view === "welcome" || view === "traveler";
+  const isImmersive = view === "traveler";
   document.body.classList.toggle("mob-immersive", isImmersive);
   // Any leftover tutorial overlays from a previous mount must be removed,
   // otherwise they linger on body when the view re-renders.
   document.querySelectorAll(".tour-overlay").forEach(el => el.remove());
-  // The header carries what you check at a glance (courage, who you are,
-  // the language) and the way back to camp. Sparks, progress, sound and
-  // settings each had a header icon AND a place in the ☰ drawer; on a phone
-  // the row ran off the screen. They live in the drawer now.
-  const menuBtn = `<button class="audio-btn" id="menuBtn" title="${t("nav.menu", "Menu")}" aria-label="${t("a11y.openMenu", "Open menu")}">☰</button>`;
-  // Character avatar in header (when one exists). The badge opens the profile
-  // picker if the user has more than one character, otherwise the editor.
-  const character = window.Character && window.Character.loadCharacter();
-  const allChars = window.Character ? window.Character.loadCharacters() : [];
-  const streak = computeStreak();
-  const charBadge = character ? `
-    <button class="char-badge" id="charBadge" title="${allChars.length > 1 ? t("a11y.switchChar", "Switch character") : t("a11y.editChar", "Edit character")}">
-      <span class="char-badge-avatar">${window.Character.avatarSVG(character, 28)}</span>
-      ${character.name ? `<span class="char-badge-name">${escapeHtml(character.name)}</span>` : ""}
-      ${allChars.length > 1 ? `<span class="char-badge-count">${allChars.length}</span>` : ""}
-      ${streak >= 2 ? `<span class="char-badge-streak" title="${tf("a11y.streak", "{n}-day streak", { n: streak })}">🔥 ${streak}</span>` : ""}
-    </button>` : "";
-  const isFa = window.I18n && window.I18n.currentLanguage() === "fa";
-  const langBtn = `<button class="audio-btn lang-btn" id="langBtn" title="${isFa ? "Switch to English" : "تغییر زبان به فارسی"}" aria-label="${t("a11y.lang", "Change language")}" lang="${isFa ? "en" : "fa"}">${isFa ? "EN" : "فا"}</button>`;
+  // The bar used to carry a menu, the brand and its tagline, courage, the
+  // traveler's badge, the language and a Camp button — six things to read on
+  // every page. It carries the way home and the menu; the rest is in ☰.
   const html = `
     <a class="skip-link" href="#view">${t("a11y.skip", "Skip to main content")}</a>
-    <header class="brand" role="banner">
-      <div class="brand-left">
-        ${menuBtn}
-        <p class="lw-head">${brandLamp()}<span class="lw-name">${t("brand.name", "Lanternwalk")}</span> <span class="brand-tag">${t("brand.tag", "small steps, brave paths")}</span></p>
-      </div>
+    <header class="brand topbar" role="banner">
+      <button type="button" class="tb-home" id="home" aria-label="${t("a11y.toHome", "Lanternwalk — home")}">${brandLamp()}<span class="lw-name">${t("brand.name", "Lanternwalk")}</span></button>
       <nav class="nav-actions" aria-label="${t("a11y.nav", "App navigation")}">
-        ${getCourage() > 0 ? `<span class="courage-badge" id="courageBadge" title="${t("hud.courage", "Courage — earned every time you face a trial")}">⚡ ${fnum(getCourage())}</span>` : ""}
-        ${charBadge}
-        ${langBtn}
-        ${view !== "welcome" && view !== "character" && view !== "threshold" ? `<button class="home-btn" id="home" aria-label="${t("a11y.home", "Back to the journey map")}">${t("hud.camp", "🏕 Camp")}</button>` : ""}
+        <button class="tb-icon" id="menuBtn" title="${t("nav.menu", "Menu")}" aria-label="${t("a11y.openMenu", "Open menu")}">${menuGlyph()}</button>
       </nav>
     </header>
     <main id="view" role="main"></main>
@@ -307,12 +323,9 @@ function renderView(view, params) {
   if (v && v.setAttribute) { v.setAttribute("tabindex", "-1"); }
   if (view === "welcome")     v.innerHTML = viewArrival();
   if (view === "traveler")    v.innerHTML = viewTraveler();
-  if (view === "threshold")   v.innerHTML = viewThreshold();
   if (view === "character")   v.innerHTML = viewCharacterPage(params.editing);
-  if (view === "select")      v.innerHTML = viewSelect();
   if (view === "ladder")      v.innerHTML = viewLadder(params.phobia);
   if (view === "soon")        v.innerHTML = viewRealmSoon(params.phobia);
-  if (view === "predict")     v.innerHTML = viewPredict(params.phobia, params.level);
   if (view === "exposure")    v.innerHTML = viewExposure(params.phobia, params.level);
   // The instant demo IS the dogs first rung — same view, same mount — with a
   // flag the exposure chrome reads: no character needed (Body falls back to
@@ -380,12 +393,10 @@ function renderView(view, params) {
     } else mountNow();
   }
   if (view === "breathe")   runBreathing();
-  if (view === "threshold" || view === "select" || view === "ladder") mountShell3D(view, params);
+  if (view === "ladder") mountShell3D(view, params);
   // The title screen is the SVG valley now; only the creator stands in the room.
   if (view === "traveler") mountRoomStage(view);
   if (view === "traveler")  attachTravelerHandlers();
-  if (view === "threshold") mountThresholdHUD();
-  if (view === "select")    mountJourney();
   upgradeFaces(root);
 
   // Move focus to the new view's heading so keyboard + screen-reader users

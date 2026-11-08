@@ -731,6 +731,13 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         hint.innerHTML = escNote.replace(/^ &nbsp;·&nbsp; /, "");
         hintDuration = 6000;
       }
+      // The hint's clocks start when the player steps in: under the trial's
+      // opening card (.pre-start, see exposure.js) a 16 s hint ran out unseen.
+      const whenBegun = (fn) => {
+        if (!container.classList.contains("pre-start")) { fn(); return; }
+        window.addEventListener("trial-begin", () => { if (container.isConnected) fn(); }, { once: true });
+      };
+      whenBegun(() => {
       if (!rungReplay && walkable && controls && controls.position) {
         // Movement-GATED hint: a frightened person often freezes at the
         // entrance with no idea how to move (desktop has no on-screen walk
@@ -761,6 +768,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       } else {
         setTimeout(() => { if (hint && hint.parentNode) hint.style.opacity = "0"; }, hintDuration);
       }
+      });
 
       // Mobile virtual joystick (only when scene allows walking)
       if (IS_COARSE_POINTER && walkable) {
@@ -1086,6 +1094,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // The trial's hold timer and room audio wait on it (exposure.js, contract
   // 3): a stage attribute anyone can read, plus a "scene-ready" event.
   let _drawn = false;
+  let _heldSince = null, _heldRedraw = false;
   function markDrawn() {
     try { if (renderer.getContext().isContextLost()) return; } catch {}
     _drawn = true;
@@ -1106,6 +1115,24 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // the fear model and the coach's clock ran on behind another tab.
     // (__tickNow calls tick() directly, so the QA drivers still step it.)
     if (document.hidden && !renderer.xr.isPresenting) return;
+    // ---- Before the player steps in ----
+    // The trial's opening card (exposure.js) stands over the room while the
+    // player makes their guess, and the stage carries .pre-start meanwhile.
+    // The room draws and settles for a moment — streamed models land in
+    // their first pose — and then holds still: no frame runs, so no creature
+    // walks over, no coach clock or hold timer moves, and the clock is
+    // carried forward so nothing catches up when the card goes. (A zero dt
+    // would not do: half the systems read `dt || 0.016`.) A resize clears
+    // the canvas, so it gets one frame to redraw.
+    if (container.classList.contains("pre-start") && _drawn && !renderer.xr.isPresenting) {
+      const now = performance.now();
+      if (_heldSince == null) _heldSince = now;
+      if (now - _heldSince > 1200) {
+        if (_heldRedraw) { _heldRedraw = false; tick(); return; }
+        t0 += now - lastTime; lastTime = now;
+        return;
+      }
+    }
     tick();
   }
   function tick() {
@@ -1669,6 +1696,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
     sizePost(w, h);
+    _heldRedraw = true;
   }
   function onResize(ev) {
     if (ev === undefined) { applyResize(true); return; }

@@ -59,7 +59,7 @@ window.addEventListener("character-changed", () => { try { _travelerDraft = null
 function attachHandlers(view, params) {
   if (view === "welcome") gateTitleScreenOnConsent();
   const home = document.getElementById("home");
-  if (home) home.onclick = () => { PhobiaAudio.unlock(); go("select"); };
+  if (home) home.onclick = () => { PhobiaAudio.unlock(); go("welcome"); };
   const audioBtn = document.getElementById("audioBtn");
   if (audioBtn) {
     audioBtn.onclick = () => {
@@ -263,27 +263,28 @@ function openMenu() {
         <div class="menu-character-text">
           <strong>${escapeHtml(travelerDisplayName(ch))}</strong>
           <span class="small">${(() => { const f = (ch.primaryPhobia ? 1 : 0) + (ch.additionalPhobias?.length || 0), s = state.log.length;
-            return tf("pr.counts", `{f} fear${f === 1 ? "" : "s"} · {s} session${s === 1 ? "" : "s"}`, { f, s }); })()}</span>
+            return tf("pr.counts", `{f} fear${f === 1 ? "" : "s"} · {s} session${s === 1 ? "" : "s"}`, { f, s }); })()}${getCourage() > 0 ? ` · ⚡ ${fnum(getCourage())}` : ""}</span>
         </div>
       </div>
     ` : ""}
     <ul class="menu-list">
+      <li><button data-go="welcome">${t("menu.home", "🏮 Home")}</button></li>
+      ${ch ? `<li><button data-go="ladder" data-phobia="${escapeHtml((() => { try { return currentRealmKey(); } catch { return ch.primaryPhobia || ""; } })())}">${t("menu.realm", "🧭 Trials & real-world steps")}</button></li>` : ""}
       <li><button data-go="story">${t("menu.storyBook", "📖 The story — Mira's lanterns")}</button></li>
-      <li><button data-go="select">${t("menu.camp", "🏕 Camp — the valley map")}</button></li>
-      ${ch ? `<li><button data-go="ladder" data-phobia="${escapeHtml((() => { try { return currentRealmKey(); } catch { return ch.primaryPhobia || ""; } })())}">${t("menu.trials", "Continue your trials")}</button></li>` : ""}
-      <li><button data-go="journal">${t("menu.sparks", "✦ Book of Sparks")}${(() => { const n = ch ? getSparks().length : 0; return n ? ` <span class="menu-count">${fnum(n)}</span>` : ""; })()}</button></li>
-      <li><button data-go="insights">${t("menu.story", "📜 Your story so far")}</button></li>
-      <li><button data-go="report">${t("menu.report", "📄 Progress report — print / share")}</button></li>
+      ${ch && state.log.length ? `<li><button data-go="insights">${t("menu.progress", "📈 Your progress")}</button></li>` : ""}
+      ${ch && state.log.length ? `<li><button data-go="report">${t("menu.report", "📄 Progress report — print / share")}</button></li>` : ""}
+      ${ch && getSparks().length ? `<li><button data-go="journal">${t("menu.sparks", "✦ Book of Sparks")} <span class="menu-count">${fnum(getSparks().length)}</span></button></li>` : ""}
       ${allRealmsUnlocked() ? `<li><button data-go="custom">${t("menu.forge", "🛠 Forge a custom fear")}</button></li>` : ""}
     </ul>
     <div class="menu-divider"></div>
     <ul class="menu-list">
       <li><button data-go="traveler">${t("menu.editCharacter", "✎ Edit your traveler")}</button></li>
       ${allChars.length > 1 ? `<li><button data-go="profiles">${t("menu.switchCharacter", "⇄ Switch traveler")}</button></li>` : ""}
-      <li><button data-go="about">${t("menu.about", "ℹ️ About Lanternwalk")}</button></li>
-      <li><button id="menuFeedback">${t("fb.menu", "💬 Send feedback")}</button></li>
+      <li><button id="menuLang" lang="${(window.I18n && window.I18n.currentLanguage() === "fa") ? "en" : "fa"}">${(window.I18n && window.I18n.currentLanguage() === "fa") ? "🌐 English" : "🌐 فارسی"}</button></li>
       <li><button id="menuSound">${PhobiaAudio.isMuted() ? t("menu.soundOff", "🔇 Sound: off") : t("menu.soundOn", "🔊 Sound: on")}</button></li>
       <li><button id="menuOpenSettings">${t("menu.settings", "⚙ Settings")}</button></li>
+      <li><button data-go="about">${t("menu.about", "ℹ️ About Lanternwalk")}</button></li>
+      <li><button id="menuFeedback">${t("fb.menu", "💬 Send feedback")}</button></li>
     </ul>
     <div class="menu-divider"></div>
     <p class="menu-footer">${t("menu.footer", "Lanternwalk · a practice game, not therapy.")}</p>
@@ -305,6 +306,12 @@ function openMenu() {
     e.currentTarget.textContent = next ? t("menu.soundOff", "🔇 Sound: off") : t("menu.soundOn", "🔊 Sound: on");
   };
   drawer.querySelector("#menuFeedback").onclick = () => { closeMenu(); openFeedback(location.hash); };
+  drawer.querySelector("#menuLang").onclick = () => {
+    closeMenu();
+    window.I18n.setLang(window.I18n.currentLanguage() === "fa" ? "en" : "fa");
+    const route = parseRoute(location.hash);
+    render(route.view, route.params);
+  };
   drawer.querySelectorAll("[data-go]").forEach(btn => {
     btn.onclick = () => {
       closeMenu();
@@ -312,7 +319,7 @@ function openMenu() {
       const params = {};
       if (btn.dataset.phobia) params.phobia = btn.dataset.phobia;
       if (btn.dataset.edit) params.editing = true;
-      if (v === "ladder" && !params.phobia) { go("select"); return; }
+      if (v === "ladder" && !params.phobia) { go("welcome"); return; }
       go(v, params);
     };
   });
@@ -824,16 +831,22 @@ function startTrial(phobia, lvl) {
   try { PhobiaAudio.ui("whoosh"); } catch {}
   const max = PHOBIAS[phobia].levels.length - 1;
   const level = Math.max(0, Math.min(max, Number.isFinite(lvl) ? lvl : 0));
-  storyGate(phobia, level, () => go("predict", { phobia, level }));
+  // From inside the loop (a trial, its rating or results) the next trial
+  // takes this entry's place; from anywhere else it's a new page.
+  const inLoop = ["exposure", "rate", "complete"].includes(parseRoute(location.hash).view);
+  storyGate(phobia, level, () => (inLoop ? goReplace : go)("exposure", { phobia, level }));
 }
 function continueJourney() {
   const ch = window.Character && window.Character.loadCharacter();
   if (!ch) { handleAction({ action: "make-traveler" }, {}); return; }
   const tgt = continueTarget();
   if (tgt.allWalked) {
+    // Every lantern lit: the epilogue once, then the current realm's trials
+    // to pick a booster walk from (home again was a button that did nothing).
     const S = window.Story;
-    if (S && S.isUnlocked("epilogue") && !S.isSeen("epilogue")) { S.play("epilogue", { onDone: () => go("select") }); return; }
-    go("select");
+    const toRealm = () => go("ladder", { phobia: tgt.key });
+    if (S && S.isUnlocked("epilogue") && !S.isSeen("epilogue")) { S.play("epilogue", { onDone: toRealm }); return; }
+    toRealm();
     return;
   }
   startTrial(tgt.key, tgt.level);
@@ -925,9 +938,13 @@ function handleAction(d, params) {
       const fk = draft.primaryPhobia;
       const firstRun = (getProgress(fk).highestCompleted ?? -1) < 0 &&
         !(state.log || []).some((l) => l.phobia === fk);
-      // The chapter's opening page plays on the way in.
-      if (firstRun) storyGate(fk, 0, () => go("predict", { phobia: fk, level: 0 }));
-      else go("ladder", { phobia: fk });
+      // The creator's place in history is taken by where it leads (Back
+      // never reopens it). A trial that's waiting to be rated comes first —
+      // opened from the menu mid-debrief, the creator used to throw it away.
+      const owed = lastRungOutcome && isPhobiaKey(lastRungOutcome.phobia) ? lastRungOutcome : null;
+      if (owed) goReplace("rate", { phobia: owed.phobia, level: owed.level });
+      else if (firstRun) storyGate(fk, 0, () => goReplace("exposure", { phobia: fk, level: 0 }));
+      else goReplace("welcome");
       break;
     }
     case "go-dogs": continueJourney(); break;
@@ -938,6 +955,7 @@ function handleAction(d, params) {
       if (!S || !id) break;
       S.play(id, { onDone: () => {
         // The card that opened it now reads as read; the book re-renders.
+        document.querySelectorAll(`.gs-read[data-beat="${id}"]`).forEach((b) => { b.textContent = t("st.reread", "Read again"); });
         document.querySelectorAll(".story-card").forEach((c) => {
           if (c.dataset.beat !== id) return;
           c.classList.add("read");
@@ -949,6 +967,9 @@ function handleAction(d, params) {
       break;
     }
     case "open-settings": try { openSettings(); } catch {} break;
+    case "open-menu": try { openMenu(); } catch {} break;
+    case "go-home": go("welcome"); break;
+    case "ti-begin": if (typeof window.__trialBegin === "function") window.__trialBegin(null); break;
     case "toggle-lang": {
       window.I18n.setLang(window.I18n.currentLanguage() === "fa" ? "en" : "fa");
       const route = parseRoute(location.hash);
@@ -1027,7 +1048,22 @@ function handleAction(d, params) {
       go("exposure", { phobia: d.phobia, level: lvl });
       break;
     }
-    case "to-rate":         go("rate", { phobia: d.phobia, level: parseInt(d.level, 10) }); break;
+    case "to-rate": {
+      // The room fades out before the debrief comes in — a cut from a live
+      // scene to a form read as the game breaking.
+      const st = document.getElementById("stage");
+      const lvl = parseInt(d.level, 10);
+      const goNow = () => goReplace("rate", { phobia: d.phobia, level: lvl });
+      const calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (st && st.isConnected && !calm) {
+        if (st.classList.contains("leaving")) break;
+        st.classList.add("leaving");
+        const panel = st.closest(".exposure-panel");
+        if (panel) panel.classList.add("leaving");
+        setTimeout(goNow, 240);
+      } else goNow();
+      break;
+    }
     case "submit-rate":     handleRateSubmit(d, params); break;
     case "do-breathe": {
       // Inside a trial, a breath is a pause IN the room, not a way out of it:
@@ -1035,10 +1071,9 @@ function handleAction(d, params) {
       // quietly ended the exposure (and the tour promised otherwise).
       const st = document.getElementById("stage");
       if (st && st.isConnected && st.closest(".exposure-panel")) { openStageBreath(st); break; }
-      // From the done screen's check-in the trial is already logged: the
-      // breath leads back to the realm, not into a second rating.
-      window.__breatheAfter = d.after || null;
-      go("breathe", { phobia: d.phobia, level: parseInt(d.level, 10) });
+      // Anywhere else (the rating, the results' check-in) it's the same
+      // guided breath over the page — not a page of its own to come back from.
+      openPageBreath();
       break;
     }
     case "after-breathe": {
@@ -1185,7 +1220,21 @@ function beliefDeltaText(before, after) {
 // long exhale is the part that brakes the heart), then back to the room.
 // The scene keeps running underneath; the hold keeps counting if you're
 // still close. Nothing is faked: the alarm isn't reset, you just breathe.
-function openStageBreath(stage) {
+function openPageBreath() {
+  if (document.querySelector(".page-breath")) return;
+  const wrap = document.createElement("div");
+  wrap.className = "page-breath";
+  document.body.appendChild(wrap);
+  openStageBreath(wrap, { closeLabel: t("sbreath.done2", "I'm ready — continue"), stay: t("sbreath.readyPage", "Breathe with the circle. There's no hurry."), doneText: t("sbreath.donePage", "That's it. You're here, and you're okay.") });
+  const closeIt = () => { const c = wrap.querySelector(".sb-close"); if (c) c.click(); };
+  const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); closeIt(); } };
+  document.addEventListener("keydown", onKey);
+  const mo = new MutationObserver(() => { if (!wrap.querySelector(".stage-breath")) { mo.disconnect(); document.removeEventListener("keydown", onKey); wrap.remove(); } });
+  mo.observe(wrap, { childList: true });
+  wrap.addEventListener("click", (e) => { if (e.target === wrap) closeIt(); });
+  setTimeout(() => { const c = wrap.querySelector(".sb-close"); try { c && c.focus({ preventScroll: true }); } catch {} }, 50);
+}
+function openStageBreath(stage, opts = {}) {
   if (!stage || stage.querySelector(".stage-breath")) return;
   const box = document.createElement("div");
   box.className = "stage-breath";
@@ -1193,9 +1242,9 @@ function openStageBreath(stage) {
   box.setAttribute("aria-label", t("sbreath.aria", "Guided breath"));
   box.innerHTML = `
     <div class="sb-ring"><div class="sb-core"></div></div>
-    <div class="sb-text">${t("sbreath.ready", "Stay where you are. Breathe with the circle.")}</div>
+    <div class="sb-text">${opts.stay || t("sbreath.ready", "Stay where you are. Breathe with the circle.")}</div>
     <div class="sb-count"></div>
-    <button type="button" class="btn-ghost sb-close">${t("sbreath.back", "Back to the room")}</button>`;
+    <button type="button" class="btn-ghost sb-close">${opts.closeLabel || t("sbreath.back", "Back to the room")}</button>`;
   stage.appendChild(box);
   const ring = box.querySelector(".sb-ring"), text = box.querySelector(".sb-text"), count = box.querySelector(".sb-count");
   const phases = [
@@ -1208,7 +1257,7 @@ function openStageBreath(stage) {
   const step = () => {
     if (!box.isConnected) return;
     if (cycle >= 3) {
-      text.textContent = t("sbreath.done", "That's it. The room is still here — and so are you.");
+      text.textContent = opts.doneText || t("sbreath.done", "That's it. The room is still here — and so are you.");
       count.textContent = "";
       ring.className = "sb-ring";
       timers.push(setTimeout(close, 2600));
