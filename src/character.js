@@ -29,6 +29,8 @@ const HAIR_STYLES = [
   { id: "buzz",  label: "Buzz" },
   { id: "pony",  label: "Pony" },
   { id: "curly", label: "Curly" },
+  { id: "bun",   label: "Bun" },
+  { id: "afro",  label: "Afro" },
   { id: "bald",  label: "Bald" },
 ];
 
@@ -67,6 +69,7 @@ const HEADWEAR = [
   { id: "none",   label: "None" },
   { id: "beanie", label: "Beanie" },
   { id: "cap",    label: "Cap" },
+  { id: "scarf",  label: "Headscarf" },
 ];
 
 const TOP_STYLES = [
@@ -146,17 +149,20 @@ function randomCharacter() {
     return arr[0].id;
   };
   const presets = ["calm", "encouraging", "brief"];
+  const bodyType = pick(BODY_TYPES);
+  const fem = bodyType === "woman" || bodyType === "girl";
   return {
     name: "",
-    bodyType:   pick(BODY_TYPES),
+    bodyType,
     skinTone:   pick(SKIN_TONES),
     hairColor:  pick(HAIR_COLORS),
-    hairStyle:  pickW(HAIR_STYLES, { bald: 0.04, buzz: 0.10 }),
+    hairStyle:  pickW(HAIR_STYLES, { bald: 0.04, buzz: 0.10, afro: 0.08, bun: 0.10 }),
     topColor:   pick(TOP_COLORS),
     topStyle:   pick(TOP_STYLES),
     eyeColor:   pick(EYE_COLORS),
     glasses:    pickW(GLASSES, { none: 0.62 }),
-    facialHair: pickW(FACIAL_HAIR, { none: 0.72 }),
+    // The dice used to give one woman in four a beard.
+    facialHair: fem ? "none" : pickW(FACIAL_HAIR, { none: 0.60 }),
     headwear:   Math.random() < 0.25 ? pick(HEADWEAR) : "none",
     voicePreset: presets[Math.floor(Math.random() * presets.length)],
     primaryPhobia: null,
@@ -346,6 +352,30 @@ function avatarSVG(c, size = 80) {
             <circle cx="48" cy="20" r="3"/>
             <circle cx="62" cy="22" r="3"/>
           </g>`;
+      case "afro":
+        // A full, rounded halo: bigger than the curly cluster, all the way round.
+        return `
+          <g ${base}>
+            <circle cx="50" cy="26" r="30"/>
+            <circle cx="26" cy="34" r="13"/>
+            <circle cx="74" cy="34" r="13"/>
+            <circle cx="30" cy="48" r="10"/>
+            <circle cx="70" cy="48" r="10"/>
+          </g>
+          <g fill="${hairLight}" opacity=".45">
+            <circle cx="36" cy="16" r="4"/>
+            <circle cx="54" cy="8" r="4"/>
+            <circle cx="68" cy="18" r="4"/>
+            <circle cx="24" cy="36" r="3"/>
+          </g>`;
+      case "bun":
+        // Hair drawn back smooth, a bun peeking above the crown.
+        return `
+          <circle cx="54" cy="12" r="8.5" ${base}/>
+          <circle cx="52" cy="10" r="3" fill="${hairLight}" opacity=".5"/>
+          <path d="M28 38 Q26 18 50 14 Q74 18 72 38 L72 44 L28 44 Z" ${base}/>
+          <path d="M30 40 Q40 30 50 29 Q60 30 70 40 L68 43 L32 43 Z" fill="${hairLight}" opacity=".55"/>
+          <path d="M40 34 Q50 24 60 34" stroke="${hairDeep}" stroke-width="1" fill="none" opacity=".6"/>`;
       case "bald":
         return `
           <ellipse cx="50" cy="32" rx="20" ry="6" fill="${skinLight}" opacity=".4"/>
@@ -374,6 +404,16 @@ function avatarSVG(c, size = 80) {
         <path d="M47 34 Q82 32 90 43 Q84 38 49 38 Z" fill="${topShadow}"/>
         <path d="M32 30 Q41 19 50 19 Q59 19 68 30" stroke="${topLight}" stroke-width="1.2" fill="none" opacity=".5"/>
         <circle cx="50" cy="12" r="2.4" fill="${topLight}" opacity=".85"/>`;
+    }
+    if (hw === "scarf") {
+      // A headscarf: covers the hair, frames the face, drapes to the shoulders.
+      return `
+        <path fill-rule="evenodd" fill="${top}"
+              d="M22 46 Q18 10 50 8 Q82 10 78 46 L86 100 Q68 94 50 96 Q32 94 14 100 Z
+                 M50 24 Q34 24 31 46 Q30 64 40 76 Q50 84 60 76 Q70 64 69 46 Q66 24 50 24 Z"/>
+        <path d="M31 46 Q30 64 40 76" stroke="${topShadow}" stroke-width="1.6" fill="none" opacity=".55"/>
+        <path d="M69 46 Q70 64 60 76" stroke="${topShadow}" stroke-width="1.6" fill="none" opacity=".55"/>
+        <path d="M34 20 Q50 12 66 20" stroke="${topLight}" stroke-width="1.2" fill="none" opacity=".5"/>`;
     }
     return "";
   })();

@@ -1106,6 +1106,13 @@ document.addEventListener("input", (e) => {
       echo.textContent = tf("rate.predEcho2", "Before you stepped in, you guessed {p}. It peaked at {v}.", { p: +echo.dataset.p, v: +e.target.value });
       echo.hidden = false;
     }
+    // The second question steps in once the first is answered (views-trial
+    // viewRate), and scrolls into reach on a short screen.
+    const step2 = isPeak && document.getElementById("dbStep2");
+    if (step2 && step2.hidden) {
+      step2.hidden = false;
+      setTimeout(() => { try { step2.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch {} }, 80);
+    }
     const submit = document.getElementById("rateSubmit");
     if (submit) {
       submit.dataset[isPeak ? "peakTouched" : "nowTouched"] = "1";

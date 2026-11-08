@@ -833,6 +833,18 @@ function viewInsights() {
 // trial, and one question — how scared do you expect to be? Tapping a number
 // is stepping in. Creature and place realms also ask, optionally, what the
 // alarm predicts will happen; the debrief checks it against what did.
+// The trial's three beats as one small indicator — the guess, the room, the
+// look back — on the opening card, the rating and the results alike, so the
+// player always knows which of the three they're on and how many are left.
+// `cur` is 1–3; anything past 3 draws every step as done.
+function flowStepsHTML(cur) {
+  const steps = [t("flow.in", "Step in"), t("flow.face", "Face it"), t("flow.back", "Look back")];
+  return `<ol class="flow-steps" aria-label="${escapeHtml(tf("flow.aria", "Step {n} of {m}", { n: Math.min(cur, 3), m: 3 }))}">${steps.map((s, i) => {
+    const n = i + 1, st = n < cur ? "done" : n === cur ? "cur" : "";
+    return `<li class="${st}"${n === cur ? ' aria-current="step"' : ""}><i aria-hidden="true">${n < cur ? "✓" : fnum(n)}</i><span>${escapeHtml(s)}</span></li>`;
+  }).join("")}</ol>`;
+}
+
 function trialIntroHTML(phobiaKey, levelIdx) {
   const p = PHOBIAS[phobiaKey];
   if (!p) return "";
@@ -841,6 +853,16 @@ function trialIntroHTML(phobiaKey, levelIdx) {
   const focus = window.Story && firstTime ? window.Story.focusFor(phobiaKey, levelIdx) : null;
   const icon = { dogs: "🐕", spiders: "🕷", snakes: "🐍", heights: "🏔", dark: "🌙", enclosed: "🚪" }[phobiaKey] || "🏮";
   const story = window.Story ? window.Story.gateHTML(phobiaKey, levelIdx) : "";
+  // The chapter's opening is read in full the first time. On every visit
+  // after that it folds to one line — the guess, not the quote, is what a
+  // returning player came for, and the card gets shorter by a third.
+  const S = window.Story;
+  const seenOpen = !!(S && S.isSeen && S.isSeen(`${phobiaKey}.open`));
+  const chap = seenOpen && S.chapterOfRealm ? S.chapterOfRealm(phobiaKey) : null;
+  const foldLabel = chap && S.chapterLabel ? S.chapterLabel(chap) : t("ti.storyFold", "The chapter's opening");
+  const storyBlock = !story ? "" : seenOpen
+    ? `<details class="ti-story ti-fold"><summary>📖 ${escapeHtml(foldLabel)} <span class="ti-opt">${t("ti.foldHint", "read again")}</span></summary><div class="ti-fold-body">${story}</div></details>`
+    : `<div class="ti-story">${story}</div>`;
   return `
     <div class="trial-intro" id="trialIntro" role="dialog" aria-labelledby="tiTitle">
       <div class="ti-card">
@@ -848,8 +870,9 @@ function trialIntroHTML(phobiaKey, levelIdx) {
           <span class="ti-kicker">${icon} ${escapeHtml(realmOf(phobiaKey).realmName)} · ${tf("ti.trialOf", "trial {n} of {m}", { n: levelIdx + 1, m: p.levels.length })}</span>
           <button type="button" class="ti-x" data-action="go-home" aria-label="${t("ti.leave", "Not now — back home")}">✕</button>
         </div>
+        ${flowStepsHTML(1)}
         <div class="ti-main">
-        ${story ? `<div class="ti-story">${story}</div>` : ""}
+        ${storyBlock}
         <h2 class="ti-title" id="tiTitle" tabindex="-1">${escapeHtml(lvTitle(phobiaKey, levelIdx))}</h2>
         ${p.levels[levelIdx] && p.levels[levelIdx].desc ? `<p class="ti-desc">${escapeHtml(lvDesc(phobiaKey, levelIdx))}</p>` : ""}
         ${focus && focus.text ? `<p class="ti-focus">${tf("gate.focus", "🎯 Today's practice: {t}", { t: escapeHtml(focus.text) })}</p>` : ""}
@@ -1136,6 +1159,7 @@ function viewRate(phobiaKey, levelIdx) {
   const guessed = pendingPrediction && pendingPrediction.phobia === phobiaKey && pendingPrediction.level === levelIdx && typeof pendingPrediction.predicted === "number";
   return `
     <div class="debrief">
+      ${flowStepsHTML(3)}
       <span class="db-kicker">${icon} ${escapeHtml(realmOf(phobiaKey).realmName)} · ${tf("ti.trialOf", "trial {n} of {m}", { n: levelIdx + 1, m: PHOBIAS[phobiaKey].levels.length })}</span>
       <h2 class="db-title">${early ? t("db.earlyH", "You stepped out — and that's always allowed.") : t("db.doneH", "You stayed. The trial is behind you.")}</h2>
       ${hasStars ? `<div class="db-stars" role="img" aria-label="${escapeHtml(tf("stars.aria", "{n} of {m} stars", { n, m: 3 }))}">${[0, 1, 2].map((i) => `<i class="${i < n ? "on" : ""}" style="--i:${i}">★</i>`).join("")}</div>` : ""}
@@ -1143,8 +1167,13 @@ function viewRate(phobiaKey, levelIdx) {
         <label class="db-q" id="lbl-sudsPeak">${t("db.peakQ", "At its worst in there, how scared did you feel?")}</label>
         ${sudsScale("sudsPeak", 5, { aria: t("rate.peakAria", "Anxiety level at its worst during the trial, 0 calm to 10 panic"), valueId: "sudsPeakValue" })}
         ${guessed ? `<div class="hint pred-echo" id="predEcho" data-p="${pendingPrediction.predicted}" hidden></div>` : ""}
-        <label class="db-q" id="lbl-suds">${t("db.nowQ", "And right now?")}</label>
-        ${sudsScale("suds", 5, { aria: t("rate.nowAria", "Anxiety level right now, 0 calm to 10 panic"), valueId: "sudsValue" })}
+        <!-- One question at a time: "right now" appears once the peak is in
+             (exposure.js reveals it), so the page opens as a single row of
+             numbers instead of twenty-two. -->
+        <div class="db-step2" id="dbStep2" hidden>
+          <label class="db-q" id="lbl-suds">${t("db.nowQ", "And right now?")}</label>
+          ${sudsScale("suds", 5, { aria: t("rate.nowAria", "Anxiety level right now, 0 calm to 10 panic"), valueId: "sudsValue" })}
+        </div>
         <span id="sudsPeakHint" hidden></span><span id="sudsHint" hidden></span>
       </div>
       <button class="db-primary" id="rateSubmit" data-action="submit-rate" data-phobia="${phobiaKey}" data-level="${levelIdx}" disabled>${t("db.see", "See how it went")} <span aria-hidden="true">${isRtl() ? "←" : "→"}</span></button>
@@ -1602,6 +1631,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
   const icon = { dogs: "🐕", spiders: "🕷", snakes: "🐍", heights: "🏔", dark: "🌙", enclosed: "🚪" }[phobiaKey] || "🏮";
   return `
     <div class="debrief victory-panel">
+      ${flowStepsHTML(4)}
       <div class="vc-hero">
         <span class="db-kicker">${icon} ${escapeHtml(realmOf(phobiaKey).realmName)} · ${early ? tf("complete.early", "Trial {n} · stepped back", { n: levelIdx + 1 }) : tf("complete.faced", "Trial {n} faced", { n: levelIdx + 1 })}</span>
         <h2 class="db-title">${early ? t("complete.h2early", "You stepped back — showing up still counts.") : t("complete.h2", "Trial faced. That's ground you hold now.")}</h2>

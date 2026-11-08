@@ -6048,6 +6048,42 @@ body.trial-mode .exposure-panel .step-controls {
   color: var(--muted); font: inherit; font-size: 13.5px; text-decoration: underline; text-underline-offset: 3px;
 }
 .ti-skip:hover { color: var(--text); }
+/* The three beats of a trial — step in, face it, look back — as one small
+   stepper shared by the opening card, the rating and the results. */
+.flow-steps { display: flex; align-items: center; margin: 0; padding: 0; list-style: none; }
+.flow-steps li { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; line-height: 1; color: var(--muted); }
+.flow-steps li + li::before { content: ""; width: 16px; height: 1px; margin: 0 8px; background: rgba(255, 255, 255, .16); }
+.flow-steps li i {
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; flex: none;
+  font-style: normal; font-size: 11px; font-weight: 800;
+  border: 1px solid rgba(255, 255, 255, .2); color: var(--muted);
+}
+.flow-steps li.cur { color: var(--text); }
+.flow-steps li.cur i { background: var(--accent); border-color: var(--accent); color: #0b1020; }
+.flow-steps li.done i { background: rgba(124, 209, 197, .16); border-color: rgba(124, 209, 197, .55); color: var(--accent); }
+.flow-steps li.done { color: var(--accent); }
+.debrief > .flow-steps { justify-content: center; }
+.ti-card > .flow-steps { margin-top: -4px; }
+@media (max-width: 600px) {
+  .flow-steps li:not(.cur) span { display: none; }
+  .flow-steps li + li::before { width: 12px; margin: 0 6px; }
+}
+/* The chapter's opening, folded to one line once it has been read. */
+.ti-fold { padding: 0; border-radius: 16px; background: rgba(255, 207, 110, .06); border: 1px solid rgba(255, 207, 110, .22); }
+.ti-fold > summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px;
+  min-height: 42px; padding: 8px 14px; font-size: 13.5px; font-weight: 650; color: #f3d9a4;
+}
+.ti-fold > summary::-webkit-details-marker { display: none; }
+.ti-fold > summary::after { content: "›"; margin-inline-start: auto; font-size: 18px; line-height: 1; color: var(--muted); transition: transform .2s ease; }
+.ti-fold[open] > summary::after { transform: rotate(90deg); }
+.ti-fold .ti-fold-body { padding: 0 6px 6px; }
+.ti-fold .ti-fold-body .gate-story { background: none; border: 0; }
+/* The second rating question, revealed after the first (viewRate). */
+.db-step2 { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--border); animation: tiCard .4s var(--ease-out) both; }
+.db-step2[hidden] { display: none; }   /* a display rule would otherwise beat the attribute */
+.db-card .db-step2 .db-q { margin-top: 0; padding-top: 0; border-top: 0; }
+@media (prefers-reduced-motion: reduce) { .db-step2 { animation: none; } }
 @media (max-width: 600px) {
   .trial-intro { align-items: flex-end; padding: 10px; }
   .ti-card { padding: 16px 14px 10px; border-radius: 24px; gap: 10px; margin: auto 0 0; }

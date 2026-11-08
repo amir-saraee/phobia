@@ -1247,6 +1247,101 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   const returnTgt = { x: 0, z: 0 };      // where the return walk was last aimed
   const _rollAxis = new THREE.Vector3();   // scratch — ball roll axis per frame
 
+  // ----- Throw preview -----
+  // A mouse over the floor draws the arc the ball would fly and a mark where
+  // it would land: the same ballistic solve releaseItem() runs at the moment
+  // of release, so the preview IS the throw. A click used to be a guess —
+  // "somewhere over there" — and a ball that landed behind the bed read as
+  // the game ignoring you. Desktop only (touch has no hover); never over the
+  // dog (that click is a pet or a call, not a throw); never with a throw in
+  // the air; never on the barking rung, where nothing is thrown.
+  // Dots, not a hairline: a one-pixel line vanished against the boards at
+  // any distance; a trail of small beads the size of a marble reads from the
+  // doorway and on a phone-sized window alike.
+  const AIM_N = 18;
+  let aimLine = null, aimDisc = null, aimAt = 0;
+  const _aimStart = new THREE.Vector3(), _aimHit = new THREE.Vector3();
+  const _aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 1.0);   // the floor, y = −1
+  const _aimM = new THREE.Matrix4(), _aimP = new THREE.Vector3(), _aimS = new THREE.Vector3(), _aimQ = new THREE.Quaternion();
+  function ensureAim() {
+    if (aimLine) return;
+    aimLine = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(0.030, 10, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffe3a6, transparent: true, opacity: 0.78, depthWrite: false }),
+      AIM_N
+    );
+    aimLine.frustumCulled = false;
+    aimLine.userData.noPick = true; aimLine.userData.noCollide = true;
+    aimLine.visible = false;
+    scene.add(aimLine);
+    aimDisc = new THREE.Mesh(
+      new THREE.RingGeometry(0.11, 0.155, 30),
+      new THREE.MeshBasicMaterial({ color: 0xffe3a6, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide })
+    );
+    aimDisc.rotation.x = -Math.PI / 2;
+    aimDisc.userData.noPick = true; aimDisc.userData.noCollide = true;
+    aimDisc.visible = false;
+    scene.add(aimDisc);
+  }
+  function hideAim() { if (aimLine) aimLine.visible = false; if (aimDisc) aimDisc.visible = false; }
+  // Why the preview is hidden, for the verification harness (dog.userData.aim).
+  let _aimWhy = "";
+  const bail = (why) => { _aimWhy = why; hideAim(); };
+  function updateAim(clientX, clientY, dom) {
+    if (IS_COARSE_POINTER || intensity === "barking") return bail("scene");
+    if (item || fetchPhase !== "idle") return bail("busy");
+    if (dogsControls && dogsControls.isPointerLocked && dogsControls.isPointerLocked()) return bail("locked");
+    const stageEl = dom.closest && dom.closest("#stage");
+    if (stageEl && stageEl.classList.contains("pre-start")) return bail("pre-start");
+    // Over the dog's silhouette (with the same forgiveness a click gets) the
+    // cursor means the dog, not the floor behind it.
+    const cv = clickVsDog(clientX, clientY, dom);
+    if (cv && !cv.behind && cv.dist < cv.r) return bail("dog");
+    // A plane hit, not a scene raycast: this runs on every mouse move, and a
+    // raycast through the skinned dog twenty-five times a second is real work
+    // on a laptop. The dog's own navigation resolver then turns the floor point
+    // into the spot the ball will actually come to rest on.
+    const rect = dom.getBoundingClientRect();
+    mouseVec.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    mouseVec.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouseVec, camera);
+    if (!raycaster.ray.intersectPlane(_aimPlane, _aimHit)) return bail("sky");
+    const pp = dogsControls ? dogsControls.position : camera.position;
+    if (Math.hypot(_aimHit.x - pp.x, _aimHit.z - pp.z) > 11) return bail("far");
+    const target = dogCtrl && dogCtrl._resolve ? dogCtrl._resolve(_aimHit.x, _aimHit.z) : { x: _aimHit.x, z: _aimHit.z };
+    // Pointing at a wall resolves to a spot metres from the cursor: not a throw.
+    if (Math.hypot(target.x - _aimHit.x, target.z - _aimHit.z) > 1.2) return bail("wall");
+    _aimStart.set(pp.x, pp.y - 0.42, pp.z);   // hand height, both camera modes
+    const dx = target.x - _aimStart.x, dz = target.z - _aimStart.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < 0.7) return bail("feet");
+    _aimWhy = "";
+    ensureAim();
+    // Same solve as releaseItem(): flight time from distance, capped so the
+    // apex stays under the ceiling, launch velocity from that.
+    let T = Math.max(0.5, dist * 0.25);
+    const g = 9.8, restY = BALL_REST_Y;
+    const capY = ROOM.ceilY - 0.25;
+    const climb = Math.max(0.05, capY - _aimStart.y);
+    const tCap = Math.sqrt(2 * climb / g) + Math.sqrt(2 * Math.max(0.05, capY - restY) / g);
+    if (T > tCap) T = tCap;
+    const vy = (restY - _aimStart.y) / T + (g * T / 2);
+    const vx = dx / T, vz = dz / T;
+    // The first bead or two sit inside the player's own body: start a little
+    // way along the arc, and let the beads shrink toward the landing.
+    for (let i = 0; i < AIM_N; i++) {
+      const tt = (0.12 + 0.88 * (i / (AIM_N - 1))) * T;
+      _aimP.set(_aimStart.x + vx * tt, _aimStart.y + vy * tt - 0.5 * g * tt * tt, _aimStart.z + vz * tt);
+      _aimS.setScalar(1.0 - 0.45 * (i / (AIM_N - 1)));
+      _aimM.compose(_aimP, _aimQ, _aimS);
+      aimLine.setMatrixAt(i, _aimM);
+    }
+    aimLine.instanceMatrix.needsUpdate = true;
+    aimLine.visible = true;
+    aimDisc.position.set(target.x, -1.0 + 0.012, target.z);
+    aimDisc.visible = true;
+  }
+
   function clearItem() {
     if (!item) return;
     if (item.mesh.parent) item.mesh.parent.remove(item.mesh);
@@ -1379,6 +1474,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   //      then takes over.
   function throwItem(kind, tx, tz) {
     clearItem();
+    hideAim();
     // Throw targets must be places the dog can physically reach. A raycast can
     // land on the bed, side table, or just beyond the room boundary; letting
     // the ball settle there made the fetch controller pace against a prop
@@ -2020,7 +2116,18 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       // silhouette can still count as a pet rather than being silently dropped.
       handleWorldClick(hit, e.shiftKey || e.metaKey, px, py, canvasDom);
     });
+    // The throw preview follows the mouse over the floor (see updateAim).
+    canvasDom.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "touch") return;
+      if (e.buttons) { hideAim(); return; }   // a drag is a look, not an aim
+      const now = performance.now();
+      if (now - aimAt < 40) return;
+      aimAt = now;
+      try { updateAim(e.clientX, e.clientY, canvasDom); } catch { hideAim(); }
+    });
+    canvasDom.addEventListener("pointerleave", hideAim);
   }
+  dog.userData.aim = () => ({ shown: !!(aimLine && aimLine.visible), why: _aimWhy, bound: !!canvasDom });
   // Registered like every other scene timer: leaving within the 60 ms let this
   // fire after dispose and bind the dog's click handlers to the NEXT scene's
   // canvas (the query is just "#stage canvas").

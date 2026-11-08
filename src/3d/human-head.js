@@ -1102,6 +1102,9 @@ function buildHead(o) {
   // sits on the head like hair instead of a helmet — and, critically, the
   // hairline stops above the brow instead of curtaining over the face.
   const style = hairStyleKind;
+  // A headscarf covers the hair: whatever the style, only a thin shell is
+  // built under it (so no fringe, curls or tail poke through the cloth).
+  const underScarf = o.headwear === "scarf";
   const hairGroup = new THREE.Group();
   hairGroup.position.copy(skull.position);
   grp.add(hairGroup);
@@ -1112,10 +1115,13 @@ function buildHead(o) {
     // actually sits. At 8.5 mm the styles with real bulk (long, curly, pony)
     // were a skin painted on the head, which is most of the "helmet" read.
     // Buzz stays thin because a buzz cut genuinely is.
-    const thick = style === "buzz" ? 0.0040
+    const thick = underScarf ? 0.0080
+      : style === "buzz" ? 0.0040
       : style === "curly" ? 0.0190
+      : style === "afro" ? 0.0290
       : style === "long" ? 0.0165
       : style === "pony" ? 0.0145
+      : style === "bun" ? 0.0125
       : 0.0120;
     const hairShellM = hairM.clone();
     hairShellM.transparent = true;
@@ -1147,7 +1153,9 @@ function buildHead(o) {
     });
     if (cap) hairGroup.add(cap);
   }
-  if (style === "curly") {
+  if (underScarf) {
+    // Tucked away — the shell above is all that shows at the hairline.
+  } else if (style === "curly") {
     // Curl cluster riding the cap, biased to the upper-back of the skull.
     for (let i = 0; i < 26; i++) {
       const th = (i / 26) * Math.PI * 2 + (i % 3) * 0.4;
@@ -1158,6 +1166,34 @@ function buildHead(o) {
       curl.position.copy(p).multiplyScalar(1.055);
       hairGroup.add(curl);
     }
+  } else if (style === "afro") {
+    // A full, rounded halo: curls all the way round, crown to nape, sitting
+    // on the thick shell so the silhouette reads as one soft mass.
+    const n = o.lowDetail ? 40 : 64;
+    for (let i = 0; i < n; i++) {
+      const th = (i / n) * Math.PI * 2 + (i % 5) * 0.23;
+      const ph = 0.12 + ((i * 11) % 17) / 17 * 1.15;
+      if (hairlineMask(th, ph) <= 0.25) continue;
+      const p = headPoint(th, ph);
+      const curl = new THREE.Mesh(new THREE.SphereGeometry(0.024 + (i % 4) * 0.004, 10, 8), hairM);
+      curl.position.copy(p).multiplyScalar(1.17);
+      hairGroup.add(curl);
+    }
+  } else if (style === "bun") {
+    // Hair drawn back smooth, gathered in a bun high on the back of the head.
+    const bun = new THREE.Group();
+    bun.position.set(0, 0.058, -0.078);
+    hairGroup.add(bun);
+    const knot = new THREE.Mesh(new THREE.SphereGeometry(0.036, 16, 12), hairM);
+    knot.scale.set(1.0, 0.86, 0.92);
+    bun.add(knot);
+    const tie = new THREE.Mesh(
+      new THREE.TorusGeometry(0.030, 0.0045, 8, 18),
+      new THREE.MeshStandardMaterial({ color: 0x2a2f3d, roughness: 0.8 })
+    );
+    tie.rotation.x = 0.35;
+    tie.position.set(0, 0, 0.016);
+    bun.add(tie);
   } else if (style === "long") {
     // Long hair is a skinned CURTAIN built on the rig (buildHairCurtain): it
     // has to follow the head at the scalp and the upper back where it lies,
@@ -1224,7 +1260,42 @@ function buildHead(o) {
 
   // --- headwear ------------------------------------------------------------
   const hw = o.headwear || "none";
-  if (hw === "beanie" || hw === "cap") {
+  if (hw === "scarf") {
+    // A headscarf: a soft shell over the whole head with the face left open,
+    // and a short drape round the neck to the shoulders. Coordinates with the
+    // top like the hats do, a shade lighter so it reads as its own cloth.
+    const scarfM = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(o.shirtColor).lerp(new THREE.Color(0xfff4e4), 0.22),
+      roughness: 0.92, side: THREE.DoubleSide,
+    });
+    scarfM.transparent = true; scarfM.vertexColors = true; scarfM.depthWrite = true;
+    const shell = buildHeadShell(headPoint, scarfM, {
+      nu: o.lowDetail ? 64 : 100, nv: o.lowDetail ? 48 : 80, offset: 0.0135, fade: true,
+      cacheKey: "scarf2|" + shape,
+      // The face opening: an oval from just under the hairline to under the
+      // chin, about the width of the face. `phi` runs from the crown (0)
+      // through eye level (~1.57) to the chin (~2.5).
+      mask: (th, ph) => {
+        const a = th > Math.PI ? Math.PI * 2 - th : th;
+        const d = Math.hypot(a / 0.86, (ph - 1.64) / 0.94);
+        return _sstep(0.90, 1.08, d);
+      },
+    });
+    if (shell) { shell.position.copy(skull.position); grp.add(shell); }
+    const drapeM = new THREE.MeshStandardMaterial({ color: scarfM.color.clone(), roughness: 0.92, side: THREE.DoubleSide });
+    const drape = new THREE.Mesh(
+      new THREE.LatheGeometry([
+        new THREE.Vector2(0.086, -0.078), new THREE.Vector2(0.098, -0.112),
+        new THREE.Vector2(0.118, -0.146), new THREE.Vector2(0.142, -0.176),
+      ], 28),
+      drapeM
+    );
+    drape.scale.set(1, 1, 0.78);
+    drape.position.copy(skull.position);
+    drape.position.z -= 0.012;
+    drape.castShadow = true;
+    grp.add(drape);
+  } else if (hw === "beanie" || hw === "cap") {
     const hwM = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor), roughness: 0.94 });
     const bandM = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor).multiplyScalar(0.78), roughness: 0.94 });
     if (hw === "beanie") {

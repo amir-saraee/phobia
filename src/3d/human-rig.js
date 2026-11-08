@@ -1016,7 +1016,8 @@ function buildHumanRig(o = {}) {
   headB.add(head);
   head.userData.neckPart = neckPart;
   let hairCurtain = null;
-  if (o.hairStyle === "long") {
+  // Under a headscarf the hair is tucked away: no curtain down the back.
+  if (o.hairStyle === "long" && o.headwear !== "scarf") {
     try {
       group.updateMatrixWorld(true);
       hairCurtain = buildHairCurtain({

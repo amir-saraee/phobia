@@ -624,8 +624,11 @@ function viewTraveler() {
     ${row(t("tw.hair", "Hair"),   chips("hairStyle", C.HAIR_STYLES, c.hairStyle))}
     ${row(t("tw.hairC", "Hair colour"), swatches("hairColor", C.HAIR_COLORS, c.hairColor))}
     ${row(t("tw.top", "Top"),     swatches("topColor",  C.TOP_COLORS,  c.topColor))}
+    ${row(t("tw.outfit", "Outfit"), chips("topStyle", C.TOP_STYLES, c.topStyle || "tee"))}
     ${row(t("tw.eyes", "Eyes"),   swatches("eyeColor",  C.EYE_COLORS,  c.eyeColor))}
     ${row(t("tw.glasses", "Glasses"), chips("glasses", C.GLASSES, c.glasses))}
+    ${row(t("tw.hat", "Headwear"), chips("headwear", C.HEADWEAR, c.headwear || "none"))}
+    ${row(t("tw.beard", "Facial hair"), chips("facialHair", C.FACIAL_HAIR, c.facialHair || "none")).replace('class="mob-row"', `class="mob-row tw-beard-row"${c.bodyType === "woman" || c.bodyType === "girl" ? " hidden" : ""}`)}
     <p style="margin:4px 0 0;font-size:12px;opacity:.6;text-align:center">${t("tw.hint", "Drag the room to turn them around")}</p>
     <div class="mob-thumb tw-cta">
       <button class="mob-btn mob-btn-primary" data-action="traveler-save">${t("tw.save", "Walk in →")}</button>
@@ -948,6 +951,17 @@ function attachTravelerHandlers() {
       // unpress every other row's selection too.
       const row = btn.closest(".mob-chips");
       if (row) row.querySelectorAll("[data-tw]").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+      // The beard row follows the body: shown for a man or a boy, folded away
+      // (and cleared) for a woman or a girl.
+      if (key === "bodyType") {
+        const fem = val === "woman" || val === "girl";
+        const br = root.querySelector(".tw-beard-row");
+        if (br) br.hidden = fem;
+        if (fem && _travelerDraft.facialHair && _travelerDraft.facialHair !== "none") {
+          _travelerDraft = Object.assign({}, _travelerDraft, { facialHair: "none" });
+          if (br) br.querySelectorAll("[data-tw]").forEach(b => b.setAttribute("aria-pressed", String(b.getAttribute("data-val") === "none")));
+        }
+      }
       refreshTravelerFigure();
       try { if (window.PhobiaAudio && window.PhobiaAudio.tick) window.PhobiaAudio.tick(); } catch {}
     });
