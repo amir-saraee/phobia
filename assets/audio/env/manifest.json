@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "credits": "Environment beds synthesized from first principles by scripts/render-ambience.cjs (noise shaping, oscillators, modal resonators, Schroeder reverb). No recordings. CC0.",
+  "sr": 32000,
+  "layers": {
+    "airport_gate": {
+      "file": "airport_gate.m4a",
+      "dur": 40,
+      "rms": -20,
+      "peak": -3.5,
+      "note": "an airport gate hall"
+    },
+    "cabin_jet": {
+      "file": "cabin_jet.m4a",
+      "dur": 24,
+      "rms": -20,
+      "peak": -7.7,
+      "note": "a jet cabin in cruise"
+    },
+    "car_idle": {
+      "file": "car_idle.m4a",
+      "dur": 20,
+      "rms": -20,
+      "peak": -5.8,
+      "note": "a car at idle, from inside"
+    },
+    "cellar": {
+      "file": "cellar.m4a",
+      "dur": 24,
+      "rms": -20,
+      "peak": -7.9,
+      "note": "boiler, mains hum, vent and pipes in a hard room"
+    },
+    "city_far": {
+      "file": "city_far.m4a",
+      "dur": 40,
+      "rms": -20,
+      "peak": -5.8,
+      "note": "a city heard from high up"
+    },
+    "city_near": {
+      "file": "city_near.m4a",
+      "dur": 40,
+      "rms": -20,
+      "peak": -3.1,
+      "note": "a street at pavement level"
+    },
+    "clinic": {
+      "file": "clinic.m4a",
+      "dur": 40,
+      "rms": -20,
+      "peak": -6.3,
+      "note": "a clinic room"
+    },
+    "fluorescent": {
+      "file": "fluorescent.m4a",
+      "dur": 20,
+      "rms": -20,
+      "peak": -10.6,
+      "note": "a fluorescent tube"
+    },
+    "hall_large": {
+      "file": "hall_large.m4a",
+      "dur": 24,
+      "rms": -20,
+      "peak": -7.2,
+      "note": "a large hall's air"
+    },
+    "house_night": {
+      "file": "house_night.m4a",
+      "dur": 24,
+      "rms": -20,
+      "peak": -6.7,
+      "note": "a house at night: hum, far town, eaves"
+    },
+    "insects_day": {
+      "file": "insects_day.m4a",
+      "dur": 40,
+      "rms": -20,
+      "peak": -2.1,
+      "note": "cicadas and grasshoppers"
+    },
+    "insects_dusk": {
+      "file": "insects_dusk.m4a",
+      "dur": 40,
+      "rms": -20,
+      "peak": -1,
+      "note": "crickets, a tree cricket, a katydid"
+    },
+    "lake_shore": {
+      "file": "lake_shore.m4a",
+      "dur": 40,
+      "rms": -20,
+      "peak": -0.4,
+      "note": "waves on a lake shore"
+    },
+    "lift_cab": {
+      "file": "lift_cab.m4a",
+      "dur": 20,
+      "rms": -20,
+      "peak": -5.7,
+      "note": "a lift car at rest"
+    },
+    "meadow_breeze": {
+      "file": "meadow_breeze.m4a",
+      "dur": 24,
+      "rms": -20,
+      "peak": -3.7,
+      "note": "breeze through grass"
+    },
+    "mri_room": {
+      "file": "mri_room.m4a",
+      "dur": 20,
+      "rms": -20.5,
+      "peak": -0.4,
+      "note": "the MRI room between scans"
+    },
+    "office_beyond": {
+      "file": "office_beyond.m4a",
+      "dur": 40,
+      "rms": -20,
+      "peak": -2.2,
+      "note": "an office through a glass door"
+    },
+    "rain_glass": {
+      "file": "rain_glass.m4a",
+      "dur": 24,
+      "rms": -20.6,
+      "peak": -0.4,
+      "note": "rain on a window, heard from inside"
+    },
+    "rain_leaves": {
+      "file": "rain_leaves.m4a",
+      "dur": 24,
+      "rms": -20,
+      "peak": -7.2,
+      "note": "rain outdoors on leaves"
+    },
+    "vent_small": {
+      "file": "vent_small.m4a",
+      "dur": 20,
+      "rms": -20,
+      "peak": -7,
+      "note": "ventilation in a small room"
+    },
+    "wind_high": {
+      "file": "wind_high.m4a",
+      "dur": 24,
+      "rms": -20,
+      "peak": -2.5,
+      "note": "exposed wind with whistle and flutter"
+    },
+    "wind_low": {
+      "file": "wind_low.m4a",
+      "dur": 20,
+      "rms": -20,
+      "peak": -4.4,
+      "note": "gentle outdoor wind"
+    },
+    "yard_day": {
+      "file": "yard_day.m4a",
+      "dur": 40,
+      "rms": -20,
+      "peak": -5.6,
+      "note": "a suburban yard through glass, daytime"
+    },
+    "yard_dusk": {
+      "file": "yard_dusk.m4a",
+      "dur": 40,
+      "rms": -20,
+      "peak": -5.8,
+      "note": "the same yard at dusk, crickets"
+    }
+  }
+}

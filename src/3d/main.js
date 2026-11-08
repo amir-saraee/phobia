@@ -7,7 +7,7 @@
 // the asset prefetch. The exposure engine (engine.js) and each realm's scene
 // code are fetched on demand — see mount() below.
 import { DOG_MODELS, DOG_COAT_MAPS, CREATURE_MODELS } from "./assets.js";
-import { resolveQuality } from "./renderer.js";
+import { resolveQuality, sceneQuality } from "./renderer.js";
 import { REALMS } from "./realms/index.js";
 import "./avatar.js";        // window.AvatarPreview
 import "./shell-scenes.js";  // window.ShellScenes
@@ -124,6 +124,8 @@ window.Scene3D = {
   preload(phobiaKey) {
     if (REALMS[phobiaKey]) preload(phobiaKey).catch(() => { /* silent — the trial shows the fallback */ });
   },
+  // The graphics tier, for the audio module (it keeps fewer beds on "low").
+  quality() { try { return sceneQuality(); } catch { return "high"; } },
   // Which conditions a rung was practised in. Reads the LAST MOUNTED scene, not
   // the live one: the player rates a rung from the rate view, by which point the
   // scene has already been unmounted and `active` is null. Reading `active` here

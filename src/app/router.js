@@ -253,6 +253,15 @@ function showRenderRecovery(view) {
   };
 }
 function renderView(view, params) {
+  // Leaving a live trial any way but "Step out" — Back, Home, the menu —
+  // walks out of it: nothing is owed a rating. Its outcome used to linger,
+  // so the next "Edit traveler → Save" (or a typed /rate/ address) opened a
+  // rating for a trial the player had simply left, and logged it.
+  try {
+    const o = lastRungOutcome;
+    if (o && document.querySelector(".exposure-panel #stage")
+        && !(view === "rate" && params && params.phobia === o.phobia && +params.level === o.level)) dropTrialInFlight();
+  } catch {}
   // Tear down any active 3D scene + audio + voice before swapping the DOM
   if (window.Scene3D && typeof window.Scene3D.unmount === "function") {
     window.Scene3D.unmount();
@@ -285,6 +294,8 @@ function renderView(view, params) {
   // or predict page, so the trial itself mounts without a wait.
   if (params && params.phobia && view !== "soon" && window.Scene3D && window.Scene3D.preload) {
     window.Scene3D.preload(params.phobia);
+    // …and the rung's environment beds, so the room has its sound from the first frame.
+    try { if (window.PhobiaAudio && PhobiaAudio.preloadEnv) PhobiaAudio.preloadEnv(params.phobia, params.level | 0); } catch {}
   }
   // Three kinds of page. Home draws its own top bar over the valley; a trial
   // is the room, full screen, with nothing of the site around it; every

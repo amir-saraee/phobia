@@ -265,6 +265,20 @@ function smoothCreaseNormals(geom, cosLimit = 0.5) {
       nor.setXYZ(i, ax / len, ay / len, az / len);
     }
   }
+  // No zero-length normal may leave here. Opposite normals that cancel, and
+  // degenerate vertices the GLB ships with (Spider.glb's body mesh has 26),
+  // normalise to NaN in the shader — and bloom spreads one NaN pixel over the
+  // whole frame: the cellar went black whenever the spider was close on the
+  // high tier. Its own source normal, else "up".
+  for (let i = 0; i < nor.count; i++) {
+    const x = nor.getX(i), y = nor.getY(i), z = nor.getZ(i);
+    const l = Math.hypot(x, y, z);
+    if (l > 1e-6 && Number.isFinite(l)) continue;
+    const sx = src[i * 3], sy = src[i * 3 + 1], sz = src[i * 3 + 2];
+    const sl = Math.hypot(sx, sy, sz);
+    if (sl > 1e-6 && Number.isFinite(sl)) nor.setXYZ(i, sx / sl, sy / sl, sz / sl);
+    else nor.setXYZ(i, 0, 1, 0);
+  }
   nor.needsUpdate = true;
 }
 

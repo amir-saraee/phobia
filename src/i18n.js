@@ -2186,7 +2186,7 @@ const PACKS = {
     // ---- Progress, profiles, insights ----
     "nf.h": "پیدا نشد",
     "nf.p": "این ترس روی این دستگاه وجود ندارد.",
-    "pp.back": "← بازگشت به نردبانِ {fear}",
+    "pp.back": "→ بازگشت به نردبانِ {fear}",
     "pp.sum": "{a}/{b} پله · {n} جلسه",
     "pp.sum1": "{a}/{b} پله · {n} جلسه",
     "pp.highest": "بالاترین پله",
@@ -2616,9 +2616,14 @@ function secs(n) { return currentLang === "fa" ? num(n) + " ث" : n + "s"; }
 
 function t(key, fallback) {
   const pack = PACKS[currentLang];
-  if (pack && pack[key] != null) return pack[key];
-  if (PACKS.en && PACKS.en[key] != null) return PACKS.en[key];
-  return fallback != null ? fallback : key;
+  const s = (pack && pack[key] != null) ? pack[key]
+    : (PACKS.en && PACKS.en[key] != null) ? PACKS.en[key]
+    : fallback != null ? fallback : key;
+  // Persian: the "·" separator reads as the digit zero «۰» beside Persian
+  // text and digits («۰ / ۱۲ ثانیه · فقط بمان»). Rendered pages already swap it
+  // for "|" (faDigitsIn, router.js); text written later — the trial's dock
+  // and hints — comes straight from here, so it's swapped here too.
+  return (currentLang === "fa" && typeof s === "string" && s.indexOf("·") >= 0) ? s.replace(/ ?· ?/g, " | ") : s;
 }
 // Template variant: "{n} of {m}" token substitution, RTL-safe (no string
 // concatenation at call sites, so word order is the translator's choice).

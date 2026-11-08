@@ -50,7 +50,7 @@ const MIME = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
   ".json": "application/json", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg", ".webp": "image/webp", ".gltf": "model/gltf+json", ".glb": "model/gltf-binary", ".bin": "application/octet-stream",
-  ".hdr": "application/octet-stream", ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".wav": "audio/wav", ".wasm": "application/wasm", ".txt": "text/plain", ".woff2": "font/woff2",
+  ".hdr": "application/octet-stream", ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".ogg": "audio/ogg", ".wav": "audio/wav", ".wasm": "application/wasm", ".txt": "text/plain", ".woff2": "font/woff2",
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

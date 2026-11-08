@@ -2937,6 +2937,631 @@ const PhobiaAudio = (() => {
     }
   }
 
+  // ---------- Environment beds (rendered) ----------
+  // Each realm has its own set of beds in assets/audio/env/, rendered by
+  // scripts/render-ambience.cjs and normalised to one RMS, so the `gain` a
+  // palette plays a layer at is the whole story of how loud it is. A layer
+  // loops by crossfading two copies of itself at the seam (equal-power), so
+  // the codec's priming/padding can't click and a 20 s file plays for ever.
+  const ENV_BASE = "assets/audio/env/";
+  const ENV_XF = 1.6;   // crossfade seconds at the loop seam
+  let _xfCurves = null;
+  function _xfCurve() {
+    if (_xfCurves) return _xfCurves;
+    const n = 64, up = new Float32Array(n), down = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const th = (i / (n - 1)) * Math.PI / 2; up[i] = Math.sin(th); down[i] = Math.cos(th); }
+    return _xfCurves = { up, down };
+  }
+  function startEnvLayer(name, opts = {}) {
+    const c = ensureCtx(); if (!c) return { stop() {}, setGain() {} };
+    let level = opts.gain == null ? 0.3 : opts.gain;
+    let stopped = false, timer = null, buf = null, dest = null, g = null;
+    const chain = () => {
+      // level → optional filters → (spatial | master)
+      g = c.createGain();
+      g.gain.setValueAtTime(0.0001, c.currentTime);
+      g.gain.exponentialRampToValueAtTime(Math.max(0.0002, level), c.currentTime + (opts.fadeIn || 1.6));
+      let node = g;
+      if (opts.lowpass) { const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = opts.lowpass; lp.Q.value = 0.5; node.connect(lp); node = lp; }
+      if (opts.highpass) { const hp = c.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = opts.highpass; hp.Q.value = 0.5; node.connect(hp); node = hp; }
+      const out = opts.pos ? spatial(opts.pos, Object.assign({ refDistance: 2, maxDistance: 60, rolloffFactor: 1.0 }, opts.spatial || {})) : master;
+      node.connect(out);
+      dest = g;
+    };
+    const { up, down } = _xfCurve();
+    const play = (at) => {
+      if (stopped || !buf) return;
+      // A timer that fires late (a stalled main thread, a phone tab in the
+      // background) finds its start time already past. Web Audio clamps a
+      // curve's start to "now", the clamped curve then overlapped the
+      // setValueAtTime after it and threw — before the next copy was
+      // scheduled, so the bed went silent for the rest of the trial. Start
+      // late rather than in the past, and keep the loop alive regardless.
+      at = Math.max(at, c.currentTime + 0.03);
+      const D = buf.duration, xf = Math.min(ENV_XF, D / 3);
+      try {
+        const src = c.createBufferSource(); src.buffer = buf;
+        const sg = c.createGain();
+        sg.gain.setValueAtTime(0, at);
+        sg.gain.setValueCurveAtTime(up, at, xf);
+        sg.gain.setValueAtTime(1, at + xf + 0.001);
+        sg.gain.setValueCurveAtTime(down, at + D - xf, xf);
+        src.connect(sg).connect(dest);
+        src.start(at); src.stop(at + D + 0.02);
+        src.onended = () => { try { src.disconnect(); sg.disconnect(); } catch {} };
+      } catch (e) { try { console.warn("[env bed]", name, e && e.message); } catch {} }
+      const next = at + D - xf;
+      // Schedule the next copy well ahead (background tabs throttle timers to ≥1 s).
+      timer = setTimeout(() => play(next), Math.max(50, (next - c.currentTime - 3) * 1000));
+    };
+    _loadBed(ENV_BASE + name + ".m4a").then((b) => {
+      if (stopped || !b) return;
+      buf = b; chain(); play(c.currentTime + 0.05);
+    });
+    return {
+      setGain(v, ramp = 0.6) {
+        level = v;
+        if (!g) return;
+        try { g.gain.cancelScheduledValues(c.currentTime); g.gain.setTargetAtTime(Math.max(0.0002, v), c.currentTime, ramp / 3); } catch {}
+      },
+      stop() {
+        stopped = true;
+        if (timer) clearTimeout(timer);
+        if (!g) return;
+        try { const t = c.currentTime; g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(0.0001, t, 0.25); } catch {}
+        setTimeout(() => { try { g.disconnect(); } catch {} }, 1500);
+      },
+    };
+  }
+
+  // ---------- Life: the sparse, placed one-shots that make a bed a place ----------
+  // A shared timer registry: later(fn, ms) fires only while alive.
+  function _life() {
+    const timers = new Set(); let alive = true;
+    const later = (fn, ms) => { const id = setTimeout(() => { timers.delete(id); if (alive) fn(); }, ms); timers.add(id); return id; };
+    const every = (fn, minMs, maxMs, firstMs) => {
+      const tick = () => { if (!alive) return; try { fn(); } catch {} later(tick, minMs + Math.random() * (maxMs - minMs)); };
+      later(tick, firstMs == null ? minMs * 0.5 + Math.random() * minMs : firstMs);
+    };
+    const stop = () => { alive = false; timers.forEach(clearTimeout); timers.clear(); };
+    return { later, every, stop, get alive() { return alive; } };
+  }
+  // A one-shot that travels: its own panner, position ramped from a to b.
+  function _mover(a, b, dur, opts = {}) {
+    const c = ensureCtx();
+    const p = c.createPanner();
+    p.panningModel = "HRTF"; p.distanceModel = "inverse";
+    p.refDistance = opts.refDistance || 2; p.maxDistance = opts.maxDistance || 80; p.rolloffFactor = opts.rolloffFactor || 1.2;
+    const now = c.currentTime;
+    if (p.positionX) {
+      p.positionX.setValueAtTime(a.x, now); p.positionX.linearRampToValueAtTime(b.x, now + dur);
+      p.positionY.setValueAtTime(a.y, now); p.positionY.linearRampToValueAtTime(b.y, now + dur);
+      p.positionZ.setValueAtTime(a.z, now); p.positionZ.linearRampToValueAtTime(b.z, now + dur);
+    } else if (p.setPosition) p.setPosition(a.x, a.y, a.z);
+    p.connect(master);
+    if (opts.air) { const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = opts.air; lp.connect(p); return lp; }
+    return p;
+  }
+  const _rnd = (a, b) => a + Math.random() * (b - a);
+  // Short noise burst through a bandpass — the atom of most ticks and flutters.
+  function _tick(out, at, hz, q, dur, peak) {
+    const c = ctx;
+    const s = c.createBufferSource(); s.buffer = noiseBuffer(Math.max(0.05, dur + 0.02));
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = hz; bp.Q.value = q;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(peak, at + 0.002); g.gain.exponentialRampToValueAtTime(0.0005, at + dur);
+    s.connect(bp).connect(g).connect(out); s.start(at); s.stop(at + dur + 0.03);
+  }
+  // A tone with an envelope and optional sweep — the atom of calls and hums.
+  function _tone(out, at, type, f0, f1, dur, peak, attack = 0.01) {
+    const c = ctx;
+    const o = c.createOscillator(); o.type = type;
+    o.frequency.setValueAtTime(f0, at); if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, at + dur);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(peak, at + attack); g.gain.exponentialRampToValueAtTime(0.0005, at + dur);
+    o.connect(g).connect(out); o.start(at); o.stop(at + dur + 0.03);
+    return o;
+  }
+  // A slow swell of filtered noise — gusts, surges, far rumbles.
+  function _swell(out, at, dur, type, hz, q, peak, pink) {
+    const c = ctx;
+    const s = c.createBufferSource(); s.buffer = pink ? pinkNoiseBuffer(dur + 0.5) : noiseBuffer(dur + 0.5);
+    const f = c.createBiquadFilter(); f.type = type; f.frequency.value = hz; f.Q.value = q;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(peak, at + dur * 0.45); g.gain.exponentialRampToValueAtTime(0.0005, at + dur);
+    s.connect(f).connect(g).connect(out); s.start(at); s.stop(at + dur + 0.1);
+    return f;
+  }
+  const _lowTier = () => { try { return !!(window.Scene3D && window.Scene3D.quality && window.Scene3D.quality() === "low"); } catch { return false; } };
+
+  // The cellar (spiders): water finding its way in, the pipes, the boiler
+  // through the wall, someone walking overhead, a fly.
+  function startCellarLife(opts = {}) {
+    const c = ensureCtx(); if (!c) return { stop() {} };
+    const L = _life(), k = opts.intensity == null ? 0.5 : opts.intensity, low = _lowTier();
+    const R = opts.room || { x: 0, z: -1.5, rx: 3, rz: 3.5 };
+    const drip = () => {
+      const now = c.currentTime;
+      const out = spatial({ x: R.x + (Math.random() - 0.5) * 2 * R.rx, y: _rnd(0.0, 0.3), z: R.z + (Math.random() - 0.5) * 2 * R.rz }, { refDistance: 1, maxDistance: 16, reverb: 0.45, air: true });
+      const f = _rnd(1400, 2600);
+      _tone(out, now, "sine", f, f * 0.35, 0.07, 0.07, 0.003);        // the drop
+      _tick(out, now, f * 1.6, 14, 0.09, 0.03);                        // its ring on the puddle
+      if (Math.random() < 0.3) { const t2 = now + _rnd(0.12, 0.3); _tone(out, t2, "sine", f * 1.1, f * 0.4, 0.05, 0.035, 0.003); }
+    };
+    const pipeTick = () => {
+      const now = c.currentTime;
+      const out = spatial({ x: (Math.random() - 0.5) * 5, y: _rnd(1.8, 2.5), z: R.z + (Math.random() - 0.5) * 6 }, { refDistance: 1.2, maxDistance: 18, reverb: 0.35, air: true });
+      const n = 1 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) { const t = now + i * _rnd(0.25, 0.7); _tick(out, t, 2200, 7, 0.08, 0.05); _tick(out, t, 3600, 9, 0.06, 0.025); }
+    };
+    const pipeKnock = () => {
+      const now = c.currentTime;
+      const out = spatial({ x: (Math.random() - 0.5) * 5, y: 2.2, z: R.z - R.rz }, { refDistance: 1.5, maxDistance: 20, reverb: 0.3, air: true });
+      _tone(out, now, "sine", 170, 95, 0.12, 0.07, 0.004);
+      _tick(out, now, 900, 3, 0.05, 0.03);
+    };
+    const boiler = () => {
+      const now = c.currentTime;
+      const out = spatial({ x: R.x + R.rx + 1.5, y: 0.8, z: R.z }, { refDistance: 2, maxDistance: 24, air: true });
+      _tone(out, now, "sine", 80, 55, 0.25, 0.06, 0.01);                 // the kick as it lights
+      _swell(out, now + 0.05, _rnd(2.5, 4), "lowpass", 140, 0.9, 0.09, true);
+    };
+    const overhead = () => {
+      const now = c.currentTime;
+      const x0 = (Math.random() - 0.5) * 4, z0 = R.z + (Math.random() - 0.5) * 4, dir = Math.random() < 0.5 ? 1 : -1;
+      const n = 3 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) {
+        const out = spatial({ x: x0 + dir * i * 0.6, y: 2.9, z: z0 }, { refDistance: 2, maxDistance: 20, air: true });
+        const t = now + i * _rnd(0.48, 0.6);
+        _tone(out, t, "sine", 120, 70, 0.11, 0.05, 0.005);
+        _tick(out, t, 220, 1.2, 0.08, 0.02);
+      }
+    };
+    const fly = () => {
+      if (low) return;
+      const now = c.currentTime, dur = _rnd(2, 3.5);
+      const a = { x: (Math.random() - 0.5) * 4, y: _rnd(1.2, 2), z: -1 - Math.random() * 3 };
+      const b = { x: -a.x + (Math.random() - 0.5) * 2, y: _rnd(1.2, 2.2), z: -1 - Math.random() * 3 };
+      const out = _mover(a, b, dur, { refDistance: 0.6, maxDistance: 10, rolloffFactor: 2 });
+      const o = c.createOscillator(); o.type = "sawtooth"; o.frequency.setValueAtTime(_rnd(210, 260), now);
+      const lfo = c.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 28; const lg = c.createGain(); lg.gain.value = 10; lfo.connect(lg).connect(o.frequency);
+      const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 900; bp.Q.value = 1.1;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(0.012, now + 0.3);
+      g.gain.setValueAtTime(0.012, now + dur - 0.4); g.gain.exponentialRampToValueAtTime(0.0003, now + dur);
+      o.connect(bp).connect(g).connect(out); o.start(now); o.stop(now + dur + 0.05); lfo.start(now); lfo.stop(now + dur + 0.05);
+    };
+    L.every(drip, 4000 / (0.6 + k), 11000 / (0.6 + k), 1800);
+    L.every(pipeTick, 14000, 32000);
+    L.every(pipeKnock, 40000, 90000);
+    L.every(boiler, 55000, 120000, 25000 + Math.random() * 20000);
+    L.every(overhead, 45000, 110000, 30000 + Math.random() * 30000);
+    if (!low) L.every(fly, 50000, 140000, 20000 + Math.random() * 40000);
+    return { stop: L.stop };
+  }
+
+  // The city (heights): what a height SOUNDS like — pigeons and close traffic
+  // at the ledge, gulls, a flag and the far wash of streets from the roof.
+  function startCityLife(opts = {}) {
+    const c = ensureCtx(); if (!c) return { stop() {} };
+    const L = _life(), h = opts.height == null ? 0.5 : opts.height, low = _lowTier();
+    const below = opts.streetY == null ? 0 : opts.streetY;   // the street's own height (world y)
+    const P = () => _lp || { x: 0, y: 1.6, z: 0 };            // the listener: near sounds are placed around them
+    const pigeon = () => {
+      const now = c.currentTime;
+      const p = P();
+      const out = spatial({ x: p.x + (Math.random() - 0.5) * 10, y: p.y + _rnd(-1, 1.5), z: p.z - 3 - Math.random() * 6 }, { refDistance: 2, maxDistance: 30, air: true });
+      const f = _rnd(300, 360);
+      // oo-ROO-coo: three syllables, the middle one longer and warbled
+      _tone(out, now, "sine", f, f * 1.05, 0.18, 0.03, 0.03);
+      const o = _tone(out, now + 0.22, "sine", f * 1.1, f * 0.95, 0.45, 0.035, 0.04);
+      const v = c.createOscillator(); v.frequency.value = 9; const vg = c.createGain(); vg.gain.value = 12; v.connect(vg).connect(o.frequency); v.start(now + 0.22); v.stop(now + 0.7);
+      _tone(out, now + 0.75, "sine", f * 0.98, f * 0.9, 0.2, 0.025, 0.03);
+    };
+    const wings = () => {
+      const now = c.currentTime;
+      const p = P();
+      const a = { x: p.x + (Math.random() - 0.5) * 6, y: p.y + _rnd(-1, 0.5), z: p.z - 2 - Math.random() * 3 };
+      const b = { x: a.x + (Math.random() - 0.5) * 20, y: a.y + _rnd(2, 6), z: a.z - _rnd(6, 14) };
+      const out = _mover(a, b, 1.6, { refDistance: 1.5, maxDistance: 30 });
+      for (let i = 0; i < 7; i++) _tick(out, now + i * 0.11, 1300, 1.2, 0.05, 0.03 * (1 - i / 8));
+    };
+    const gull = () => {
+      const now = c.currentTime;
+      const p = P();
+      const out = spatial({ x: p.x + (Math.random() - 0.5) * 60, y: p.y + _rnd(-6, 14), z: p.z - 20 - Math.random() * 30 }, { refDistance: 6, maxDistance: 120, air: true });
+      const n = 1 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) {
+        const t = now + i * _rnd(0.45, 0.7), f = _rnd(1050, 1350);
+        const o = c.createOscillator(); o.type = "sawtooth";
+        o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 0.72, t + 0.38);
+        const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1700; bp.Q.value = 1.6;
+        const g = c.createGain();
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.06, t + 0.04); g.gain.exponentialRampToValueAtTime(0.0005, t + 0.42);
+        o.connect(bp).connect(g).connect(out); o.start(t); o.stop(t + 0.45);
+      }
+    };
+    const horn = () => {
+      const now = c.currentTime, dur = _rnd(0.35, 0.9);
+      const out = spatial({ x: (Math.random() - 0.5) * 80, y: below, z: -30 - Math.random() * 60 }, { refDistance: 10, maxDistance: 300, rolloffFactor: 1, air: true });
+      const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 900; lp.connect(out);
+      _tone(lp, now, "sawtooth", 370, 370, dur, 0.03, 0.03);
+      _tone(lp, now, "sawtooth", 440, 440, dur, 0.025, 0.03);
+    };
+    const siren = () => {
+      if (low) return;
+      const now = c.currentTime, dur = _rnd(6, 9);
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const out = _mover({ x: side * 90, y: below, z: -40 }, { x: -side * 90, y: below, z: -60 }, dur, { refDistance: 12, maxDistance: 400, rolloffFactor: 0.9, air: 1600 });
+      const o = c.createOscillator(); o.type = "triangle"; o.frequency.value = 800;
+      const lfo = c.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.55; const lg = c.createGain(); lg.gain.value = 170; lfo.connect(lg).connect(o.frequency);
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(0.03, now + dur * 0.5); g.gain.exponentialRampToValueAtTime(0.0003, now + dur);
+      o.connect(g).connect(out); o.start(now); o.stop(now + dur + 0.05); lfo.start(now); lfo.stop(now + dur + 0.05);
+    };
+    const flag = () => {
+      const now = c.currentTime;
+      const p = P();
+      const out = spatial({ x: p.x + _rnd(3, 6) * (Math.random() < 0.5 ? -1 : 1), y: p.y + 1, z: p.z - 2 }, { refDistance: 2, maxDistance: 25 });
+      const n = 4 + Math.floor(Math.random() * 6), rate = _rnd(8, 14);
+      for (let i = 0; i < n; i++) _tick(out, now + i / rate * _rnd(0.85, 1.15), 1200, 1.4, 0.045, 0.04 * (0.6 + 0.4 * Math.random()));
+    };
+    const farVoices = () => {
+      // a shout from the street, too far to be words
+      const now = c.currentTime;
+      const out = spatial({ x: (Math.random() - 0.5) * 40, y: below, z: -10 - Math.random() * 30 }, { refDistance: 8, maxDistance: 200, air: true });
+      const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 600; bp.Q.value = 2; bp.connect(out);
+      const f = _rnd(180, 260);
+      _tone(bp, now, "sawtooth", f, f * 1.2, 0.3, 0.04, 0.03);
+      if (Math.random() < 0.5) _tone(bp, now + 0.4, "sawtooth", f * 1.1, f * 0.9, 0.35, 0.035, 0.03);
+    };
+    if (h < 0.3) { L.every(pigeon, 9000, 22000, 3000); L.every(wings, 20000, 45000); L.every(farVoices, 25000, 60000); }
+    if (h >= 0.3) { L.every(gull, 14000, 40000, 5000 + Math.random() * 5000); }
+    if (h >= 0.6) { L.every(flag, 6000, 16000, 2500); }
+    L.every(horn, 30000, 75000, 15000 + Math.random() * 15000);
+    if (!low) L.every(siren, 70000, 160000, 40000 + Math.random() * 40000);
+    return { stop: L.stop };
+  }
+
+  // The clearing (snakes): birds with a few calls of their own, a bee going
+  // past, a gust through the grass, a crow two fields over.
+  function startMeadowLife(opts = {}) {
+    const c = ensureCtx(); if (!c) return { stop() {} };
+    const L = _life(), hour = opts.hour || "noon", wet = opts.weather === "rain", low = _lowTier();
+    const dusk = hour === "dusk" || hour === "golden" || hour === "dawn";
+    const birdPos = () => ({ x: (Math.random() - 0.5) * 16, y: _rnd(2, 5), z: -4 - Math.random() * 10 });
+    const bird = () => {
+      const now = c.currentTime;
+      const out = spatial(birdPos(), { refDistance: 2.5, maxDistance: 40, air: true });
+      const kind = Math.random();
+      if (kind < 0.4) {          // chips
+        const n = 3 + Math.floor(Math.random() * 4), f = _rnd(3200, 4200);
+        for (let i = 0; i < n; i++) _tone(out, now + i * _rnd(0.09, 0.14), "sine", f * _rnd(0.97, 1.03), f * 0.9, 0.045, 0.028, 0.004);
+      } else if (kind < 0.75) {  // a rising whistle, twice
+        for (let i = 0; i < 2; i++) { const t = now + i * 0.5, f = _rnd(2000, 2600); _tone(out, t, "sine", f, f * 1.55, 0.26, 0.03, 0.03); }
+      } else {                   // a trill
+        const o = _tone(out, now, "sine", _rnd(2600, 3100), 2800, 0.45, 0.026, 0.03);
+        const v = c.createOscillator(); v.frequency.value = 24; const vg = c.createGain(); vg.gain.value = 320; v.connect(vg).connect(o.frequency); v.start(now); v.stop(now + 0.5);
+      }
+    };
+    const crow = () => {
+      const now = c.currentTime;
+      const out = spatial({ x: (Math.random() - 0.5) * 60, y: 6, z: -25 - Math.random() * 20 }, { refDistance: 8, maxDistance: 120, air: true });
+      const n = 2 + Math.floor(Math.random() * 2);
+      for (let i = 0; i < n; i++) {
+        const t = now + i * _rnd(0.4, 0.55);
+        const o = c.createOscillator(); o.type = "sawtooth"; o.frequency.setValueAtTime(470, t); o.frequency.exponentialRampToValueAtTime(380, t + 0.2);
+        const b1 = c.createBiquadFilter(); b1.type = "bandpass"; b1.frequency.value = 1100; b1.Q.value = 1.4;
+        const g = c.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.05, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0005, t + 0.22);
+        o.connect(b1).connect(g).connect(out); o.start(t); o.stop(t + 0.25);
+      }
+    };
+    const bee = () => {
+      if (low) return;
+      const now = c.currentTime, dur = _rnd(2.5, 4);
+      const a = { x: (Math.random() - 0.5) * 6 - 3, y: _rnd(0.6, 1.4), z: -1.5 - Math.random() * 2 };
+      const b = { x: a.x + _rnd(4, 8) * (Math.random() < 0.5 ? -1 : 1), y: _rnd(0.6, 1.6), z: a.z + (Math.random() - 0.5) * 4 };
+      const out = _mover(a, b, dur, { refDistance: 0.7, maxDistance: 10, rolloffFactor: 2 });
+      const o = c.createOscillator(); o.type = "sawtooth"; o.frequency.setValueAtTime(_rnd(200, 240), now);
+      const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2200; lp.Q.value = 0.7;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(0.014, now + 0.4);
+      g.gain.setValueAtTime(0.014, now + dur - 0.5); g.gain.exponentialRampToValueAtTime(0.0003, now + dur);
+      o.connect(lp).connect(g).connect(out); o.start(now); o.stop(now + dur + 0.05);
+    };
+    const gust = () => {
+      const now = c.currentTime, dur = _rnd(1.8, 3.2);
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const out = _mover({ x: side * 7, y: 0.4, z: -3 }, { x: -side * 4, y: 0.4, z: -1 }, dur, { refDistance: 2, maxDistance: 30 });
+      _swell(out, now, dur, "bandpass", _rnd(1400, 1900), 0.8, 0.05, false);
+    };
+    const rate = wet ? 0.35 : dusk ? 0.6 : 1;
+    L.every(bird, 7000 / rate, 16000 / rate, 2500);
+    L.every(crow, 40000 / rate, 90000 / rate, 15000 + Math.random() * 20000);
+    if (!dusk && !wet) L.every(bee, 35000, 90000, 12000 + Math.random() * 20000);
+    L.every(gust, 9000, 22000, 4000);
+    return { stop: L.stop };
+  }
+
+  // The house at night (dark): a clock on the wall, the wind getting into
+  // the eaves, once in a long while a dog two streets away. Everything here
+  // has an obvious cause — the scene's own creaks are the ones it names.
+  function startHouseNightLife(opts = {}) {
+    const c = ensureCtx(); if (!c) return { stop() {} };
+    const L = _life(), k = opts.intensity == null ? 1 : opts.intensity;
+    const win = opts.window || { x: 0, y: 1.2, z: -4 };
+    const clockPos = opts.clock || { x: 2.6, y: 1.8, z: 1.5 };
+    let tock = false, clockOut = null;
+    const clock = () => {
+      // one shared panner — a clock doesn't move
+      if (!clockOut) clockOut = spatial(clockPos, { refDistance: 1.2, maxDistance: 14, rolloffFactor: 1.8, reverb: 0.15 });
+      const now = c.currentTime;
+      tock = !tock;
+      _tick(clockOut, now, tock ? 2500 : 3300, 6, 0.012, 0.02 * k);
+      _tone(clockOut, now, "sine", tock ? 1800 : 2300, tock ? 1700 : 2200, 0.02, 0.006 * k, 0.001);
+    };
+    const eaves = () => {
+      const now = c.currentTime, dur = _rnd(2.5, 4.5);
+      const out = spatial({ x: win.x + (Math.random() - 0.5) * 2, y: win.y + 0.8, z: win.z - 0.5 }, { refDistance: 2, maxDistance: 20, air: true });
+      _swell(out, now, dur, "lowpass", _rnd(300, 520), 0.9, 0.05 * k, true);
+    };
+    const farDog = () => {
+      const now = c.currentTime;
+      const out = spatial({ x: win.x + (Math.random() - 0.5) * 60, y: win.y, z: win.z - 50 - Math.random() * 40 }, { refDistance: 10, maxDistance: 250, air: true });
+      const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1100; lp.connect(out);
+      const n = 1 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) {
+        const t = now + i * _rnd(0.35, 0.6), f = _rnd(380, 460);
+        const o = c.createOscillator(); o.type = "sawtooth"; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 0.7, t + 0.13);
+        const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 750; bp.Q.value = 1.8;
+        const g = c.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.05, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0005, t + 0.15);
+        o.connect(bp).connect(g).connect(lp); o.start(t); o.stop(t + 0.17);
+      }
+    };
+    // The clock keeps time on its own interval (not jittered).
+    let clockTimer = null;
+    const tickLoop = () => { if (!L.alive) return; try { clock(); } catch {} clockTimer = setTimeout(tickLoop, 1000); };
+    clockTimer = setTimeout(tickLoop, 600);
+    L.every(eaves, 14000, 34000, 6000);
+    L.every(farDog, 60000, 150000, 35000 + Math.random() * 40000);
+    return { stop() { L.stop(); if (clockTimer) clearTimeout(clockTimer); } };
+  }
+
+  // The tight places (enclosed): per rung, the few things that happen in a
+  // small room, a lift, a closet — all quiet, all explicable.
+  function startEnclosedLife(rung = 0) {
+    const c = ensureCtx(); if (!c) return { stop() {} };
+    const L = _life();
+    const ventPos = { x: 0, y: 2.3, z: -0.5 };
+    const surge = () => { const now = c.currentTime; const out = spatial(ventPos, { refDistance: 1.5, maxDistance: 10 }); _swell(out, now, _rnd(1.6, 2.8), "lowpass", 700, 0.7, 0.035, false); };
+    const corridorDoor = () => {
+      const now = c.currentTime;
+      const out = spatial({ x: (Math.random() < 0.5 ? -1 : 1) * _rnd(6, 10), y: 1, z: _rnd(-4, 4) }, { refDistance: 3, maxDistance: 30, air: true });
+      _tone(out, now, "sine", 130, 70, 0.14, 0.05, 0.004);
+      _tick(out, now + _rnd(0.15, 0.3), 1800, 4, 0.03, 0.02);   // the latch
+    };
+    const ballastTick = () => { const now = c.currentTime; const out = spatial({ x: 0, y: 2.4, z: 0 }, { refDistance: 1.5, maxDistance: 8 }); _tick(out, now, _rnd(3500, 5500), 3, 0.012, 0.03); };
+    const cableTick = () => { const now = c.currentTime; const out = spatial({ x: 0, y: 2.6, z: 0 }, { refDistance: 1.5, maxDistance: 10 }); _tick(out, now, 3100, 10, 0.05, 0.03); _tick(out, now + 0.004, 5200, 12, 0.04, 0.015); };
+    const beyondWall = () => {
+      // steps and a voice somewhere in the building, through the wall
+      const now = c.currentTime;
+      const out = spatial({ x: (Math.random() < 0.5 ? -1 : 1) * _rnd(3, 6), y: 1.2, z: _rnd(-3, 3) }, { refDistance: 2.5, maxDistance: 24, air: true });
+      const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 260; lp.connect(out);
+      const n = 2 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < n; i++) { const t = now + i * _rnd(0.45, 0.6); _tone(lp, t, "sine", 110, 70, 0.1, 0.06, 0.005); }
+    };
+    const pipeTick = () => { const now = c.currentTime; const out = spatial({ x: _rnd(-1, 1), y: _rnd(0.3, 2), z: -0.8 }, { refDistance: 1, maxDistance: 8 }); _tick(out, now, 2600, 8, 0.06, 0.03); if (Math.random() < 0.5) _tick(out, now + _rnd(0.3, 0.9), 2400, 8, 0.06, 0.025); };
+    if (rung === 0) { L.every(surge, 18000, 40000, 8000); L.every(corridorDoor, 40000, 100000, 20000 + Math.random() * 20000); L.every(ballastTick, 20000, 50000); }
+    if (rung === 1) { L.every(corridorDoor, 35000, 90000, 15000 + Math.random() * 20000); }
+    if (rung === 2) { L.every(cableTick, 12000, 30000, 5000); L.every(ballastTick, 25000, 60000); }
+    if (rung === 3) { L.every(beyondWall, 30000, 80000, 12000 + Math.random() * 15000); L.every(pipeTick, 20000, 50000, 8000); }
+    // rung 4 (MRI): the scanner and the technician are the scene's own.
+    return { stop: L.stop };
+  }
+
+  // The shore (water): gulls over the lake, a fish jumping, wind over water.
+  function startShoreLife(opts = {}) {
+    const c = ensureCtx(); if (!c) return { stop() {} };
+    const L = _life(), deep = !!opts.deep;
+    const gull = () => {
+      const now = c.currentTime;
+      const out = spatial({ x: (Math.random() - 0.5) * 50, y: _rnd(5, 18), z: -15 - Math.random() * 30 }, { refDistance: 6, maxDistance: 100, air: true });
+      const n = 1 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) {
+        const t = now + i * _rnd(0.45, 0.7), f = _rnd(1050, 1350);
+        const o = c.createOscillator(); o.type = "sawtooth"; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 0.72, t + 0.38);
+        const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1700; bp.Q.value = 1.6;
+        const g = c.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.055, t + 0.04); g.gain.exponentialRampToValueAtTime(0.0005, t + 0.42);
+        o.connect(bp).connect(g).connect(out); o.start(t); o.stop(t + 0.45);
+      }
+    };
+    const plop = () => { try { splash(0.25, { x: (Math.random() - 0.5) * 20, y: 0, z: -6 - Math.random() * 14 }); } catch {} };
+    L.every(gull, 15000, 40000, 6000);
+    if (!deep) L.every(plop, 25000, 70000, 15000);
+    return { stop: L.stop };
+  }
+
+  // ---------- Per-realm environment palettes ----------
+  // THE table: what each realm sounds like, by rung, hour and weather. Beds
+  // are the rendered layers above (gain is everything — they share one RMS);
+  // life is the realm's own placed one-shots; the synth beds that still earn
+  // their place (engine drone, murmur, underwater) are started here too.
+  // Nothing here is a score, a heartbeat or a breath pacer: every sound has a
+  // source the player could point at.
+  const _duskish = (h) => h === "dusk" || h === "golden" || h === "dawn";
+  function envBeds(realm, levelIdx, info = {}) {
+    const hour = info.hour || null, weather = info.weather || null;
+    const any = !hour && !weather;                 // preload: every candidate
+    const rain = weather === "rain", overcast = weather === "overcast";
+    const dusk = hour ? _duskish(hour) : false;
+    const lv = info.lv || {};
+    const beds = [];
+    const bed = (name, gain, extra) => beds.push(Object.assign({ name, gain }, extra || {}));
+    switch (realm) {
+      case "dogs": {
+        // A living room onto a yard. The room's own air is the recorded bed;
+        // the yard comes through the glass, by the hour and the weather.
+        if (any || !dusk) bed("yard_day", rain ? 0.14 : 0.26);
+        if (any || dusk) bed("yard_dusk", 0.26);
+        if (any || rain) bed("rain_glass", 0.48, { pos: { x: -2.2, y: 0.8, z: -5.6 }, spatial: { refDistance: 3, maxDistance: 30, rolloffFactor: 0.8 } });
+        if (any || overcast) bed("wind_low", 0.12, { lowpass: 600 });
+        break;
+      }
+      case "spiders": {
+        const size = lv.size == null ? 0.5 : lv.size;
+        bed("cellar", 0.26 + size * 0.10);
+        break;
+      }
+      case "snakes": {
+        bed("meadow_breeze", rain ? 0.14 : overcast ? 0.30 : 0.22);
+        if (any || (!dusk && !rain)) bed("insects_day", overcast ? 0.08 : 0.13);
+        if (any || (dusk && !rain)) bed("insects_dusk", 0.16);
+        if (any || rain) bed("rain_leaves", 0.30);
+        if (any || overcast) bed("wind_low", 0.14);
+        break;
+      }
+      case "heights": {
+        const h = lv.height == null ? 0.5 : lv.height;
+        // Street level is loud and close; from the roof the city is one far
+        // wash and the wind is the loudest thing there is.
+        if (any || h < 0.5) bed("city_near", h < 0.1 ? 0.30 : 0.22 - h * 0.2);
+        if (any || h >= 0.15) bed("city_far", 0.12 + 0.16 * Math.min(1, h * 1.3) * (1 - 0.35 * Math.max(0, h - 0.75) / 0.25));
+        if (any || h < 0.6) bed("wind_low", 0.10 + h * 0.3 + (overcast ? 0.08 : 0));
+        if (any || h >= 0.4) bed("wind_high", (h - 0.4) * 0.55 + (overcast ? 0.08 : 0));
+        if (any || rain) bed("rain_leaves", 0.22);
+        break;
+      }
+      case "dark": {
+        // The same house all the way down; with the lights off, the ear
+        // reaches further, so the bed comes up a little.
+        bed("house_night", 0.24 + levelIdx * 0.025);
+        break;
+      }
+      case "enclosed": {
+        const r = levelIdx | 0;
+        if (any || r === 0) { bed("vent_small", 0.24); bed("fluorescent", 0.07); }
+        if (any || r === 1) { bed("office_beyond", 0.36, { pos: { x: 0, y: 1.4, z: -1.6 }, spatial: { refDistance: 1.5, maxDistance: 20, rolloffFactor: 0.9 } }); bed("vent_small", 0.12); }
+        if (any || r === 2) { bed("lift_cab", 0.28); bed("fluorescent", 0.05); }
+        if (any || r === 3) { bed("house_night", 0.26, { lowpass: 320 }); }
+        if (any || r === 4) { bed("mri_room", 0.26); }
+        break;
+      }
+      case "water": {
+        const deep = levelIdx >= 4;
+        bed("lake_shore", deep ? 0.10 : 0.30, deep ? { lowpass: 500 } : null);
+        if (any || !deep) bed("wind_low", 0.10 + (overcast ? 0.08 : 0));
+        if (any || rain) bed("rain_leaves", deep ? 0.08 : 0.24);
+        break;
+      }
+      case "flying": {
+        const r = levelIdx | 0;
+        if (any || r <= 1) bed("airport_gate", r === 0 ? 0.30 : 0.16);
+        if (any || r >= 1) bed("cabin_jet", r === 1 ? 0.08 : r === 2 ? 0.14 : 0.20 + (r - 3) * 0.04);
+        break;
+      }
+      case "needles": bed("clinic", 0.26); break;
+      case "speaking": {
+        const r = levelIdx | 0;
+        if (any || r === 0) bed("vent_small", 0.18);
+        if (any || r > 0) bed("hall_large", 0.12 + r * 0.05);
+        break;
+      }
+      case "driving": {
+        bed("car_idle", 0.30 - levelIdx * 0.04);
+        if (any || levelIdx >= 4) bed("rain_glass", 0.16);
+        break;
+      }
+      case "storms": {
+        bed("rain_leaves", 0.14 + levelIdx * 0.07);
+        bed("wind_high", 0.08 + levelIdx * 0.07);
+        break;
+      }
+    }
+    return beds;
+  }
+  // Fetch + decode a rung's candidate beds ahead of the trial (the realm page
+  // calls this). Skipped on data-saver / 2G, like the model prefetch.
+  function preloadEnv(realm, levelIdx) {
+    try { const c = navigator.connection; if (c && (c.saveData || /(^|-)2g$/.test(c.effectiveType || ""))) return; } catch {}
+    const beds = envBeds(realm, levelIdx | 0, {});
+    const seen = new Set();
+    beds.forEach((b) => { if (!seen.has(b.name)) { seen.add(b.name); _loadBed(ENV_BASE + b.name + ".m4a"); } });
+  }
+  // Start a realm's whole environment: its beds, its life, and the synth beds
+  // it still uses. Returns handles with stop(); the caller owns them.
+  function startEnvironment(realm, levelIdx, info = {}) {
+    const c = ensureCtx(); if (!c) return [];
+    const H = [];
+    const low = _lowTier();
+    const beds = envBeds(realm, levelIdx, info);
+    // On the low tier keep the two loudest beds (fewer decoders, less memory).
+    const kept = low ? beds.slice().sort((a, b) => b.gain - a.gain).slice(0, 2) : beds;
+    kept.forEach((b) => { if (b.gain > 0.005) H.push(startEnvLayer(b.name, b)); });
+    const hour = info.hour || "noon", weather = info.weather || "clear", lv = info.lv || {};
+    const rain = weather === "rain";
+    const lifeLevel = low ? 0.7 : 1;
+    switch (realm) {
+      case "dogs": {
+        // Indoor air stays the recorded bed; birds come through the glass in
+        // daylight; the room's own life (bird, creak, a car) is spatialised.
+        H.push(startAmbienceBed("room", { gain: 0.032 }));
+        if (!rain && !_duskish(hour)) H.push(startAmbienceBed("birds", { gain: hour === "noon" ? 0.024 : 0.034, lowpass: 2200 }));
+        H.push(startRoomLife({ window: { x: -2.2, y: 0.5, z: -5.6 }, room: { x: 0, z: -0.2, rx: 4.6, rz: 5.4 }, level: rain ? 0.5 : 1 }));
+        if (!rain) H.push(startOutdoorLife({ night: _duskish(hour), level: 0.45 * lifeLevel }));
+        break;
+      }
+      case "spiders":
+        H.push(startCellarLife({ intensity: 0.3 + (lv.size || 0.5) * 0.6 }));
+        break;
+      case "snakes":
+        if (!rain && !_duskish(hour)) { H.push(startAmbienceBed("forest", { gain: 0.03 })); H.push(startAmbienceBed("birds", { gain: 0.016 })); }
+        H.push(startMeadowLife({ hour, weather }));
+        break;
+      case "heights":
+        H.push(startCityLife({ height: lv.height == null ? 0.5 : lv.height, hour }));
+        break;
+      case "dark": {
+        // The bedroom's window is on its far wall, the clock on the right-hand
+        // one; the landing (rung 4) is a corridor with its window at the end.
+        const hall = levelIdx === 3;
+        H.push(startHouseNightLife({
+          intensity: 0.8 + levelIdx * 0.1,
+          window: hall ? { x: 0, y: 0.55, z: -6.2 } : { x: 0.55, y: 0.5, z: -2.8 },
+          clock: hall ? { x: 0.75, y: 0.8, z: 1.0 } : { x: 2.1, y: 0.9, z: 0.5 },
+        }));
+        break;
+      }
+      case "enclosed":
+        H.push(startEnclosedLife(levelIdx | 0));
+        break;
+      case "water": {
+        const deep = levelIdx >= 4;
+        if (deep) { H.push(startUnderwater()); H.push(startBreathing(0.3)); }   // your own breath, under water: diegetic
+        H.push(startShoreLife({ deep }));
+        break;
+      }
+      case "flying": {
+        const r = levelIdx | 0;
+        // Engine pod outside the left window — coordinates match the mesh in the flying realm.
+        if (r >= 3) H.push(startEngineDrone(0.4 + ((r + 1) / 5) * 0.6, { x: -4.0, y: -0.05, z: -4.2 }));
+        break;
+      }
+      case "needles":
+        if (startMonitorBeep) H.push(startMonitorBeep(72));
+        break;
+      case "speaking":
+        H.push(startAudienceMurmur(lv.crowd != null ? lv.crowd : (levelIdx + 1) / 5));
+        break;
+      case "driving":
+        H.push(startDrivingDrone(lv.speed != null ? lv.speed : (levelIdx + 1) / 5));
+        break;
+      case "storms":
+        // thunder is the scene's own (it has to match the flash)
+        break;
+    }
+    return H;
+  }
+
   return {
     unlock, setMuted, isMuted, duck, ui,
     startMonitorBeep, startCreaks,
@@ -2971,6 +3596,9 @@ const PhobiaAudio = (() => {
     windHowl,
     // Spatial audio
     spatial, updateListener,
+    // Environment beds + per-realm palettes (assets/audio/env)
+    startEnvLayer, envBeds, preloadEnv, startEnvironment,
+    startCellarLife, startCityLife, startMeadowLife, startHouseNightLife, startEnclosedLife, startShoreLife,
   };
 })();
 window.PhobiaAudio = PhobiaAudio;

@@ -336,7 +336,11 @@ function handleRateSubmit(d, params) {
     };
     if (Array.isArray(ev.goals) && ev.goals.length) {
       extra.stars = Math.max(0, Math.min(3, ev.stars | 0));
-      extra.goals = ev.goals.slice(0, 3).map((g) => ({ id: g.id, done: !!g.done, text: String(g.text || "").slice(0, 90) }));
+      extra.goals = ev.goals.slice(0, 3).map((g) => {
+        const o = { id: g.id, done: !!g.done, text: String(g.text || "").slice(0, 90) };
+        if (Number.isFinite(g.need) && g.need > 1) { o.need = g.need | 0; o.n = Math.max(0, Math.min(o.need, g.n | 0)); }
+        return o;
+      });
     }
   }
   window.__lastTrialEvidence = null;

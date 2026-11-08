@@ -733,11 +733,8 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     scene.add(tufts); shellPieces.push(tufts);
   }
 
-  // Warm outdoor ambient bed (breeze + distant birds + cicadas). No reverb.
-  {
-    const A = window.PhobiaAudio;
-    if (A && A.startClearingAmbient) liveAudio.push(A.startClearingAmbient({ intensity: sceneQuality() === "low" ? 0.2 : (0.25 + size * 0.25) }));
-  }
+  // (The clearing's breeze, insects and birds come from the realm's palette —
+  // PhobiaAudio.startEnvironment — by this visit's hour and weather.)
 
   // Snake — real rigged GLTF (Quaternius "Easy Enemies", CC0), replacing the
   // old procedural tube. It lies along the path; the model animates a constant

@@ -27,7 +27,7 @@ import { TouchJoystick, FPControls } from "./controls.js";
 import { Body } from "./body.js";
 import { Hands } from "./hands.js";
 import { FearGradeShader, makeOutputGradePass } from "./postfx.js";
-import { sceneContext, CTX_WEATHER_AUDIBLE, CTX_DAYLIGHT, applyContextDaylight } from "./scene-context.js";
+import { sceneContext, CTX_DAYLIGHT, applyContextDaylight } from "./scene-context.js";
 import { PhobiaPhysics, PhobiaGrab } from "./physics.js";
 import { REALMS } from "./realms/index.js";
 import { active, setActive } from "./live.js";
@@ -665,7 +665,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // is the user's ethical exit at any moment. We bake it into every
       // approach scene's intro so users know it's there before they need it.
       const T = window.t, TF = window.tf;
-      const escNote = " &nbsp;·&nbsp; <span style=\"opacity:.75\">" + (IS_COARSE_POINTER
+      // The way out sits on its own line under the instruction — it used to
+      // trail it after a "·", which in Persian reads as the digit zero.
+      const escNote = "<span class=\"hint-esc\">" + (IS_COARSE_POINTER
         ? T("intro.esc.m", "Tap <b>🛟</b> any time to ground yourself.")
         : T("intro.esc.d", "Press <b>Esc</b> any time to ground yourself.")) + "</span>";
       // Movement wording follows IS_COARSE_POINTER (where the on-screen joystick
@@ -728,7 +730,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       // yet. Other scenes auto-hide after 11 s as before.
       let hintDuration = sceneIntros[phobiaKey] ? 16000 : 11000;
       if (rungReplay) {
-        hint.innerHTML = escNote.replace(/^ &nbsp;·&nbsp; /, "");
+        hint.innerHTML = escNote;
         hintDuration = 6000;
       }
       // The hint's clocks start when the player steps in: under the trial's
@@ -1009,21 +1011,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         catch (e) { console.warn("context daylight:", e); }
       }
     }
-    // Audible weather, for scenes that have an outside. Kept well under the
-    // scene's own ambience — this is a different DAY, not a different scene.
-    // Storms owns its own rain and thunder — a second rain loop under it just
-    // muddies the mix.
-    if (CTX_WEATHER_AUDIBLE.has(phobiaKey) && phobiaKey !== "storms"
-        && sceneCtx && window.PhobiaAudio) {
-      try {
-        const w = sceneCtx.weather.id;
-        if (w === "rain" && PhobiaAudio.startRain) {
-          ctxWeatherAudio = PhobiaAudio.startRain(0.22);
-        } else if (w === "overcast" && PhobiaAudio.startWind) {
-          ctxWeatherAudio = PhobiaAudio.startWind(0.16);
-        }
-      } catch (e) { console.warn("context weather audio:", e); }
-    }
+    // (Audible weather — rain on the glass, wind on the roof — is part of the
+    // realm's palette now: PhobiaAudio.startEnvironment reads this visit's
+    // hour and weather through Scene3D.currentContext.)
     interactFn = result && result.interact;
     onClickFn = result && result.onClick;
   } catch (err) {

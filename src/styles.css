@@ -1492,6 +1492,10 @@ body.light-mode .menu-avatar { background: linear-gradient(180deg, #e8eef7 0%, #
   transition: background .12s, border-color .12s, color .12s;
 }
 .menu-list button:hover { background: var(--panel-2); border-color: var(--border); }
+/* One icon column: every row's icon sits in the same fixed cell (openMenu
+   splits it off the label), so the labels start on one line. */
+.menu-list button:has(.mi-ic) { display: flex; align-items: center; gap: 12px; min-height: 46px; }
+.menu-list .mi-ic { flex: 0 0 1.5em; width: 1.5em; text-align: center; font-size: 17px; line-height: 1; }
 .menu-divider { height: 1px; background: var(--border); margin: 14px 0; }
 .menu-footer {
   margin: 0; padding: 0 4px;
@@ -2774,9 +2778,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .rc-bel { color: #9faae7; font-size: 12.5px; font-weight: 700; margin-left: 4px; }
 .rc-verdict { margin: 12px 0 0; font-weight: 700; font-size: 15px; color: var(--text); }
 .reality-card.rc-no .rc-verdict { color: #a9e8d2; }
-.rc-after { margin-top: 12px; }
-.rc-after label { font-size: 13.5px; }
-#beliefDelta b { color: var(--ok); }
 .wave-card .wave-svg { display: block; width: 100%; height: auto; max-height: 150px; margin: 8px 0 4px; }
 .wave-note { margin: 4px 0 0; font-size: 14px; color: #dbe3f0; line-height: 1.5; }
 .wave-note b { color: var(--text); }
@@ -3075,7 +3076,7 @@ html[dir="rtl"] .grid.big .card:hover .card-go .arr { transform: scaleX(-1) tran
 .back-link {
   color: var(--accent); text-decoration: none;
   font-size: 13px; font-weight: 500;
-  display: inline-block; margin-bottom: 10px;
+  display: inline-flex; align-items: center; min-height: 40px; margin-bottom: 4px;
 }
 .back-link:hover { text-decoration: underline; }
 .ladder-progress-link {
@@ -3377,6 +3378,9 @@ body.light-mode .journal-entry p { color: var(--muted); }
 .stage:has(.grounding-overlay.active) .ctx-prompt,
 .stage:has(.grounding-overlay.active) .dc-callout,
 .stage:has(.grounding-overlay.active) .controls-hint { opacity: 0 !important; pointer-events: none !important; }
+/* The coach card steps back too: on a phone the 5-4-3-2-1 text was drawn
+   over its goals and hearts. Grounding is the one thing on screen. */
+.stage:has(.grounding-overlay.active) .dog-coach { opacity: 0 !important; pointer-events: none !important; transition: opacity .3s ease; }
 /* Tiny pulse indicator showing fear level — small dot at top-left under
    the camera toggle. Visible to the user as biofeedback. */
 .stage .fear-meter {
@@ -4103,7 +4107,9 @@ body.light-mode .pip { background: #cbd3e0; }
   position: absolute; inset: 0;
   background: linear-gradient(180deg, rgba(10, 14, 26, .15) 0%, rgba(10, 14, 26, .55) 55%, rgba(10, 14, 26, .92) 100%);
 }
-.realm-hero-text { position: relative; z-index: 1; flex: 1; }
+/* The 3D hero puts a light floor under the title on phones: a soft shadow
+   keeps the name and its pale epithet readable over it. */
+.realm-hero-text { position: relative; z-index: 1; flex: 1; text-shadow: 0 1px 2px rgba(0, 0, 0, .85), 0 0 14px rgba(5, 8, 20, .7); }
 .realm-hero-text .realm-kicker { color: #9fe8dc; }
 .realm-hero-text h2 { margin: 2px 0; font-size: clamp(24px, 4.4vw, 34px); color: #fff; }
 .realm-hero-text .realm-epithet { color: #b8c4dd; }
@@ -4129,7 +4135,9 @@ body.light-mode .pip { background: #cbd3e0; }
   background: linear-gradient(90deg, var(--accent), var(--ok));
   transition: width .5s ease;
 }
-.ground-stats { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+/* An even grid: wrapping flex left one stat alone on a second row on phones
+   (three, then "real steps" by itself). Two columns there, one row wide. */
+.ground-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px 16px; }
 .ground-stat { display: flex; flex-direction: column; line-height: 1.15; }
 .ground-stat .gs-v { font-size: 17px; font-weight: 800; color: var(--text); }
 .ground-stat .gs-v i { font-style: normal; font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -5256,8 +5264,15 @@ html[lang="fa"] .lw-name, html[lang="fa"] .lw-mark span, html[lang="fa"] .lw-mar
   color: var(--accent); font-weight: 700;
   display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px;
 }
-.consent-modal .bridge-invite-kicker { display: inline-flex; align-items: center; gap: 6px; }
-.consent-modal .bridge-invite-kicker .lw-lamp { font-size: 12px; }
+/* One heading (it had a kicker above it saying the same thing), the brand
+   lamp in front. Each item's text is one span, so a link inside it flows
+   with the sentence — as a bare flex item it became a column of its own. */
+.consent-modal .consent-h { margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+.consent-modal .consent-h .lw-lamp { font-size: 16px; }
+.consent-list li > span + span { flex: 1 1 auto; min-width: 0; }
+/* The helpline keeps its big target without stretching the line it sits
+   on: inline padding grows the hit area, not the line box. */
+.consent-modal .consent-crisis a { display: inline; min-height: 0; padding: 10px 4px; }
 .vh-moon-n { display: none; }
 @media (max-aspect-ratio: 1/1) { .vh-moon-w { display: none; } .vh-moon-n { display: inline; } }
 .consent-modal .consent-crisis { margin-top: 16px; }
@@ -5390,14 +5405,25 @@ img.cast-face.baked { animation: castIn .35s ease; }
 @media (pointer: coarse) { .stage-wrap .stage.cmds-open .controls-hint { display: block; } }
 
 /* ---- star pop: top of the view, never over the creature ---- */
+/* Phones: over the top button row (it lets taps through, and is gone in
+   3 s) — at 96px it landed on the coach card and on an open read question. */
 @media (max-width: 600px) {
-  .stage .star-pop { top: 96px; bottom: auto; max-width: calc(100% - 24px); }
+  .stage .star-pop { top: max(8px, env(safe-area-inset-top)); bottom: auto; max-width: calc(100% - 24px); }
 }
+/* A sound caption ("🔊 a bark") shown with a star landing steps below it:
+   the toast covered it, and a muted or deaf player lost the cue. */
+.stage:has(> .star-pop) .sound-cap { top: 84px; }
+@media (max-width: 600px) { .stage:has(> .star-pop) .sound-cap { top: 76px; } }
 
 /* ---- desktop hotbar: small, bottom-centre, with keycaps ---- */
 .stage-wrap .scene-cmd-bar:not(.collapsed) { bottom: 12px; padding: 6px 8px; gap: 6px; border-radius: 16px; }
 .stage-wrap .scene-cmd-bar:not(.collapsed) .cmd-btn {
   padding: 6px 11px; min-height: 34px; font-size: 12.5px; border-radius: 12px;
+}
+/* Touch scenes without a joystick (the MRI) used this desktop size too: the
+   scene's one action was a 34px target on phones and tablets. */
+@media (pointer: coarse) {
+  .stage-wrap:not(:has(.joystick)) .scene-cmd-bar:not(.collapsed) .cmd-btn { min-height: 48px; padding: 8px 16px; font-size: 14.5px; border-radius: 14px; }
 }
 .scene-cmd-bar .cmd-key {
   display: inline-block; min-width: 16px; margin-inline-start: 5px; padding: 0 4px;
@@ -5529,7 +5555,11 @@ html[dir="rtl"] .gs-kicker { letter-spacing: 0; }
   .gs-quote { font-size: 14.5px; }
 }
 /* The trial's flame: dark until the trial is held, then it catches. */
-.dog-coach .dc-lamp { display: inline-block; filter: grayscale(1) brightness(.55); opacity: .7; transition: filter .6s ease, opacity .6s ease; }
+/* Lamp and label are one unit: a flex row's first item shrank on phones and
+   wrapped the lamp onto a line of its own, above the label. Unlit, it is a
+   pale grey lantern — brightness(.55) turned it into a dark smudge. */
+.dog-coach .dc-stars-row > span:first-child { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; min-width: 0; }
+.dog-coach .dc-lamp { display: inline-block; font-size: 13px; line-height: 1; letter-spacing: 0; filter: grayscale(1) brightness(1.2); opacity: .5; transition: filter .6s ease, opacity .6s ease; }
 .dog-coach.dc-lit .dc-lamp { filter: drop-shadow(0 0 6px rgba(255, 186, 92, .9)); opacity: 1; animation: dcLampCatch 1.4s ease-out 1; }
 @keyframes dcLampCatch { 0% { transform: scale(.8); } 35% { transform: scale(1.35); } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { .dog-coach.dc-lit .dc-lamp { animation: none; } }
@@ -5537,8 +5567,12 @@ html[dir="rtl"] .gs-kicker { letter-spacing: 0; }
    line (without the label the lamp read as a stray dot), and drops the
    creature's mood note — the wave and the next goal are the read. */
 @media (max-width: 600px) {
-  .dog-coach .dc-stars-row { font-size: 10px; letter-spacing: .05em; gap: 4px; }
+  .dog-coach .dc-stars-row { font-size: 9.5px; letter-spacing: .02em; gap: 4px; }
   .dog-coach .dc-stars-row .dc-stars-lbl { white-space: nowrap; }
+  /* Lamp, label and three stars on one line in a ~130px card. */
+  .dog-coach .dc-stars-row > span:first-child { gap: 4px; }
+  .dog-coach .dc-lamp { font-size: 12px; }
+  .dog-coach .dc-stars { font-size: 12.5px; letter-spacing: 0; flex: 0 0 auto; }
   .dog-coach .dc-trust.dc-note { display: none; }
   .dog-coach .dc-stars-row { align-items: center; }
 }
@@ -5918,7 +5952,11 @@ html[lang="fa"] .home-mark { font-family: inherit; }
 body.trial-mode header.brand { display: none !important; }
 body.trial-mode .app { max-width: none; padding: 0; }
 body.trial-mode #view.view-enter { animation: none; }
-body.trial-mode .exposure-panel { border: 0; border-radius: 0; box-shadow: none; background: #070a14; }
+/* padding: 0 — the phone rule `.panel { padding: 14px }` (later in the
+   file than .exposure-panel's own padding: 0) framed the room in a dark 14px
+   border and made the page 28px taller than the screen, so the trial could
+   be dragged up under the thumb. */
+body.trial-mode .exposure-panel { padding: 0; border: 0; border-radius: 0; box-shadow: none; background: #070a14; }
 body.trial-mode .exposure-header { display: none; }
 body.trial-mode .stage-wrap { margin: 0; }
 body.trial-mode .stage { border-radius: 0; border-left: 0; border-right: 0; border-top: 0; }
@@ -5947,6 +5985,9 @@ body.trial-mode .exposure-panel .step-controls {
 .trial-intro.gone { animation: tiOut .4s ease forwards; pointer-events: none; }
 @keyframes tiIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes tiOut { to { opacity: 0; } }
+/* Column wrappers: only the short-landscape card lays them out; everywhere
+   else the card is one column and they get out of the way. */
+.ti-main, .ti-ask { display: contents; }
 .ti-card {
   --text: #eef2f9; --muted: #a3afc4; --panel: rgba(255, 255, 255, .05); --border: rgba(255, 255, 255, .12);
   color: var(--text);
@@ -5979,7 +6020,7 @@ body.trial-mode .exposure-panel .step-controls {
 .ti-story .gs-quote { font-size: 15px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .ti-story .gs-who { font-size: 12.5px; }
 .ti-story .gs-mira { margin-top: 8px; font-size: 13.5px; }
-.ti-story .gs-read { min-height: 36px; font-size: 13px; }
+.ti-story .gs-read { min-height: 40px; font-size: 13px; }
 .ti-story .story-card { padding: 12px 14px; gap: 10px; }
 .ti-block { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--g-line); }
 .ti-q { font-size: 15.5px; font-weight: 700; line-height: 1.35; }
@@ -5990,6 +6031,11 @@ body.trial-mode .exposure-panel .step-controls {
   background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .14); color: var(--text);
   font: inherit; font-size: 13.5px; line-height: 1.25; text-align: start;
 }
+/* The phone card packs the chips at 34px to keep the whole card on one
+   screen; the tap area reaches into the gaps (3px a side) for a 40px target
+   without moving anything. */
+.ti-chips .expect-chip { position: relative; }
+.ti-chips .expect-chip::before { content: ""; position: absolute; inset: -3px; border-radius: inherit; }
 .ti-chips .expect-chip.on, .ti-chips .expect-chip[aria-checked="true"] {
   background: rgba(124, 209, 197, .16); border-color: var(--accent); color: #fff;
 }
@@ -6155,12 +6201,22 @@ a.btn-ghost, a.btn-primary {
 @media (max-height: 560px) and (min-width: 640px) {
   .trial-intro { align-items: center; }
   .ti-story { display: block; }
+  /* Each column stacks on its own (.ti-main | .ti-ask): as one grid, the
+     short heading row took the tall chip block's height and left a ~150px
+     hole above the trial's title, pushing it below the fold. */
   .ti-card {
-    width: min(920px, 100%); display: grid; grid-template-columns: 1fr 1.1fr; grid-auto-flow: row dense;
+    width: min(920px, 100%); display: grid; grid-template-columns: 1fr 1.1fr;
     column-gap: 18px; row-gap: 8px; align-items: start; padding: 12px 16px 8px;
   }
-  .ti-card > .ti-head, .ti-card > .ti-story, .ti-card > .ti-title, .ti-card > .ti-desc, .ti-card > .ti-focus { grid-column: 1; }
-  .ti-card > .ti-block, .ti-card > .ti-skip { grid-column: 2; }
+  /* The kicker heads the left column; ✕ sits in the card's corner, so the
+     questions start at the top of the right one instead of under a full row. */
+  .ti-card { position: relative; grid-template-rows: auto 1fr; }
+  .ti-card > .ti-head { grid-column: 1; grid-row: 1; }
+  .ti-card > .ti-main { grid-column: 1; grid-row: 2; }
+  .ti-card > .ti-ask { grid-column: 2; grid-row: 1 / span 2; }
+  .ti-card > .ti-main, .ti-card > .ti-ask { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .ti-card .ti-x { position: absolute; top: 8px; inset-inline-end: 8px; }
+  .ti-ask > .ti-block:first-child { border-top: 0; padding-top: 2px; padding-inline-end: 44px; }
   .ti-story .gs-mira, .ti-story .gs-who { display: none; }
   .ti-story .gs-quote { -webkit-line-clamp: 2; font-size: 13.5px; }
   .ti-title { font-size: 20px; }
@@ -6310,3 +6366,24 @@ body.light-mode .debrief .story-card .sc-read { color: var(--text); border-color
   bottom: max(164px, calc(var(--cmdbar-top, 0px) + 12px));
 }
 .stage-wrap .stage:not(:has(.joystick)):has(.ground-btn) .dc-callout { width: calc(100% - 20px); max-width: calc(100% - 20px); }
+
+/* A goal that counts shows how far it got ("1/2"), beside its text. */
+.vc-goals .vc-gn { margin-inline-start: 4px; color: #9faae7; font-weight: 700; white-space: nowrap; }
+/* The intro hint's second line: how to ground, under the instruction. */
+.stage .controls-hint .hint-esc { display: block; margin-top: 2px; opacity: .75; font-weight: 500; }
+/* A phone held sideways can't seat a read question above an open hotbar:
+   the bar steps aside while the question is up (coach.js, read-hides-bar). */
+.stage-wrap.read-hides-bar:has(.dc-read.show) > .scene-cmd-bar { opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+/* The results page's check-in: its two ways to calm down are full touch
+   targets (they were 38px). */
+.debrief .vc-checkin .actions .btn-ghost { min-height: 44px; display: inline-flex; align-items: center; }
+/* Phones: the coach card's footer name ("A first-floor balcony", "An MRI
+   scan…") wraps instead of being cut off mid-word — the mood note beside it
+   is hidden at this width anyway. */
+@media (max-width: 600px) {
+  .dog-coach .dc-dog { max-width: none; flex: 1 1 auto; min-width: 0; white-space: normal; line-height: 1.25; }
+  .dog-coach .dc-foot { gap: 6px; }
+}
+/* A read question risen over the coach card on a small phone (coach.js,
+   under-read): the card fades while the question is up. */
+.stage:has(.dc-read.show) .dog-coach.under-read { opacity: .12; transition: opacity .25s ease; }

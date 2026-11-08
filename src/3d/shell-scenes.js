@@ -493,7 +493,11 @@ const ShellScenes = (() => {
         if (window.PhobiaAudio && window.PhobiaAudio.startFireCrackle) {
           campAudio.push(window.PhobiaAudio.startFireCrackle({ gain: 0.042, pos: { x: 0, y: 0.3, z: 0 } }));
         }
-        if (window.PhobiaAudio && window.PhobiaAudio.startAmbienceBed) {
+        // The valley's wind: the rendered bed (gusts and lulls), not the
+        // 3-second recorded loop that used to repeat under the fire.
+        if (window.PhobiaAudio && window.PhobiaAudio.startEnvLayer) {
+          campAudio.push(window.PhobiaAudio.startEnvLayer("wind_low", { gain: 0.09 }));
+        } else if (window.PhobiaAudio && window.PhobiaAudio.startAmbienceBed) {
           campAudio.push(window.PhobiaAudio.startAmbienceBed("wind", { gain: 0.018 }));
         }
       } catch {}

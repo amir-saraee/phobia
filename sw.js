@@ -81,6 +81,7 @@ const SHELL = [
   // Manifests only: the dog vocal bank and ambient beds list what to fetch.
   "./assets/audio/ambient/manifest.json",
   "./assets/audio/dog/manifest.json",
+  "./assets/audio/env/manifest.json",
   // Models, coats, the HDR sky and recordings are NOT precached any more —
   // they were ~9 MB downloaded behind the title screen on every first visit,
   // most of it for realms the visitor never opens. Each is cached the first

@@ -294,6 +294,10 @@ function makeCreatureCoach(opts) {
     calloutCur = null; calloutT = 0;
   };
   let groundQuietT = 0;
+  const introHintUp = () => {
+    const hi = stage && stage.querySelector(".controls-hint");
+    return !!hi && hi.style.opacity !== "0" && !!hi.textContent.trim();
+  };
   function pumpCallout(dt, grounding) {
     // Never over the grounding exercise: the 5-4-3-2-1 is the one thing on
     // screen. A lesson showing steps back into the queue (if it hadn't been
@@ -321,6 +325,11 @@ function makeCreatureCoach(opts) {
     if (!calloutQueue.length || readOpen || readResultT > 0) return;
     if (calloutGap > 0 && !calloutQueue[0].urgent) return;
     if (document.querySelector(".tour-overlay:not(.dismiss), .countdown")) return;
+    // The trial's orientation line (the engine's .controls-hint) stays up
+    // until the player first moves. A lesson waits for it: the first seconds
+    // of a trial carry one line, not "walk closer…" and Mira's prediction
+    // side by side.
+    if (!calloutQueue[0].urgent && introHintUp()) return;
     // Wait for the lane: a question or another beat on screen goes first;
     // a lesson outranks a caption or a context beat and takes the slot.
     const L = lane();
@@ -779,7 +788,21 @@ function makeCreatureCoach(opts) {
       // …and again when the stage itself changes size: a card left open
       // through a rotation kept the portrait height and hung below the stage.
       if (readBox._sz && (readBox._sz.sw !== s.stageW || readBox._sz.sh !== s.stageH)) readBox._sz = null;
-      if (!readBox._sz) readBox._sz = { bw: readBox.offsetWidth || 420, bh: readBox.offsetHeight || 96, pw: root.offsetWidth || 0, pb: (root.offsetTop || 0) + (root.offsetHeight || 0), ch: (root.parentElement && root.parentElement.clientHeight) || 0, sw: s.stageW, sh: s.stageH };
+      if (!readBox._sz) {
+        readBox._sz = { bw: readBox.offsetWidth || 420, bh: readBox.offsetHeight || 96, pw: root.offsetWidth || 0, pb: (root.offsetTop || 0) + (root.offsetHeight || 0), ch: (root.parentElement && root.parentElement.clientHeight) || 0, sw: s.stageW, sh: s.stageH };
+        // The touch thumb lane — Ground me over the joystick, bottom-left.
+        // Only an open hotbar used to be kept clear, so on a rung without
+        // one (the barking dog) the card's answers sat under Ground me and a
+        // tap on "Relaxed" started grounding.
+        let lane = null;
+        const stg = root.parentElement;
+        if (stg) for (const el of stg.querySelectorAll(":scope > .ground-btn, :scope > .joystick")) {
+          if (!el.offsetWidth) continue;
+          const lt = el.offsetTop, lr = el.offsetLeft + el.offsetWidth;
+          lane = lane ? { t: Math.min(lane.t, lt), r: Math.max(lane.r, lr) } : { t: lt, r: lr };
+        }
+        readBox._sz.lane = lane;
+      }
       const { bw, bh } = readBox._sz;
       const panelW = (readBox._sz.pw && s.stageW > 700) ? readBox._sz.pw + 16 : 0;
       const lo = bw / 2 + 8, hi = s.stageW - bw / 2 - 8 - panelW;
@@ -792,13 +815,29 @@ function makeCreatureCoach(opts) {
       // height) above an open command bar: on a phone held sideways the bar
       // clipped the answer row.
       const stEl = root.parentElement;
-      const barTop = stEl ? parseFloat(stEl.style.getPropertyValue("--cmdbar-top")) : 0;
+      const barTop0 = stEl ? parseFloat(stEl.style.getPropertyValue("--cmdbar-top")) : 0;
+      // What the card's bottom edge must stay above: the open hotbar, and on
+      // a tall enough stage the thumb lane too (else it sits beside the lane,
+      // below). A stage too short to seat the card under the top HUD row and
+      // over the bar (a phone held sideways) moves the bar aside while the
+      // question is up — it used to push the card over the camera switch.
+      const chh0 = readBox._sz.ch || s.stageH || 0;
+      const lane = readBox._sz.lane;
+      const HUD_ROW = 60;
+      const hideBar = barTop0 > 0 && chh0 > 0 && chh0 - barTop0 - 8 - bh < HUD_ROW;
+      const wrapEl = stEl && stEl.parentElement;
+      if (wrapEl && wrapEl.classList.contains("stage-wrap")) wrapEl.classList.toggle("read-hides-bar", hideBar);
+      let barTop = hideBar ? 0 : (barTop0 > 0 ? barTop0 : 0);
+      const laneUp = lane && chh0 > 0 ? chh0 - lane.t + 8 : 0;
+      const laneAbove = laneUp > 0 && chh0 - laneUp - bh >= HUD_ROW;
+      if (laneAbove) barTop = Math.max(barTop, laneUp);
       if (barTop > 0 && readBox._sz.ch) ty = Math.max(bh + 8, Math.min(ty, readBox._sz.ch - barTop - 8));
       // Never over the animal it asks about: the band above clamps the card
       // to a fixed height, and a dog whose head sat in that band (the far dog
       // on rung 1, almost every creature on a portrait phone) was hidden
       // behind the question. Slide beside it; else above; else below.
       const ay = s.anchorY;
+      let overPanel = false;
       if (B) {
         // With the body's box: beside it, else above, else below (each kept
         // inside the stage, under the HUD band / coach panel, above an open
@@ -845,6 +884,16 @@ function makeCreatureCoach(opts) {
         if (over(spot.home(), prev && prev !== "home" ? M + 24 : M) === 0) kind = "home";
         else if (prev && prev !== "home" && spot[prev] && over(spot[prev](), M / 2) === 0) kind = prev;
         else kind = ["right", "left", "above", "below"].find((k) => over(spot[k](), M) === 0) || null;
+        // A small phone has no clear spot between the coach card and the
+        // thumb lane: the question may rise over the coach card (which fades
+        // while it's up) rather than cover the animal it asks about.
+        if (!kind && s.stageW <= 700 && pb && minBot > HUD_ROW + bh) {
+          const keepMin = minBot;
+          minBot = Math.max(bh + 8, Math.min(HUD_ROW + bh, maxBot));
+          kind = ["home", "right", "left", "above", "below"].find((k) => over(spot[k](), M) === 0) || null;
+          if (kind) overPanel = spot[kind]()[1] - bh < pb + 4;
+          else minBot = keepMin;
+        }
         let pick = kind ? spot[kind]() : null;
         if (!pick) {
           let best = Infinity;
@@ -872,6 +921,12 @@ function makeCreatureCoach(opts) {
           else if (ay - 70 >= ((s.stageW <= 700 && readBox._sz.pb) ? readBox._sz.pb + 8 + bh : bh + 96)) ty = ay - 70;
           else if (ay + 110 + bh <= maxBot) ty = ay + 110 + bh;
         }
+      }
+      root.classList.toggle("under-read", overPanel);
+      // A short stage: beside the thumb lane rather than over it.
+      if (lane && !laneAbove && ty > lane.t - 4 && tx - bw / 2 < lane.r + 8) {
+        const nx = lane.r + 8 + bw / 2;
+        if (nx + bw / 2 <= s.stageW - 8) tx = nx;
       }
       if (readPos.x == null) { readPos.x = tx; readPos.y = ty; }
       readPos.x += (tx - readPos.x) * Math.min(1, d * 6);
@@ -1013,7 +1068,9 @@ function makeCreatureCoach(opts) {
     delete out._running; delete out._close; delete out._runFrom; delete out._lastRunT; delete out._explicitRuns;
     out.minDist = isFinite(ev.minDist) ? +ev.minDist.toFixed(1) : null;
     out.stareSec = Math.round(ev.stareSec);
-    out.goals = goals.map((g) => ({ id: g.id, done: !!g.done, text: g.text }));
+    // n/need ride along so the results page can say "1/2" beside a goal
+    // that counts — "1/1 read right" next to an unearned read star read as a bug.
+    out.goals = goals.map((g) => ({ id: g.id, done: !!g.done, text: g.text, n: g.need > 1 ? Math.min(g.n | 0, g.need) : undefined, need: g.need > 1 ? g.need : undefined }));
     out.stars = starsDone();
     return out;
   }

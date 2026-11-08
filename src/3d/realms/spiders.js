@@ -530,7 +530,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   {
     const A = window.PhobiaAudio;
     if (A && A.roomReverb && sceneQuality() !== "low") liveAudio.push(A.roomReverb({ level: 0.20 }));
-    if (A && A.startCellarAmbient) liveAudio.push(A.startCellarAmbient({ intensity: 0.35 + size * 0.25 }));
+    // (The cellar's bed and its drips, pipes and boiler come from the realm's
+    // palette — PhobiaAudio.startEnvironment — with the trial's audio.)
   }
 
   // Build spider — real rigged GLTF (Quaternius, CC0), at a REAL spider's
@@ -675,6 +676,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   let pounceT = 0;
   let elapsed = 0;              // scene clock
   let nextPounceAt = B.firstPounceAt ?? Infinity;
+  let spHoldDoneAt = null;   // when the hold completed (rung 4's open jump star keeps it lively a while)
+  let spPouncesAfterHold = 0;
   let coilStartDist = 0, thisCoil = 0.9, pounceFired = false, recoilTicked = false;
   // Where the spider crouched (the jump's "stay put" is measured from it).
   let coilSX = 0, coilSZ = 0;
@@ -1601,6 +1604,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
             if (!onWall) spider.rotation.y += dy * Math.min(1, d * 12);
             if (!pounceFired) {
               pounceFired = true;
+              if (spHoldDoneAt != null) spPouncesAfterHold++;
               const closeness = clamp01((2.0 - distP) / 2.0);
               if (p.play) p.play("Attack", 0.04, { once: true });
               spiderCtrl.pounceRear(1);
@@ -1816,8 +1820,20 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         // ---- Diegetic completion beat ----
         if (window.__rungHoldComplete && !completionBeatDone) {
           if (spCoach.everSettled) spCoach.goalDone("settle");
+          if (spHoldDoneAt == null) spHoldDoneAt = elapsed;
+          // Rung 4's star is a jump you stay through and then step toward. The
+          // hold often completed between the first jump and the next one, and
+          // this beat ended the jumps — one missed step and the star could not
+          // be earned at all. While it's open, the spider gets one more go
+          // (soon, and within 35 s) before it settles.
+          // One more jump, not a string of them: once it has jumped since the
+          // hold, the open star waits only for that jump's step-closer window.
+          const jumpStarOpen = rung === 3 && B.pounce && spCoach.goalOpen("jumpCloser") && elapsed - spHoldDoneAt < 35
+            && (spPouncesAfterHold === 0 || !!spJump || pounceState !== "idle");
+          const calmNow = elapsed < spCalmUntil || !!(window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding());
+          if (jumpStarOpen && spPouncesAfterHold === 0 && !calmNow && !spJump && pounceState === "idle" && nextPounceAt > elapsed + 9) nextPounceAt = elapsed + 6 + Math.random() * 3;
           if (!B.pounce) { completionBeatDone = true; }
-          else if (pounceState === "idle" || pounceState === "recoiling") {
+          else if (!jumpStarOpen && (pounceState === "idle" || pounceState === "recoiling")) {
             completionBeatDone = true;
             nextPounceAt = Infinity;
             if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt(window.t("sc.s.settled", "It settled. You outlasted it."), 4500);

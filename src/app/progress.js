@@ -322,6 +322,9 @@ let state = loadState();
 // global state.progress / state.log fields are kept as references to the
 // active character's data so existing code continues to work.
 function activateCharacterState() {
+  // Every traveler switch comes through here (the menu, the profiles page,
+  // another tab): a trial in flight that was someone else's is dropped.
+  try { syncTrialOwner(); } catch {}
   if (!_isObj(state.byCharacter)) state.byCharacter = {};
   const ch = window.Character && window.Character.loadCharacter();
   // An id like "constructor" or "__proto__" (a crafted import) read the
@@ -392,7 +395,7 @@ function resetActiveProgress() {
   saveState();
 }
 // Refresh state when the user switches/creates/deletes a character
-window.addEventListener("character-changed", () => { activateCharacterState(); });
+window.addEventListener("character-changed", () => { activateCharacterState(); });  // (activateCharacterState checks the trial in flight's owner)
 // Non-persisted prediction (cleared on submit-rate). Drives the post-rung
 // "you expected X, you felt Y" comparison that powers prediction-error learning.
 let pendingPrediction = null;
@@ -415,19 +418,46 @@ let ambientPad = null;
 // as "left early". Mirrored to sessionStorage: it survives a reload of this
 // tab, and dies with it.
 const TRIAL_SNAP_KEY = "fobia.trialSnap";
+// Whose trial it is. The trial in flight was nobody's: switch traveler on the
+// rate page and the next traveler rated — and logged — the last one's trial.
+let trialOwner = null;
+function activeTravelerId() {
+  try {
+    const id = window.Character && window.Character.activeCharacterId && window.Character.activeCharacterId();
+    if (id) return String(id);
+  } catch {}
+  try { return localStorage.getItem("fobia.activeCharacter.v1") || "default"; } catch { return "default"; }
+}
 function saveTrialSnap() {
+  trialOwner = activeTravelerId();
   try {
     sessionStorage.setItem(TRIAL_SNAP_KEY, JSON.stringify({
       o: lastRungOutcome, p: pendingPrediction, e: pendingExpect,
-      ev: window.__lastTrialEvidence || null, pk: lastRungPeakFear,
+      ev: window.__lastTrialEvidence || null, pk: lastRungPeakFear, c: trialOwner,
     }));
   } catch {}
 }
 function clearTrialSnap() { try { sessionStorage.removeItem(TRIAL_SNAP_KEY); } catch {} }
+// Forget the trial in flight: its outcome, guess, named fear and evidence.
+// For a trial the player walked out of (Back, Home) rather than stepped out
+// of to rate, and for one that belongs to another traveler.
+function dropTrialInFlight() {
+  lastRungOutcome = null; pendingPrediction = null; pendingExpect = null;
+  window.__pendingExpect = null; window.__lastTrialEvidence = null; lastRungPeakFear = 0;
+  clearTrialSnap();
+}
+// A traveler switch (in this tab, or the active id changed in another while
+// this one held a trial) drops a trial that was someone else's.
+function syncTrialOwner() {
+  const id = activeTravelerId();
+  if (trialOwner && trialOwner !== id && (lastRungOutcome || pendingPrediction || pendingExpect)) dropTrialInFlight();
+  trialOwner = id;
+}
 (function restoreTrialSnap() {
   try {
     const s = JSON.parse(sessionStorage.getItem(TRIAL_SNAP_KEY));
     if (!s) return;
+    trialOwner = s.c || null;
     if (s.o) lastRungOutcome = s.o;
     if (s.p) pendingPrediction = s.p;
     if (s.e) { pendingExpect = s.e; window.__pendingExpect = s.e; }

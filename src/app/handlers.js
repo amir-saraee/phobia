@@ -289,6 +289,23 @@ function openMenu() {
     <div class="menu-divider"></div>
     <p class="menu-footer">${t("menu.footer", "Lanternwalk · a practice game, not therapy.")}</p>
   `;
+  // One icon column. Each label carries its icon as its first character (in
+  // both languages); split it into its own fixed-width cell so the labels
+  // line up, and swap the four text glyphs (✦ ✎ ⇄ ⚙) for emoji — they drew
+  // smaller and in text colour, and pushed their labels out of line.
+  const GLYPH_EMOJI = { "✦": "✨", "✎": "✏️", "⇄": "👥", "⚙": "⚙️" };
+  const iconize = (b) => {
+    const tn = b.firstChild;
+    if (!tn || tn.nodeType !== 3) return;
+    const m = /^\s*(\p{Extended_Pictographic}\p{Variation_Selector}?|[✦✎⇄⚙ℹ]\p{Variation_Selector}?)\s*/u.exec(tn.nodeValue);
+    if (!m) return;
+    tn.nodeValue = tn.nodeValue.slice(m[0].length);
+    const ic = document.createElement("span");
+    ic.className = "mi-ic"; ic.setAttribute("aria-hidden", "true");
+    ic.textContent = GLYPH_EMOJI[m[1].replace(/\p{Variation_Selector}/gu, "")] || m[1];
+    b.insertBefore(ic, b.firstChild);
+  };
+  drawer.querySelectorAll(".menu-list button").forEach(iconize);
   const backdrop = document.createElement("div");
   backdrop.className = "menu-backdrop";
   document.body.appendChild(backdrop);
@@ -304,6 +321,7 @@ function openMenu() {
     const next = !PhobiaAudio.isMuted();
     PhobiaAudio.setMuted(next);
     e.currentTarget.textContent = next ? t("menu.soundOff", "🔇 Sound: off") : t("menu.soundOn", "🔊 Sound: on");
+    iconize(e.currentTarget);
   };
   drawer.querySelector("#menuFeedback").onclick = () => { closeMenu(); openFeedback(location.hash); };
   drawer.querySelector("#menuLang").onclick = () => {
@@ -1014,46 +1032,20 @@ function handleAction(d, params) {
         c.classList.toggle("on", on);
         c.setAttribute("aria-checked", on ? "true" : "false");
       });
-      const box = document.getElementById("expectBeliefBox");
-      if (box) box.hidden = d.fear === "none";
       break;
     }
-    case "confirm-predict": {
-      const lvl = parseInt(d.level, 10);
-      const slider = document.getElementById("predictedSuds");
-      // No number is picked for them any more (a pre-lit 4 was a guess the
-      // player never made). The first Enter without one asks; the second
-      // goes in with none.
-      const nudge = document.getElementById("predictNudge");
-      if (slider && !slider.dataset.touched && nudge && nudge.hidden && !nudge.dataset.shown) {
-        nudge.hidden = false; nudge.dataset.shown = "1";
-        try { nudge.scrollIntoView({ block: "center", behavior: "smooth" }); } catch {}
-        break;
-      }
-      const predicted = (slider && slider.dataset.touched) ? parseInt(slider.value, 10) : null;
-      pendingPrediction = { phobia: d.phobia, level: lvl, predicted, ts: Date.now() };
-      // The feared outcome, when one was named (dogs). The scene reads it to
-      // point the player at the test; the complete screen checks it.
-      const chip = document.querySelector(".expect-chip.on");
-      const bel = document.getElementById("expectBelief");
-      pendingExpect = (chip && chip.dataset.fear !== "none")
-        // An untouched slider sits at 50 behind a "—" readout; storing that
-        // would invent the player's belief. Only a moved slider counts.
-        ? { phobia: d.phobia, level: lvl, fear: chip.dataset.fear, belief: (bel && bel.dataset.touched) ? parseInt(bel.value, 10) : null, ts: Date.now() }
-        : null;
-      window.__pendingExpect = pendingExpect;
-      lastRungOutcome = null; saveTrialSnap();
-      // The gate page told the chapter's opening; walking in turns it.
-      try { if (window.Story && !window.Story.isSeen(`${d.phobia}.open`)) window.Story.markSeen(`${d.phobia}.open`); } catch {}
-      go("exposure", { phobia: d.phobia, level: lvl });
-      break;
-    }
+    // (The gate page's "confirm-predict" lived here. The trial's own opening
+    // card took over the guess — armTrialIntro in exposure.js.)
     case "to-rate": {
       // The room fades out before the debrief comes in — a cut from a live
       // scene to a form read as the game breaking.
       const st = document.getElementById("stage");
       const lvl = parseInt(d.level, 10);
-      const goNow = () => goReplace("rate", { phobia: d.phobia, level: lvl });
+      // Back pressed during the fade has already left the trial: rating it
+      // now would replaceState over wherever Back went — the home entry, so
+      // the next Back left the app.
+      const from = location.hash;
+      const goNow = () => { if (location.hash === from) goReplace("rate", { phobia: d.phobia, level: lvl }); };
       const calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (st && st.isConnected && !calm) {
         if (st.classList.contains("leaving")) break;
@@ -1161,7 +1153,6 @@ function handleAction(d, params) {
     }
     case "open-select":     go("select"); break;
     case "open-journal":    go("journal"); break;
-    case "go-camp":         go("select"); break;
     case "open-custom":     go("custom"); break;
     case "open-report":     go("report"); break;
     case "report-lang":     reportEnglish = !reportEnglish; render("report", {}); break;
@@ -1197,24 +1188,6 @@ function downsampleWave(w, n) {
     out.push(m);
   }
   return out;
-}
-// The belief re-rate on the complete screen writes straight into the log
-// entry it belongs to.
-function saveBeliefAfter(v) {
-  const last = state.log[state.log.length - 1];
-  if (!last || !last.expect) return;
-  last.expect.beliefAfter = Math.max(0, Math.min(100, Math.round(v)));
-  saveState();
-  const out = document.getElementById("beliefDelta");
-  if (out) out.innerHTML = beliefDeltaText(last.expect.belief, last.expect.beliefAfter);
-}
-function beliefDeltaText(before, after) {
-  if (after == null) return "";
-  if (before == null) return tf("rc.noted", "Noted: {b}%. Next time, rate it before the trial as well — the change between the two is the lesson.", { b: after });
-  const dlt = before - after;
-  if (dlt >= 10) return tf("rc.dropped", "From <b>{a}%</b> to <b>{b}%</b>. That drop — in how sure the fear is — is the real progress. More than any timer.", { a: before, b: after });
-  if (dlt <= -10) return tf("rc.rose", "Up from {a}% to {b}%. That's honest, and worth knowing. A repeat of this trial is how that number moves.", { a: before, b: after });
-  return tf("rc.same", "About the same ({a}% → {b}%). Beliefs this old move in steps — each repeat is one.", { a: before, b: after });
 }
 // A guided breath over the live scene: three slow cycles (in 4, out 6 — the
 // long exhale is the part that brakes the heart), then back to the room.

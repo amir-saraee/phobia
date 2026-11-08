@@ -848,10 +848,13 @@ function trialIntroHTML(phobiaKey, levelIdx) {
           <span class="ti-kicker">${icon} ${escapeHtml(realmOf(phobiaKey).realmName)} · ${tf("ti.trialOf", "trial {n} of {m}", { n: levelIdx + 1, m: p.levels.length })}</span>
           <button type="button" class="ti-x" data-action="go-home" aria-label="${t("ti.leave", "Not now — back home")}">✕</button>
         </div>
+        <div class="ti-main">
         ${story ? `<div class="ti-story">${story}</div>` : ""}
         <h2 class="ti-title" id="tiTitle" tabindex="-1">${escapeHtml(lvTitle(phobiaKey, levelIdx))}</h2>
         ${p.levels[levelIdx] && p.levels[levelIdx].desc ? `<p class="ti-desc">${escapeHtml(lvDesc(phobiaKey, levelIdx))}</p>` : ""}
         ${focus && focus.text ? `<p class="ti-focus">${tf("gate.focus", "🎯 Today's practice: {t}", { t: escapeHtml(focus.text) })}</p>` : ""}
+        </div>
+        <div class="ti-ask">
         ${kit ? `
         <div class="ti-block">
           <div class="ti-q">${expectQ(phobiaKey)} <span class="ti-opt">${t("gate.optional", "optional")}</span></div>
@@ -865,6 +868,7 @@ function trialIntroHTML(phobiaKey, levelIdx) {
           <p class="ti-hint">${t("ti.tapHint", "0 is calm, 10 is panic. Tap a number to step in — afterwards you'll see how close you were.")}</p>
         </div>
         <button type="button" class="ti-skip" data-action="ti-begin">${t("ti.noGuess", "Step in without a guess")}</button>
+        </div>
       </div>
     </div>`;
 }
@@ -1256,21 +1260,11 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
           <span><strong>${tf("camp.sayLine", "“{line}”", { line: escapeHtml(kitFearText(phobiaKey, X.fear)) })}</strong>${X.belief != null ? ` <span class="rc-bel">${tf("rc.sure", "{n}% sure", { n: X.belief })}</span>` : ""}</span></div>
         <div class="rc-row"><span class="rc-lab">${t("rc.happened", "What happened")}</span><span>${r.line}</span></div>
         <p class="rc-verdict">${verdict}</p>
-        <div class="suds rc-after">
-          <label for="beliefAfter">${phobiaKey === "dogs"
-            ? tf("rc.again", "Now: if you walked into that room again, how sure would you be that “{f}”?", { f: escapeHtml(kitFearText(phobiaKey, X.fear)) })
-            : tf("rc.again2", "Now: if you faced that again, how sure would you be that “{f}”?", { f: escapeHtml(kitFearText(phobiaKey, X.fear)) })}</label>
-          <div class="scale-row">
-            <span class="small">${tf("pct", "{n}%", { n: 0 })}</span>
-            <input type="range" id="beliefAfter" min="0" max="100" step="5" value="${X.beliefAfter != null ? X.beliefAfter : (X.belief != null ? X.belief : 50)}"/>
-            <span class="small">${tf("pct", "{n}%", { n: 100 })}</span>
-            <div class="value" id="beliefAfterValue">${X.beliefAfter != null ? tf("pct", "{n}%", { n: X.beliefAfter }) : "—"}</div>
-          </div>
-          <div class="hint" id="beliefDelta">${X.beliefAfter != null ? beliefDeltaText(X.belief, X.beliefAfter)
-            : X.belief != null ? tf("rc.was", "Before the trial you said {n}%. Move the slider to answer honestly.", { n: X.belief })
-            : t("rc.wasNone", "Move the slider to answer honestly. (Rate it before the next trial too — the change between the two is the lesson.)")}</div>
-        </div>
       </div>`;
+    // (A "how sure are you now?" slider used to sit here, re-rating a belief
+    // the trial's card stopped asking for — so it had nothing to compare
+    // against, told the player to rate it "before the next trial" where
+    // nothing asks, and nothing read the answer. The verdict is the lesson.)
   }
   // The alarm, drawn: the same wave the player watched live, whole.
   if (ev && Array.isArray(ev.wave) && ev.wave.length > 4) {
@@ -1486,7 +1480,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
           ${[0, 1, 2].map((i) => `<i class="${i < nStars ? "on" : ""}" style="--i:${i}">★</i>`).join("")}
         </div>
         <div class="vc-stars-head">${head}${newBest ? ` <span class="vc-best">${t("vc.newBest", "new best")}</span>` : ""}</div>
-        ${gl.length ? `<ul class="vc-goals">${gl.map((g) => `<li class="${g.done ? "done" : ""}"><b aria-hidden="true">${g.done ? "★" : "☆"}</b><span>${escapeHtml(g.text)}</span></li>`).join("")}</ul>` : ""}
+        ${gl.length ? `<ul class="vc-goals">${gl.map((g) => `<li class="${g.done ? "done" : ""}"><b aria-hidden="true">${g.done ? "★" : "☆"}</b><span>${escapeHtml(g.text)}${!g.done && g.need > 1 ? ` <span class="vc-gn">${fnum(Math.min(g.n | 0, g.need))}/${fnum(g.need)}</span>` : ""}</span></li>`).join("")}</ul>` : ""}
       </div>`;
   }
   const stat = (icon, v, l) => `<div class="vc-stat"><span class="vc-sv">${icon} ${v}</span><span class="vc-sl">${l}</span></div>`;
@@ -1506,9 +1500,15 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     const rA = courageRank(after), rB = courageRank(before);
     const span = (r, c) => r.next ? Math.max(0, Math.min(100, ((c - RANKS[r.idx].min) / (r.next.min - RANKS[r.idx].min)) * 100)) : 100;
     const from = rB.idx === rA.idx ? span(rA, before) : 0;
-    const chips = [`<span class="vc-chip">${tf("reward.courage", "+{n} courage", { n: lastAward.points })}</span>`];
-    if (lastAward.starBonus) chips.push(`<span class="vc-chip gold">${tf("vc.starBonus", "+{n} for new stars", { n: lastAward.starBonus })}</span>`);
-    if (lastAward.daily) chips.push(`<span class="vc-chip ember">${t("reward.ember", "🔥 daily ember +15")}</span>`);
+    // One number for what the trial paid. It was three chips side by side
+    // (+20 courage · +5 for new stars · 🔥 daily ember +15) — three things to
+    // read and add up at the moment the next button matters. The parts stay
+    // in the chip's title for whoever wants them.
+    const parts = [tf("reward.courage", "+{n} courage", { n: lastAward.points })];
+    if (lastAward.starBonus) parts.push(tf("vc.starBonus", "+{n} for new stars", { n: lastAward.starBonus }));
+    if (lastAward.daily) parts.push(t("reward.ember", "🔥 daily ember +15"));
+    const total = (lastAward.points || 0) + (lastAward.starBonus || 0) + (lastAward.daily ? 15 : 0);
+    const chips = [`<span class="vc-chip${lastAward.daily ? " ember" : ""}" title="${escapeHtml(parts.join(" · "))}">${lastAward.daily ? "🔥" : "⚡"} ${tf("reward.courage", "+{n} courage", { n: total })}</span>`];
     if (lastAward.streakAfter >= 2) chips.push(`<span class="vc-chip">${tf("reward.day", "day {n} of practice", { n: lastAward.streakAfter })}</span>`);
     rankRow = `
       <div class="vc-chips">${chips.join("")}</div>
@@ -1554,25 +1554,6 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
         <a class="btn-ghost" href="https://findahelpline.com" target="_blank" rel="noopener">${t("ci.help", "☎️ Talk to someone — findahelpline.com")}</a>
       </div>
     </div>` : "";
-  // A dog joins the campfire the first time its last trial is faced.
-  let companionBlock = "";
-  if (fresh && !early && lastAward.advanced && phobiaKey === "dogs") {
-    const joined = dogCompanions().find((c) => CAMP_COMPANION_AT[c.breed] === levelIdx);
-    if (joined) {
-      const nm = escapeHtml(joined.name);
-      companionBlock = `
-        <div class="companion-card">
-          <span class="cc-icon" aria-hidden="true">🐕</span>
-          <div class="cc-body">
-            <span class="bridge-invite-kicker">${t("cc.kicker", "🔥 A new friend at camp")}</span>
-            <strong>${tf("cc.title", "{name} joined your campfire", { name: nm })}</strong>
-            <p>${tf("cc.p", "You walked up to {name} and stayed. From now on, {name} rests by your fire at camp.", { name: nm })}</p>
-            <button class="btn-ghost" data-action="go-camp">${t("cc.see", "See your camp")}</button>
-          </div>
-        </div>`;
-    }
-  }
-
   // One short page: what happened (stars, the numbers, the lantern), the
   // next step, then — only if you want them — the longer lessons. It used to
   // run to fourteen blocks with the same "Next trial" button twice.

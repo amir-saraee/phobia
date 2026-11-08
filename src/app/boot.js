@@ -59,14 +59,13 @@ function showConsent(rereading, onOk) {
   overlay.className = "goal-modal-overlay consent-overlay";
   overlay.innerHTML = `
     <div class="goal-modal consent-modal" role="dialog" aria-modal="true" aria-label="${t("consent.title", "Before you begin")}">
-      <span class="bridge-invite-kicker">${brandLamp()} ${t("consent.kicker2", "Before you walk in")}</span>
-      <h3 style="margin:6px 0 10px">${t("consent.title", "Before you begin")}</h3>
+      <h3 class="consent-h">${brandLamp()} ${t("consent.title", "Before you begin")}</h3>
       <ul class="consent-list">
-        <li><span>🎮</span>${t("consent.game2", "Lanternwalk is a practice game about how fear works — not therapy, and no substitute for a clinician. If a fear is seriously limiting your life, a professional can help; this can start that conversation.")}</li>
-        <li><span>🔒</span>${t("consent.privacy2", "Everything stays on this device. No account, no tracking.")} <a href="${PRIVACY_URL}" target="_blank" rel="noopener">${t("legal.privacy", "Privacy policy")}</a></li>
-        <li><span>🚪</span>${touch
+        <li><span>🎮</span><span>${t("consent.game2", "Lanternwalk is a practice game about how fear works — not therapy, and no substitute for a clinician. If a fear is seriously limiting your life, a professional can help; this can start that conversation.")}</span></li>
+        <li><span>🔒</span><span>${t("consent.privacy2", "Everything stays on this device. No account, no tracking.")} <a href="${PRIVACY_URL}" target="_blank" rel="noopener">${t("legal.privacy", "Privacy policy")}</a></span></li>
+        <li><span>🚪</span><span>${touch
           ? t("consent.control2m", "You're in control: leave any scene, any time — 🛟 grounds you. Stepping out is never a failure.")
-          : t("consent.control2d", "You're in control: leave any scene, any time — Esc grounds you. Stepping out is never a failure.")}</li>
+          : t("consent.control2d", "You're in control: leave any scene, any time — Esc grounds you. Stepping out is never a failure.")}</span></li>
       </ul>
       <p class="consent-crisis">☎️ ${t("consent.crisis", "If you're in crisis right now, please reach a real person:")} <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a>${isRtl() ? /* «|» — a «·» beside Persian digits reads as a zero (see faDigitsIn) */ " | اورژانس اجتماعی <b>۱۲۳</b> | صدای مشاور بهزیستی <b>۱۴۸۰</b>" : ""}</p>
       <div class="actions" style="margin-top:14px">

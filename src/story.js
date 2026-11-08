@@ -1147,7 +1147,7 @@
           <span class="gs-face" aria-hidden="true">${portrait(who, 56)}</span>
           <div class="gs-body">
             <p class="gs-quote">${lang() === "fa" ? `«${esc(q)}»` : `“${esc(q)}”`}</p>
-            <span class="gs-who">— ${esc(L(c.name))}${c.role ? `, ${esc(L(c.role))}` : ""}</span>
+            <span class="gs-who">— ${esc(L(c.name))}${c.role ? `${lang() === "fa" ? "،" : ","} ${esc(L(c.role))}` : ""}</span>
           </div>
         </div>
         <p class="gs-mira"><span class="gs-mface" aria-hidden="true">${portrait("mira", 28)}</span><span>${esc(T("st.gateMira", "Let's light this lantern together — one small step at a time. I'll be right beside you."))}</span></p>
@@ -1449,6 +1449,11 @@
   .sb-tab { padding: 10px 14px; min-height: 44px; border: none; background: none; color: var(--muted, #94a3b8); font: inherit; font-weight: 650;
     cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
   .sb-tab[aria-selected="true"] { color: var(--text, #e8eef7); border-bottom-color: var(--accent, #7cd1c5); }
+  /* Phones: three equal tabs that all fit (the third sat off-screen in a
+     strip that scrolled with no sign it could). Long labels wrap. */
+  @media (max-width: 480px) {
+    .sb-tab { flex: 1 1 0; min-width: 0; padding: 8px 4px; white-space: normal; text-align: center; line-height: 1.25; font-size: 14px; }
+  }
   .sb-chapter { border: 1px solid var(--border, #25324f); border-radius: 16px; padding: 14px; margin: 0 0 12px; background: var(--panel-2, #18213a); }
   .sb-chapter.lit { border-color: rgba(255,207,110,.5); }
   .sb-chapter header { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }

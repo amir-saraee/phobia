@@ -1071,114 +1071,17 @@ function mountExposure(phobiaKey, levelIdx) {
 }
 
 // ---------- Per-scene audio mixes ----------
+// What a realm sounds like lives in ONE place: PhobiaAudio.startEnvironment
+// (src/app/audio.js, envBeds). This passes it what only the app knows — the
+// rung's data and the hour/weather this visit was given — and owns the handles.
 function startSceneAudio(phobiaKey, levelIdx) {
-  const A = window.PhobiaAudio; if (!A) return [];
-  const intensity = (levelIdx + 1) / 5; // 0.2 .. 1.0
-  const handles = [];
-  switch (phobiaKey) {
-    case "heights": {
-      handles.push(A.startCityHum());
-      handles.push(A.startWind(0.25 + intensity * 0.85));
-      if (levelIdx >= 3) handles.push(A.startBreathing(0.18 + intensity * 0.15));
-      break;
-    }
-    case "water": {
-      if (levelIdx >= 4) {
-        handles.push(A.startUnderwater());
-        handles.push(A.startBreathing(0.3));
-      } else {
-        handles.push(A.startWaterLap(0.3 + intensity * 0.7));
-      }
-      break;
-    }
-    case "dogs": {
-      // A room that opens onto a yard: indoor air + the meadow through glass.
-      handles.push(A.startRoomTone(0.10));
-      if (A.startAmbienceBed) {
-        handles.push(A.startAmbienceBed("room", { gain: 0.032 }));
-        handles.push(A.startAmbienceBed("birds", { gain: 0.036, lowpass: 2200 }));
-        handles.push(A.startAmbienceBed("wind", { gain: 0.014, lowpass: 900 }));
-      }
-      if (A.startRoomLife) {
-        handles.push(A.startRoomLife({
-          window: { x: -2.2, y: 0.5, z: -5.6 },
-          room: { x: 0, z: -0.2, rx: 4.6, rz: 5.4 },
-        }));
-      }
-      if (A.startOutdoorLife) {
-        handles.push(A.startOutdoorLife({ night: false, level: 0.55 }));
-      }
-      break;
-    }
-    case "spiders": {
-      handles.push(A.startRoomTone(0.16));
-      handles.push(A.startSkittering());
-      if (levelIdx >= 3) handles.push(A.startBreathing(0.35));
-      break;
-    }
-    case "enclosed": {
-      // Room tone only; the scene fires its own sounds (the lift motor, the
-      // scanner's knocking, the latch) so each can be named when it happens.
-      handles.push(A.startRoomTone(0.22 + intensity * 0.2));
-      break;
-    }
-    case "flying": {
-      // Engine pod sits outside the left window — pan the drone to that
-      // position so the user actually hears the engine "out there" instead
-      // of in their ears. Coordinates match the engine mesh in setupFlying.
-      handles.push(A.startEngineDrone(0.4 + intensity * 0.6, { x: -4.0, y: -0.05, z: -4.2 }));
-      if (levelIdx >= 3) handles.push(A.startBreathing(0.3 + intensity * 0.2));
-      // Quiet cabin chatter via room tone (no panning — surrounds you)
-      handles.push(A.startRoomTone(0.15));
-      break;
-    }
-    case "needles": {
-      handles.push(A.startRoomTone(0.18));
-      if (A.startMonitorBeep) handles.push(A.startMonitorBeep(72));   // clinical ECG blip = "medical room"
-      if (levelIdx >= 2) handles.push(A.startBreathing(0.4 + intensity * 0.2));
-      break;
-    }
-    case "snakes": {
-      handles.push(A.startWind(0.12));
-      if (A.startAmbienceBed) {
-        handles.push(A.startAmbienceBed("forest", { gain: 0.048 }));
-        handles.push(A.startAmbienceBed("wind", { gain: 0.024 }));
-        handles.push(A.startAmbienceBed("birds", { gain: 0.022 }));
-      }
-      if (A.startOutdoorLife) handles.push(A.startOutdoorLife({ night: false, level: 0.9 }));
-      handles.push(A.startHiss(0.15 + intensity * 0.4));
-      if (levelIdx >= 3) handles.push(A.startBreathing(0.3));
-      break;
-    }
-    case "speaking": {
-      const lv = PHOBIAS.speaking.levels[levelIdx];
-      handles.push(A.startAudienceMurmur(lv && lv.crowd != null ? lv.crowd : intensity));
-      if (levelIdx >= 2) handles.push(A.startBreathing(0.4 + intensity * 0.25));
-      break;
-    }
-    case "driving": {
-      const lv = PHOBIAS.driving.levels[levelIdx];
-      const speed = lv && lv.speed != null ? lv.speed : intensity;
-      handles.push(A.startDrivingDrone(speed));
-      if (levelIdx >= 4) handles.push(A.startRain(0.6));
-      if (levelIdx >= 3) handles.push(A.startBreathing(0.35));
-      break;
-    }
-    case "storms": {
-      handles.push(A.startRain(0.4 + intensity * 0.5));
-      if (levelIdx >= 2) handles.push(A.startBreathing(0.35));
-      break;
-    }
-    case "dark": {
-      // Quiet room tone only. The house's night sounds (creaks, the branch on
-      // the glass, the fridge) are fired by the scene itself, so each one can
-      // be named — random unexplained thumps and birdsong at midnight were
-      // the fear's own soundtrack.
-      handles.push(A.startRoomTone(0.18 + intensity * 0.14));
-      break;
-    }
-  }
-  return handles;
+  const A = window.PhobiaAudio; if (!A || !A.startEnvironment) return [];
+  const lv = (PHOBIAS[phobiaKey] && PHOBIAS[phobiaKey].levels && PHOBIAS[phobiaKey].levels[levelIdx]) || {};
+  let ctx = null;
+  try { ctx = window.Scene3D && window.Scene3D.currentContext && window.Scene3D.currentContext(phobiaKey, levelIdx); } catch {}
+  try {
+    return A.startEnvironment(phobiaKey, levelIdx, { lv, hour: ctx && ctx.hour, weather: ctx && ctx.weather }) || [];
+  } catch (e) { console.warn("scene audio:", e); return []; }
 }
 
 // SUDS slider live update (also used on rate + predict views)
@@ -1209,19 +1112,10 @@ document.addEventListener("input", (e) => {
       const needPeak = !!document.getElementById("sudsPeak");
       submit.disabled = !(submit.dataset.nowTouched && (!needPeak || submit.dataset.peakTouched));
     }
-  } else if (e.target.id === "expectBelief" || e.target.id === "beliefAfter") {
-    e.target.dataset.touched = "1";
-    const out = document.getElementById(e.target.id + "Value");
-    // Persian digits and its own percent sign («۵۰٪», not "50%").
-    const fa = !!(window.I18n && window.I18n.currentLanguage && window.I18n.currentLanguage() === "fa");
-    if (out) out.textContent = (window.fnum ? window.fnum(e.target.value) : e.target.value) + (fa ? "٪" : "%");
-    if (e.target.id === "beliefAfter") { try { saveBeliefAfter(+e.target.value); } catch {} }
   } else if (e.target.id === "predictedSuds") {
     e.target.dataset.touched = "1";
     const out = document.getElementById("predictedValue");
     if (out) out.textContent = e.target.value;
-    const nudge = document.getElementById("predictNudge");
-    if (nudge) nudge.hidden = true;
   }
 });
 

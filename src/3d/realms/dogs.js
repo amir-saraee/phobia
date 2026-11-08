@@ -4280,7 +4280,11 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
             // Never while you're grounding (Esc): the run-over is the rung's
             // big moment, and it came straight through the 5-4-3-2-1.
             const grounding = !!(window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding());
-            const canBound = !grounding && inRoom && distP > 2.0 && distP < 9 && kRuns < 4 && t - kLastRunAt > 8 && kExcite > 0.3;
+            // (distP > 1.3, not 2.0: the "bound PAST you" branch below is for
+            // players standing close, and a 2 m floor meant it never ran — the
+            // rung's skill star, holding your ground as he bounds over, could
+            // not be earned from under 2 m, the bravest place to stand.)
+            const canBound = !grounding && inRoom && distP > 1.3 && distP < 9 && kRuns < 4 && t - kLastRunAt > 8 && kExcite > 0.3;
             if (canBound && (kRuns === 0 || Math.random() < 0.55)) {
               // Bound over — and stop short. From across the room the stop
               // point is on the line from you to him, 1.7–2.1 m out, with a
