@@ -6097,6 +6097,24 @@ body.trial-mode .exposure-panel .step-controls {
   .ti-q { font-size: 15px; }
   .ti-chips .expect-chip { font-size: 13px; padding: 5px 11px; min-height: 34px; }
 }
+/* A laptop 800 px tall had to scroll the first-visit card to reach the
+   numbers (the full card ran to 804 px). Under 880 px the story tightens the
+   way the phone card does, so the whole card fits without a scroll. */
+@media (min-width: 601px) and (max-height: 880px) {
+  .ti-card { padding: 14px 16px 12px; gap: 10px; }
+  .ti-story .gs-mira { display: none; }
+  .ti-story .gs-quote { -webkit-line-clamp: 2; font-size: 14.5px; }
+  .ti-story .gate-story { padding: 10px 12px 4px; }
+  .ti-desc { font-size: 14.5px; }
+  .ti-block { padding-top: 10px; gap: 7px; }
+}
+/* 720p laptops: the same card, packed a little tighter still. */
+@media (min-width: 601px) and (max-height: 760px) {
+  .trial-intro { padding: 8px; }
+  .ti-card { gap: 8px; padding: 12px 16px 10px; }
+  .ti-title { font-size: 22px; }
+  .ti-chips .expect-chip { min-height: 34px; padding: 5px 11px; font-size: 13px; }
+}
 @media (max-height: 560px) {
   .trial-intro { align-items: flex-start; }
   .ti-story { display: none; }

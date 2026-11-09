@@ -1118,7 +1118,7 @@ function buildHead(o) {
     const thick = underScarf ? 0.0080
       : style === "buzz" ? 0.0040
       : style === "curly" ? 0.0190
-      : style === "afro" ? 0.0290
+      : style === "afro" ? 0.0400
       : style === "long" ? 0.0165
       : style === "pony" ? 0.0145
       : style === "bun" ? 0.0125
@@ -1127,13 +1127,34 @@ function buildHead(o) {
     hairShellM.transparent = true;
     hairShellM.vertexColors = true;
     hairShellM.depthWrite = true;
-    const strands = getHairStrandTex(22, 3);
+    // The afro's hairline: on a 4 cm shell the ordinary 0.24 rad fade is a
+    // wide translucent band floating above the forehead with the skin showing
+    // through, and no fade at all is a stair-stepped rim. A narrow (~1 cm)
+    // fade, with the shell tapering down to the hair-tinted scalp across it
+    // (thickMul below), gives a soft edge that lands on matching colour.
+    const afro = style === "afro";
+    const afroMask = (th, ph) => {
+      const a = th > Math.PI ? Math.PI * 2 - th : th;
+      const reach = _hairReach(a);
+      return _sstep(reach + 0.04, reach - 0.06, ph);
+    };
+    // The strand texture reads as straight hair lying flat; an afro is a
+    // matte, tightly coiled mass — no strands, a rougher surface, and its
+    // volume comes from a bumpy shell (thickMul below) rather than curls.
+    const strands = style === "afro" ? null : getHairStrandTex(22, 3);
     if (strands) { hairShellM.map = strands; hairShellM.bumpMap = strands; hairShellM.bumpScale = 1.4; }
+    if (style === "afro") { hairShellM.roughness = 0.90; hairShellM.sheen = 0.06; }
+    const afroBump = (th, ph) => {
+      const s = Math.sin(th * 7.3 + ph * 2.1) * Math.sin(ph * 5.1 - th * 1.3)
+        + 0.6 * Math.sin(th * 13.7 + 0.8) * Math.sin(ph * 11.2 + 1.9)
+        + 0.35 * Math.sin(th * 23.1 + ph * 3.3) * Math.sin(ph * 19.4);
+      return s / 1.95;   // ≈ −1..1
+    };
     // Volume is not a uniform offset: hair lifts at the crown, lies flatter
     // over the ears and at the nape, and PARTS down the middle of the top,
     // where the scalp shows as a darker line. A constant-thickness shell of
     // the skull is exactly what reads as a helmet.
-    const partW = style === "buzz" ? 0 : 1;
+    const partW = (style === "buzz" || style === "afro") ? 0 : 1;
     const partK = (th, ph) => {
       const a = th > Math.PI ? th - Math.PI * 2 : th;
       return partW * Math.exp(-(a / 0.075) * (a / 0.075)) * _sstep(0.95, 0.60, ph) * _sstep(0.10, 0.30, ph);
@@ -1141,15 +1162,26 @@ function buildHead(o) {
     const cap = buildHeadShell(headPoint, hairShellM, {
       // Dense enough that the faded hairline does not step along grid lines.
       nu: o.lowDetail ? 72 : 120, nv: o.lowDetail ? 56 : 96, offset: thick, fade: true,
-      cacheKey: "hairF8|" + shape + "|" + style + "|" + thick,
-      mask: (th, ph) => hairlineMask(th, ph),
+      cacheKey: "hairF11|" + shape + "|" + style + "|" + thick,
+      mask: afro ? afroMask : (th, ph) => hairlineMask(th, ph),
       thickMul: (th, ph) => {
         const a = th > Math.PI ? Math.PI * 2 - th : th;
         const crown = _sstep(1.35, 0.35, ph);                   // top of the head
+        if (style === "afro") {
+          // A 4 cm shell has to come DOWN to the scalp at the hairline, or
+          // the faded rim floats above the forehead as a translucent band.
+          // The geometric taper is WIDE (≈3 cm behind the hairline) while the
+          // alpha fade stays narrow: a 4 cm drop inside two grid rows made
+          // stretched sliver triangles that read as spokes round the face.
+          const ta = th > Math.PI ? Math.PI * 2 - th : th;
+          const reach = _hairReach(ta);
+          const tp = _sstep(reach + 0.04, reach - 0.34, ph), taper = tp * tp * (3 - 2 * tp);
+          return (1.0 + 0.12 * crown) * (1 + 0.17 * afroBump(th, ph)) * (0.05 + 0.95 * taper);
+        }
         const ears = Math.exp(-Math.pow((a - 1.52) / 0.32, 2)) * _sstep(1.0, 1.35, ph);
         return (0.80 + 0.32 * crown) * (1 - 0.35 * ears) * (1 - 0.55 * partK(th, ph));
       },
-      shade: (th, ph) => 1 - 0.42 * partK(th, ph),
+      shade: (th, ph) => style === "afro" ? 1 - 0.12 * (0.5 - 0.5 * afroBump(th, ph)) : 1 - 0.42 * partK(th, ph),
     });
     if (cap) hairGroup.add(cap);
   }
@@ -1167,25 +1199,15 @@ function buildHead(o) {
       hairGroup.add(curl);
     }
   } else if (style === "afro") {
-    // A full, rounded halo: curls all the way round, crown to nape, sitting
-    // on the thick shell so the silhouette reads as one soft mass.
-    const n = o.lowDetail ? 40 : 64;
-    for (let i = 0; i < n; i++) {
-      const th = (i / n) * Math.PI * 2 + (i % 5) * 0.23;
-      const ph = 0.12 + ((i * 11) % 17) / 17 * 1.15;
-      if (hairlineMask(th, ph) <= 0.25) continue;
-      const p = headPoint(th, ph);
-      const curl = new THREE.Mesh(new THREE.SphereGeometry(0.024 + (i % 4) * 0.004, 10, 8), hairM);
-      curl.position.copy(p).multiplyScalar(1.17);
-      hairGroup.add(curl);
-    }
+    // The bumpy shell above IS the afro (sphere "curls" on top of it, at any
+    // size, read as a cluster of balls).
   } else if (style === "bun") {
     // Hair drawn back smooth, gathered in a bun high on the back of the head.
     const bun = new THREE.Group();
-    bun.position.set(0, 0.058, -0.078);
+    bun.position.set(0, 0.062, -0.082);
     hairGroup.add(bun);
-    const knot = new THREE.Mesh(new THREE.SphereGeometry(0.036, 16, 12), hairM);
-    knot.scale.set(1.0, 0.86, 0.92);
+    const knot = new THREE.Mesh(new THREE.SphereGeometry(0.046, 16, 12), hairM);
+    knot.scale.set(1.0, 0.84, 0.90);
     bun.add(knot);
     const tie = new THREE.Mesh(
       new THREE.TorusGeometry(0.030, 0.0045, 8, 18),
@@ -1271,13 +1293,14 @@ function buildHead(o) {
     scarfM.transparent = true; scarfM.vertexColors = true; scarfM.depthWrite = true;
     const shell = buildHeadShell(headPoint, scarfM, {
       nu: o.lowDetail ? 64 : 100, nv: o.lowDetail ? 48 : 80, offset: 0.0135, fade: true,
-      cacheKey: "scarf2|" + shape,
-      // The face opening: an oval from just under the hairline to under the
-      // chin, about the width of the face. `phi` runs from the crown (0)
-      // through eye level (~1.57) to the chin (~2.5).
+      cacheKey: "scarf3|" + shape,
+      // The face opening: an oval from the hairline to under the chin, about
+      // the width of the face. `phi` runs from the crown (0) through eye
+      // level (~1.57) to the chin (~2.5); the top edge sits ON the hairline
+      // (reach ≈ 0.80 at the front) so no strip of scalp shows under the cloth.
       mask: (th, ph) => {
         const a = th > Math.PI ? Math.PI * 2 - th : th;
-        const d = Math.hypot(a / 0.86, (ph - 1.64) / 0.94);
+        const d = Math.hypot(a / 0.86, (ph - 1.70) / 0.87);
         return _sstep(0.90, 1.08, d);
       },
     });
