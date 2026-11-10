@@ -10,14 +10,32 @@ import { buildHand, makePrivateRig, applyPrivateRig } from "./human-rig.js";
 const _UP = new THREE.Vector3(0, 1, 0);   // default surface normal for reach
 // Right-hand underhand toss, camera-local: hold → swing back and down →
 // through and up to the release at u = 1 → follow-through → let go.
+// The release stays in the lower right of the view: lifted to eye level at
+// screen centre the arm read as a club hanging in mid-air.
 const _TOSS_KEYS = [
-  [0.00, 0.16, -0.13, -0.44, 0.10, 1],
-  [0.45, 0.19, -0.19, -0.36, 0.38, 1],
-  [1.00, 0.12, -0.04, -0.56, -0.30, 1],
-  [1.40, 0.10, 0.01, -0.60, -0.45, 1],
-  [1.90, 0.12, -0.08, -0.50, -0.20, 0],
+  [0.00, 0.17, -0.14, -0.44, 0.10, 1],
+  [0.45, 0.20, -0.20, -0.37, 0.38, 1],
+  [1.00, 0.15, -0.105, -0.55, -0.26, 1],
+  [1.40, 0.14, -0.070, -0.60, -0.40, 1],
+  [1.90, 0.15, -0.12, -0.50, -0.20, 0],
 ];
 const _tossP = new THREE.Vector3();
+// ---- The arm behind the hand ----
+// The hand used to carry a rigid 23 cm forearm stub that ended in a rounded
+// cap. Any pose that lifted the hand (the toss, a reach at eye level) put
+// that cap in the middle of the view: a hand on a club, attached to nothing.
+// The arm is now a real two-segment chain solved every frame from the wrist
+// back to a shoulder that sits BEHIND the camera plane (z > 0), so the far end
+// can never be in frame: whatever the hand does, the arm runs out through the
+// bottom/side edge of the screen. Past full stretch the upper arm lengthens
+// rather than letting go of the shoulder.
+const ARM_FORE = 0.245, ARM_UPPER = 0.29;
+const _ARM_SHOULDER = [0.25, -0.36, 0.08];     // camera-local, × side on x
+const _aS = new THREE.Vector3(), _aW = new THREE.Vector3(), _aE = new THREE.Vector3();
+const _aD = new THREE.Vector3(), _aP = new THREE.Vector3(), _aX = new THREE.Vector3();
+const _aY = new THREE.Vector3(), _aZ = new THREE.Vector3(), _aM = new THREE.Matrix4();
+const _pA = new THREE.Vector3(), _pB = new THREE.Vector3();
+const _holdE = new THREE.Euler(), _holdQ = new THREE.Quaternion();
 class Hands {
   constructor(scene, camera, opts = {}) {
     this.camera = camera;
@@ -76,6 +94,12 @@ class Hands {
     this.left  = this._buildHand(skin, sleeve, -1);
     this.right = this._buildHand(skin, sleeve,  1);
     this.group.add(this.left, this.right);
+    this.left.userData.arm = this._buildArm(skin, sleeve);
+    this.right.userData.arm = this._buildArm(skin, sleeve);
+    // A held pose (a match pinched in the fingers, a torch in the fist):
+    // see setHold().
+    this._hold = null;
+    this._holdK = 0;
     // Hands come up when there is something to do and drop out of frame when
     // there isn't. Two hands parked at the bottom of the view for a whole
     // trial were the most constant thing on screen and belonged to nothing.
@@ -109,7 +133,9 @@ class Hands {
     // The SAME hand the third-person rig uses, so the pair you see in first
     // person and the pair on your character are one asset. They used to be two
     // separate builds that had quietly drifted apart.
-    const hand = buildHand(side, skin, sleeve, { scale: 0.76, forearm: true, forearmMat: this._forearmMat });
+    // No forearm stub from the shared builder: the arm is this file's own
+    // two-segment chain (_buildArm / _solveArm).
+    const hand = buildHand(side, skin, sleeve, { scale: 0.76 });
     // Rig hands hang along −Y with the palm facing −Z. First person wants
     // fingers pointing away from the camera (−Z) with the palm DOWN (−Y): a
     // 180° turn about the Y+Z diagonal swaps those two axes, which is a proper
@@ -140,6 +166,143 @@ class Hands {
     return root;
   }
 
+  // Forearm + upper arm, in the hand group's (camera) space. Each is a lathe
+  // along +Y from its distal joint: the forearm from the wrist to the elbow,
+  // the upper arm from the elbow to the shoulder. Bare skin below a short
+  // sleeve; all sleeve for a long-sleeved outfit.
+  _buildArm(skin, sleeve) {
+    const lathe = (prof, mat) => new THREE.Mesh(
+      new THREE.LatheGeometry(prof.map(([y, r]) => new THREE.Vector2(r, y)), 18), mat);
+    const armMat = this._forearmMat;
+    // Slim at the wrist, a belly of muscle toward the elbow.
+    const fore = lathe([[0.000, 0.0], [0.000, 0.0180], [0.025, 0.0190], [0.070, 0.0222], [0.130, 0.0268],
+      [0.185, 0.0290], [0.225, 0.0284], [ARM_FORE, 0.0270]], armMat);
+    fore.scale.z = 0.86;
+    const upper = lathe([[0.000, 0.0270], [0.060, 0.0290], [0.150, 0.0325], [0.230, 0.0340],
+      [0.275, 0.0325], [0.288, 0.0210], [ARM_UPPER, 0.0]], armMat);
+    upper.scale.z = 0.92;
+    // Short sleeve over the top of the upper arm (a tee); a long sleeve has
+    // the whole arm in cloth already.
+    if (armMat !== sleeve) {
+      const cuff = lathe([[0.125, 0.0], [0.125, 0.0365], [0.180, 0.0375], [0.275, 0.0362], [0.292, 0.0230], [0.296, 0.0]], sleeve);
+      upper.add(cuff);
+    }
+    const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.0272, 14, 10), armMat);
+    const wrist = new THREE.Mesh(new THREE.SphereGeometry(0.0176, 14, 10), skin);
+    wrist.scale.set(1, 1, 0.86);
+    for (const m of [fore, upper, elbow, wrist]) { m.userData.noPick = true; this.group.add(m); }
+    return { fore, upper, elbow, wrist };
+  }
+  // Two-bone solve, wrist → elbow → shoulder, in camera space. Called after
+  // the hand has its final pose for the frame.
+  _solveArm(hand) {
+    const a = hand.userData.arm; if (!a) return;
+    const side = hand.userData.side;
+    const W = _aW.copy(hand.position);
+    const S = _aS.set(_ARM_SHOULDER[0] * side, _ARM_SHOULDER[1], _ARM_SHOULDER[2]);
+    const dir = _aD.copy(W).sub(S);               // shoulder → wrist
+    let d = Math.max(1e-4, dir.length());
+    dir.multiplyScalar(1 / d);
+    // A long reach leans the shoulder in after the hand, as far as it can go
+    // while staying under the bottom edge of the view; only what is left
+    // over stretches the upper arm. (Reaching down to a dog at your feet
+    // otherwise drew an arm twice its length.)
+    const excess = d - (ARM_FORE + ARM_UPPER) * 0.995;
+    if (excess > 0) {
+      const c = this.camera;
+      const tanH = c && c.isPerspectiveCamera ? Math.tan((c.fov * Math.PI / 180) / 2) : 0.6;
+      let lo = 0, hi = excess;
+      for (let i = 0; i < 5; i++) {
+        const tt = (lo + hi) / 2;
+        const cy = S.y + dir.y * tt, cz = S.z + dir.z * tt;
+        if (cz > -0.02 || cy < cz * tanH * 1.25 - 0.06) lo = tt; else hi = tt;
+      }
+      S.addScaledVector(dir, lo);
+      d -= lo;
+    }
+    let upperLen = ARM_UPPER;
+    const E = _aE;
+    if (d >= (ARM_FORE + ARM_UPPER) * 0.995) {
+      // Full stretch (or beyond): a straight arm; the upper arm takes the slack.
+      E.copy(W).addScaledVector(dir, -ARM_FORE);
+      upperLen = Math.max(0.05, d - ARM_FORE);
+    } else {
+      // Bent: the elbow drops down and outward, the way an arm hangs.
+      const dd = Math.max(d, Math.abs(ARM_UPPER - ARM_FORE) + 0.01);
+      const k = (ARM_UPPER * ARM_UPPER - ARM_FORE * ARM_FORE + dd * dd) / (2 * dd);
+      const h = Math.sqrt(Math.max(0, ARM_UPPER * ARM_UPPER - k * k));
+      const pole = _aP.set(side * 0.55, -1, 0.12);
+      pole.addScaledVector(dir, -pole.dot(dir));
+      if (pole.lengthSq() < 1e-6) pole.set(side, 0, 0);
+      pole.normalize();
+      E.copy(S).addScaledVector(dir, k).addScaledVector(pole, h);
+    }
+    // Forearm: +Y from the wrist to the elbow, rolled with the hand so the
+    // oval section follows the wrist instead of staying square to the camera.
+    const y = _aY.copy(E).sub(W).normalize();
+    const x = _aX.set(1, 0, 0).applyQuaternion(hand.quaternion);
+    x.addScaledVector(y, -x.dot(y));
+    if (x.lengthSq() < 1e-6) x.set(0, 0, 1).addScaledVector(y, -y.z);
+    x.normalize();
+    const z = _aZ.crossVectors(x, y);
+    a.fore.quaternion.setFromRotationMatrix(_aM.makeBasis(x, y, z));
+    a.fore.position.copy(W);
+    a.wrist.position.copy(W);
+    a.wrist.quaternion.copy(a.fore.quaternion);
+    // Upper arm: +Y from the elbow to the shoulder.
+    y.copy(S).sub(E).normalize();
+    x.addScaledVector(y, -x.dot(y));
+    if (x.lengthSq() < 1e-6) x.set(0, 0, 1).addScaledVector(y, -y.z);
+    x.normalize();
+    z.crossVectors(x, y);
+    a.upper.quaternion.setFromRotationMatrix(_aM.makeBasis(x, y, z));
+    a.upper.position.copy(E);
+    a.upper.scale.y = upperLen / ARM_UPPER;
+    a.elbow.position.copy(E);
+  }
+  // Half-width of the view at camera-local depth z (metres).
+  _halfW(z) {
+    const c = this.camera;
+    if (!c || !c.isPerspectiveCamera) return 1;
+    return Math.abs(z) * Math.tan((c.fov * Math.PI / 180) / 2) * (c.aspect || 1);
+  }
+
+  // Hold the right (or left) hand up in a fixed camera-local pose while it
+  // carries something — a match pinched in the fingers, a torch in the fist.
+  // Call every frame it applies (like setReachTarget); clearHold() or null
+  // lets go. opts:
+  //   pos:  [x, y, z] camera-local wrist position (x is for the right hand;
+  //         mirrored for the left, and pulled in on a narrow portrait view)
+  //   rot:  [x, y, z] euler of the hand root (mirrored on y/z for the left)
+  //   grip: "pinch" (thumb + index tips meet, the rest curled) | "fist" | "open"
+  //   hand: "right" | "left"
+  setHold(opts) {
+    if (!opts) { this._hold = null; return; }
+    this._hold = {
+      pos: opts.pos || [0.15, -0.12, -0.40],
+      rot: opts.rot || [0.3, -0.1, -1.2],
+      grip: opts.grip || "fist",
+      hand: opts.hand === "left" ? -1 : 1,
+      src: opts,
+    };
+    this._holdLast = this._hold;
+  }
+  clearHold() { this._hold = null; }
+  // Where the thumb and index tips meet, in camera-local space (the parent
+  // space of anything added to the camera). Returns `out`.
+  getPinchPoint(out, hand = "right") {
+    const h = hand === "left" ? this.left : this.right;
+    const u = h.userData;
+    out.set(0, 0, 0);
+    if (!u.fingers || !u.thumb) return h.getWorldPosition(out) && this.camera.worldToLocal(out);
+    h.updateWorldMatrix(true, true);
+    const f = u.fingers[0];
+    _pA.set(0, -f.spec.len[2], 0); f.seg[2].localToWorld(_pA);
+    _pB.set(0, -0.0165, 0); u.thumb[1].localToWorld(_pB);
+    out.copy(_pA).add(_pB).multiplyScalar(0.5);
+    return this.camera.worldToLocal(out);
+  }
+
   // Underhand toss with the right hand, `dur` seconds to the release. The
   // scene parents the item to this.right (palm-up, see tossHoldOffset) and
   // lets go when its own windup ends; the swing carries on into a short
@@ -166,6 +329,8 @@ class Hands {
   //   normal:  THREE.Vector3 world-space surface normal (palm faces it)
   //   maxReach: arm length in metres before the hand stops at full stretch
   //   curl:    optional explicit finger curl override (0..1.4)
+  //   fingers: optional world direction for the fingers (default: the reach)
+  //   contact: false for a hand held out in the air (never reports contactK)
   setReachTarget(world, opts = {}) {
     if (!world) { this._reach = null; return; }
     this._reachWorld.copy(world);
@@ -176,6 +341,11 @@ class Hands {
       maxReach: opts.maxReach || 0.62,
       curl: opts.curl,
       spread: opts.spread || 0,   // for "both" on a bar: lateral half-gap per hand
+      // World direction the fingers point (default: along the reach). A hand
+      // held OUT rather than laid ON something wants its own attitude.
+      fingers: opts.fingers || null,
+      // false = a hand held out in the air: it never reports contact.
+      contact: opts.contact !== false,
     };
   }
   clearReachTarget() { this._reach = null; }
@@ -201,11 +371,27 @@ class Hands {
     const holding = this.left.children.length > this.left.userData._baseKids
       || this.right.children.length > this.right.userData._baseKids;
     if (this._toss) { this._toss.t += d; if (this._toss.t > this._toss.dur + 0.45) this._toss = null; }
-    const busy = !!this._reach || !!this._toss || this.gestureTargetStrength > 0 || this.actionPulse > 0.02 || holding;
+    this._holdK += ((this._hold ? 1 : 0) - this._holdK) * Math.min(1, d * (this._hold ? 7 : 5));
+    const busy = !!this._reach || !!this._toss || !!this._hold || this._holdK > 0.05 || this.gestureTargetStrength > 0 || this.actionPulse > 0.02 || holding;
     this._restT = busy ? 0 : this._restT + d;
     const wantShow = (!this.hideAtRest || busy || this._restT < 0.9) ? 1 : 0;
     this._showK += (wantShow - this._showK) * Math.min(1, d * (wantShow > this._showK ? 7 : 2.4));
-    const hideDrop = (1 - this._showK) * (1 - this._showK) * 0.30;
+    // Per hand: a one-handed action (a reach, a toss, something held) brings
+    // up THAT hand. The other one used to come up with it and sit in the
+    // bottom corner as a pale fist with nothing to do.
+    const twoHanded = this.gestureTargetStrength > 0 || (this._reach && this._reach.hand === "both");
+    for (const h of [this.left, this.right]) {
+      const ud = h.userData, sd = ud.side;
+      const mine = !this.hideAtRest || twoHanded
+        || (this._reach && (this._reach.hand === (sd > 0 ? "right" : "left")))
+        || (this._toss && sd > 0)
+        || ((this._hold || (this._holdK > 0.05 && this._holdLast)) && (this._hold || this._holdLast).hand === sd)
+        || h.children.length > ud._baseKids
+        || (this.actionPulse > 0.02 && !this._reach && !this._toss && !this._hold);
+      if (mine) ud._mineT = 0; else ud._mineT = (ud._mineT == null ? 99 : ud._mineT) + d;
+      const want = (mine || ud._mineT < 0.9) ? 1 : 0;
+      ud._showK = (ud._showK || 0) + (want - (ud._showK || 0)) * Math.min(1, d * (want > (ud._showK || 0) ? 7 : 2.4));
+    }
 
     // Body-feel inputs: the walk gait (hands counter-sway like real arms),
     // breath that quickens with fear, and a fear tremor that puts the
@@ -348,6 +534,7 @@ class Hands {
 
       // Lerp position + rotation toward (base + (target - base) * gestureStrength)
       const finalPos = base.clone().lerp(target, this.gestureStrength);
+      const hideDrop = (1 - hand.userData._showK) * (1 - hand.userData._showK) * 0.30;
       finalPos.y -= hideDrop;
       finalPos.z += hideDrop * 0.12;
       // Gait counter-swing: each hand drifts forward/back opposite its
@@ -395,7 +582,9 @@ class Hands {
       const reachThisHand = reach && (reach.hand === "both"
         || (reach.hand === "right" && side === 1)
         || (reach.hand === "left"  && side === -1));
-      const gestureK = (reachThisHand && rk > 0.001) ? Math.max(0, 1 - rk) : 1;
+      // A held pose owns its hand the same way (see the hold block below).
+      const holdThisHand = (this._hold || this._holdLast) && (this._hold || this._holdLast).hand === side ? this._holdK : 0;
+      const gestureK = ((reachThisHand && rk > 0.001) ? Math.max(0, 1 - rk) : 1) * (1 - holdThisHand);
       const posK = Math.min(1, d * 11) * gestureK;
       hand.position.lerp(finalPos, posK);
       hand.rotation.x += (baseRot.x + (targetRotX - baseRot.x) * this.gestureStrength + gaitRotX - hand.rotation.x) * posK;
@@ -450,7 +639,7 @@ class Hands {
         // Published so the scene loop can tell that first person has ACTUALLY
         // made contact — third person measures this off the body's wrist, and
         // without this the whole event-beat channel was blind in first person.
-        this.contactK = Math.max(this.contactK || 0, contactK * rk);
+        if (reach.contact) this.contactK = Math.max(this.contactK || 0, contactK * rk);
         // Fingers (-Z) point at the target; palm (+Y local) faces the surface
         // normal so the hand lies flat on / wraps the surface.
         const reachDir = this._rcDir.copy(local).sub(sh);
@@ -461,6 +650,11 @@ class Hands {
         if (nrm.lengthSq() < 1e-6) nrm.set(0, 1, 0);
         nrm.normalize();
         const zAxis = this._rcZ.copy(reachDir).negate();          // local +Z = away from target
+        if (reach.fingers) {
+          zAxis.copy(reach.fingers).applyQuaternion(camQ).negate();   // camQ is inverted above
+          if (zAxis.lengthSq() < 1e-6) zAxis.copy(reachDir).negate();
+          zAxis.normalize();
+        }
         const yAxis = this._rcY.copy(nrm);
         yAxis.addScaledVector(zAxis, -yAxis.dot(zAxis));          // orthonormalise vs z
         if (yAxis.lengthSq() < 1e-6) { yAxis.set(0, 1, 0).addScaledVector(zAxis, -zAxis.y); }
@@ -502,6 +696,24 @@ class Hands {
         u._spread += ((reach.grip === "flat" ? 0.6 : 0) - u._spread) * rk;
         if (reach.grip === "wrap") u._thumb = reachCurl * 0.8;
       }
+      // ---- Held pose (match, torch): owns the hand while it is held ----
+      const H = this._hold || this._holdLast;
+      if (H && H.hand === side && this._holdK > 0.001) {
+        const hk = this._holdK;
+        const kk = Math.min(1, d * 14) * hk;
+        const hz = H.pos[2];
+        _tossP.set(side * Math.min(H.pos[0], this._halfW(hz) * 0.80), H.pos[1], hz);
+        _tossP.y += Math.sin(t * breathRate + side * 0.9) * breathAmp - (1 - hk) * (1 - hk) * 0.12;
+        hand.position.lerp(_tossP, kk);
+        _holdQ.setFromEuler(_holdE.set(H.rot[0], side * H.rot[1], side * H.rot[2]));
+        hand.quaternion.slerp(_holdQ, kk);
+        const ud = hand.userData;
+        const gc = H.grip === "pinch" ? 0.62 : H.grip === "fist" ? 1.0 : 0.1;
+        ud._curl += (gc - ud._curl) * hk;
+        ud._spread *= 1 - hk;
+        ud._thumb = H.grip === "pinch" ? 0.55 : H.grip === "fist" ? 0.7 : null;
+        ud._grip = H.grip; ud._gripK = hk;
+      } else hand.userData._gripK = 0;
       // ---- Toss (right hand): keyed swing, owns the hand while it runs ----
       if (this._toss && side === 1) {
         const T = this._toss, u = T.t / T.dur;
@@ -515,7 +727,8 @@ class Hands {
         const L = (j) => a0[j] + (a1[j] - a0[j]) * f;
         const w = L(5);
         const kk = Math.min(1, d * 22) * w;
-        _tossP.set(L(1), L(2), L(3));
+        // Pulled in on a narrow (portrait) view so the swing stays in frame.
+        _tossP.set(Math.min(L(1), this._halfW(L(3)) * 0.78), L(2), L(3));
         hand.position.lerp(_tossP, kk);
         hand.rotation.x += (L(4) - hand.rotation.x) * kk;
         hand.rotation.y += (-0.10 - hand.rotation.y) * kk;
@@ -528,6 +741,25 @@ class Hands {
       const u2 = hand.userData;
       if (u2.setCurl) {
         u2.setCurl(u2._curl || 0, u2._spread || 0, u2._thumb);
+        // Pinch: the index stays long and meets the thumb pad; the other
+        // three fold into the palm behind it.
+        if (u2._gripK > 0.001 && u2._grip === "pinch" && u2.fingers) {
+          const g = u2._gripK, P = Hands.PINCH;
+          const ix = u2.fingers[0].seg;
+          ix[0].rotation.x += (P.index[0] - ix[0].rotation.x) * g;
+          ix[1].rotation.x += (P.index[1] - ix[1].rotation.x) * g;
+          ix[2].rotation.x += (P.index[2] - ix[2].rotation.x) * g;
+          for (let fi = 1; fi < u2.fingers.length; fi++) {
+            const sg = u2.fingers[fi].seg;
+            sg[0].rotation.x += (P.rest[0] - sg[0].rotation.x) * g;
+            sg[1].rotation.x += (P.rest[1] - sg[1].rotation.x) * g;
+            sg[2].rotation.x += (P.rest[2] - sg[2].rotation.x) * g;
+          }
+          if (u2.thumb) {
+            u2.thumb[0].rotation.x += (P.thumb[0] - u2.thumb[0].rotation.x) * g;
+            u2.thumb[1].rotation.x += (P.thumb[1] - u2.thumb[1].rotation.x) * g;
+          }
+        }
         // Per-finger micro-flex on its own phase: fingers that move in perfect
         // lockstep are the loudest mannequin tell at first-person range.
         const idleK = (1 - this.gestureStrength) * (1 - this._reachStrength);
@@ -539,9 +771,16 @@ class Hands {
           }
         }
       }
+      this._solveArm(hand);
+      const hv = hand.userData._showK > 0.02;
+      if (hand.visible !== hv) {
+        hand.visible = hv;
+        const am = hand.userData.arm;
+        if (am) { am.fore.visible = am.upper.visible = am.elbow.visible = am.wrist.visible = hv; }
+      }
     });
     // Out of frame at rest: stop drawing them altogether once they're down.
-    const vis = this.cameraMode === "fp" && this._showK > 0.02;
+    const vis = this.cameraMode === "fp" && (this.left.visible || this.right.visible);
     if (this.group.visible !== vis) this.group.visible = vis;
   }
 
@@ -569,5 +808,8 @@ class Hands {
     });
   }
 }
+
+// Pinch pose (radians): index MCP/PIP/DIP, the other fingers, thumb MP/IP.
+Hands.PINCH = { index: [0.95, 0.85, 0.45], rest: [1.35, 1.45, 0.9], thumb: [0.55, 0.50] };
 
 export { _UP, Hands };

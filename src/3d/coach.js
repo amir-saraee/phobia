@@ -66,6 +66,7 @@ function makeCreatureCoach(opts) {
   let settledNow = false;
   const distHist = [];       // [t, dist] for escape detection
   let lastEscapeT = -99;
+  let lastAwayT = -99;       // the creature last off on the player's errand (fetch)
   // Grounding (Esc) drains PhobiaFear toward 0 — the panic stop. That number
   // is not a reading of the alarm: the peak, the settle, the fall beat and
   // "nothing to settle" must never come from it, or a player who walked in
@@ -373,7 +374,9 @@ function makeCreatureCoach(opts) {
 
   // ---------------- reading the dog ----------------
   let readOpen = null;       // { id, t0, until }
-  let readCooldown = 6;      // seconds before the first prompt may appear
+  // seconds before the first prompt may appear. A traveler's first trial
+  // ever gets room to look around and take a step before the quiz starts.
+  let readCooldown = (o.novice != null ? o.novice : window.__lwNovice) ? 16 : 6;
   let readResultT = 0;
   const readPos = { x: null, y: null };
   const seenThisTrial = new Set();
@@ -390,6 +393,7 @@ function makeCreatureCoach(opts) {
     if (readOpen || readResultT > 0 || readCooldown > 0) return false;
     // Never a quiz over the grounding exercise (it used to cover the text).
     if (window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding()) return false;
+    if (stage && stage.classList.contains("breathing")) return false;   // nor over the breath
     if (s.onScreen === false) return false;
     if (s.dist != null && s.dist > 9.5) return false;
     // Variety: a signal already read this trial comes back only rarely.
@@ -621,8 +625,18 @@ function makeCreatureCoach(opts) {
     // Hysteresis: in at the zone line, out only a step past it, so a dog
     // pacing at the edge doesn't flicker the hold between "paused" and not.
     const wasEngaged = engaged;
-    engaged = engaged ? dist < o.inZoneDist + 0.6 : dist < o.inZoneDist;
-    if (engaged) { engagedSec += d; everEngaged = true; }
+    // A dog sent after a ball or a treat is away on YOUR errand: you were
+    // told to stay put, so the hold doesn't pause ("come back within 3 m")
+    // while it runs it back.
+    if (s.dogAway) lastAwayT = clock;
+    engaged = engaged ? (dist < o.inZoneDist + 0.6 || !!s.dogAway) : dist < o.inZoneDist;
+    if (engaged) {
+      engagedSec += d;
+      // (Read by the engine's "walk closer" hint: once the exposure has
+      // begun — you walked in, or the creature came to you — it retires.)
+      if (!everEngaged && stage) { try { stage.dataset.engaged = "1"; } catch {} }
+      everEngaged = true;
+    }
     // Back in the zone (from outside, or the spider's glass lifted): the fall
     // beat measures from this stretch only — a peak from out there (the
     // glass-drop startle) read as "you stayed, it came down" on re-entry.
@@ -673,7 +687,10 @@ function makeCreatureCoach(opts) {
     // right now): that drop is relief, and "You stayed" said the opposite.
     const line = settleLine();
     settledNow = engaged && trusted && engagedPeak >= 12 && cur <= line && (clock - lastPulseT) > 2.5
-      && clock - lastSafetyT > 8 && clock - lastEscapeT > 8 && backed < 0.5;
+      && clock - lastSafetyT > 8 && clock - lastEscapeT > 8 && backed < 0.5
+      // ...nor because the dog ran off after the ball: that fall isn't
+      // "same dog, same distance — a quieter alarm".
+      && clock - lastAwayT > 5;
     if (settledNow && !settledLatched && engagedSec > 5) {
       settledLatched = true; everSettled = true;
       // In seconds of staying, the same clock as "You stayed" on the done
@@ -940,6 +957,7 @@ function makeCreatureCoach(opts) {
       const k = Math.max(0, (readOpen.until - clock) / (readOpen.until - readOpen.t0));
       const bar = readBox._bar && readBox._bar.isConnected ? readBox._bar : (readBox._bar = readBox.querySelector(".dc-read-timer i"));
       if (bar) bar.style.transform = `scaleX(${k.toFixed(3)})`;
+      if (stage && stage.classList.contains("breathing")) readOpen.until += d;   // the question waits out a breath
       if (clock > readOpen.until) { readOpen = null; readBox.classList.remove("show"); readCooldown = readStarDone() ? 30 : 8; const L = lane(); if (L) L.release("read"); }
     }
     if (readResultT > 0) { readResultT -= d; if (readResultT <= 0) { readBox.classList.remove("show", "result"); const L = lane(); if (L) L.release("read"); } }

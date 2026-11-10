@@ -2302,6 +2302,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     switch (cmd) {
       case "sit":
         dogCtrl.sit();
+        // The words get a hand: the open palm pressed down (third person).
+        try { if (active.body && active.body.playGesture) active.body.playGesture("easy"); } catch {}
         if (window.PhobiaVoice) window.PhobiaVoice.speak(window.t("sc.d.settle", "Easy now. Settle."), { speaker: "you" });
         break;
       case "stand":
@@ -2345,6 +2347,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         // already on its feet just comes. The walk itself approaches along
         // the dog→player vector so it stops in front of you from any angle.
         armCallStay();
+        // …and you call it the way people do: a bend and a pat on the thigh.
+        try { if (active.body && active.body.playGesture) active.body.playGesture("call"); } catch {}
         // The lying dog of the alert rung gets up because you called it — the
         // rise is the moment, so it lands now rather than mid-walk later.
         if (B.startPose === "lay" && startPoseApplied && !esc.stood) {
@@ -2427,7 +2431,12 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       tpContain: {
         minX: ROOM.x0 + 0.3, maxX: ROOM.x1 - 0.3,
         minZ: ROOM.z0 + 0.3, maxZ: ROOM.z1 - 0.3,
-        maxY: ROOM.ceilY - 0.25, after: 2.5,
+        maxY: ROOM.ceilY - 0.25,
+        // Standing at the door and looking ahead keeps the wide opening shot
+        // (the whole room, the traveler head to toe, the dog in view). The
+        // timer used to pull the boom inside after 2.5 s whatever you did,
+        // which parked it on the back of your head until the first step.
+        after: 1e9, untilTurn: 0.22,
       },
     },
     // Walls/ceiling the third-person camera shouldn't clip through. The
@@ -3207,11 +3216,36 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           && (Math.sin(dog.rotation.y) * dx + Math.cos(dog.rotation.y) * dz) / (playerDist || 1) > 0.8;
         // Keep the dog in the third-person shot (the boom swings out when the
         // avatar would hide it).
+        // The room stops you a metre short of where the dog started — say so
+        // once, instead of an unexplained wall in the middle of open floor.
+        if (!controls._farTold && controls.position.z <= minZ + 0.06
+            && typeof controls.isMovingForward === "function" && controls.isMovingForward()
+            && window.PhobiaFX && window.PhobiaFX.contextPrompt) {
+          controls._farTold = !!window.PhobiaFX.contextPrompt(
+            window.tf("sc.d.farEnough", "That's far enough in. Let {dog} come the rest of the way.", { dog: dogName }), 3400);
+        }
         coachSubj.x = dog.position.x; coachSubj.z = dog.position.z;
         controls.tpSubject = coachSubj;
+        // First person has no such help, and on a portrait phone a dog that
+        // has walked up to your feet is simply under the bottom of the frame:
+        // the game says "it's sniffing hello — tap to pet" over a picture of
+        // an empty rug. When the dog is close, its head sits low or off the
+        // screen and the player hasn't touched the view for a moment, the
+        // gaze drops to it — gently, and only until it is back in the frame.
+        if ((controls.tpBlend || 0) < 0.3 && playerDist < 2.2 && !controls.dragging && !controls._plLocked
+            && sh > 0 && (headY == null || headY > sh * 0.5 || !coachOnScreen)) {
+          controls._fpSubjIdle = (controls._fpSubjIdle || 0) + d;
+          if (controls._fpSubjIdle > 1.2 && typeof controls._lookTo === "function") {
+            const pT = controls._pitchT ?? controls.pitch;
+            if (pT > -1.05) controls._lookTo(controls._yawT ?? controls.yaw, pT - Math.min(0.03, d * 0.55));
+          }
+        } else controls._fpSubjIdle = 0;
         coach.update(d, {
           dist: playerDist, gaze: gazeAlign, dogToward: coachToward,
           px: controls.position.x, pz: controls.position.z, dogX: dog.position.x, dogZ: dog.position.z,
+          // The dog is off on the player's own errand (ball or treat in
+          // play): its distance is not the player leaving.
+          dogAway: fetchPhase !== "idle",
           onScreen: coachOnScreen, dogGazing, trust: intensity === "barking" ? null : trust,
           anchorX: headX, anchorY: headY, stageW: sw, stageH: sh,
           // The whole dog on screen, so the read card sits clear of its body

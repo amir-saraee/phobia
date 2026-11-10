@@ -770,6 +770,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       : window.t("cmd.sp.jar", "Glass");
     if (lb.textContent !== want) lb.textContent = want;
   }
+  const JAR_Y = Math.max(0.2, Math.min(0.5, jarScale * 1.1));   // 17–42 cm tall
   function buildJar() {
     const g = new THREE.Group();
     const glass = new THREE.Mesh(
@@ -794,7 +795,10 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     // Wider, not longer: the spider is flat, so only the rim has to grow. A
     // uniform scale made the apex rung's jar 1.9 m long, its glass end 0.7 m
     // from your eye — the whole view washed out through it.
-    g.scale.set(jarScale, 1, jarScale);
+    // ...and no taller than a glass: the height stayed at 0.85 m, so a 3 cm
+    // house spider got a waist-high pillar and the wall rung a tube reaching
+    // 0.85 m out of the wall toward your face.
+    g.scale.set(jarScale, JAR_Y, jarScale);
     return g;
   }
   // Where the jar starts and rests. Floor rungs: open end down, lowered from
@@ -803,7 +807,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   // end toward the pillar, pressed flat against the face over the spider — an
   // upright jar there stood half inside the concrete and covered only the top
   // half of the spider.
-  const JAR_H = 0.85;
+  const JAR_H = 0.85 * JAR_Y;
   function jarRest() {
     if (onWall) return { x: spider.position.x, y: spider.position.y, z: (B.wallZ ?? -2.6) + 0.004 };
     return { x: spider.position.x, y: -0.95, z: spider.position.z };
@@ -1077,6 +1081,9 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   // Look closer: a held lean-in — the field of view narrows onto it. Tap 🔍
   // still turns you to face it.
   let spZoomHeld = false, spBaseFov = null, spFovMode = null;
+  // A hold that began in third person: the shot goes through the traveler's
+  // eyes for as long as it's held (see the update loop), then comes back out.
+  let spZoomFromTp = false, spZoomTpSynced = false, spBendT = 0;
   const spZoomKey = (e) => {
     if (e.code !== "KeyZ" || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
@@ -1144,6 +1151,17 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       pointerLock: true,
       lookSmoothing: 10,
       fearGait: true,
+      // Third person stays inside the cellar and UNDER its joists. The front
+      // wall is see-through from outside (the opening shot), so nothing held
+      // the boom in the room, and whatever lifted it — a wall behind you, the
+      // spider at your feet — had no ceiling: two steps in, the camera was up
+      // among the joists with a beam across the traveler's head.
+      // Joists hang to ceilY − 0.21; the lens keeps a hand's width below.
+      tpContain: {
+        minX: ROOM.x0 + 0.3, maxX: ROOM.x1 - 0.3,
+        minZ: ROOM.z0 + 0.3, maxZ: ROOM.z1 - 0.3,
+        maxY: ROOM.ceilY - 0.21 - 0.22, after: 2.5,
+      },
     },
     collisionObjects: [backWall, leftWall, rightWall, ceiling],
     bloom: { strength: 0.16, threshold: 0.97 },   // dim room — only the filament blooms
@@ -1697,7 +1715,57 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
         // ---- Look closer (held) ----
         if (controls) {
           if (spBaseFov == null || controls.cameraMode !== spFovMode) { spBaseFov = camera.fov; spFovMode = controls.cameraMode; }
-          const wantFov = spZoomHeld ? Math.min(spBaseFov, 26) : spBaseFov;
+          // In third person the narrowed lens used to push in on the back of
+          // your own head — the look target there is the avatar's chest, so
+          // the spider left the frame as the view tightened. Looking closer
+          // is something the EYES do: the avatar bends toward it and the shot
+          // moves in through their eyes for the hold, then pulls back out to
+          // where it was. (Not remembered as a view choice; the View button
+          // still means what it says.)
+          if (spZoomHeld && !spZoomFromTp && controls.cameraMode === "tp" && !controls._cameraModeLocked) {
+            spZoomFromTp = true; spZoomTpSynced = false;
+            // The camera starts in; the body stays whole (head on, leaning)
+            // until the lens is nearly at its eyes — see the sync just below.
+            controls.cameraMode = "fp"; spFovMode = "fp";
+          }
+          if (spZoomFromTp) {
+            if (spZoomHeld && !spZoomTpSynced && controls.cameraMode === "fp" && controls.tpBlend < 0.3) {
+              spZoomTpSynced = true;
+              // Head off, hands on: the camera is the head now. (The mode
+              // change also resets the lens to that view's default — put it
+              // back, the hold is easing it.)
+              const f0 = camera.fov;
+              controls.setCameraMode("fp", false);
+              if (camera.fov !== f0) { camera.fov = f0; camera.updateProjectionMatrix(); }
+            }
+            if (!spZoomHeld) {
+              // Back out — unless the player changed the view themselves meanwhile.
+              if (controls.cameraMode === "fp") {
+                const f0 = camera.fov;
+                controls.setCameraMode("tp", false);
+                if (camera.fov !== f0) { camera.fov = f0; camera.updateProjectionMatrix(); }
+              }
+              spZoomFromTp = false; spFovMode = controls.cameraMode;
+            }
+          }
+          if (spZoomFromTp && spZoomHeld && controls.cameraMode === "fp") {
+            // A quick move in (≈0.3 s): the ordinary view change takes most of
+            // a second, and that long a push through your own back is the
+            // shot this replaced.
+            controls.tpBlend -= controls.tpBlend * Math.min(1, d * 6);
+          }
+          if (active && active.body && active.body.setPosture) {
+            // Bend to look: a fold at the hips and soft knees. Seen as the
+            // shot goes in, and again as it pulls back out to find the
+            // traveler still bent over, straightening up.
+            if (spZoomFromTp && spZoomHeld) spBendT = 0.4;
+            else spBendT = Math.max(0, spBendT - d);
+            const bend = spBendT > 0 ? 1 : 0;
+            active.body.setPosture({ hinge: 0.6 * bend, crouch: 0.22 * bend });
+          }
+          // The lens narrows only once the shot is through the eyes.
+          const eyeK = clamp01((0.3 - (controls.tpBlend || 0)) / 0.3);
+          const wantFov = spZoomHeld ? spBaseFov + (Math.min(spBaseFov, 26) - spBaseFov) * eyeK : spBaseFov;
           if (Math.abs(camera.fov - wantFov) > 0.05) { camera.fov += (wantFov - camera.fov) * Math.min(1, d * 7); camera.updateProjectionMatrix(); }
           // (No crouch: the body doesn't crouch with the eye here, so a lowered
           // camera ended up inside your own chest when looking down.)
@@ -1705,12 +1773,19 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
           // middle of the view, ease the gaze onto it (through a narrow lens a
           // 10 cm spider otherwise slides straight out of frame).
           if (spZoomHeld && !spiderReleased && controls._lookTo) {
-            camera.getWorldPosition(_spV);
+            // From the eye, not the boom, when the hold began behind your back.
+            if (spZoomFromTp) _spV.copy(controls.position); else camera.getWorldPosition(_spV);
             const ex = spider.position.x - _spV.x, ez = spider.position.z - _spV.z;
             const ey = spider.position.y + (spiderCtrl.height || 0.05) * 0.4 - _spV.y;
             const wantYaw = Math.atan2(-ex, -ez), wantPitch = Math.atan2(ey, Math.hypot(ex, ez));
             const dyaw = Math.atan2(Math.sin(wantYaw - controls.yaw), Math.cos(wantYaw - controls.yaw)), dp = wantPitch - controls.pitch;
-            if (Math.abs(dyaw) < 0.4 && Math.abs(dp) < 0.4) {
+            // (From third person you were framing yourself, not it: the gaze
+            // is brought round from further off.)
+            // (First person too: after a normal walk-in the spider sits ~0.5
+            // rad below a level gaze, so the first hold zoomed on bare floor
+            // and earned nothing. The first moments of a hold reach wider.)
+            const gate = spZoomFromTp ? 1.3 : 0.95;
+            if (Math.abs(dyaw) < gate && Math.abs(dp) < Math.max(0.4, gate * 0.8)) {
               const k = Math.min(1, d * 3.2);
               controls._lookTo(controls.yaw + dyaw * k, controls.pitch + dp * k);
             }
@@ -1922,6 +1997,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       try { if (window.PhobiaThreat === _threatPos) window.PhobiaThreat = null; } catch {}
       try { window.removeEventListener("keydown", spZoomKey); window.removeEventListener("keyup", spZoomKey); } catch {}
       try { if (spiderControls && spiderControls.tpSubject === spSubj) spiderControls.tpSubject = null; } catch {}
+      try { if (spZoomFromTp && spiderControls && spiderControls.cameraMode === "fp") spiderControls.setCameraMode("tp", true); } catch {}
       try { if (window.PhobiaFear && window.PhobiaFear.setDirect) window.PhobiaFear.setDirect(null); } catch {}
       try { if (window.__holdPolicy === spPolicy) window.__holdPolicy = null; } catch {}
       try { if (window.__coach === spCoach) window.__coach = null; } catch {}

@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { CREATURE_MODELS, buildCreature } from "../assets.js";
 import { IS_COARSE_POINTER, IS_LOW_POWER, sceneQuality, loadMeadowHDR } from "../renderer.js";
-import { buildHand, angleGap } from "../human-rig.js";
+import { angleGap } from "../human-rig.js";
 import { sceneContext } from "../scene-context.js";
 import { makeEarthMaps, makeGrassMaps, makeLeafTexture } from "../textures.js";
 import { makeScaleNormal, makeFurMaps, ensureBoxUV, smoothCreaseNormals, coatFor, SNAKE_COATS } from "../creature-kit.js";
@@ -2217,33 +2217,17 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
   let sniffT = 0;            // builds while the hand is near the snake's head
   let sniffMet = false;      // becomes true once sniffT reaches threshold
   let _lastSniffFlick = 0;   // throttles the sniff tongue-flick request
-  // Visible procedural hand pinned to the camera. We add it as a child of
-  // camera so it follows look direction; extension drives a forward offset.
-  const handGroup = new THREE.Group();
-  handGroup.position.set(0.10, -0.18, -0.30);
-  camera.add(handGroup);
-  if (!scene.children.includes(camera)) scene.add(camera);
-  const sHandSkin = (window.Character && window.Character.loadCharacter())
-              ? window.Character.hexToInt(window.Character.skinHex(window.Character.loadCharacter()))
-              : 0xe8b794;
-  const sHandMat = new THREE.MeshStandardMaterial({ color: sHandSkin, roughness: 0.62, envMapIntensity: 0.5 });
-  const sShirt = (() => { try { const ch = window.Character.loadCharacter(); return window.Character.hexToInt(window.Character.topHex(ch)); } catch { return 0x2c9d96; } })();
-  const sleeveMat = new THREE.MeshStandardMaterial({ color: sShirt, roughness: 0.9 });
-  // The SAME hand the Hands rig and the third-person body use (buildHand):
-  // this scene used to draw a white mitten of spheres and capsules on a brown
-  // cuff — nobody's hand. Back of the hand up, fingers forward, as you'd
-  // offer it to be smelled.
-  const sHandObj = buildHand(1, sHandMat, sleeveMat, { scale: 0.8, forearm: true, forearmMat: sHandMat });
-  const sHolder = new THREE.Group();
-  sHolder.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 1).normalize(), Math.PI);
-  sHolder.add(sHandObj);
-  sHolder.rotation.z += -0.18;
-  handGroup.add(sHolder);
-  try { if (sHandObj.userData.setCurl) sHandObj.userData.setCurl(0.0, 0.12); } catch {}
-  // Palm marker for the sniff distance check (palm centre, hand-local).
-  const sPalm = new THREE.Object3D();
-  sPalm.position.set(0, -0.03, 0);
-  sHandObj.add(sPalm);
+  // The hand is the shared first-person Hands rig (`hands` below), driven by
+  // setReachTarget toward the snake — the same arm that pets the dog. This
+  // scene used to pin its own hand to the camera and slide it straight down
+  // the view axis: seen exactly end-on it was a pale egg at screen centre,
+  // and at rest a fist on the bottom edge. The rig brings an arm in from the
+  // lower right with the back of the hand up, stops at a real arm's length,
+  // and is out of frame when the button isn't held.
+  const _snkReachL = new THREE.Vector3();
+  const _snkReachW = new THREE.Vector3();
+  const _snkUp = new THREE.Vector3(0, 1, 0);
+  const _snkFingers = new THREE.Vector3(0, 0, -1);
 
   function wireSnakesCmds() {
     const bar = document.querySelector('.scene-cmd-bar[data-scene="snakes"]');
@@ -2251,8 +2235,13 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     bar.dataset.wired = "1";
     const stillBtn = bar.querySelector('[data-cmd="still"]');
     if (stillBtn) {
-      const press = (e) => { e.stopPropagation(); stillHeld = true; stillBtn.classList.add("pressed"); };
-      const release = () => { stillHeld = false; stillBtn.classList.remove("pressed"); };
+      // A quick tap latches the pose for a few seconds — both verbs are
+      // press-and-hold, and a tap used to do nothing at all, with nothing on
+      // the button to say why.
+      let downAt = 0, latch = 0;
+      const press = (e) => { e.stopPropagation(); clearTimeout(latch); downAt = performance.now(); stillHeld = true; stillBtn.classList.add("pressed"); };
+      const off = () => { stillHeld = false; stillBtn.classList.remove("pressed"); };
+      const release = () => { if (!stillHeld) return; clearTimeout(latch); if (performance.now() - downAt < 400) latch = setTimeout(off, 4000); else off(); };
       stillBtn.addEventListener("pointerdown", press);
       stillBtn.addEventListener("pointerup", release);
       stillBtn.addEventListener("pointerleave", release);
@@ -2262,15 +2251,18 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
     if (extendBtn) {
       const press = (e) => {
         e.stopPropagation();
+        clearTimeout(latch); downAt = performance.now();
         extendHeld = true;
         extensionTarget = 1;
         extendBtn.classList.add("pressed");
       };
-      const release = () => {
+      let downAt = 0, latch = 0;
+      const off = () => {
         extendHeld = false;
         extensionTarget = 0;
         extendBtn.classList.remove("pressed");
       };
+      const release = () => { if (!extendHeld) return; clearTimeout(latch); if (performance.now() - downAt < 400) latch = setTimeout(off, 4000); else off(); };
       extendBtn.addEventListener("pointerdown", press);
       extendBtn.addEventListener("pointerup", release);
       extendBtn.addEventListener("pointerleave", release);
@@ -2333,7 +2325,11 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       initialPos: [0, 0.62, 4.0],
       initialYaw: 0,
       initialPitch: snakePitch * 0.4,
-      bounds: { minX: -3, maxX: 3, minZ: -distance + 1.0, maxZ: 5 },
+      // The player may follow as far as the snake may go (less a metre): on
+      // the close rungs the limit was the snake's SPAWN distance, so a snake
+      // that retreated left you at an invisible wall with the hold paused
+      // and no way back within range. The snake's own guard keeps the gap.
+      bounds: { minX: -3, maxX: 3, minZ: Math.min(-distance + 1.0, SNAKE_BOUNDS.minZ + 3.0), maxZ: 5 },
       speed: 1.2,
       lookSpeed: 0.0035,
       // Snake phobia is intimate — first-person locked (the hand-extend gesture
@@ -2344,9 +2340,9 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       lookSmoothing: 10,
       fearGait: true,
     },
-    // NOTE: no generic `hands` here — this scene builds its own palm-up
-    // `handGroup` (below) for the "extend hand" mechanic. Requesting the
-    // generic first-person hands too would render a second forearm on top.
+    // The shared first-person hands: the "extend hand" verb drives the right
+    // one with setReachTarget (see the extend-hand block in update).
+    hands: { skinColor: 0xd4a07a, sleeveColor: 0x2c9d96 },
     bloom: { strength: 0.24, threshold: 0.95 },
     fearGradePass: true,
     cameraFar: 45,
@@ -2528,7 +2524,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
             // A novel object landed: tongue-taste it (twice — the same
             // chemosensing beat the extend-hand mechanic teaches).
             const leafD = Math.hypot(leaf.position.x - snake.position.x, leaf.position.z - snake.position.z);
-            if (snakeCtl.ctrl && leafD < 4) {
+            if (snakeCtl.ctrl && leafD < 3) {
               snakeCtl.ctrl.requestTongueFlick(true);
               // ...and the tasting is a moment to read: the leaf is a way to
               // ask the snake a question, not just to watch it.
@@ -2577,15 +2573,47 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       // snake is sensitive to fast movement; quicker on the way back).
       const extKEase = extensionTarget > extension ? 2.5 : 5.0;
       extension += (extensionTarget - extension) * Math.min(1, dtN * extKEase);
-      // Visually: handGroup z goes from -0.30 (close to camera) to a forward
-      // reach of -0.85 (about an outstretched arm length from the eye).
-      handGroup.position.z = -0.30 - extension * 0.55;
-      // Tilt the palm up slightly as it extends (offering posture)
-      handGroup.rotation.x = -extension * 0.25;
-      // World-space distance from the extended palm to the snake's head
-      // (reuse closure temps — this runs every frame).
-      sPalm.getWorldPosition(_snkPalm);
+      // The hand goes out toward the snake's head from the right shoulder:
+      // 0.30 m as it comes up, 0.55 m (a comfortable reach) at full
+      // extension. The aim is held inside the lower-right of the view, so
+      // you always see your own hand go out, wherever you're looking.
       headAnchor.getWorldPosition(_snkHead2);
+      const hh = active && active.hands;
+      if (hh && hh.setReachTarget && hh.right) {
+        if (extendHeld || extension > 0.04) {
+          camera.updateWorldMatrix(true, false);
+          const L = _snkReachL.copy(_snkHead2);
+          camera.worldToLocal(L);
+          // Direction from the shoulder (camera-local), kept forward.
+          L.x -= 0.17; L.y += 0.22; L.z += 0.02;
+          if (L.z > -0.2) L.z = -0.2;
+          L.normalize();
+          const reach = 0.30 + 0.25 * extension;
+          L.multiplyScalar(reach);
+          L.x += 0.17; L.y -= 0.22; L.z -= 0.02;
+          const halfH = Math.abs(L.z) * Math.tan((camera.fov * Math.PI / 180) / 2);
+          const halfW = halfH * (camera.aspect || 1);
+          L.x = Math.max(Math.min(0.02, halfW * 0.2), Math.min(Math.min(0.20, halfW * 0.62), L.x));
+          L.y = Math.max(-halfH * 0.70, Math.min(-halfH * 0.18, L.y));
+          _snkReachW.copy(L);
+          camera.localToWorld(_snkReachW);
+          // Back of the hand toward you, fingers loosely open and a little
+          // raised: offered to be smelled. (Laid dead flat along the reach it
+          // was seen edge-on — a hook, not a hand.) Held in the air: it never
+          // counts as touching anything.
+          _snkFingers.set(-0.42, 0.38, -0.82).normalize().transformDirection(camera.matrixWorld);
+          _snkUp.set(-0.10, 0.80, 0.55).normalize().transformDirection(camera.matrixWorld);
+          hh.setReachTarget(_snkReachW, { hand: "right", grip: "flat", normal: _snkUp, fingers: _snkFingers, maxReach: 0.72, curl: 0, contact: false });
+          hh.right.getWorldPosition(_snkPalm);
+        } else {
+          if (hh._reach) hh.clearReachTarget();
+          hh.right.getWorldPosition(_snkPalm);
+        }
+      } else {
+        // Third person / no rig: an arm's length ahead of the eye.
+        _snkPalm.set(0.1, -0.2, -0.3 - extension * 0.35);
+        camera.localToWorld(_snkPalm);
+      }
       // A lying snake's head is a long reach below an outstretched palm (a
       // hand held out while looking down gains little ground): scent drifts
       // down to it, so the vertical gap counts for a third, and it tastes
@@ -2594,7 +2622,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       // Sniff trust builds when the palm is near the snake's head AND the
       // user is holding the extend button (active gesture, not by accident).
       // Decays slowly otherwise.
-      const sniffing = extendHeld && extension > 0.6 && headWorldDist < 1.2 && !moving;
+      const sniffing = extendHeld && extension > 0.6 && headWorldDist < 1.45 && !moving;
       snakeCtl._palmDist = headWorldDist;
       snakeCtl.sniffing = sniffing;   // published for the fear feed + tongue cadence
       if (sniffing) {
@@ -2669,16 +2697,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           });
         });
       } catch {}
-      // Dispose the hand group's own geometry/materials BEFORE detaching it.
-      // (The global disposer walks the scene graph; once we remove handGroup
-      // from the camera it's unreachable, so we must free it here ourselves.)
-      try {
-        handGroup.traverse(o => {
-          if (o.geometry) o.geometry.dispose();
-          if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m && m.dispose());
-        });
-        camera.remove(handGroup);
-      } catch {}
+      try { if (active && active.hands && active.hands.clearReachTarget) active.hands.clearReachTarget(); } catch {}
     },
   };
 }

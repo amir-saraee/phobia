@@ -153,7 +153,49 @@ function restoreScroll(st) {
   to();
   requestAnimationFrame(to);   // once more after the page's first layout pass
 }
-window.addEventListener("hashchange", () => {
+// ---- Back closes what is on top, and never throws a trial away ----
+// Android's Back (and the edge swipe that sits exactly where a thumb drags to
+// look around) used to navigate under an open menu / story page / breathing
+// panel, and walked silently out of a live trial with nothing logged. Now a
+// Back press is first offered to whatever is on top: an overlay closes; a
+// trial in progress steps out the proper way (to its rating). The history
+// step the press already took is undone with forward(), and the two
+// navigations' events are swallowed so nothing re-renders.
+let _backEat = 0;             // hashchange events still to swallow
+let _backFwd = false;         // the undo's own popstate is still to come
+let _backThen = null;         // what to run once we're back on the entry
+function closeTopForBack() {
+  const q = (s) => document.querySelector(s);
+  let el;
+  if ((el = q(".story-ov .st-skip"))) { el.click(); return true; }
+  if ((el = q(".goal-modal-overlay"))) { el.remove(); return true; }
+  if (q(".settings-drawer")) { closeSettings(); return true; }
+  if (q(".menu-drawer")) { closeMenu(); return true; }
+  if ((el = q(".page-breath .sb-close, .stage-breath:not(.gone) .sb-close"))) { el.click(); return true; }
+  try {
+    if (window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding()) {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+      return true;
+    }
+  } catch {}
+  // A trial that has begun: Back is "Step out" — the stay is rated and kept.
+  const stage = q(".exposure-panel #stage");
+  const out = q("#continueBtn");
+  if (stage && out && !stage.classList.contains("pre-start") && !stage.classList.contains("leaving")) {
+    _backThen = () => { try { out.click(); } catch {} };
+    return true;
+  }
+  return false;
+}
+function backUndoDone() {
+  if (_backFwd || _backEat > 0) return;
+  clearTimeout(_backTimer);
+  const then = _backThen; _backThen = null;
+  if (then) then();
+}
+let _backTimer = 0;
+window.addEventListener("hashchange", (e) => {
+  if (_backEat > 0) { _backEat--; e.stopImmediatePropagation(); backUndoDone(); return; }
   if (_suppressHashSync) return;
   const entry = _popEntry; _popEntry = undefined;
   const route = parseRoute(location.hash);
@@ -163,6 +205,23 @@ window.addEventListener("hashchange", () => {
   if (entry === undefined) scrollToTop(); else restoreScroll(entry);
 });
 window.addEventListener("popstate", (e) => {
+  if (_backFwd) {             // landed back on the entry Back had left
+    _backFwd = false;         // (its hashchange, if one is due, is swallowed next)
+    backUndoDone();
+    return;
+  }
+  if (!_suppressHashSync && closeTopForBack()) {
+    _backEat = location.hash !== _lastRenderedHash ? 2 : 0;
+    _backFwd = true;
+    // Safety: if there was nothing to go forward to, don't stay deaf.
+    clearTimeout(_backTimer);
+    _backTimer = setTimeout(() => {
+      _backFwd = false; _backEat = 0; _backThen = null;
+      if (location.hash !== _lastRenderedHash) { const r = parseRoute(location.hash); render(r.view, r.params); }
+    }, 900);
+    try { history.forward(); } catch {}
+    return;
+  }
   if (location.hash !== _lastRenderedHash) { _popEntry = e.state || null; return; }
   const route = parseRoute(location.hash);
   render(route.view, route.params);

@@ -316,7 +316,11 @@ async function creatures(browser, base) {
   });
   for (const [realm, rung, stop] of [["spiders", 1, 1.2], ["snakes", 1, 3.0]]) {
     await page.goto(`${base}/?r=${Date.now()}#/${realm}/exposure/${rung}`, { waitUntil: "load" }); await sleep(800);
-    check(`${realm}: the card asks what the ${realm === "spiders" ? "spider" : "snake"} will do`, await page.evaluate(() => document.querySelectorAll("#trialIntro .expect-chip").length >= 6));
+    // A traveler's first trial ever asks one question: no "what will it do?"
+    // chips on that card (and so no reality check after it). They join from
+    // the second trial on.
+    const novice = await page.evaluate(() => !(state.log && state.log.length));
+    check(`${realm}: ${novice ? "a first-ever card asks only the number" : `the card asks what the ${realm === "spiders" ? "spider" : "snake"} will do`}`, await page.evaluate((nv) => { const n = document.querySelectorAll("#trialIntro .expect-chip").length; return nv ? n === 0 && !!document.querySelector("#trialIntro .sc") : n >= 6; }, novice));
     await stepIn(page, 6);
     check(`${realm}: scene + coach mount`, await waitFor(page, () => !!(window.__active && window.__active.scene && window.__coach && document.querySelector(".dog-coach")), 15000));
     await sleep(2500);
@@ -354,7 +358,7 @@ async function creatures(browser, base) {
     await sleep(1200);
     await page.evaluate(() => { document.querySelectorAll('input[type="range"]').forEach((r) => { r.value = "3"; r.dispatchEvent(new Event("input", { bubbles: true })); r.dispatchEvent(new Event("change", { bubbles: true })); }); const b = document.getElementById("rateSubmit"); b && b.click(); });
     await sleep(1500);
-    check(`${realm}: reality check on the complete page`, await page.evaluate(() => /\/done\//.test(location.hash) && !!document.querySelector(".reality-card")), await hash(page));
+    check(`${realm}: ${novice ? "the complete page" : "reality check on the complete page"}`, await page.evaluate((nv) => /\/done\//.test(location.hash) && (nv || !!document.querySelector(".reality-card")), novice), await hash(page));
   }
   check("spider + snake trials: no page errors", page.errors.length === 0, page.errors.slice(0, 5).join(" | "));
   await ctx.close();
@@ -374,7 +378,11 @@ async function places(browser, base) {
   });
   for (const [realm, rung, walk] of [["heights", 1, 3000], ["dark", 0, 2200], ["enclosed", 0, 3000]]) {
     await page.goto(`${base}/?r=${Date.now()}#/${realm}/exposure/${rung}`, { waitUntil: "load" }); await sleep(800);
-    check(`${realm}: the card asks what the alarm predicts`, await page.evaluate(() => document.querySelectorAll("#trialIntro .expect-chip").length >= 6 && /alarm predicting/i.test((document.querySelector("#trialIntro .ti-q") || {}).textContent || "")));
+    // A traveler's first trial ever asks one question: no "what will it do?"
+    // chips on that card (and so no reality check after it). They join from
+    // the second trial on.
+    const novice = await page.evaluate(() => !(state.log && state.log.length));
+    check(`${realm}: ${novice ? "a first-ever card asks only the number" : "the card asks what the alarm predicts"}`, await page.evaluate((nv) => { const n = document.querySelectorAll("#trialIntro .expect-chip").length; return nv ? n === 0 && !!document.querySelector("#trialIntro .sc") : n >= 6 && /alarm predicting/i.test((document.querySelector("#trialIntro .ti-q") || {}).textContent || ""); }, novice));
     await stepIn(page, 6);
     check(`${realm}: scene + coach mount`, await waitFor(page, () => !!(window.__active && window.__active.scene && window.__coach && document.querySelector(".dog-coach")), 15000));
     await sleep(2500);
@@ -398,7 +406,7 @@ async function places(browser, base) {
     await sleep(1200);
     await page.evaluate(() => { document.querySelectorAll('input[type="range"]').forEach((r) => { r.value = "3"; r.dispatchEvent(new Event("input", { bubbles: true })); r.dispatchEvent(new Event("change", { bubbles: true })); }); const b = document.getElementById("rateSubmit"); b && b.click(); });
     await sleep(1500);
-    check(`${realm}: reality check on the complete page`, await page.evaluate(() => /\/done\//.test(location.hash) && !!document.querySelector(".reality-card")), await hash(page));
+    check(`${realm}: ${novice ? "the complete page" : "reality check on the complete page"}`, await page.evaluate((nv) => /\/done\//.test(location.hash) && (nv || !!document.querySelector(".reality-card")), novice), await hash(page));
   }
   check("place trials: no page errors", page.errors.length === 0, page.errors.slice(0, 5).join(" | "));
   await ctx.close();

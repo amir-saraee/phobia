@@ -785,7 +785,7 @@ const ENCLOSED_SIGNALS = {
             means: "Fans, motors and lights hum. It's the building's machinery working, and it means air is moving." },
   knock:  { cls: "place", icon: "🥁", name: "Loud knocking",        look: "a loud, rhythmic knocking starts up",
             means: "That's the scanner's coils switching — loud, harmless, and the sign it's working. Every MRI sounds like this." },
-  vent:   { cls: "place", icon: "🌬", name: "A breath of air",      look: "cool air brushes your face",
+  vent:   { cls: "place", icon: "🌬️", name: "A breath of air",      look: "cool air brushes your face",
             means: "The ventilation. Fresh air, moving through the space the whole time." },
   latch:  { cls: "place", icon: "🔒", name: "The latch clicks",     look: "the door clicks shut behind you",
             means: "A latch, not a lock. It opens from the inside with one push, the same as it did a minute ago." },

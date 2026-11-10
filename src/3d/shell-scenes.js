@@ -770,7 +770,16 @@ const ShellScenes = (() => {
     // BELOW them, since the frame's centre lands where the camera looks and
     // the figure has to end up above that centre. The lower half of the shot
     // is floor nobody sees — the sheet is sitting on it.
-    const camBase = portrait
+    // A WIDE creator stage (desktop: the options sit in a side panel, so the
+    // stage is its own tall-enough box) is the simple case again: stand 2.9 m
+    // off and aim at the traveler's middle, so they fill the height of the
+    // frame and a change of glasses or beard can actually be seen.
+    // (Same query as the side-panel layout in styles.css — the container
+    // itself may not be laid out yet when the stage mounts.)
+    const wideStage = portrait && !!(window.matchMedia && window.matchMedia("(min-width: 900px) and (min-height: 520px)").matches);
+    const camBase = wideStage
+      ? { x: 0, y: -0.02, z: 3.25, lx: 0, ly: -0.16, lz: 0.35 }
+      : portrait
       ? { x: 0, y: 0.05, z: 4.9, lx: 0, ly: -1.15, lz: 0.35 }
       : { x: 1.5, y: 0.22, z: 1.0, lx: -1.2, ly: -0.34, lz: -5.5 };
     camera.position.set(camBase.x, camBase.y, camBase.z);

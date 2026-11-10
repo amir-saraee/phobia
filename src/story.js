@@ -945,7 +945,7 @@
   const ROM = ["", "I", "II", "III", "IV", "V", "VI"];
   function chapterLabel(ch) {
     if (!ch.n) return L(ch.title);
-    return lang() === "fa" ? `فصلِ ${FA_ORD[ch.n] || ch.n} · ${L(ch.title)}` : `Chapter ${ROM[ch.n] || ch.n} · ${L(ch.title)}`;
+    return lang() === "fa" ? `فصلِ ${FA_ORD[ch.n] || ch.n} | ${L(ch.title)}` : `Chapter ${ROM[ch.n] || ch.n} · ${L(ch.title)}`;
   }
   function chapterShort(ch) {
     if (!ch.n) return L(ch.title);

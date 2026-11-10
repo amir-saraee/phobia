@@ -85,8 +85,9 @@ class Body {
       armSpread: 0,        // arms out to the sides for balance
       reach: 0,            // both hands forward, like grabbing a railing
       reachHeight: 0.5,    // 0 hip → 1 chest height for the reach gesture
+      hinge: 0,            // fold forward at the HIPS (peering over a rail, bending to look)
     };
-    this._postureSm = { lean: 0, crouch: 0, armSpread: 0, reach: 0, reachHeight: 0.5 };
+    this._postureSm = { lean: 0, crouch: 0, armSpread: 0, reach: 0, reachHeight: 0.5, hinge: 0 };
     this.group = new THREE.Group();
     // Scene click-pickers must see THROUGH the avatar: in third person the
     // body stands dead centre and its meshes swallowed clicks meant for the
@@ -1067,6 +1068,7 @@ class Body {
     ps.armSpread  += (pt.armSpread  - ps.armSpread ) * lerpRate;
     ps.reach      += (pt.reach      - ps.reach     ) * lerpRate;
     ps.reachHeight += (pt.reachHeight - ps.reachHeight) * lerpRate;
+    ps.hinge = (ps.hinge || 0) + ((pt.hinge || 0) - (ps.hinge || 0)) * lerpRate;
 
     // ---------- World-anchored contact ----------
     // Resolved BEFORE the spine and legs, because touching something is a
@@ -1084,6 +1086,9 @@ class Body {
         normal: r.normal || null,
         grip: r.grip || "flat",
         curl: r.curl != null ? r.curl : (r.grip === "wrap" ? 0.95 : 0.12),
+        // Two hands on a bar: each takes its own place along it (the lateral
+        // half-gap the first-person hands already honour).
+        spread: r.hand === "both" ? (r.spread || 0) : 0,
       };
       // How far short is the arm? Measure shoulder → target and let the body
       // make up the difference by bending, exactly like a person would.
@@ -1141,7 +1146,12 @@ class Body {
     const totalLean = walkLean + postureLean;
     // Hip hinge for reach assist — applied to the spine chain below so it
     // carries the shoulders forward rather than just tilting the chest.
-    const hinge = assistLean * 0.62;
+    // A scene can ask for the same fold directly (`posture.hinge`): leaning
+    // out over a railing, bending to look at something on the floor. Third
+    // person only, like the posture lean — in first person the camera is the
+    // head and the scene moves it itself.
+    const sceneHinge = this.cameraMode === "tp" ? (ps.hinge || 0) : 0;
+    const hinge = Math.min(1.1, assistLean * 0.62 + sceneHinge * 0.62);
     // Walk-start commitment: rising walkAmt tips the torso into the first
     // step — real walking begins with a fall forward, not an upright glide.
     const risingWalk = Math.max(0, walkAmt - (this._prevWalkAmtLean || 0));
@@ -1769,6 +1779,19 @@ class Body {
         const give = 0.070 - (contact.landed || 0) * (0.018 + 0.008 * Math.sin(t * 3.1));
         if (n) tgt.addScaledVector(n, give);
         else tgt.y += give;
+        // Both hands on one bar used to be sent to the SAME point: two fists
+        // stacked on the centre line. Each goes out to its own side instead,
+        // along the body's left-right axis.
+        if (!arm._cOff) arm._cOff = new THREE.Vector3();
+        arm._cOff.set(0, 0, 0);
+        if (contact.spread) {
+          this.group.updateMatrixWorld();
+          _bV4.setFromMatrixColumn(this.group.matrixWorld, 0).normalize();
+          _bV5.setFromMatrixPosition(arm.root.matrixWorld)
+            .sub(_bV6.setFromMatrixPosition(this.chest.matrixWorld));
+          arm._cOff.copy(_bV4).multiplyScalar((_bV5.dot(_bV4) < 0 ? -1 : 1) * contact.spread);
+          tgt.add(arm._cOff);
+        }
         this.chest.updateMatrixWorld();
         this.chest.worldToLocal(tgt);
         if (this._armIK(arm, tgt, k)) {
@@ -1807,7 +1830,7 @@ class Body {
         // 0.055 m from the coat.
         this.group.updateMatrixWorld(true);
         _bV6.setFromMatrixPosition(arm.wrist.matrixWorld);
-        const gapNow = _bV6.distanceTo(contact.world);
+        const gapNow = _bV6.sub(arm._cOff).distanceTo(contact.world);
         this._contactGap = this._contactGap == null
           ? gapNow : this._contactGap + (gapNow - this._contactGap) * Math.min(1, dtB * 8);
       } else if (gestureWeight > 0.3 && side > 0) {
@@ -2003,6 +2026,65 @@ class Body {
         }
       }
     }
+
+    // ---- One-shot arm gestures: calling the dog over, "easy now" ----
+    // Speaking to the dog used to leave the avatar standing with both arms at
+    // its sides while the words came out. Same layer as the toss, but small:
+    // about a second, one arm, eased in and out so it hands back to whatever
+    // the arm was doing (idle sway or the walk swing).
+    if (this._gestAct) {
+      const A = this._gestAct;
+      A.t += dtB;
+      const dur = A.kind === "easy" ? 1.25 : 1.1;
+      // The arm is spoken for: a toss, a live touch on this side, a kneel.
+      const busy = !!this._throwAct || !!this._kneeling
+        || (contact && (contact.side === 0 || contact.side === A.side));
+      if (A.t >= dur || busy || this.cameraMode !== "tp") this._gestAct = null;
+      else {
+        const u01 = A.t / dur;
+        // In over the first fifth, out over the last third.
+        let w = Math.min(_sstep(0, 0.2, u01), 1 - _sstep(0.66, 1, u01));
+        // A walking arm keeps most of its swing: the gesture rides on top.
+        w *= 1 - 0.45 * Math.min(1, walkAmt || 0);
+        const arm = this.arms.find((q) => q.side === A.side);
+        if (arm && w > 0.001) {
+          let pitch, flex, yawIn = 0, curl = 0.15, spread = 0, bend = 0;
+          if (A.kind === "easy") {
+            // Palm-down "easy": forearm out in front at waist height, the open
+            // hand pressing down twice, slowly.
+            const press = Math.sin(u01 * Math.PI * 2 * 1.5) * 0.5 + 0.5;
+            pitch = -0.50 + 0.12 * press;
+            flex = 0.95 - 0.22 * press;
+            yawIn = 0.04;
+            curl = 0.02; spread = 0.35;
+          } else {
+            // Call: a bend toward the dog and two pats on the thigh.
+            const pat = Math.sin(u01 * Math.PI * 2 * 2 - Math.PI / 2) * 0.5 + 0.5;
+            pitch = -0.30 - 0.16 * pat;
+            flex = 0.30 + 0.50 * pat;
+            curl = 0.10; spread = 0.2;
+            bend = 0.10;
+          }
+          _thE.set(pitch, 0, A.side * (0.10 - yawIn));
+          _thQ.setFromEuler(_thE);
+          arm.root.quaternion.slerp(_thQ, w);
+          arm.elbow.rotation.x += (-flex - arm.elbow.rotation.x) * w;
+          if (A.kind === "easy" && arm.wrist) {
+            // Turn the forearm over so the palm faces the floor.
+            _thE.set(0, -A.side * 1.2, 0);
+            _thQ.setFromEuler(_thE);
+            arm.wrist.quaternion.slerp(_thQ, w);
+          }
+          if (bend && walkAmt < 0.3) {
+            const bw = w * (1 - (walkAmt || 0) / 0.3);
+            if (this.spine) this.spine.rotation.x += bend * 0.5 * bw;
+            if (this.chest) this.chest.rotation.x += bend * 0.5 * bw;
+          }
+          const hu = arm.hand && arm.hand.userData;
+          if (hu && hu.setCurl) hu.setCurl(curl, spread);
+        }
+      }
+    }
   }
 
   // Spawn a small dust puff at the planted foot. Surface determines the
@@ -2100,6 +2182,7 @@ class Body {
     if (opts.armSpread  != null) p.armSpread  = Math.max(0, Math.min(1, opts.armSpread));
     if (opts.reach      != null) p.reach      = Math.max(0, Math.min(1, opts.reach));
     if (opts.reachHeight != null) p.reachHeight = Math.max(0, Math.min(1, opts.reachHeight));
+    if (opts.hinge      != null) p.hinge      = Math.max(0, Math.min(1, opts.hinge));
   }
 
   // One-arm underhand toss (ball, treat). Runs as the last layer of update()
@@ -2107,6 +2190,21 @@ class Body {
   // `release` is when the item should leave the hand, in seconds.
   playThrow(opts = {}) {
     this._throwAct = { t: 0, side: opts.side || 1, release: opts.release || 0.62, soft: !!opts.soft };
+    this._gestAct = null;
+  }
+
+  // A short spoken-to-the-dog gesture (≈1 s, one arm, blends back by itself):
+  //   "call" — a bend toward it and two pats on the thigh;
+  //   "easy" — an open palm pressed down, the calm "settle" sign.
+  // Third person only (first person has no avatar arm to move), and it never
+  // interrupts a toss, a kneel or a hand that is touching something.
+  playGesture(kind, opts = {}) {
+    if (this.cameraMode !== "tp" || this._throwAct) return false;
+    const k = kind === "easy" ? "easy" : "call";
+    // Asked again mid-gesture (key mashing): let the one in flight finish.
+    if (this._gestAct && this._gestAct.kind === k && this._gestAct.t < 0.7) return true;
+    this._gestAct = { t: 0, kind: k, side: opts.side || 1 };
+    return true;
   }
 
   // Event-driven whole-body flinch (the TP twin of the camera's kickShake):

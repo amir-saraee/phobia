@@ -1226,6 +1226,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
   // walk amount is also fed into FPControls.moving so the legs cycle.
   let walkAnimT = 0;
   let walkAnimFrom = 0, walkAnimTo = 0;
+  let _walkScriptPh = null;   // stride phase of the scripted walk (see the update loop)
   // "Lean over" animation — camera pitch drops AND z slides forward past the
   // bound for a held moment, then returns. The visceral peek-over.
   let leanT = 0;
@@ -1235,6 +1236,9 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
   // rail if you pressed "Lean over" from further back — gliding a few metres
   // back afterwards read (to you and to the coach) as stepping away.
   let leanBackZ = 0;
+  // 0..1 through the lean (ease out → hold → ease back): drives the camera
+  // peek in first person and the avatar's hinge over the rail in third.
+  let _leanEnv = 0;
   let storedActiveControls = null;
 
   // ---- Character-driven event state machine ----
@@ -1566,12 +1570,37 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         const k = Math.max(0, Math.min(1, 1 - walkAnimT));
         // Smoothstep ease: k*k*(3-2k)
         const ease = k * k * (3 - 2 * k);
+        const zWas = controls.position.z;
         controls.position.z = walkAnimFrom + (walkAnimTo - walkAnimFrom) * ease;
-        // Drive the walk cycle so the legs actually move
+        // Drive the walk cycle so the legs actually move — by the DISTANCE
+        // covered, as the controls do for a real walk, and easing the stride
+        // out as the glide slows. A fixed two steps a second at full stride
+        // kept marching on the spot while the glide eased to a halt, and the
+        // last footfall landed a full half-stride ahead of a body that had
+        // already stopped: the traveler stood at the rail in a lunge, one
+        // shoe out under the bottom bar.
         if (k < 1) {
-          controls._walkAmt = Math.min(1, (controls._walkAmt || 0) + 0.10);
-          controls._walkPhase = (controls._walkPhase || 0) + (dt || 0.016) * Math.PI * 4;
-        }
+          const dd = Math.abs(controls.position.z - zWas);
+          const spd = dd / Math.max(1e-3, dt || 0.016);
+          const amtT = Math.max(0, Math.min(1, spd / 0.5));
+          controls._walkAmt = Math.min(amtT, Math.min(1, (controls._walkAmt || 0) + 0.10));
+          // The phase is kept here and written over the controls' own: with
+          // no move input they ease it back to the nearest standing pose
+          // every frame, which would hold the legs still under a gliding body.
+          if (_walkScriptPh == null) _walkScriptPh = controls._walkPhase || 0;
+          _walkScriptPh += (dd / Math.max(0.3, controls._strideLen || 0.62)) * Math.PI;
+          controls._walkPhase = _walkScriptPh;
+          // …and which way the legs are stepping, in the body's own frame.
+          // Left unset, a glide to the rail that followed a backpedal ran the
+          // stride BACKWARDS under a body moving forwards.
+          if (dd > 1e-5) {
+            const sg = controls.position.z > zWas ? 1 : -1;
+            controls._moveFwd = -Math.cos(controls.yaw) * sg;
+            controls._moveSide = -Math.sin(controls.yaw) * sg;
+          }
+        } else _walkScriptPh = null;
+      } else {
+        _walkScriptPh = null;
       }
 
       // "Lean over" animation — over ~3 s the camera pitches steeply down
@@ -1593,15 +1622,24 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         }
         leanT -= (dt || 0.016) * 0.33;            // ~3 s total
         const k = Math.max(0, Math.min(1, 1 - leanT));
-        let p, z;
+        // The traveler's FEET stay on the platform, a hand's length behind
+        // the rail (which stands at z = -0.4). The peek past the edge is the
+        // HEAD's: a camera offset in first person, a hip hinge over the rail
+        // in third. Sliding the whole player to z = -0.50 — as this used to —
+        // put the avatar's body through the railing with the rail grip 10 cm
+        // BEHIND its chest (both elbows folded backwards), and in first
+        // person parked your own shoulders under the camera.
+        const standZ = -0.15;
+        let p, z, env;
         if (k < 0.35) {
-          // Lean OUT: pitch drops fast, body slides forward past the edge
+          // Lean OUT: pitch drops fast, the head goes forward past the edge
           const u = k / 0.35;
           p = leanFromPitch + (-1.30 - leanFromPitch) * u;
-          z = leanFromZ + (-0.50 - leanFromZ) * u;
+          z = leanFromZ + (standZ - leanFromZ) * u;
+          env = u * u * (3 - 2 * u);
         } else if (k < 0.65) {
           // Hold: peeked over, can see straight down
-          p = -1.30; z = -0.50;
+          p = -1.30; z = standZ; env = 1;
           // Held out over the drop (at the edge, not a lean cut short):
           // rung 2's star — and rung 4's, if the wind is blowing as you do.
           if (hCoach.engaged) {
@@ -1612,16 +1650,22 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
           // Lean BACK: pitch and position return
           const u = (k - 0.65) / 0.35;
           p = -1.30 + (leanFromPitch - (-1.30)) * u;
-          z = -0.50 + (leanBackZ - (-0.50)) * u;
+          z = standZ + (leanBackZ - standZ) * u;
+          env = 1 - u * u * (3 - 2 * u);
         }
         controls.pitch = p;
-        // Bypass the bounds z-clamp so the slide forward can actually land past
-        // minZ (FPControls honours controls._leanBypass). The rail is noCollide
-        // so its static collider no longer halts the approach either.
-        controls._leanBypass = true;
         controls.position.z = z;
-      } else if (controls && controls._leanBypass) {
-        controls._leanBypass = false;   // lean finished — resume normal bounds
+        _leanEnv = leanT > 0 ? env : 0;
+        // Eye past the rail: 0.35 m forward of the feet at the hold, which
+        // lands the first-person camera where the old slide put it (z -0.50).
+        // Faded out with the third-person blend — there the boom follows the
+        // body and the avatar's own hinge carries the lean.
+        const fpK = 1 - Math.max(0, Math.min(1, controls.tpBlend || 0));
+        camera.position.z += (-0.50 - standZ) * _leanEnv * fpK;
+        if (controls._leanBypass) controls._leanBypass = false;
+      } else {
+        _leanEnv = 0;
+        if (controls && controls._leanBypass) controls._leanBypass = false;
       }
 
       // Lean-forward: when looking very steeply down, the camera nudges
@@ -1982,17 +2026,18 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         // Reach for the railing once you're within ~1.5 m of it
         const reach = edgeProx > 0.4 ? Math.min(1, (edgeProx - 0.4) * 2.5) : 0;
         // Lean forward steeply when peering over the edge or auto-lean fired
-        const lean = (leanT > 0)
-          ? Math.min(1, 1 - leanT)
-          : (edgeProx * 0.5 + lookDown * 0.7) * 0.85;
+        const lean = Math.max(_leanEnv, (edgeProx * 0.5 + lookDown * 0.7) * 0.85 * (1 - _leanEnv));
         // Arm spread for high-wind balance (only at scary heights, h > 0.6)
         const armSpread = h > 0.6 ? Math.min(0.4, vertigo * 0.5) : 0;
         active.body.setPosture({
           reach,
           reachHeight: 0.9,        // chest-height grip (railing is at chest)
           lean: Math.max(0, Math.min(1, lean)),
-          armSpread,
+          armSpread: armSpread * (1 - _leanEnv),
           crouch: 0,
+          // Leaning over: fold at the hips so the chest goes out over the
+          // rail while the feet stay behind it.
+          hinge: _leanEnv,
         });
         // FP hands physically wrap the REAL top rail when you're at it and
         // facing the drop — knuckles on the metal instead of a canned grab

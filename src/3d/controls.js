@@ -852,7 +852,17 @@ class FPControls {
     this._tpSubjH = (this._tpSubjH || 0) + (subjH - (this._tpSubjH || 0)) * Math.min(1, dt * 1.8);
     this._tpSubjW = (this._tpSubjW || 0) + (subjW - (this._tpSubjW || 0)) * Math.min(1, dt * 2.2);
     this._tpSubjS = (this._tpSubjS || 0) + (subjS - (this._tpSubjS || 0)) * Math.min(1, dt * 1.6);
-    const shoulder = this.tpShoulder + this._tpSubjS;
+    let shoulder = this.tpShoulder + this._tpSubjS;
+    // A portrait screen is only ~0.9 m wide at the traveler's distance, and
+    // shoulder + subject swing can add up to nearly 2 m: the avatar slid off
+    // the edge of the phone. On a tall frame the sideways offset is held to
+    // the share of the half-width that keeps the traveler on screen.
+    const asp = this.camera.aspect || 1;
+    if (asp < 1) {
+      const halfW = Math.tan((this.camera.fov || 50) * Math.PI / 360) * asp * tpDist;
+      const maxS = Math.max(0.12, halfW * 0.5);
+      if (shoulder > maxS) shoulder = maxS; else if (shoulder < -maxS) shoulder = -maxS;
+    }
     const sideX = cosY * shoulder;
     const sideZ = -sinY * shoulder;
     // Camera sits behind player along their facing direction (player faces
@@ -947,7 +957,18 @@ class FPControls {
     const tc = this.opts.tpContain;
     if (tc && this.tpBlend > 0.05) {
       this._tpContainT = (this._tpContainT || 0) + dt;
-      if (!this._tpContainOn && (this._tpContainT > (tc.after || 0) || (this._walkAmt || 0) > 0.25)) {
+      // A scene may also ask to keep the opening shot while the traveler
+      // simply stands and looks ahead (`untilTurn`): the boom then comes
+      // inside on the first step OR the first real turn of the head — turning
+      // is what swings the outside of the room into frame, standing isn't.
+      if (this._tpContainYaw0 == null) this._tpContainYaw0 = this.yaw;
+      let turned = false;
+      if (tc.untilTurn != null) {
+        let dy = (this.yaw - this._tpContainYaw0) % (Math.PI * 2);
+        if (dy > Math.PI) dy -= Math.PI * 2; else if (dy < -Math.PI) dy += Math.PI * 2;
+        turned = Math.abs(dy) > tc.untilTurn;
+      }
+      if (!this._tpContainOn && (this._tpContainT > (tc.after || 0) || (this._walkAmt || 0) > 0.25 || turned)) {
         this._tpContainOn = true;
       }
       const w = this._tpContainW = Math.min(1, (this._tpContainW || 0) + (this._tpContainOn ? dt * 1.2 : 0));
@@ -1053,7 +1074,9 @@ class FPControls {
       // A boom the room has shortened (tpContain) looks PAST the traveler
       // into the room rather than down at the crown of their head: the aim
       // moves ahead of them and up by however much distance was lost.
-      const cl = Math.min(2.8, this._tpContainLostSm || 0);
+      // (On a tall, narrow frame the look-ahead is held shorter: aiming far
+      // past the traveler swung them off the side of a phone.)
+      const cl = Math.min((this.camera.aspect || 1) < 1 ? 1.0 : 2.8, this._tpContainLostSm || 0);
       let lookX = this.position.x + sinY * 0.20 + (lvx / lspd) * lead - sinY * cl * 0.55;
       let lookY = lookYBase + sinP * tpDist * 0.55 + 0.06 * (this._walkAmt || 0) + cl * 0.12;
       let lookZ = this.position.z + cosY * 0.20 + (lvz / lspd) * lead - cosY * cl * 0.55;

@@ -3220,17 +3220,29 @@ body.light-mode .journal-entry p { color: var(--muted); }
   color: #cbd5e1;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Two lines, then the ellipsis: one line cut a rank's whole sentence
+     off mid-word on a phone. */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+  white-space: normal;
   max-width: 240px;
 }
 @media (max-width: 480px) {
+  /* On a phone the toast drops in under the top bar: at the bottom it sat on
+     the creator's Save button and the results page's next step. */
   .achievement-toast {
-    right: var(--space-3); bottom: var(--space-3);
-    padding: 6px var(--space-3);
+    right: var(--space-3); left: var(--space-3); bottom: auto;
+    top: calc(env(safe-area-inset-top, 0px) + 66px);
+    max-width: none;
+    padding: 8px var(--space-3);
     gap: var(--space-2);
+    transform: translateY(-160%);
   }
+  .achievement-toast.show { transform: translateY(0); }
   .ach-icon { width: 28px; height: 28px; font-size: 16px; }
-  .ach-text span { font-size: var(--text-xs); max-width: 180px; }
+  .ach-text span { font-size: var(--text-xs); max-width: none; }
+  /* The card is the first step: the three-beat stepper starts on the pages
+     that look back (rating, results), where its labels have room. */
+  .trial-intro .flow-steps { display: none; }
 }
 
 /* Smooth scene fade-in when canvas mounts */
@@ -6441,3 +6453,46 @@ body.light-mode .debrief .story-card .sc-read { color: var(--text); border-color
 /* A read question risen over the coach card on a small phone (coach.js,
    under-read): the card fades while the question is up. */
 .stage:has(.dc-read.show) .dog-coach.under-read { opacity: .12; transition: opacity .25s ease; }
+
+/* The fifth trial's results end on the story: the chapter's last page sits in
+   the hero and carries the one filled button. */
+.debrief .vc-finale { margin: 4px 0 2px; text-align: start; }
+.debrief .vc-finale .story-card .sc-read {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2, #a5b4fc)); color: #0b1020; border-color: transparent; font-weight: 700;
+}
+.home-next .hn-lit { display: block; font-size: 13px; line-height: 1.4; color: #f6dca4; margin-bottom: 6px; }
+/* A phone on its side: the results hero is short enough that the next step
+   is one small scroll away, not two screens. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .debrief .db-title { font-size: 19px; }
+  .debrief .vc-stars { font-size: 30px; margin: 2px 0; gap: 6px; }
+  .debrief .vc-stars i:nth-child(2) { font-size: 36px; transform: translateY(-3px); }
+  .debrief .vc-stars-wrap { margin: 2px 0; }
+  .debrief .vc-stars-head { font-size: 14px; margin-bottom: 4px; }
+  .debrief > .flow-steps { display: none; }
+}
+
+/* ---- The creator on a wide screen ----
+   A bottom sheet across a laptop left the traveler 40 px tall above a wall of
+   chips. With room to spare the options become a side panel and the stage
+   keeps its full height, so the figure you are dressing is the main thing. */
+@media (min-width: 900px) and (min-height: 520px) {
+  #travelerStage { inset: 0 440px 0 0; }
+  #travelerStage ~ .mob-top { right: 440px; }
+  #travelerStage ~ .mob-sheet {
+    left: auto; right: 0; top: 0; bottom: 0; width: 440px; max-height: none;
+    border-radius: 0; border-top: 0; border-inline-start: 1px solid rgba(255,255,255,0.10);
+    box-shadow: -18px 0 48px rgba(0,0,0,0.35); animation: none;
+    padding: 22px 22px 18px;
+  }
+  #travelerStage ~ .mob-sheet .mob-sheet-grab { display: none; }
+  [dir="rtl"] #travelerStage { inset: 0 0 0 440px; }
+  [dir="rtl"] #travelerStage ~ .mob-top { right: 0; left: 440px; }
+  [dir="rtl"] #travelerStage ~ .mob-sheet { right: auto; left: 0; }
+}
+/* A 360 px phone: "I'm ready — continue" is wider than half the dock, so the
+   exit button takes the larger share and both labels drop a size. */
+@media (max-width: 380px) {
+  body.trial-mode .exposure-panel .step-controls { grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); column-gap: 8px; }
+  body.trial-mode .step-controls > button { padding: 0 8px; font-size: 14px; }
+}

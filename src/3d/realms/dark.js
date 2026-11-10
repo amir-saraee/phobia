@@ -295,16 +295,82 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
   // a light mid-scene changes the light count, and three then recompiles every
   // lit program on the next frame: a freeze at the very moment the player
   // reaches for the match.
+  // The light sits just behind the eye line, not at the flame: 7 cm from the
+  // stick (and from the fingers that now hold it) an inverse-square light
+  // burned both to a white bar. From here the room is lit as before and the
+  // hand takes a warm, readable light.
   const matchLight = new THREE.PointLight(0xffb060, 0, 4, 2);
-  matchLight.position.set(0.2, -0.13, -0.27); camera.add(matchLight);
+  matchLight.position.set(0.10, 0.07, 0.14); camera.add(matchLight);
+  // The match: a 46 mm splint with a burnt head and a small teardrop flame,
+  // pinched between thumb and index of the first-person hand (Hands.setHold).
+  // Unlit materials — it is its own light source, and a lit stick this close
+  // to any lamp blows out.
   const matchGroup = new THREE.Group();
-  const matchStick = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.0045, 0.10, 8), new THREE.MeshStandardMaterial({ color: 0xb8987a, roughness: 0.95 }));
-  matchStick.rotation.z = -0.4; matchGroup.add(matchStick);
-  const flameMat = new THREE.MeshBasicMaterial({ color: 0xffe0a0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
-  const matchFlame = new THREE.Mesh(new THREE.SphereGeometry(0.018, 12, 10), flameMat);
-  matchFlame.scale.set(0.7, 1.6, 0.7); matchFlame.position.set(0.05, 0.07, 0); matchGroup.add(matchFlame);
-  matchGroup.position.set(0.18, -0.18, -0.32); matchGroup.visible = false;
+  const stickMat = new THREE.MeshBasicMaterial({ color: 0xa98a5c });
+  const matchStick = new THREE.Mesh(new THREE.CylinderGeometry(0.0012, 0.0013, 0.046, 6), stickMat);
+  matchStick.position.y = 0.015; matchGroup.add(matchStick);
+  const matchHead = new THREE.Mesh(new THREE.SphereGeometry(0.0022, 8, 6), new THREE.MeshBasicMaterial({ color: 0x2a120a }));
+  matchHead.scale.y = 1.5; matchHead.position.y = 0.0385; matchGroup.add(matchHead);
+  const flameTex = (() => {
+    const c = document.createElement("canvas"); c.width = 64; c.height = 128;
+    const g = c.getContext("2d");
+    // Teardrop: round at the base, drawn out to a point.
+    const tear = () => { g.beginPath(); g.moveTo(32, 6); g.bezierCurveTo(37, 40, 54, 66, 54, 92); g.bezierCurveTo(54, 122, 10, 122, 10, 92); g.bezierCurveTo(10, 66, 27, 40, 32, 6); g.closePath(); };
+    const body = g.createRadialGradient(32, 94, 3, 32, 80, 74);
+    body.addColorStop(0, "rgba(255,252,236,1)"); body.addColorStop(0.22, "rgba(255,236,160,1)");
+    body.addColorStop(0.50, "rgba(255,178,70,0.95)"); body.addColorStop(0.80, "rgba(255,110,30,0.55)");
+    body.addColorStop(1, "rgba(255,70,10,0)");
+    g.shadowColor = "rgba(255,130,40,0.75)"; g.shadowBlur = 9;
+    tear(); g.fillStyle = body; g.fill();
+    g.shadowBlur = 0;
+    // The cool, almost clear base where the gas hasn't caught yet.
+    g.globalCompositeOperation = "source-atop";
+    const base = g.createRadialGradient(32, 114, 1, 32, 114, 20);
+    base.addColorStop(0, "rgba(70,110,230,0.9)"); base.addColorStop(1, "rgba(70,110,230,0)");
+    g.fillStyle = base; g.fillRect(0, 88, 64, 40);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })();
+  const glowTex = (() => {
+    const c = document.createElement("canvas"); c.width = c.height = 64;
+    const g = c.getContext("2d"); const r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    r.addColorStop(0, "rgba(255,190,100,0.55)"); r.addColorStop(0.4, "rgba(255,150,60,0.16)"); r.addColorStop(1, "rgba(255,120,40,0)");
+    g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })();
+  const flameMat = new THREE.SpriteMaterial({ map: flameTex, transparent: true, opacity: 0, depthWrite: false });
+  const matchFlame = new THREE.Sprite(flameMat);
+  matchFlame.center.set(0.5, 0.10); matchFlame.scale.set(0.013, 0.029, 1); matchFlame.position.y = 0.0375;
+  matchGroup.add(matchFlame);
+  const glowMat = new THREE.SpriteMaterial({ map: glowTex, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false });
+  const matchGlow = new THREE.Sprite(glowMat);
+  matchGlow.scale.set(0.11, 0.11, 1); matchGlow.position.y = 0.05; matchGroup.add(matchGlow);
+  matchGroup.rotation.set(-0.18, 0, -0.22);
+  matchGroup.position.set(0.15, -0.10, -0.40); matchGroup.visible = false;
+  matchGroup.traverse((o) => { o.userData.noCollide = true; o.userData.noPick = true; });
   camera.add(matchGroup);
+  // The torch, gripped overhand in the same fist; the beam itself is the
+  // SpotLight above. Rides the hand (copied from its pose each frame).
+  const torch = new THREE.Group();
+  {
+    // A little self-light: in a dark room a black torch in a dim fist was
+    // invisible, and the hand looked like it was holding nothing.
+    const tm = new THREE.MeshStandardMaterial({ color: 0x3c4048, roughness: 0.5, metalness: 0.4, emissive: 0x15171b });
+    const hm = new THREE.MeshStandardMaterial({ color: 0x8d929b, roughness: 0.4, metalness: 0.5, emissive: 0x2c2e33 });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.0145, 0.0145, 0.095, 14), tm);
+    body.rotation.z = Math.PI / 2; body.position.x = 0.0025; torch.add(body);
+    const head = new THREE.Mesh(new THREE.CylinderGeometry(0.0150, 0.0225, 0.040, 16), hm);
+    head.rotation.z = Math.PI / 2; head.position.x = 0.070; torch.add(head);
+    torch.userData.head = hm;
+    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.0195, 16), new THREE.MeshBasicMaterial({ color: 0xfff3dc }));
+    lens.rotation.y = Math.PI / 2; lens.position.x = 0.0905; torch.add(lens);
+    torch.userData.lens = lens;
+  }
+  torch.visible = false;
+  torch.traverse((o) => { o.userData.noCollide = true; o.userData.noPick = true; });
+  camera.add(torch);
+  const _pinch = new THREE.Vector3(), _torchOff = new THREE.Vector3();
+  const MATCH_HOLD = { pos: [0.174, -0.133, -0.372], rot: [0.41, -0.24, -0.80], grip: "pinch" };
+  const TORCH_HOLD = { pos: [0.165, -0.150, -0.42], rot: [0.22, 1.20, 0.0], grip: "fist" };
 
   // ---- The coach ----
   const D_COACH = [
@@ -422,7 +488,15 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
     const line = n.k === "coat" ? window.t("dc.d.namedCoat", "A coat on a hook — that's the tall shape.")
       : n.k === "leds" ? window.t("dc.d.namedLeds", "Two standby lights — a charger, not eyes.")
       : window.tf("dc.d.named", "{thing} — the same as in daylight.", { thing: cap });
-    if (window.PhobiaFX && window.PhobiaFX.contextPrompt) window.PhobiaFX.contextPrompt(line, 2600);
+    // Said now or not at all (ttl 1 s): queued behind a lesson, "the lamp —
+    // same as in daylight" used to arrive seconds later, over the window.
+    // And naming counts once you're IN the dark: the star used to land from
+    // the doorway, before the trial had begun.
+    const inIt = !!coach.engaged;
+    if (window.PhobiaFX && window.PhobiaFX.contextPrompt) {
+      window.PhobiaFX.contextPrompt(inIt ? line : window.t("dc.d.nameInside", "That's it — now walk in, and name things from inside the dark."), 2600, { ttl: 1 });
+    }
+    if (!inIt) return;
     const fresh = !namedIdx.has(best);
     namedIdx.add(best);
     coach.note("named");
@@ -458,7 +532,7 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
 
   // ---- Command bar ----
   function lightMatch() {
-    matchT = 1; strikeAnim = 1; matchGroup.visible = true;
+    matchT = 1; strikeAnim = 1;
     try { window.PhobiaAudio && window.PhobiaAudio.indicatorClick && window.PhobiaAudio.indicatorClick(); } catch {}
     coach.safety("match");
   }
@@ -507,11 +581,54 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
       flashlight.intensity += ((flashlightHeld ? 14 : 0) - flashlight.intensity) * Math.min(1, d * 9);
       if (matchT > 0 && matchLight) {
         matchT = Math.max(0, matchT - d * 0.2);
-        matchLight.intensity = matchT * (1 + Math.sin(t * 18) * 0.15 + (Math.random() - 0.5) * 0.1) * 2.4;
-        flameMat.opacity = Math.min(1, matchT * 1.2);
+        const flick = 1 + Math.sin(t * 18) * 0.15 + (Math.random() - 0.5) * 0.1;
+        matchLight.intensity = matchT * flick * 2.7;
+        flameMat.opacity = Math.min(1, matchT * 2.2);
+        glowMat.opacity = Math.min(1, matchT * 1.6) * (0.75 + 0.25 * flick);
+        // The flame shrinks as the match burns down, and never holds still.
+        const fs = 0.55 + 0.45 * Math.min(1, matchT * 1.6);
+        matchFlame.scale.set(0.013 * fs * (1 + Math.sin(t * 23) * 0.06), 0.029 * fs * (0.92 + 0.14 * flick), 1);
+        matchFlame.material.rotation = Math.sin(t * 7.3) * 0.07;
         strikeAnim = Math.max(0, strikeAnim - d * 4);
-        matchGroup.position.x = 0.18 + strikeAnim * 0.25; matchGroup.rotation.z = -strikeAnim * 0.4;
-      } else if (matchLight) { matchLight.intensity = 0; flameMat.opacity = 0; matchGroup.visible = false; }
+      } else if (matchLight) { matchLight.intensity = 0; flameMat.opacity = 0; glowMat.opacity = 0; matchGroup.visible = false; }
+      // The hand that holds them. A lit match is pinched in the fingers; the
+      // torch sits in the fist while its button is held (the torch wins).
+      {
+        const hh = active && active.hands;
+        const fp = hh && hh.setHold && hh.cameraMode !== "tp";
+        const wantTorch = flashlightHeld, wantMatch = !wantTorch && matchT > 0.05;
+        if (fp) {
+          if (wantTorch) hh.setHold(TORCH_HOLD);
+          else if (wantMatch) { MATCH_HOLD.pos[0] = 0.174 + strikeAnim * 0.05; MATCH_HOLD.pos[1] = -0.133 - strikeAnim * 0.05; hh.setHold(MATCH_HOLD); }
+          else if (hh._hold) hh.clearHold();
+          const hk = hh._holdK || 0, held = hh._holdLast && hh._holdLast.src;
+          // Match: at the pinch, once the fingers have closed on it.
+          if (wantMatch && held === MATCH_HOLD) {
+            hh.getPinchPoint(_pinch);
+            matchGroup.position.copy(_pinch);
+            matchGroup.visible = hk > 0.35;
+          } else if (matchGroup.visible && !wantMatch) matchGroup.visible = false;
+          // Torch: in the palm, along the knuckle line, lens out past the little finger.
+          const showTorch = held === TORCH_HOLD && hk > 0.25 && (wantTorch || hk > 0.5);
+          if (showTorch) {
+            torch.quaternion.copy(hh.right.quaternion);
+            torch.position.copy(_torchOff.set(0, -0.026, -0.036).applyQuaternion(hh.right.quaternion)).add(hh.right.position);
+          }
+          torch.visible = !!showTorch;
+          // The beam leaves the lens, not the eye: from the eye it lit the
+          // torch and the fist holding it to a white blob.
+          if (showTorch) {
+            flashlight.position.copy(_torchOff.set(0.094, 0, 0).applyQuaternion(torch.quaternion)).add(torch.position);
+            flashlight.target.position.set(flashlight.position.x * 0.25, -0.20, -2.2);
+          } else if (flashlight.intensity < 0.05) { flashlight.position.set(0, -0.05, 0); flashlight.target.position.set(0, -0.15, -1); }
+          const on = Math.min(1, flashlight.intensity / 14);
+          torch.userData.lens.material.color.setScalar(0.12 + 0.88 * on);
+          torch.userData.head.emissive.setRGB(0.03 + 0.20 * on, 0.03 + 0.18 * on, 0.035 + 0.13 * on);
+        } else {
+          torch.visible = false;
+          if (wantMatch) { matchGroup.position.set(0.15, -0.10, -0.40); matchGroup.visible = true; }
+        }
+      }
       const lightOn = flashlightHeld || matchT > 0.05;
       // Curtain stirs.
       if (curtainSway > 0) {

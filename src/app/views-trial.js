@@ -95,7 +95,7 @@ function viewLadder(phobiaKey) {
       <span class="ground-title">${rstat.tamed
         ? t("ground.tamed", "This realm is behind you")
         : rstat.walked
-          ? t("ground.walked", "The valley is walked — the Real Path is what's left")
+          ? t("ground.walked", "All five trials faced — the Real Path is what's left")
           : t("ground.head", "Your ground here")}</span>
       <div class="ground-meter"><div class="ground-meter-fill" style="width:${((done / total) * 100).toFixed(0)}%"></div></div>
       <div class="ground-stats">${groundStats}</div>
@@ -848,9 +848,13 @@ function flowStepsHTML(cur) {
 function trialIntroHTML(phobiaKey, levelIdx) {
   const p = PHOBIAS[phobiaKey];
   if (!p) return "";
-  const kit = hasCreatureKit(phobiaKey);
+  // The very first card a traveler ever sees asks ONE thing: the story, the
+  // room, a number. The "what will it do?" chips and the practice line join
+  // from the second trial on, once the loop itself is familiar.
+  const novice = !(state.log && state.log.length);
+  const kit = hasCreatureKit(phobiaKey) && !novice;
   const firstTime = (getProgress(phobiaKey).highestCompleted ?? -1) < levelIdx;
-  const focus = window.Story && firstTime ? window.Story.focusFor(phobiaKey, levelIdx) : null;
+  const focus = window.Story && firstTime && !novice ? window.Story.focusFor(phobiaKey, levelIdx) : null;
   const icon = { dogs: "🐕", spiders: "🕷", snakes: "🐍", heights: "🏔", dark: "🌙", enclosed: "🚪" }[phobiaKey] || "🏮";
   const story = window.Story ? window.Story.gateHTML(phobiaKey, levelIdx) : "";
   // The chapter's opening is read in full the first time. On every visit
@@ -899,6 +903,8 @@ function trialIntroHTML(phobiaKey, levelIdx) {
 function viewExposure(phobiaKey, levelIdx) {
   const p = PHOBIAS[phobiaKey];
   const lv = p.levels[levelIdx];
+  // Read by the 3D coach: a first trial ever holds its first quiz back.
+  window.__lwNovice = !(state.log && state.log.length);
   // Recommended hold time scales with the rung — harder rungs ask you to sit
   // with the feeling longer, the way real exposure does.
   const minHold = lv.minHold || (6 + levelIdx * 4); // default 6, 10, 14, 18, 22 s; a rung may set its own
@@ -1074,7 +1080,7 @@ function viewExposure(phobiaKey, levelIdx) {
         ${cmdBar}
       </div>
       <div class="step-controls">
-        <button class="btn-warn sc-breathe" data-action="do-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("stage.breathe2", "🌬 Breathe")}</button>
+        <button class="btn-warn sc-breathe" data-action="do-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("stage.breathe2", "🌬️ Breathe")}</button>
         <button class="btn-primary holding" id="continueBtn" data-action="to-rate" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("hold.stepOut2", "Step out")}</button>
         <div class="hold-bar"><div id="holdBarFill"></div></div>
         <span class="hold-label" id="holdLabel">${fnum(0)} / ${fsecs(minHold)}</span>
@@ -1177,7 +1183,7 @@ function viewRate(phobiaKey, levelIdx) {
         <span id="sudsPeakHint" hidden></span><span id="sudsHint" hidden></span>
       </div>
       <button class="db-primary" id="rateSubmit" data-action="submit-rate" data-phobia="${phobiaKey}" data-level="${levelIdx}" disabled>${t("db.see", "See how it went")} <span aria-hidden="true">${isRtl() ? "←" : "→"}</span></button>
-      <button class="db-link" data-action="do-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("db.breathe", "🌬 Take a breath first")}</button>
+      <button class="db-link" data-action="do-breathe" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("db.breathe", "🌬️ Take a breath first")}</button>
       <p class="db-note">${t("db.note", "Two honest numbers — only you see them. They show your fear getting quieter over time.")}</p>
     </div>
   `;
@@ -1429,7 +1435,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
           ${rs.walked
             ? `<span class="gg-note">${rs.tamed
                 ? t("gain.tamed", "🕊 Every trial and every real step — this realm is behind you.")
-                : tf("gain.stepsLeft", "The valley is walked. {n} of {s} real steps taken — those are the ones that follow you home.", { n: rs.steps, s: rs.totalSteps })}</span>`
+                : tf("gain.stepsLeft", "All five trials here are faced. {n} of {s} real steps taken — those are the ones that follow you home.", { n: rs.steps, s: rs.totalSteps })}</span>`
             : ""}
         </div>`;
     }
@@ -1562,7 +1568,7 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     ? `<button class="btn-primary" data-action="next-level" data-phobia="${phobiaKey}" data-level="${next}">${tf("complete.next", "Next trial: {t}", { t: escapeHtml(lvTitle(phobiaKey, next)) })}</button>`
     : `<button class="btn-primary" data-action="back-ladder" data-phobia="${phobiaKey}">${realmStatus(phobiaKey).tamed
         ? t("complete.tamed", "🕊 The realm is behind you — see it")
-        : t("complete.walked", "🌍 The valley is walked — see the Real Path")}</button>`;
+        : t("complete.walked", "🌍 All five trials faced — see the Real Path")}</button>`;
   // A trial that ran near the top of the scale is not the moment to point at
   // a harder one: lead with staying here (or a step down), and check in.
   const peakNum = (peak == null || Number.isNaN(+peak)) ? null : +peak;
@@ -1572,14 +1578,18 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     : "";
   const heroCta = heavy
     ? `<div class="actions vc-cta">${replayBtn.replace("btn-ghost vc-replay", "btn-primary vc-replay")}${easierBtn}${nextBtn.replace('class="btn-primary"', 'class="btn-ghost"')}</div>`
-    : `<div class="actions vc-cta">${nextBtn}${(early || (hasStars && nStars < 3)) ? replayBtn : ""}</div>`;
+    // Stepped out before the hold was done: the trial isn't faced yet, so
+    // the filled button is "try it again", not a harder room.
+    : early
+    ? `<div class="actions vc-cta">${replayBtn.replace("btn-ghost vc-replay", "btn-primary vc-replay")}${nextBtn.replace('class="btn-primary"', 'class="btn-ghost"')}</div>`
+    : `<div class="actions vc-cta">${nextBtn}${(hasStars && nStars < 3) ? replayBtn : ""}</div>`;
   const checkInBlock = heavy ? `
     <div class="mirror-invite vc-checkin" role="note">
       <span class="bridge-invite-kicker">${t("ci.kicker", "🫶 A check-in")}</span>
       <strong>${t("ci.title", "That one ran high. How are you right now?")}</strong>
       <p>${t("ci.p", "Nothing needs to happen next. Slow your breathing for a minute, stay at this trial for a few more passes, or take a step down. Any of those is progress. If the fear is still very strong now that you're out, please reach someone who can help.")}</p>
       <div class="actions" style="margin-top:8px">
-        <button class="btn-ghost" data-action="do-breathe" data-after="ladder" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("ci.breathe", "🌬 Breathe for a minute")}</button>
+        <button class="btn-ghost" data-action="do-breathe" data-after="ladder" data-phobia="${phobiaKey}" data-level="${levelIdx}">${t("ci.breathe", "🌬️ Breathe for a minute")}</button>
         <a class="btn-ghost" href="https://findahelpline.com" target="_blank" rel="noopener">${t("ci.help", "☎️ Talk to someone — findahelpline.com")}</a>
       </div>
     </div>` : "";
@@ -1614,6 +1624,9 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
     if (S.isUnlocked("epilogue") && !S.isSeen("epilogue")) out.push(S.cardHTML("epilogue", { kicker: t("st.cardEpi", "🌅 Every lantern is lit — the last page of the story") }));
     return out.join("");
   })();
+  // The fifth trial ends on the story, not on a list page: the chapter's
+  // closing page moves up into the hero and becomes the filled button.
+  const finale = isLast && !early && storyCards.includes("story-card closes");
   const experiments = (() => {
     const ses = window.PhobiaExperiments && PhobiaExperiments.lastSessionFor(phobiaKey, levelIdx);
     if (!ses || !ses.results.length) return "";
@@ -1634,17 +1647,20 @@ function viewComplete(phobiaKey, levelIdx, suds, predicted, peak) {
       ${flowStepsHTML(4)}
       <div class="vc-hero">
         <span class="db-kicker">${icon} ${escapeHtml(realmOf(phobiaKey).realmName)} · ${early ? tf("complete.early", "Trial {n} · stepped back", { n: levelIdx + 1 }) : tf("complete.faced", "Trial {n} faced", { n: levelIdx + 1 })}</span>
-        <h2 class="db-title">${early ? t("complete.h2early", "You stepped back — showing up still counts.") : t("complete.h2", "Trial faced. That's ground you hold now.")}</h2>
+        <h2 class="db-title">${early ? t("complete.h2early", "You stepped back — showing up still counts.")
+          : isLast ? tf("complete.h2lit", "{realm}: the lantern is lit.", { realm: escapeHtml(realmOf(phobiaKey).realmName) })
+          : t("complete.h2", "Trial faced. That's ground you hold now.")}</h2>
         ${celebration}
         ${starHero}
         ${statsRow}
         ${predictionLesson ? `<p class="db-lesson db-${predictionTone}">${predictionLesson}</p>` : ""}
         ${shadowStrip}
         ${rankRow ? `<div class="vc-chips-only">${rankRow}</div>` : rewardStrip}
-        ${heroCta}
+        ${finale ? `<div class="vc-finale">${storyCards}</div>` : ""}
+        ${finale ? heroCta.replace('class="btn-primary" data-action="back-ladder"', 'class="btn-ghost" data-action="back-ladder"') : heroCta}
       </div>
       ${checkInBlock}
-      ${storyCards}
+      ${finale ? "" : storyCards}
       ${realityBlock}
       ${bridgeInvite}
       ${firstNext}

@@ -1155,3 +1155,32 @@ function runBreathing() {
 function stopCurrentTrialAudio() {
   try { window.__stopTrialAudio && window.__stopTrialAudio(); } catch {}
 }
+
+// ---- Second-finger taps ----
+// A browser only turns a touch into a `click` when it is the ONLY finger on
+// the screen. In a trial one thumb lives on the joystick, so every button the
+// other thumb tapped — a read answer, a verb, Step out, even Ground me — got
+// its pointerdown and pointerup and then nothing. For a touch that is not the
+// primary pointer, a short tap that starts and ends on the same control is
+// delivered as the click it was meant to be.
+(function secondFingerTaps() {
+  const downs = new Map();   // pointerId → { el, x, y, t }
+  const control = (n) => n && n.closest && n.closest("button, [role=button], a[href], [data-action], .cmd-btn, .dc-opt");
+  const inTrial = (el) => !!el.closest(".stage-wrap, .step-controls, .exposure-panel");
+  document.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "touch" || e.isPrimary) return;
+    const el = control(e.target);
+    if (!el || el.disabled || !inTrial(el)) return;
+    downs.set(e.pointerId, { el, x: e.clientX, y: e.clientY, t: performance.now() });
+  }, true);
+  document.addEventListener("pointerup", (e) => {
+    const d = downs.get(e.pointerId);
+    if (!d) return;
+    downs.delete(e.pointerId);
+    if (performance.now() - d.t > 700 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 22) return;
+    const at = control(document.elementFromPoint(e.clientX, e.clientY));
+    if (at !== d.el || !d.el.isConnected || d.el.disabled) return;
+    try { d.el.click(); } catch {}
+  }, true);
+  document.addEventListener("pointercancel", (e) => downs.delete(e.pointerId), true);
+})();

@@ -517,6 +517,10 @@ function viewArrival() {
   const recap = S && !note ? S.recapLine() : "";
   let rs = { trials: 0, totalTrials: 5 };
   try { rs = realmStatus(tgt.key); } catch {}
+  // The realm the traveler was walking is finished, so "Continue" now opens
+  // a fear they never picked: say so instead of switching silently.
+  let litBefore = null;
+  try { const ck = currentRealmKey(); if (ck && ck !== tgt.key && !tgt.allWalked) litBefore = ck; } catch {}
   const cont = tgt.allWalked ? `
       <section class="home-next all" aria-label="${t("home.nextAria", "Your next step")}">
         <span class="hn-kicker">🕊 ${t("home.allK", "Every lantern is lit")}</span>
@@ -524,6 +528,7 @@ function viewArrival() {
         <button class="home-btn-primary" data-action="story-continue">${t("home.allGo", "Walk one again")}</button>
       </section>` : `
       <section class="home-next" aria-label="${t("home.nextAria", "Your next step")}">
+        ${litBefore ? `<span class="hn-lit">🏮 ${tf("home.litNext", "{realm}: lantern lit. The next one — or choose another below.", { realm: escapeHtml(realmOf(litBefore).realmName) })}</span>` : ""}
         <span class="hn-kicker">${FEAR_ICON[tgt.key] || "🏮"} ${escapeHtml(chap ? S.chapterLabel(chap) : realm.realmName)}</span>
         <strong class="hn-title">${escapeHtml(lvTitle(tgt.key, tgt.level))}</strong>
         <span class="hn-meta">${escapeHtml(realm.realmName)} · ${tf("home.trialOf", "trial {n} of {m}", { n: tgt.level + 1, m: rs.totalTrials })} ${homePips(rs.trials, rs.totalTrials)}</span>

@@ -517,9 +517,15 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
       //      to discover the toggle to get a sensible default.
       //   2. Users who prefer first-person can toggle once and have it
       //      stick across the rest of their session.
-      // Session-scoped (sessionStorage) so reopening the tab resets to TP.
+      // The flag is durable (localStorage): a view the player picked with the
+      // View button is theirs on the next visit too. It used to live in
+      // sessionStorage only, so a saved third-person choice was dropped on
+      // every reload in realms that prefer first person (spiders, heights).
+      // Players who never touched the button have no flag, so realm defaults
+      // (and the phone-portrait first-person opening) still apply to them.
       let userToggled = false;
       try { userToggled = sessionStorage.getItem("fobia.userToggledCamera") === "1"; } catch {}
+      if (!userToggled) { try { userToggled = localStorage.getItem("fobia.userToggledCamera") === "1"; } catch {} }
       // Camera-mode locking: scenes can FORCE first-person (e.g. driving,
       // needles — looking at your own arm) or third-person, in which case
       // the toggle button is hidden and the V key is no-op. When locked,
@@ -755,7 +761,11 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
           if (!hint || !hint.isConnected) { clearInterval(moveWatch); return; }
           const moved = Math.hypot(controls.position.x - spawnX, controls.position.z - spawnZ);
           const elapsed = Date.now() - hintShownAt;
-          if (moved > 0.4 || elapsed > 30000) {
+          // ...or the exposure has begun without a step: on rungs where the
+          // dog walks up to YOU, "walk closer" stayed up for 30 s over a star
+          // goal that says "stay put".
+          const begun = !!document.querySelector('[data-engaged="1"]');
+          if (moved > 0.4 || elapsed > 30000 || begun) {
             hint.style.opacity = "0";
             hint.classList.remove("nudge");
             clearInterval(moveWatch);
@@ -2314,6 +2324,8 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // scene's default the next time they reopen the page.
   function markUserToggled() {
     try { sessionStorage.setItem("fobia.userToggledCamera", "1"); } catch {}
+    // Durable too: the choice survives a reload (read at mount, above).
+    try { localStorage.setItem("fobia.userToggledCamera", "1"); } catch {}
   }
   cameraToggle.addEventListener("click", (e) => {
     e.stopPropagation();

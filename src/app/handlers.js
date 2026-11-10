@@ -1225,7 +1225,10 @@ function openStageBreath(stage, opts = {}) {
     { cls: "out", label: t("sbreath.out", "…and out, slowly"), s: 6 },
   ];
   let cycle = 0, pi = 0, timers = [];
-  const close = () => { timers.forEach(clearTimeout); box.classList.add("gone"); setTimeout(() => box.remove(), 350); };
+  // The room's quiz and Mira's lines step aside for the breath (the coach
+  // reads this class and holds an open question's clock too).
+  stage.classList.add("breathing");
+  const close = () => { timers.forEach(clearTimeout); box.classList.add("gone"); stage.classList.remove("breathing"); setTimeout(() => box.remove(), 350); };
   box.querySelector(".sb-close").addEventListener("click", (e) => { e.stopPropagation(); close(); });
   const step = () => {
     if (!box.isConnected) return;

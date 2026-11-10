@@ -663,7 +663,7 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
     if (open && byPlayer && coach.engaged) { coach.note("door"); coach.safety("door"); }
   }
   // Lift.
-  let floor = 1, liftState = "open", liftTarget = 1, moveT = 0, moveDur = 0, idleT = 0, floorsRidden = 0, rideStartInside = false, liftPrevPz = 0;
+  let floor = 1, liftState = "open", liftTarget = 1, moveT = 0, moveDur = 0, idleT = 0, floorsRidden = 0, rideStartInside = false, liftPrevPz = 0, liftWasInside = false;
   function liftGo(n) {
     if (!LIFT) return;
     if (!inside) { coach.teach("liftOut", window.t("dc.e.tLiftOut", "Step inside the lift first — then pick a floor."), 4500, true); return; }
@@ -955,6 +955,11 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
           const headingOut = pz - liftPrevPz > 0.002;
           const atDoor = Math.abs(px) < 0.6 && pz > -0.55;
           liftPrevPz = pz;
+          // Walking out of the car is the way out, however the doors came
+          // open (they open by themselves when a ride ends): the alarm's drop
+          // out in the lobby is relief, and used to be praised as "you stayed".
+          if (liftWasInside && !inside && (floorsRidden > 0 || coach.engaged)) { coach.note("out"); coach.safety("out"); }
+          liftWasInside = inside;
           if ((liftState === "closing" || liftState === "closing-idle") && doorAmt > 0.02 && atDoor && (headingOut || Math.abs(pz) < 0.4)) {
             setDoor(true, false); liftState = "opening"; idleT = 0;
           }

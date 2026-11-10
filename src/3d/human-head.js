@@ -156,6 +156,88 @@ function _sdfAO(sdf, p) {
   return 0.76 + 0.24 * Math.max(0, ao);
 }
 
+// ---- the lips ---------------------------------------------------------------
+// The lips are a RELIEF on the muzzle — a height in metres over (x, y) on the
+// front of the face — and not solids of their own. As two ellipsoids with a
+// 1.8 mm slot cut between them and 3 mm "tucks" at the corners they were made
+// of features smaller than a cell of the head grid (3.1 mm columns, 2.4 mm
+// rows): the slot was caught by some columns and missed by the next, which
+// drew a row of vertical ridges exactly like bared teeth; each tuck was one
+// spiked vertex, a notch at either corner; and the slot under the lower lip
+// came out as a rectangle. Nothing here is narrower than two cells except the
+// seam itself, and the head shell lays a row of vertices ALONG the seam
+// (`seamY` in buildHeadShell), so that one line is drawn rather than sampled.
+//
+// The same function gives the vermilion mask, so the lip colour cannot drift
+// off the lip shape: read `_lipRelief.mask` (0..1) and `.upper` (0..1, how
+// much of that is the upper lip) after a call.
+const LIP = {
+  halfW: 0.0245,                 // seam centre to the corner of the mouth
+  upH: 0.0074, loH: 0.0100,      // vermilion heights at the midline
+  upA: 0.0025, loA: 0.0029,      // how far each lip stands proud — lower is fuller
+  // The mouth can open. The skull grid carries FOUR rows along the seam, 20 µm
+  // apart: the edge of the upper lip, two rows of mouth interior, the edge of
+  // the lower lip. At rest they are one line; the jawOpen field carries
+  // everything below `slit` down with the jaw and leaves everything above it,
+  // so the interior rows are pulled apart into a dark sheet between the lips.
+  // That sheet deforms with every other expression too, which the dark patch
+  // that used to be laid over a sealed face never did.
+  rowGap: 0.00002,
+};
+// Below this height a point belongs to the lower lip / jaw.
+const _LIP_SLIT = FACE.mouthY - 1.5 * LIP.rowGap;
+// How far the lips can part at this x: 1 mid-mouth, 0 at and beyond the corners.
+function _lipAperture(x) {
+  const u = x / (LIP.halfW * 0.95);
+  return u * u >= 1 ? 0 : Math.pow(1 - u * u, 0.75);
+}
+function _lipRelief(x, y) {
+  const ax = Math.abs(x), u = ax / LIP.halfW;
+  const v = y - FACE.mouthY;
+  let h = 0, mask = 0, upper = 0;
+  if (u < 1) {
+    const e = 1 - u * u;
+    const amp = Math.pow(e, 0.85);
+    // Cupid's bow: the upper border peaks ~5 mm either side of the midline
+    // and dips between the peaks. Modest — a deep bow is a drawn-on mouth.
+    const bow = 1 - 0.25 * Math.exp(-(x * x) / (0.0036 * 0.0036));
+    const Hu = LIP.upH * Math.pow(e, 0.55) * bow;
+    const Hl = LIP.loH * Math.pow(1 - u * u * Math.sqrt(u), 0.70);
+    if (v >= 0) {
+      const t = v / Math.max(1e-5, Hu);
+      if (t < 1) {
+        // Fullest a third of the way up from the seam, rolling off to the border.
+        const k = t < 0.36 ? 1 - (1 - t / 0.36) * (1 - t / 0.36) : 0.5 + 0.5 * Math.cos(Math.PI * (t - 0.36) / 0.64);
+        // The tubercle: the little fullness in the middle of the upper lip.
+        h += LIP.upA * amp * k * (1 + 0.16 * Math.exp(-(x * x) / (0.0045 * 0.0045)));
+      }
+      mask = _sstep(1.06, 0.84, t); upper = 1;
+    } else {
+      const t = -v / Math.max(1e-5, Hl);
+      if (t < 1) {
+        const k = t < 0.40 ? 1 - (1 - t / 0.40) * (1 - t / 0.40) : 0.5 + 0.5 * Math.cos(Math.PI * (t - 0.40) / 0.60);
+        h += LIP.loA * amp * k;
+      }
+      mask = _sstep(1.04, 0.84, t);
+    }
+    mask *= _sstep(1.0, 0.90, u);
+    // The seam: a fine crease where the lips meet, fading out to the corners.
+    h -= 0.0005 * Math.sqrt(e) * Math.exp(-(v * v) / (0.0011 * 0.0011));
+  }
+  // Corners: a soft, shallow hollow just outside each end of the seam.
+  const cx = ax - LIP.halfW - 0.0012;
+  h -= 0.0011 * Math.exp(-(cx * cx) / (0.0042 * 0.0042) - (v * v) / (0.0046 * 0.0046));
+  // Philtrum: a faint groove from the bow up toward the nose.
+  const pv = (v - 0.0118) / 0.0050;
+  h -= 0.0007 * Math.exp(-(x * x) / (0.0034 * 0.0034) - pv * pv);
+  // Mentolabial fold: the soft dip between the lower lip and the chin.
+  const mv = (v + 0.0158) / 0.0048;
+  h -= 0.0013 * Math.exp(-(x * x) / (0.0150 * 0.0150) - mv * mv);
+  _lipRelief.mask = mask; _lipRelief.upper = upper;
+  return h;
+}
+_lipRelief.mask = 0; _lipRelief.upper = 0;
+
 function makeHeadSurface(shape) {
   // shape: 0 = softer/rounder (woman/child), 1 = squarer/heavier (man)
   const sq = shape;
@@ -225,24 +307,15 @@ function makeHeadSurface(shape) {
     }
     // --- mouth ----------------------------------------------------------
     {
-      // Lips blend INTO the face (k 0.010): as a separate block set on a flat
-      // muzzle they read as a bill however they were sized.
-      // Profile (measured): subnasale 9.4, lips 9.5, chin 9.5 — a flat muzzle.
-      // Real lips stand ~3 mm proud of the subnasale and the chin sits a
-      // little behind them. The lips were a bill when they were TALL and
-      // proud; short and proud is a mouth.
-      let lip = _sdEll(x, y + 0.0560, z - 0.0850, 0.0205, 0.0050, 0.0104);
-      lip = _smin(lip, _sdEll(x, y + 0.0688, z - 0.0842, 0.0188, 0.0056, 0.0106), 0.004);
-      d = _smin(d, lip, 0.010);
-      // The seam — a crease, not a cavity.
-      d = _smax(d, -_sdEll(x, y - FACE.mouthY, z - 0.0970, 0.0190, 0.0009, 0.0090), 0.0014);
-      // Corners tuck in; the philtrum is a faint groove under the nose.
-      d = _smax(d, -_sdEll(ax - 0.0198, y - FACE.mouthY, z - 0.0860, 0.0030, 0.0028, 0.0038), 0.003);
-      d = _smax(d, -_sdEll(x, y + 0.0490, z - 0.0955, 0.0028, 0.0050, 0.0012), 0.004);
+      // The muzzle: the convexity of the teeth and gums under the lips. Real
+      // lips stand ~3 mm proud of the subnasale and the chin sits a little
+      // behind them — but as one broad mound, never a block set on the face.
+      d = _smin(d, _sdEll(x, y + 0.0630, z - 0.0795, 0.0250, 0.0150, 0.0130), 0.016);
       // Subnasal trough: the skin dips between the nose base and the upper lip.
       d = _smax(d, -_sdEll(x, y + 0.0445, z - 0.0975, 0.0095, 0.0028, 0.0045), 0.004);
-      // Mentolabial crease between the lower lip and the chin.
-      d = _smax(d, -_sdEll(x, y + 0.0785, z - 0.0950, 0.0140, 0.0032, 0.0055), 0.004);
+      // The lips themselves, the seam, the corners, the philtrum and the fold
+      // over the chin are one relief on that mound (see _lipRelief).
+      if (z > 0.045) d -= _lipRelief(x, y) * _sstep(0.045, 0.065, z);
     }
     return d;
   }
@@ -295,16 +368,29 @@ const FACE_MORPHS = [
   // so the chin swings down AND back; translating the lower face straight down
   // is the classic puppet-hinge tell.
   { name: "jawOpen", apply(x, y, z, o) {
-      const w = _sstep(-0.030, -0.072, y) * _sstep(-0.150, -0.060, z);
+      // Cheeks and the corners of the mouth stretch between a still upper face
+      // and a moving jaw; between the corners the lips PART — the upper lip
+      // stays with the skull, the lower lip goes with the jaw.
+      const lat = _sstep(-0.042, -0.084, y);
+      const ap = z > 0.04 ? _lipAperture(x) : 0;
+      const below = y < _LIP_SLIT;
+      const w = (below ? lat + (1 - lat) * ap : lat * (1 - ap)) * _sstep(-0.150, -0.060, z);
       if (w <= 0) return;
+      // The two interior rows also sink INTO the head, so what opens is a
+      // cavity with the inner faces of the lips leading into it, and not a
+      // sheet stretched flat from lip to lip.
+      if (ap > 0 && y < FACE.mouthY - 0.5 * LIP.rowGap && y > FACE.mouthY - 2.5 * LIP.rowGap) o.z -= 0.0085 * ap;
       const PY = FACE.earY + 0.012, PZ = -0.030;          // condyle
-      const a = 0.30 * w;                                  // radians at full open
+      // Radians at full open. (Negative about +x: the chin goes down and back.
+      // This used to be +0.30, which swung the jaw UP and forward through the
+      // upper lip.)
+      const a = -0.20 * w;
       const dy = y - PY, dz = z - PZ;
       o.y += (dy * Math.cos(a) + dz * Math.sin(a)) - dy;
       o.z += (-dy * Math.sin(a) + dz * Math.cos(a)) - dz;
       // The lower lip rides the jaw only partly — it is slung between the
       // corners, so the middle trails and the aperture opens as a lens.
-      o.y += 0.0045 * _falloff(x, y + 0.0720, z - 0.1080, 0.0210, 0.0130, 0.040);
+      if (below) o.y += 0.0045 * _falloff(x, y + 0.0720, z - 0.1080, 0.0210, 0.0130, 0.040);
     } },
   // AU12 + AU6, the real smile: corners up and OUT, cheek mass lifts, the fold
   // beside the nose deepens. Corners alone give the rictus of a jack-o-lantern.
@@ -537,16 +623,102 @@ function buildHeadShell(headPoint, mat, opts = {}) {
   // brow-to-chin band, at the same vertex count.
   const warp = opts.warp !== false;
   const WK_T = 0.5, WK_P = 0.4, WC_P = 0.15;
-  for (let j = 0; j <= NV; j++) {
+  let rowPhiT = null;
+  const rowPhi = (j) => {
+    if (rowPhiT) return rowPhiT[j];
     const sP = (j / NV) * Math.PI;
-    const phi = warp ? sP + WK_P * 0.5 * (Math.sin(2 * (sP - WC_P)) + Math.sin(2 * WC_P)) : sP;
+    return warp ? sP + WK_P * 0.5 * (Math.sin(2 * (sP - WC_P)) + Math.sin(2 * WC_P)) : sP;
+  };
+  const colTheta = (i) => {
+    const sT = (i / NU) * Math.PI * 2 - Math.PI;
+    return warp ? sT - WK_T * Math.sin(sT) : sT;     // signed, 0 = the face
+  };
+  // `seamY` (the skull only): the grid is rebuilt around the mouth, because a
+  // mouth is the one place this parameterisation cannot draw. Three things
+  // are wrong with sampling it blind: (1) rows here land ~5 mm apart in
+  // height — a whole upper lip gets ONE row; (2) the seam is a line of
+  // constant height while rows are lines of constant angle, so it crosses
+  // them at a slant and comes out as a staircase of little vertical ridges;
+  // (3) rays from the skull centre arrive at the mouth 33° downhill, so the
+  // upper lip shadows the seam and the top of the lower lip from them.
+  // So: extra rows are packed into a band around the mouth; inside the mouth
+  // zone each row is given a HEIGHT (one row exactly on the seam, its
+  // neighbours ~1.3 mm either side, easing back to the band's edges) and the
+  // vertex is dropped onto the surface from straight in front.
+  let seam = null;
+  if (opts.seamY != null && headPoint.sdf) {
+    const sdfS = headPoint.sdf;
+    const TAU = Math.PI * 2;
+    const yAt = (th, ph) => headPoint((th + TAU) % TAU, ph).y;
+    let lo = 0.9, hi = 2.3;
+    for (let k = 0; k < 18; k++) { const m = (lo + hi) * 0.5; if (yAt(0, m) > opts.seamY) lo = m; else hi = m; }
+    const phC = (lo + hi) * 0.5;
+    // Re-space the rows: the band keeps its share of the base rows and takes
+    // all of the extra ones.
+    const extra = opts.seamRows || 11, NV0 = NV - extra, BAND = 0.088;
+    const base = [];
+    for (let j = 0; j <= NV0; j++) {
+      const sP = (j / NV0) * Math.PI;
+      base.push(warp ? sP + WK_P * 0.5 * (Math.sin(2 * (sP - WC_P)) + Math.sin(2 * WC_P)) : sP);
+    }
+    let jA = 0; while (jA < NV0 && base[jA + 1] < phC - BAND) jA++;
+    let jB0 = NV0; while (jB0 > 0 && base[jB0 - 1] > phC + BAND) jB0--;
+    const nIn = jB0 - jA + extra, table = [];
+    for (let j = 0; j <= jA; j++) table.push(base[j]);
+    for (let k = 1; k < nIn; k++) table.push(base[jA] + (base[jB0] - base[jA]) * (k / nIn));
+    for (let j = jB0; j <= NV0; j++) table.push(base[j]);
+    const jB = jA + nIn;
+    // Rows j0..j0+3 are the four seam rows (see LIP.rowGap).
+    let j0 = jA + 1;
+    for (let j = jA + 1; j < jB; j++) if (Math.abs(table[j] - phC) < Math.abs(table[j0] - phC)) j0 = j;
+    j0 = Math.max(jA + 2, Math.min(jB - 5, j0 - 2));
+    rowPhiT = table;
+    const halfW = opts.seamHalfW || 0.026;
+    seam = { j0, jA, jB, cols: [], x: new Float32Array(NU + 1), w: new Float32Array(NU + 1), yTop: new Float32Array(NU + 1), yBot: new Float32Array(NU + 1) };
+    for (let i = 0; i <= NU; i++) {
+      const th = colTheta(i);
+      if (Math.abs(th) > 0.9) continue;
+      const q = headPoint((th + TAU) % TAU, table[j0]);
+      seam.w[i] = _sstep(halfW * 1.9, halfW * 1.12, Math.abs(q.x));
+      seam.x[i] = q.x;
+      seam.yTop[i] = yAt(th, table[jA]);
+      seam.yBot[i] = yAt(th, table[jB]);
+    }
+    // The surface straight in front of (x, y).
+    seam.z = (x, y, zGuess) => {
+      let z = zGuess + 0.012;
+      while (z > 0.03 && sdfS(x, y, z) > 0) z -= 0.0008;
+      let a = z, b = z + 0.0008;
+      for (let k = 0; k < 12; k++) { const m = (a + b) * 0.5; if (sdfS(x, y, m) < 0) a = m; else b = m; }
+      return (a + b) * 0.5;
+    };
+    seam.y = opts.seamY;
+  }
+  for (let j = 0; j <= NV; j++) {
+    const phiRow = rowPhi(j);
     const row = [];
     for (let i = 0; i <= NU; i++) {
       // Offset by π so the wrap seam sits on the back of the skull, never
       // down the middle of the face.
-      const sT = (i / NU) * Math.PI * 2 - Math.PI;
-      const theta = ((warp ? sT - WK_T * Math.sin(sT) : sT) + Math.PI * 2) % (Math.PI * 2);
+      const theta = (colTheta(i) + Math.PI * 2) % (Math.PI * 2);
+      const phi = phiRow;
       P.copy(headPoint(theta, Math.max(1e-3, Math.min(Math.PI - 1e-3, phi))));
+      if (seam && seam.w[i] > 0 && j > seam.jA && j < seam.jB) {
+        const up = j < seam.j0, jL = seam.j0 + 3;
+        let yReg;
+        let x2 = P.x;
+        if (!up && j <= jL) {
+          // The four seam rows share one x as well, so at rest they are one line.
+          yReg = seam.y - (j - seam.j0) * LIP.rowGap;
+          x2 += (seam.x[i] - x2) * seam.w[i];
+        } else {
+          const sK = up ? (seam.j0 - j) / (seam.j0 - seam.jA) : (j - jL) / (seam.jB - jL);
+          const gK = sK * (0.55 + 0.45 * sK);
+          yReg = (up ? seam.y : seam.y - 3 * LIP.rowGap) + ((up ? seam.yTop[i] : seam.yBot[i]) - seam.y) * gK;
+        }
+        const y2 = P.y + (yReg - P.y) * seam.w[i];
+        P.set(x2, y2, seam.z(x2, y2, P.z));
+      }
       // Radial approximation is only used to push masked shells (hair, beard)
       // outward; the shading normals come from computeVertexNormals() below.
       // Sampling the sculpt three times per vertex for an analytic normal
@@ -558,7 +730,9 @@ function buildHeadShell(headPoint, mat, opts = {}) {
       if (keep > 0 || !mask) {
         // Fading shells keep a floor under the offset: collapsing onto the
         // skull at the edge would z-fight with it.
-        const o = off * (mask ? (fade ? 0.12 + 0.88 * keep : Math.min(1, keep * 1.6)) : 1)
+        // `edgeFloor` (hats): the rim stays that fraction of the offset off the
+        // skull instead of collapsing onto it, so hair fits underneath.
+        const o = off * (mask ? (fade ? 0.12 + 0.88 * keep : Math.max(opts.edgeFloor || 0, Math.min(1, keep * 1.6))) : 1)
           * (opts.thickMul ? opts.thickMul(theta, phi) : 1);
         if (fade) {
           const A = keep * keep * (3 - 2 * keep);
@@ -575,6 +749,7 @@ function buildHeadShell(headPoint, mat, opts = {}) {
           col.push(c[0] * ao, c[1] * ao, c[2] * ao);
         }
         row[row.length - 1].idx = count++;
+        if (seam && j === seam.j0 && seam.w[i] >= 1) seam.cols.push(i);
       } else {
         row[row.length - 1].idx = -1;
       }
@@ -588,7 +763,12 @@ function buildHeadShell(headPoint, mat, opts = {}) {
       if (mask && Math.min(a.keep, b.keep, c.keep, d.keep) <= 0) continue;
       // (a,c,b)/(a,d,c) — this winding puts the face normal OUTWARD for the
       // theta/phi parameterisation used here; the naive order renders inside-out.
-      idx.push(a.idx, c.idx, b.idx, a.idx, d.idx, c.idx);
+      // The quad diagonal is MIRRORED across the face's midline. With one
+      // diagonal everywhere the two halves of the face triangulate differently
+      // — it runs along a fold on one side and across it on the other, which
+      // showed as a crease from one mouth corner to the chin only.
+      if (i * 2 < NU) idx.push(a.idx, d.idx, b.idx, b.idx, d.idx, c.idx);
+      else idx.push(a.idx, c.idx, b.idx, a.idx, d.idx, c.idx);
     }
   }
   if (idx.length === 0) return null;
@@ -599,6 +779,30 @@ function buildHeadShell(headPoint, mat, opts = {}) {
   else if (fade) g.setAttribute("color", new THREE.Float32BufferAttribute(col, 4));
   g.setIndex(idx);
   g.computeVertexNormals();
+  // The four seam rows are hair-thin slivers while the mouth is shut, and a
+  // normal averaged from slivers points anywhere. While the interior rows are
+  // still together they take the normal of the lip edge beside them — and
+  // outside the lips, where there is no seam at all, the two edges are welded
+  // to one normal, or the grid's own bunching shows as a crease running on
+  // from each corner of the mouth.
+  const fixSeamNormals = (posArr, norArr) => {
+    if (!seam) return;
+    for (const ci of seam.cols) {
+      const r = [0, 1, 2, 3].map((k) => grid[seam.j0 + k][ci].idx * 3);
+      // Once pulled apart, the rows keep the normals their faces give them.
+      if (Math.hypot(posArr[r[1]] - posArr[r[2]], posArr[r[1] + 1] - posArr[r[2] + 1], posArr[r[1] + 2] - posArr[r[2] + 2]) > 0.0004) continue;
+      const k = 1 - Math.min(1, _lipAperture(grid[seam.j0][ci].p.x) * 1.4);
+      const ux = norArr[r[0]], uy = norArr[r[0] + 1], uz = norArr[r[0] + 2];
+      const lx = norArr[r[3]], ly = norArr[r[3] + 1], lz = norArr[r[3] + 2];
+      let ax = ux + k * lx, ay = uy + k * ly, az = uz + k * lz;
+      let bx = lx + k * ux, by = ly + k * uy, bz = lz + k * uz;
+      const al = Math.hypot(ax, ay, az) || 1, bl = Math.hypot(bx, by, bz) || 1;
+      ax /= al; ay /= al; az /= al; bx /= bl; by /= bl; bz /= bl;
+      for (const q of [r[0], r[1]]) { norArr[q] = ax; norArr[q + 1] = ay; norArr[q + 2] = az; }
+      for (const q of [r[2], r[3]]) { norArr[q] = bx; norArr[q + 1] = by; norArr[q + 2] = bz; }
+    }
+  };
+  fixSeamNormals(g.attributes.position.array, g.attributes.normal.array);
   const m = new THREE.Mesh(g, mat);
   m.castShadow = true;
   // Morph normals are computed, not skipped. A jaw drop rotates the whole
@@ -619,6 +823,7 @@ function buildHeadShell(headPoint, mat, opts = {}) {
       tmp.setAttribute("position", new THREE.Float32BufferAttribute(moved.slice(), 3));
       tmp.computeVertexNormals();
       const nn = tmp.attributes.normal.array;
+      fixSeamNormals(moved, nn);
       const dn = new Float32Array(base.length);
       for (let i = 0; i < base.length; i++) dn[i] = nn[i] - baseNor[i];
       posArrs.push(d); norArrs.push(dn); dict[fields[f].name] = f;
@@ -746,7 +951,8 @@ function buildHead(o) {
   // mouth — the old head looked blank because its cells were bigger than its
   // features. Tinting does the other half of the work: skin is not one flat
   // colour, and lips/sockets/brows carry most of a face's readability.
-  const dense = o.lowDetail ? { nu: 72, nv: 54 } : { nu: 112, nv: 86 };
+  // (The skull adds `seamRows` rows of its own, all of them around the mouth.)
+  const dense = o.lowDetail ? { nu: 72, nv: 54, seamRows: 9 } : { nu: 112, nv: 86, seamRows: 11 };
   // Skin: slightly oilier T-zone (forehead/nose via roughness map) + cheek
   // sheen warmth so the face stops reading as matte clay. Vertex colours still
   // drive lip / socket / blush tinting on top of the baked albedo.
@@ -765,11 +971,21 @@ function buildHead(o) {
   // Lips are a little redder and darker than the skin around them — not a
   // different material. At 0.545/0.515 they went brown enough that, with the
   // seam shading on top, a closed mouth read as an open one.
-  const lipTone = [0.96, 0.640, 0.660];
+  // A multiplier alone cannot do that on every skin: 0.64 of a deep brown is
+  // black, and the mouth vanished into the face. So the lip is the skin
+  // reddened AND lifted by a fixed amount of rose — on fair skin that lands a
+  // step darker and pinker, on deep skin a step lighter and rosier, which is
+  // how lips actually sit against each.
+  const lipTone = [0.94, 0.715, 0.735];
+  const lipRose = [0.43, 0.105, 0.115];
+  const mouthIn = [0.014, 0.003, 0.004].map((c, i) => c / Math.max(0.02, [skinCol.r, skinCol.g, skinCol.b][i]));
+  const lipMul = [0, 1, 2].map((i) => lipTone[i]
+    + 0.090 * lipRose[i] / Math.max(0.02, [skinCol.r, skinCol.g, skinCol.b][i]));
   // Bust the geometry cache when the sculpt/tint changes so creator previews
   // pick up the new face immediately (old keys would serve stale morphs).
   const skull = buildHeadShell(headPoint, faceM, {
-    nu: dense.nu, nv: dense.nv, morphs: true, cacheKey: "skull|v8|" + shape + "|" + dense.nu,
+    nu: dense.nu, nv: dense.nv + dense.seamRows, morphs: true, cacheKey: "skull|v10|" + shape + "|" + dense.nu,
+    seamY: FACE.mouthY, seamHalfW: LIP.halfW, seamRows: dense.seamRows,
     // Cavity shading baked from the sculpt's own distance field: sockets, the
     // nostrils, the lip seam, the corners of the mouth and the folds read as
     // form even under flat, frontal light (which is most of this game).
@@ -781,14 +997,23 @@ function buildHead(o) {
       // that landmark (makeHeadSurface) — a tint centred a centimetre behind
       // its feature fires at a fraction of its strength and on the wrong side
       // of the curve, which is how a mouth turns into a brown smear.
-      // Lips — upper vermilion a touch darker than the lower (it faces down).
-      const lipU = _falloff(p.x, p.y + 0.0560, p.z - 0.0952, 0.0192, 0.0058, 0.030);
-      const lipL = _falloff(p.x, p.y + 0.0688, p.z - 0.0946, 0.0175, 0.0064, 0.030);
-      const lip = Math.min(1, lipU * 1.05 + lipL);
-      r *= 1 + (lipTone[0] - 1) * lip; g *= 1 + (lipTone[1] - 1) * lip; b *= 1 + (lipTone[2] - 1) * lip;
-      // Lip seam — darker than skin, never a void; the crease carries the rest.
-      const seam = _falloff(p.x, p.y - FACE.mouthY, p.z - 0.0895, 0.0195, 0.0020, 0.040);
-      const sk = 1 - 0.30 * seam; r *= sk; g *= sk * 0.95; b *= sk * 0.96;
+      // Lips — the mask comes from the lip relief itself, so the colour sits
+      // on the shape. Upper vermilion a touch darker than the lower (it faces
+      // down).
+      if (p.z > 0.05) {
+        _lipRelief(p.x, p.y);
+        const lip = _lipRelief.mask, sh = 1 - 0.10 * _lipRelief.upper * lip;
+        r *= (1 + (lipMul[0] - 1) * lip) * sh; g *= (1 + (lipMul[1] - 1) * lip) * sh; b *= (1 + (lipMul[2] - 1) * lip) * sh;
+        // Lip seam — darker than the lips, never a void; the crease carries the rest.
+        const u = Math.abs(p.x) / LIP.halfW, dv = (p.y - FACE.mouthY) / 0.0013;
+        const seam = u < 1 ? Math.pow(1 - u * u, 0.35) * Math.exp(-dv * dv) : 0;
+        const sk = 1 - 0.34 * seam; r *= sk; g *= sk * 0.94; b *= sk * 0.95;
+        // The two interior rows: the inside of the mouth, seen only when the
+        // lips part.
+        if (p.y < FACE.mouthY - 0.5 * LIP.rowGap && p.y > FACE.mouthY - 2.5 * LIP.rowGap && _lipAperture(p.x) > 0) {
+          r = mouthIn[0]; g = mouthIn[1]; b = mouthIn[2];
+        }
+      }
       // Upper-lid crease and a faint warm shadow in the inner corner.
       const crease = _falloff(ax - FACE.eyeX, p.y - FACE.eyeY - 0.0118, p.z - 0.0800, 0.0150, 0.0035, 0.030);
       const ck = 1 - 0.16 * crease; r *= ck; g *= ck * 0.97; b *= ck * 0.97;
@@ -810,7 +1035,7 @@ function buildHead(o) {
       // Nasolabial fold and the shadow under the lower lip — faint.
       const nlf = _falloff(ax - 0.0225, p.y + 0.0500, p.z - 0.0920, 0.0060, 0.0140, 0.030);
       const nk2 = 1 - 0.06 * nlf; r *= nk2; g *= nk2 * 0.98; b *= nk2 * 0.98;
-      const sulcus = _falloff(p.x, p.y + 0.0785, p.z - 0.0925, 0.0140, 0.0040, 0.030);
+      const sulcus = _falloff(p.x, p.y + 0.0793, p.z - 0.0925, 0.0140, 0.0045, 0.030);
       const sk2 = 1 - 0.08 * sulcus; r *= sk2; g *= sk2 * 0.98; b *= sk2 * 0.975;
       // Shade the scalp under the hair and the jaw under a beard toward the
       // hair colour, so the shells' polygon edges land on matching skin.
@@ -974,69 +1199,11 @@ function buildHead(o) {
   }
 
   // --- mouth opening -------------------------------------------------------
-  // The lips are paint, so the character used to deliver a whole speech with a
-  // sealed face. An opening has to be real geometry — and a flat disc laid on
-  // THIS face floats ~2 cm proud at the corners (the lip line runs from z 0.099
-  // at the centre to z 0.075 at the corners), so the patch is cut from the SAME
-  // sculpted surface as the skull, exactly like the brows. Vertices are authored
-  // relative to the lip seam, so scale.y = 0 collapses the patch onto the
-  // painted seam and the mouth is genuinely shut.
-  const MOUTH_HALF_H = 0.0125;
-  const mouthCap = (() => {
-    // phi runs down the skull and theta across it, both monotonic through the
-    // lip region, so two bisections give the patch's extent on any head shape.
-    const solveY = (th, ty) => {
-      let lo = 0.9, hi = 2.3;
-      for (let i = 0; i < 24; i++) {
-        const m = (lo + hi) * 0.5;
-        if (headPoint(th, m).y > ty) lo = m; else hi = m;
-      }
-      return (lo + hi) * 0.5;
-    };
-    const solveX = (ph, tx) => {
-      let lo = 0, hi = 1.2;
-      for (let i = 0; i < 24; i++) {
-        const m = (lo + hi) * 0.5;
-        if (headPoint(m, ph).x < tx) lo = m; else hi = m;
-      }
-      return (lo + hi) * 0.5;
-    };
-    const ph0 = solveY(0, FACE.mouthY);
-    const dph = solveY(0, FACE.mouthY - MOUTH_HALF_H) - ph0;
-    const dth = solveX(ph0, 0.0225);
-    const NA = 18, NR = 3, LIFT = 0.0009;   // 0.9 mm proud — never z-fights the seam
-    const pos = [], idx = [];
-    const c0 = headPoint(0, ph0);
-    pos.push(0, c0.y - FACE.mouthY, c0.z + LIFT);
-    for (let r = 1; r <= NR; r++) {
-      const rr = r / NR;
-      for (let i = 0; i < NA; i++) {
-        const a = (i / NA) * Math.PI * 2;
-        const q = headPoint(dth * rr * Math.cos(a), ph0 + dph * rr * Math.sin(a));
-        pos.push(q.x, q.y - FACE.mouthY, q.z + LIFT);
-      }
-    }
-    for (let i = 0; i < NA; i++) idx.push(0, 1 + ((i + 1) % NA), 1 + i);
-    for (let r = 0; r < NR - 1; r++) {
-      const a0 = 1 + r * NA, b0 = a0 + NA;
-      for (let i = 0; i < NA; i++) {
-        const j = (i + 1) % NA;
-        idx.push(a0 + i, a0 + j, b0 + j, a0 + i, b0 + j, b0 + i);
-      }
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-    g.setIndex(idx);
-    g.computeVertexNormals();
-    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-      color: 0x2a0d10, roughness: 0.92, metalness: 0, side: THREE.DoubleSide,
-    }));
-    m.position.set(0, FACE.mouthY, 0);
-    m.scale.y = 0.001;
-    m.visible = false;
-    face.add(m);
-    return m;
-  })();
+  // There is no separate mouth patch any more. The opening is part of the
+  // skull: four rows of vertices along the lip seam that the jawOpen field
+  // pulls apart (see LIP.rowGap). A dark cap laid over a sealed face could not
+  // follow a smile or a stretch, and sat proud of the lips it was meant to be
+  // behind.
 
   // --- ears ----------------------------------------------------------------
   // Where is the side of the head, actually? Parked at a hard-coded x = 0.068
@@ -1105,6 +1272,23 @@ function buildHead(o) {
   // A headscarf covers the hair: whatever the style, only a thin shell is
   // built under it (so no fringe, curls or tail poke through the cloth).
   const underScarf = o.headwear === "scarf";
+  // A cap or beanie sits ON the hair: above the hat's rim the hair shell is
+  // pressed thinner than the hat (it used to keep its full volume, so the hat
+  // read as a headband with hair growing through it and vanished from behind);
+  // below the rim it springs back to its own thickness. `hatOff` is the hat
+  // shell's offset, `hatRim` the polar angle where the hat ends, and
+  // `hatBack` swells the hat over the back of the head for long hair, whose
+  // skinned curtain (human-rig.js) starts on the crown at full thickness.
+  const hatKind = (o.headwear === "beanie" || o.headwear === "cap") ? o.headwear : null;
+  const hatOff = hatKind === "beanie" ? 0.0150 : 0.0125;
+  const hatRim = hatKind === "beanie" ? 1.28 : 1.24;
+  const HAT_EDGE = 0.80;
+  const hatBack = (hatKind && hairStyleKind === "long") ? 0.0190 / hatOff : 1;
+  const hatMul = (th) => {
+    if (hatBack === 1) return 1;
+    const a = th > Math.PI ? Math.PI * 2 - th : th;
+    return 1 + (hatBack - 1) * _sstep(1.25, 1.80, a);
+  };
   const hairGroup = new THREE.Group();
   hairGroup.position.copy(skull.position);
   grp.add(hairGroup);
@@ -1162,9 +1346,22 @@ function buildHead(o) {
     const cap = buildHeadShell(headPoint, hairShellM, {
       // Dense enough that the faded hairline does not step along grid lines.
       nu: o.lowDetail ? 72 : 120, nv: o.lowDetail ? 56 : 96, offset: thick, fade: true,
-      cacheKey: "hairF11|" + shape + "|" + style + "|" + thick,
+      cacheKey: "hairF12|" + shape + "|" + style + "|" + thick + "|" + (hatKind || "-"),
       mask: afro ? afroMask : (th, ph) => hairlineMask(th, ph),
       thickMul: (th, ph) => {
+        const m = hairMul(th, ph);
+        if (!hatKind) return m;
+        // Under the hat: no thicker than the hat's rim clearance. The shell's
+        // own fade floor (≥0.12) is already inside `m`'s base, so cap the
+        // product conservatively against the full `thick`.
+        const room = (hatOff * HAT_EDGE - 0.0035) / thick;
+        const k = _sstep(hatRim - 0.02, hatRim + 0.26, ph);
+        return Math.min(m, room) * (1 - k) + m * k;
+      },
+      shade: (th, ph) => style === "afro" ? 1 - 0.12 * (0.5 - 0.5 * afroBump(th, ph)) : 1 - 0.42 * partK(th, ph),
+    });
+    function hairMul(th, ph) {
+      {
         const a = th > Math.PI ? Math.PI * 2 - th : th;
         const crown = _sstep(1.35, 0.35, ph);                   // top of the head
         if (style === "afro") {
@@ -1180,9 +1377,8 @@ function buildHead(o) {
         }
         const ears = Math.exp(-Math.pow((a - 1.52) / 0.32, 2)) * _sstep(1.0, 1.35, ph);
         return (0.80 + 0.32 * crown) * (1 - 0.35 * ears) * (1 - 0.55 * partK(th, ph));
-      },
-      shade: (th, ph) => style === "afro" ? 1 - 0.12 * (0.5 - 0.5 * afroBump(th, ph)) : 1 - 0.42 * partK(th, ph),
-    });
+      }
+    }
     if (cap) hairGroup.add(cap);
   }
   if (underScarf) {
@@ -1191,11 +1387,14 @@ function buildHead(o) {
     // Curl cluster riding the cap, biased to the upper-back of the skull.
     for (let i = 0; i < 26; i++) {
       const th = (i / 26) * Math.PI * 2 + (i % 3) * 0.4;
-      const ph = 0.35 + ((i * 7) % 11) / 11 * 0.75;
-      if (hairlineMask(th, ph) <= 0.2) continue;
+      // Under a hat the curls spill out BELOW its rim (sides and back) instead
+      // of riding the crown, where they would poke through the cloth.
+      const ph = hatKind ? hatRim + 0.24 + ((i * 7) % 11) / 11 * 0.42
+        : 0.35 + ((i * 7) % 11) / 11 * 0.75;
+      if (hairlineMask(th, ph) <= (hatKind ? 0.75 : 0.2)) continue;
       const p = headPoint(th, ph);
-      const curl = new THREE.Mesh(new THREE.SphereGeometry(0.019 + (i % 4) * 0.004, 10, 8), hairM);
-      curl.position.copy(p).multiplyScalar(1.055);
+      const curl = new THREE.Mesh(new THREE.SphereGeometry((0.019 + (i % 4) * 0.004) * (hatKind ? 0.72 : 1), 10, 8), hairM);
+      curl.position.copy(p).multiplyScalar(hatKind ? 1.10 : 1.055);
       hairGroup.add(curl);
     }
   } else if (style === "afro") {
@@ -1204,7 +1403,9 @@ function buildHead(o) {
   } else if (style === "bun") {
     // Hair drawn back smooth, gathered in a bun high on the back of the head.
     const bun = new THREE.Group();
-    bun.position.set(0, 0.062, -0.082);
+    // (Under a hat it is a low bun at the nape, clear of the rim.)
+    if (hatKind) { bun.position.set(0, -0.022, -0.094); bun.scale.setScalar(0.84); }
+    else bun.position.set(0, 0.062, -0.082);
     hairGroup.add(bun);
     const knot = new THREE.Mesh(new THREE.SphereGeometry(0.046, 16, 12), hairM);
     knot.scale.set(1.0, 0.84, 0.90);
@@ -1222,7 +1423,8 @@ function buildHead(o) {
     // which a mesh parented to the head alone cannot do.
   } else if (style === "pony") {
     const tail = new THREE.Group();
-    tail.position.set(0, 0.030, -0.072);
+    // Tied lower under a hat, so the tail leaves below the rim.
+    tail.position.set(0, hatKind ? 0.004 : 0.030, hatKind ? -0.080 : -0.072);
     hairGroup.add(tail);
     const tie = new THREE.Mesh(
       new THREE.TorusGeometry(0.019, 0.0055, 8, 14),
@@ -1230,12 +1432,31 @@ function buildHead(o) {
     );
     tie.rotation.x = Math.PI / 2;
     tail.add(tie);
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.026, 0.15, 6, 12), hairM);
-    body.position.set(0, -0.095, -0.020);
-    body.rotation.x = -0.22;
+    // The tail itself: a lock, not a rod — full just under the tie, tapering
+    // to the tip, a little flattened, leaving the head backward and curving
+    // in toward the neck as it falls. (It was a constant-radius capsule.)
+    const tailM = hairM.clone();
+    { const st = getHairStrandTex(22, 3); tailM.map = st; tailM.bumpMap = st; tailM.bumpScale = 1.4; }
+    const lockG = new THREE.SphereGeometry(1, 14, 18);
+    lockG.scale(0.027, 0.100, 0.024);
+    {
+      // Fatten the upper third so it reads as hair gathered by the tie.
+      const lp = lockG.attributes.position;
+      for (let i = 0; i < lp.count; i++) {
+        const t = (0.100 - lp.getY(i)) / 0.200;            // 0 top … 1 tip
+        const k = 1 + 0.22 * Math.exp(-Math.pow((t - 0.22) / 0.20, 2));
+        const bow = -0.030 * Math.sin(Math.min(1, t * 1.15) * Math.PI) * 0.55;   // swings out behind, returns
+        lp.setXYZ(i, lp.getX(i) * k, lp.getY(i), lp.getZ(i) * k + bow);
+      }
+    }
+    shapeHairLock(lockG, { tipR: 0.42, flat: 0.92, curve: 0.012 });
+    const body = new THREE.Mesh(lockG, tailM);
+    body.position.set(0, -0.092, -0.006);
+    body.rotation.x = -0.10;
+    body.castShadow = true;
     tail.add(body);
     hairFlutter = tail;
-  } else if (style === "short") {
+  } else if (style === "short" && !hatKind) {
     // A soft fringe sweeping across the forehead — the cue that reads "styled"
     // rather than "shaved cap".
     const fringe = new THREE.Mesh(new THREE.SphereGeometry(0.040, 14, 10), hairM);
@@ -1252,7 +1473,11 @@ function buildHead(o) {
       color: hairCol.clone().multiplyScalar(0.82), roughness: 0.98,
       transparent: fh === "stubble", opacity: fh === "stubble" ? 0.55 : 1,
     });
-    if (fh === "beard" || fh === "stubble") {
+    // Stubble is a SHADOW in the skin, not a layer on it: the skull's own
+    // vertex tint (toHair(beardMask) above) carries it, smooth at any distance.
+    // The translucent shell it also had sat 0.2–1.6 mm off the skin, z-fought
+    // along its edge and read as a solid brown patch with a stepped outline.
+    if (fh === "beard") {
       // Jaw-and-chin mask: everything below the mouth line and forward of the ears.
       const beardM = fhM.clone();
       beardM.transparent = true;
@@ -1265,7 +1490,7 @@ function buildHead(o) {
         // the very same morphs as the skin underneath it and rides the jaw
         // instead of tearing off it.
         morphs: true,
-        cacheKey: "beardF6|" + shape + "|" + fh,
+        cacheKey: "beardF7|" + shape + "|" + fh,
         // Slightly tighter than the tinted zone so the shell's polygon edge
         // always lands on skin that is already beard-coloured.
         mask: (th, ph, p) => { const v = beardMask(p); return v > 0.30 ? (v - 0.30) / 0.70 : 0; },
@@ -1273,9 +1498,48 @@ function buildHead(o) {
       if (beard) { beard.position.copy(skull.position); grp.add(beard); expressionMeshes.push(beard); }
     }
     if (fh === "beard" || fh === "moustache") {
-      const stache = new THREE.Mesh(new THREE.SphereGeometry(0.020, 14, 10), fhM);
-      stache.scale.set(1.55, 0.42, 0.62);
-      stache.position.set(0, -0.0530, 0.0810);
+      // A moustache is a pad lying ON the upper lip: built as a domed sheet
+      // over the MEASURED surface (the old one was a squashed sphere at a
+      // hard-coded depth that the sculpt had since moved in front of — it sat
+      // wholly under the skin and the option showed nothing). Two wings from
+      // the philtrum past the mouth corners, drooping and thinning outward.
+      const sdf = headPoint.sdf;
+      const surfZ = (x, y) => {
+        let z = 0.135;
+        while (z > 0.03 && sdf(x, y, z) > 0) z -= 0.001;
+        let lo = z, hi = z + 0.001;
+        for (let i = 0; i < 10; i++) { const m = (lo + hi) * 0.5; if (sdf(x, y, m) < 0) lo = m; else hi = m; }
+        return (lo + hi) * 0.5;
+      };
+      const NUs = 30, NVs = 8, HWs = 0.0285;
+      const sp = [], si = [];
+      for (let i = 0; i <= NUs; i++) {
+        const u = (i / NUs) * 2 - 1, au = Math.abs(u);
+        const x = u * HWs;
+        // Centre line sits under the nose and droops toward the corners; the
+        // pad is tallest beside the philtrum and thins to a point.
+        const yc = -0.0511 - 0.0062 * Math.pow(au, 1.7);   // clear of the upper lip's border
+        const half = 0.0052 * (1 - 0.80 * au * au) * (0.78 + 0.22 * Math.min(1, au * 5));
+        const lift = 0.0036 * (1 - 0.55 * au * au);
+        for (let j = 0; j <= NVs; j++) {
+          const v = (j / NVs) * 2 - 1;
+          const y = yc + v * half;
+          const dome = Math.sqrt(Math.max(0, 1 - v * v));
+          // Edges are sunk a hair INTO the skin so the pad is sealed all round.
+          sp.push(x, y, surfZ(x, y) - 0.0006 + lift * (0.25 + 0.75 * dome) * Math.min(1, (1 - au) * 6 + 0.15));
+        }
+      }
+      for (let i = 0; i < NUs; i++) for (let j = 0; j < NVs; j++) {
+        const a = i * (NVs + 1) + j, b = a + NVs + 1;
+        si.push(a, b, a + 1, a + 1, b, b + 1);
+      }
+      const sg = new THREE.BufferGeometry();
+      sg.setAttribute("position", new THREE.Float32BufferAttribute(sp, 3));
+      sg.setIndex(si);
+      sg.computeVertexNormals();
+      const stacheM = fhM.clone();
+      stacheM.side = THREE.DoubleSide;
+      const stache = new THREE.Mesh(sg, stacheM);
       face.add(stache);
     }
   }
@@ -1319,33 +1583,45 @@ function buildHead(o) {
     drape.castShadow = true;
     grp.add(drape);
   } else if (hw === "beanie" || hw === "cap") {
-    const hwM = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor), roughness: 0.94 });
-    const bandM = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor).multiplyScalar(0.78), roughness: 0.94 });
+    // Double-sided: the rim now stands off the skull, so its inside can show.
+    const hwM = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor), roughness: 0.94, side: THREE.DoubleSide });
+    const bandM = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.shirtColor).multiplyScalar(0.78), roughness: 0.94, side: THREE.DoubleSide });
     if (hw === "beanie") {
       const dome = buildHeadShell(headPoint, hwM, {
-        nu: 44, nv: 32, offset: 0.014, cacheKey: "beanie3|" + shape,
-        mask: (th, ph) => _sstep(1.28, 1.12, ph),
+        nu: 56, nv: 40, offset: hatOff, cacheKey: "beanie4|" + shape + "|" + hatBack,
+        edgeFloor: HAT_EDGE, thickMul: hatMul,
+        mask: (th, ph) => _sstep(hatRim, hatRim - 0.16, ph),
       });
       if (dome) { dome.position.copy(skull.position); grp.add(dome); }
-      const band = new THREE.Mesh(new THREE.TorusGeometry(0.077, 0.014, 10, 26), bandM);
-      band.rotation.x = Math.PI / 2;
-      band.scale.set(1.02, 1.0, 1.14);
-      band.position.set(0, HEAD_LIFT + 0.036, 0);
-      grp.add(band);
+      // The cuff is a second shell of the same head, a few mm outside the
+      // dome's lower edge, so it follows the rim all the way round. (It was a
+      // torus at a fixed height: the rim follows the skull, a torus does not,
+      // and the dome poked through it in ragged flaps.)
+      const cuffOff = hatOff + 0.0040;
+      const band = buildHeadShell(headPoint, bandM, {
+        nu: 56, nv: 48, offset: cuffOff, cacheKey: "beanieCuff1|" + shape + "|" + hatBack,
+        edgeFloor: (hatOff * HAT_EDGE + 0.0006) / cuffOff, thickMul: hatMul,
+        mask: (th, ph) => _sstep(hatRim + 0.05, hatRim - 0.01, ph) * _sstep(hatRim - 0.30, hatRim - 0.22, ph),
+      });
+      if (band) { band.position.copy(skull.position); grp.add(band); }
       const pom = new THREE.Mesh(new THREE.SphereGeometry(0.019, 12, 10), bandM);
       pom.position.set(0, HEAD_LIFT + 0.128, 0);
       grp.add(pom);
     } else {
       const dome = buildHeadShell(headPoint, hwM, {
-        nu: 44, nv: 32, offset: 0.011, cacheKey: "cap3|" + shape,
-        mask: (th, ph) => _sstep(1.24, 1.08, ph),
+        nu: 56, nv: 40, offset: hatOff, cacheKey: "cap4|" + shape + "|" + hatBack,
+        edgeFloor: HAT_EDGE, thickMul: hatMul,
+        mask: (th, ph) => _sstep(hatRim, hatRim - 0.16, ph),
       });
       if (dome) { dome.position.copy(skull.position); grp.add(dome); }
       const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.008, 20, 1, false, 0, Math.PI), bandM);
       brim.scale.set(1.15, 1, 1.30);
-      brim.rotation.y = Math.PI / 2;
-      brim.position.set(0, HEAD_LIFT + 0.040, 0.030);
-      brim.rotation.x = -0.12;
+      // The half-disc's round edge faces FORWARD (+Z). It was turned +90°,
+      // which pointed the visor backward into the skull — only two slivers at
+      // the temples ever showed.
+      brim.rotation.y = -Math.PI / 2;
+      brim.position.set(0, HEAD_LIFT + 0.045, 0.040);
+      brim.rotation.x = 0.10;
       grp.add(brim);
     }
   }
@@ -1360,6 +1636,13 @@ function buildHead(o) {
       opacity: 0.15, depthWrite: false, clearcoat: 1.0, clearcoatRoughness: 0.02,
     });
     const zFront = eyeSurfZ + 0.0085;
+    // Half-width of the head at (y, z): march in from outside along +X.
+    const sideX = (y, z) => {
+      const sdf = headPoint.sdf;
+      let x = 0.115;
+      while (x > 0.02 && sdf(x, y, z) > 0) x -= 0.001;
+      return x + 0.0005;
+    };
     for (const sx of [-1, 1]) {
       const rim = new THREE.Mesh(
         o.glasses === "round"
@@ -1375,10 +1658,25 @@ function buildHead(o) {
       lens.position.z -= 0.0008;
       if (o.glasses === "square") lens.scale.set(1.0, 0.82, 1);
       face.add(lens);
-      // Temple arm, angled back to the ear.
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.0026, 0.0026), fr);
-      arm.position.set(sx * 0.052, FACE.eyeY + 0.004, zFront - 0.030);
-      arm.rotation.y = sx * 0.72;
+      // Temple arm: from the rim's outer edge back along the side of the head
+      // to the top of the ear, then a short hook down behind it. The path is
+      // laid on the MEASURED head surface (the arm was a 62 mm bar at a fixed
+      // angle that floated beside the temple, attached to nothing).
+      const armY = FACE.eyeY + 0.004;
+      const hingeX = FACE.eyeX + (o.glasses === "round" ? 0.0200 : 0.0150);
+      const earZ = earSurf.z - 0.006;
+      const earX = Math.max(earSurf.x, sideX(armY, earZ)) + 0.0024;
+      const pts = [new THREE.Vector3(sx * hingeX, armY, zFront)];
+      const NA = 9;
+      for (let k = 1; k <= NA; k++) {
+        const t = k / NA;
+        const z = zFront + (earZ - zFront) * t;
+        const line = hingeX + (earX - hingeX) * Math.min(1, t * 1.6);
+        pts.push(new THREE.Vector3(sx * Math.max(line, sideX(armY, z) + 0.0024), armY, z));
+      }
+      pts.push(new THREE.Vector3(sx * (sideX(armY - 0.007, earZ - 0.009) + 0.0022), armY - 0.007, earZ - 0.009));
+      const arm = new THREE.Mesh(
+        new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, false, "catmullrom", 0.2), 22, 0.0013, 5, false), fr);
       face.add(arm);
     }
     const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.0024, 0.0024), fr);
@@ -1412,7 +1710,10 @@ function buildHead(o) {
       const open = Math.max(this.talk || 0, this.jaw || 0);
       _mWant.fill(0);
       const put = (name, v) => { const i = _mIdx[name]; if (i != null) _mWant[i] = Math.max(_mWant[i], Math.min(1, v)); };
-      put("jawOpen", open);
+      // Dead zone: the idle jaw hovers around 0.07 and the closed-lips beat of
+      // speech is 0.06. Now that the lips really part, a mouth at rest has to
+      // be SHUT, not open a millimetre.
+      put("jawOpen", open <= 0.10 ? 0 : (open - 0.10) / 0.90);
       // Fear: brows up AND knitted, mouth drawn back, a touch of sneer at the
       // top of the range. Raise without knit is surprise; knit without raise is
       // anger. Fear is the corner where both are true.
@@ -1506,18 +1807,6 @@ function buildHead(o) {
     },
     // Mouth aperture. Talking wins; a frightened face keeps its lips parted.
     _applyMouth() {
-      const open = Math.max(this.talk || 0, this.jaw || 0);
-      const s = Math.max(0.001, open * 0.75);
-      // The dark interior patch only belongs behind a mouth that is actually
-      // open. The idle jaw sits around 0.07, so at 0.03 the cavity showed on a
-      // resting face and did most of the work of making it look slack-jawed.
-      mouthCap.visible = open > 0.11;
-      mouthCap.scale.y = s;
-      // A jaw drops; it does not open symmetrically about the lip line. The cap
-      // has to travel with the jawOpen morph or the dark interior slides out
-      // from behind the lips.
-      mouthCap.position.y = FACE.mouthY - MOUTH_HALF_H * s * 0.45 - open * 0.0075;
-      mouthCap.position.z = (mouthCap.userData.baseZ || 0) - open * 0.0030;
       this._applyMorphs();
     },
     // Fear, on the face. The whole game is about arousal going up and coming
