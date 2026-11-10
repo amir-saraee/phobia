@@ -1547,7 +1547,13 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
       // cancels the auto-look instead of fighting it frame by frame.
       if (autoLookT > 0 && controls && controls.dragging) autoLookT = 0;
       if (autoLookT > 0 && controls) {
-        autoLookT -= (dt || 0.016) * 0.25;       // ~4-second total run
+        // On the glass floor the look stays down until you lift it yourself
+        // (a drag cancels, above) or the star is in: it used to spring back
+        // after ~1.5 s while the star asks for 8 s of looking down, and
+        // nothing said to press again.
+        const kNow = 1 - autoLookT;
+        const holdDown = kNow >= 0.4 && kNow < 0.7 && _wasOnGlass && hState.glassLookT <= 8.3;
+        if (!holdDown) autoLookT -= (dt || 0.016) * 0.25;       // ~4-second total run
         const k = 1 - autoLookT;                 // 0..1
         // Ease in to look down (first 40 %), hold (40-70 %), ease back out (70-100 %)
         let pitch;

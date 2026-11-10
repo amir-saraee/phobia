@@ -5420,7 +5420,23 @@ img.cast-face.baked { animation: castIn .35s ease; }
 /* Phones: over the top button row (it lets taps through, and is gone in
    3 s) — at 96px it landed on the coach card and on an open read question. */
 @media (max-width: 600px) {
-  .stage .star-pop { top: max(8px, env(safe-area-inset-top)); bottom: auto; max-width: calc(100% - 24px); }
+  /* ...and not over the top button row either (it hid View, sound and the
+     alarm card's header for 3 s): the free spot on a phone is the left
+     column under the View button, beside the coach card. */
+  .stage .star-pop {
+    top: calc(max(8px, env(safe-area-inset-top)) + 52px); bottom: auto; left: 8px; right: auto;
+    max-width: calc(100% - 182px); flex-direction: column; align-items: flex-start; gap: 4px;
+    transform: none; animation-name: starPopInPh;
+  }
+  @keyframes starPopInPh {
+    0% { opacity: 0; transform: translateY(-12px) scale(.94); }
+    9% { opacity: 1; transform: translateY(0) scale(1.02); }
+    14%, 82% { opacity: 1; transform: none; }
+    100% { opacity: 0; transform: translateY(-8px) scale(.97); }
+  }
+}
+@media (max-width: 600px) and (prefers-reduced-motion: reduce) {
+  .stage .star-pop { animation-name: starPopFade; }
 }
 /* A sound caption ("🔊 a bark") shown with a star landing steps below it:
    the toast covered it, and a muted or deaf player lost the cue. */

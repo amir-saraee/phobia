@@ -745,6 +745,19 @@ class Body {
       }
       if (ws.amount > walkAmt) walkAmt = ws.amount;
     }
+    // `ws.side` is positive toward the CAMERA's right. The leg solve works in
+    // the body's own frame, and the body is built facing +Z with the half-turn
+    // folded into group.rotation.y — so its local +x (the axis `alongS`,
+    // `_plantSd` and `_hipStepS` are all measured on) points to the camera's
+    // LEFT. Fed in unflipped, every side-step was planned mirrored: the foot
+    // was put down BEHIND the travel and then dragged further behind as the
+    // body moved on — 60 cm out by lift-off, leg locked straight at the reach
+    // clamp, pelvis 17 cm down and released in one frame (measured in FP strafe:
+    // hips 0.59 m, 13 cm single-frame jump). Forward/back never showed it, and
+    // a third-person strafe mostly hides it by turning to face the travel, so
+    // it surfaced as "a squat while the facing catches up" and on reach-locked
+    // side-steps.
+    gaitSide = -gaitSide;
     const fwdShare = Math.abs(gaitFwd);
     const sideShare = Math.abs(gaitSide);
     // How much does LATERAL travel dominate? 0 on a forward walk or a 45°
@@ -776,7 +789,9 @@ class Body {
           leg._plantF = 0; leg._plantSd = 0; leg._plantS = null;
           leg._anchor = null; leg._hipPrev = null;
           leg._hipStepF = 0; leg._hipStepS = 0;
+          leg._swOffF = null; leg._liftNew = false;
         }
+        this._hipHPrev = null; this._legSolved = false;
       }
     }
 
@@ -825,8 +840,89 @@ class Body {
     const hipHalf = Math.abs(this.legs[0].hip.position.x);
     const footInset = Math.max(0, hipHalf - 0.022 * (legLen / 0.78)) * walkAmt;
 
-    // ---- pass 1: where each foot has to be ----
     const legT = this._legT;
+    // ---- hurry step ----
+    // The stride is closed around a foot that lands a half-sweep AHEAD of the
+    // hip and leaves a half-sweep behind. A stance that did not begin that way
+    // — the support leg of a start from rest (it joins the cycle at mid-stance,
+    // wherever the last stop left it), a reversal mid-stride — still has the
+    // whole rest of its stance to give back, and ends it far out of reach:
+    // pressing back after a forward walk left the front foot 51 cm ahead at
+    // lift-off, the pelvis on its squat floor (hips 0.644 m) and an 11 cm jump
+    // when the foot finally lifted. A person in that position does not hold the
+    // foot down and sink; they take the next step sooner. So: predict where
+    // each planted foot will be when its stance ends, and if that is beyond a
+    // normal lift-off, run this body's own phase ahead until it is not. The
+    // lead is applied to `walkPhase` itself, so legs, arms, footfall events and
+    // the retargeted clip all stay on one clock.
+    if (this._phaseLead == null) this._phaseLead = 0;
+    {
+      const dMag = Math.hypot(gaitFwd, gaitSide);
+      if (walkAmt > 0.25 && dMag > 0.3 && this._legSolved) {
+        const halfN = Math.min(legLen * 0.85, STANCE * strideLen);
+        let behind = 0;
+        if (halfN > 0.06) {
+          for (let i = 0; i < this.legs.length; i++) {
+            const T = legT[i];
+            if (!T.planted) continue;
+            // Foot position along the axis OPPOSITE to travel (behind = +).
+            const pos = -(T.alongF * gaitFwd + (T.alongS + this.legs[i].side * footInset) * gaitSide) / dMag;
+            const atLift = pos + 2 * halfN * (1 - T.s / STANCE);
+            // A normal stance leaves from (2 − start)·half behind: one half
+            // for a stride, more for the short-stepping lead leg of a
+            // side-step, less for the crossing one (`_latAmp`).
+            const la = this.legs[i]._latAmp == null ? 0.55 : this.legs[i]._latAmp;
+            const startK = (gaitFwd * gaitFwd + gaitSide * gaitSide * la) / (dMag * dMag);
+            // Margin: wider sideways, where the same channel also carries
+            // pelvic list and the step-width inset (±5 cm a stance) — a steady
+            // side-step must not trip this.
+            const margin = 0.07 + 0.07 * (gaitSide * gaitSide) / (dMag * dMag);
+            const over = atLift - ((2 - startK) * halfN + margin);
+            if (over > 0) behind = Math.max(behind, Math.min(0.3, over / (2 * halfN) * STANCE));
+          }
+        }
+        this._phaseLead += behind * Math.PI * 2 * Math.min(1, dtB * 8);
+      } else if (walkAmt < 0.2) {
+        // At rest, come back onto the controller's settle phase (legs parked at
+        // mid-stance / mid-swing) — forwards only, so no leg re-enters stance
+        // backwards.
+        let rest = Math.ceil(this._phaseLead / Math.PI - 1e-3) * Math.PI;
+        // Recovery step. Standing is not always stationary: the dog noses the
+        // traveler back, a collider slides them along a wall, the stop itself
+        // glides a few centimetres — and the planted foot, pinned to the floor
+        // as it should be, is left out in front or behind (40 cm of push
+        // measured beside the dog). Rather than slide it home or stand in a
+        // lunge, take a step: one more half-cycle lifts that foot and puts the
+        // other down under the hips. A scene pose (lean over the rail, crouch,
+        // kneel) moves the hips on purpose and keeps its feet.
+        const psR = this._postureSm;
+        const posed = !!this._kneeling || (psR && (psR.lean > 0.2 || psR.crouch > 0.1));
+        if (!posed && rest - this._phaseLead < 0.05) {
+          for (let i = 0; i < this.legs.length; i++) {
+            const T = legT[i];
+            if (T.planted && Math.hypot(T.alongF, T.alongS + this.legs[i].side * footInset) > 0.09) { rest += Math.PI; break; }
+          }
+        }
+        // Rate-limited (0.7 cycles/s) so a foot lifted on the way has time to
+        // travel rather than blink across.
+        this._phaseLead += Math.min((rest - this._phaseLead) * Math.min(1, dtB * 5), dtB * Math.PI * 2 * 0.7);
+      }
+      // The legs' clock only runs forwards. The controller eases its phase to
+      // the NEAREST rest when the walk stops — backwards half the time — and a
+      // leg dragged back across lift-off re-plants at the contact pose, the far
+      // end of its stride: 60–70 cm in one frame (measured). Absorb any
+      // backward step into the lead; the rest branch above then brings the
+      // legs to their park by finishing the step instead of undoing it.
+      let ph = walkPhase + this._phaseLead;
+      if (this._phPrev != null && ph < this._phPrev && this._phPrev - ph < Math.PI) {
+        this._phaseLead += this._phPrev - ph;
+        ph = this._phPrev;
+      }
+      this._phPrev = ph;
+      walkPhase = ph;
+    }
+
+    // ---- pass 1: where each foot has to be ----
     for (let i = 0; i < this.legs.length; i++) {
       const leg = this.legs[i], T = legT[i];
       const th = walkPhase + (leg.side > 0 ? 0 : Math.PI);
@@ -859,6 +955,15 @@ class Body {
       if (leg._wasPlanted && !planted) {
         leg._stepVar = 1 + (Math.random() - 0.5) * 0.075;
         leg._liftVar = 1 + (Math.random() - 0.5) * 0.22;
+        // Where the foot actually WAS when it left the ground (T still holds
+        // last frame's solve). The swing below starts from the nominal toe-off
+        // pose, which is the same place on a steady stride — but not after a
+        // stop, a reversal or a hurried step, where the planted foot can be
+        // 30 cm from it and used to cross that gap in a single frame.
+        if (T.planted && T.alongF != null) {
+          leg._liftF = T.alongF; leg._liftS = T.alongS + leg.side * footInset; leg._liftH = T.ankleH;
+          leg._liftNew = true;
+        }
       }
       leg._wasPlanted = planted;
       if (leg._stepVar == null) { leg._stepVar = 1; leg._liftVar = 1; }
@@ -876,7 +981,13 @@ class Body {
       const rockY = ft.soleDrop * Math.cos(pitch) + pz * Math.sin(pitch);
       let alongF, alongS, swingT = 0;
       if (planted) {
-        if (leg._plantS == null || s < leg._plantS) {     // a fresh footfall
+        // A fresh footfall: the leg was in swing, or the phase wrapped. NOT
+        // any backward step of `s` — the controller settles its phase to the
+        // NEAREST rest when the walk stops, which is backwards half the time,
+        // and treating each of those frames as a new footfall threw the plant
+        // away: the foot teleported to the contact pose (37 cm in one frame,
+        // measured) and then slid home as the stride shrank.
+        if (leg._plantS == null || s < leg._plantS - 0.25) {
           leg._plantF = 0; leg._plantSd = 0;
           leg._dirF = gaitFwd; leg._dirS = gaitSide;
           leg._anchor = null;                              // re-anchor below
@@ -930,6 +1041,27 @@ class Body {
         alongF = _track(kz, swingT);
         T.ankleH = _track(ky, swingT);
         alongS = (-halfL + 2 * halfL * _sstep(0, 1, swingT)) * gaitSide * leg._latAmp;
+        // Carry the foot in from where it really lifted: the gap to the
+        // nominal toe-off pose is taken up over the first 30% of swing (done
+        // well before the s ≈ 0.75 rest park, so nothing is left hanging when
+        // the walk stops), with a little extra clearance when the gap is a
+        // real step rather than millimetres.
+        if (leg._liftNew) {
+          leg._liftNew = false;
+          leg._swOffF = leg._liftF - zTO;
+          leg._swOffS = leg._liftS - (-halfL * gaitSide * leg._latAmp);
+          leg._swOffH = leg._liftH - yTO;
+        }
+        if (leg._swOffF != null) {
+          const wOff = 1 - _sstep(0, 0.30, swingT);
+          if (wOff > 0) {
+            alongF += leg._swOffF * wOff;
+            alongS += leg._swOffS * wOff;
+            const gap = Math.hypot(leg._swOffF, leg._swOffS);
+            T.ankleH += leg._swOffH * wOff
+              + Math.max(0, Math.min(0.04, (gap - 0.03) * 0.25)) * Math.sin(Math.PI * Math.min(1, swingT / 0.30));
+          }
+        }
         // Turning on the spot is foot WORK: alternating knee-ups, not a
         // pirouette on frozen legs. `half` is ~0 here, so lift the ankle
         // directly and let the IK fold the knee to match.
@@ -971,9 +1103,30 @@ class Body {
     // on the floor through double support.
     const hipStand = legLen + ft.soleDrop;
     let hipH = Infinity;
+    // The pre-swing knee flexion in `kneeKeys` (0.26 → 0.82 rad over the last
+    // quarter of stance) is the knee's half of the FOREFOOT rocker: the heel
+    // rises ~10 cm over the toe at the same moment, and that rise is what pays
+    // for the shorter leg. Only a forward stride has a forefoot rocker. Going
+    // backwards the foot leaves the ground from the HEEL, out in front, on a
+    // flatter pitch (ankle up 3 cm, not 10), and a flat side-step has no rise
+    // at all — so the same 47° of flexion came straight out of pelvis height:
+    // a 4–5 cm squat in every double support, released in a single frame when
+    // the foot lifted (measured: hips 0.678 m against 0.717 forwards, and a
+    // 5.9 cm one-frame jump). Scale the late-stance flexion by how much of the
+    // stride is actually rolling forward over the toe; what is left is the
+    // modest bend a leg really carries as it is lifted off its heel.
+    {
+      const want = Math.max(0, Math.min(1, gaitFwd * 1.3));
+      this._preSwingK = this._preSwingK == null
+        ? want : this._preSwingK + (want - this._preSwingK) * Math.min(1, dtB * 8);
+    }
+    const preSwingK = 0.35 + 0.65 * this._preSwingK;
+    const kneeMidS = G.kneeKeys[2][0], kneeMid = G.kneeKeys[2][1];
     for (const T of legT) {
       if (!T.planted) continue;
-      const L = _legReach(_track(G.kneeKeys, T.s), A, Bl);
+      let kneeN = _track(G.kneeKeys, T.s);
+      if (T.s > kneeMidS && kneeN > kneeMid) kneeN = kneeMid + (kneeN - kneeMid) * preSwingK;
+      const L = _legReach(kneeN, A, Bl);
       const horiz = T.alongF * T.alongF + T.alongS * T.alongS;
       hipH = Math.min(hipH, T.ankleH + Math.sqrt(Math.max(0, L * L - horiz)));
     }
@@ -1005,6 +1158,37 @@ class Body {
     // over-reaching foot simply lifts early, which is what a person does.
     hipH = Math.max(hipH, hipStand - 0.135 * (legLen / 0.78));
     hipH = hipStand + (hipH - hipStand) * walkAmt;
+    // …but fading the stride out must not lift the pelvis off a foot that is
+    // still planted where the walk left it. Standing height is the leg at FULL
+    // extension, so a foot pinned even 10 cm from under its hip cannot reach
+    // from there: the sole hung in the air (3.8 cm, measured after a stop),
+    // and the plant servo — seeing a foot that never arrives — pushed its
+    // target further out every frame until the reach clamp caught it at 28 cm.
+    // Keep the hips low enough for a straight leg to reach each planted foot;
+    // a staggered stance then simply stands a centimetre or two lower (until
+    // the recovery step above brings the feet back under). Not under a scene
+    // lean: that hinge shifts the hips on purpose and has its own balance.
+    if (!(this._postureSm && this._postureSm.lean > 0.2)) {
+      const Lmax = (A + Bl) * 0.9995;
+      let reachCap = Infinity;
+      for (const T of legT) {
+        if (!T.planted) continue;
+        const horiz = T.alongF * T.alongF + T.alongS * T.alongS;
+        reachCap = Math.min(reachCap, T.ankleH + Math.sqrt(Math.max(0, Lmax * Lmax - horiz)));
+      }
+      if (reachCap < hipH) hipH = Math.max(reachCap, hipStand - 0.135 * (legLen / 0.78));
+    }
+    // The cap above is a hard min over the planted feet, so the moment the
+    // limiting foot lifts it is free to jump — on a steady stride by a
+    // centimetre, after an over-reached stance by ten, in one frame. Let the
+    // pelvis RISE no faster than a walk ever asks (measured peak 0.63 m/s);
+    // sinking stays instant, because a foot can only fail to reach when the
+    // pelvis is too high.
+    if (this._hipHPrev != null && hipH > this._hipHPrev) {
+      hipH = Math.min(hipH, this._hipHPrev + 0.95 * dtB);
+    }
+    this._hipHPrev = hipH;
+    this._legSolved = true;
 
     // ---- trunk compliance ----
     // A real spine absorbs most of the pelvis's rise and fall: the head

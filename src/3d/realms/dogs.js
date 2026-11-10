@@ -2420,8 +2420,11 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       // spawn under a metre from its front wall, and the over-the-shoulder
       // shot could neither pull back nor rise — it sat on the back of your
       // head with the dog a few pixels tall above it. (View still switches.)
-      preferredCameraMode: (intensity === "barking"
-        || (IS_COARSE_POINTER && window.innerHeight > window.innerWidth)) ? "fp" : "tp",
+      // (That held until the opening shot learned to stay outside the wall
+      // until the first step, and the boom to keep the traveler on a narrow
+      // frame: a phone now opens over the shoulder as well, so the traveler
+      // you dressed is on screen there too.)
+      preferredCameraMode: intensity === "barking" ? "fp" : "tp",
       // Bias the camera over the shoulder so the avatar does not mask the dog.
       tpShoulder: 0.62,
       tpDistance: 3.9,
@@ -3226,20 +3229,60 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         }
         coachSubj.x = dog.position.x; coachSubj.z = dog.position.z;
         controls.tpSubject = coachSubj;
+        // A portrait phone opens over the shoulder so the traveler is on
+        // screen — but the frame is too narrow to hold them AND a dog right
+        // in front of them: the avatar's back simply covers the animal the
+        // trial is about. So on that screen the view steps into the
+        // traveler's eyes when the dog comes close, and back out when it has
+        // been away a moment. Never once the player has chosen a view.
+        if (controls._autoEyes === undefined) {
+          let picked = false;
+          try { picked = localStorage.getItem("fobia.userToggledCamera") === "1"; } catch {}
+          controls._autoEyes = IS_COARSE_POINTER && window.innerHeight > window.innerWidth
+            && intensity !== "barking" && !picked && !controls._cameraModeLocked;
+        }
+        if (controls._autoEyes && !controls._userPickedView) {
+          if (controls.cameraMode === "tp" && playerDist < 2.3) { controls.setCameraMode("fp"); controls._eyesFarT = 0; controls._fpSubjKick = true; }
+          else if (controls.cameraMode === "fp" && playerDist > 3.4) {
+            controls._eyesFarT = (controls._eyesFarT || 0) + d;
+            if (controls._eyesFarT > 2.2) { controls.setCameraMode("tp"); controls._eyesFarT = 0; }
+          } else controls._eyesFarT = 0;
+        }
         // First person has no such help, and on a portrait phone a dog that
         // has walked up to your feet is simply under the bottom of the frame:
         // the game says "it's sniffing hello — tap to pet" over a picture of
         // an empty rug. When the dog is close, its head sits low or off the
         // screen and the player hasn't touched the view for a moment, the
         // gaze drops to it — gently, and only until it is back in the frame.
-        if ((controls.tpBlend || 0) < 0.3 && playerDist < 2.2 && !controls.dragging && !controls._plLocked
-            && sh > 0 && (headY == null || headY > sh * 0.5 || !coachOnScreen)) {
+        if (IS_COARSE_POINTER && (controls.tpBlend || 0) < 0.3 && !controls.dragging && !controls._plLocked
+            && typeof controls._lookTo === "function") {
           controls._fpSubjIdle = (controls._fpSubjIdle || 0) + d;
-          if (controls._fpSubjIdle > 1.2 && typeof controls._lookTo === "function") {
-            const pT = controls._pitchT ?? controls.pitch;
-            if (pT > -1.05) controls._lookTo(controls._yawT ?? controls.yaw, pT - Math.min(0.03, d * 0.55));
+          // Where the dog is from the eyes: a yaw, and a pitch to its head
+          // (never steeper than ~57°). Beyond 2.6 m the gaze belongs level again.
+          const ex = dog.position.x - controls.position.x, ez = dog.position.z - controls.position.z;
+          const yT = controls._yawT ?? controls.yaw, pT = controls._pitchT ?? controls.pitch;
+          const wantYaw = Math.atan2(-ex, -ez);
+          const dyaw = Math.atan2(Math.sin(wantYaw - yT), Math.cos(wantYaw - yT));
+          const drop = Math.max(0.4, camera.position.y - dog.position.y - 0.5);
+          const near = playerDist < 2.6;
+          // (Aimed a little BELOW the dog: the bottom 40% of a phone screen is
+          // joystick, verbs and Mira's line, so the clear part of the frame —
+          // where the dog should sit — is above the centre.)
+          const wantPitch = near ? Math.max(-1.0, -Math.atan2(drop, Math.max(0.45, playerDist)) - 0.17) : -0.2;
+          if (controls._fpSubjKick && near) {
+            // Arriving in the eyes view by the switch above: turn to the dog.
+            const k = Math.min(1, d * 2.6);
+            controls._lookTo(yT + dyaw * k, pT + (wantPitch - pT) * k);
+            if (Math.abs(dyaw) < 0.08 && Math.abs(wantPitch - pT) < 0.06) controls._fpSubjKick = false;
+          } else if (controls._fpSubjIdle > 1.2 && (near ? Math.abs(dyaw) < 0.9 : pT < -0.45)
+              && Math.abs(wantPitch - pT) > 0.1) {
+            // Untouched for a moment: the tilt follows the dog ahead of you
+            // down to your feet and back up as it leaves (it never turns
+            // you), and a gaze left on the floor comes level once it's gone.
+            controls._lookTo(yT, pT + (wantPitch - pT) * Math.min(1, d * 1.6));
           }
-        } else controls._fpSubjIdle = 0;
+          if (!near) controls._fpSubjKick = false;
+        } else { controls._fpSubjIdle = 0; if (controls.dragging) controls._fpSubjKick = false; }
         coach.update(d, {
           dist: playerDist, gaze: gazeAlign, dogToward: coachToward,
           px: controls.position.x, pz: controls.position.z, dogX: dog.position.x, dogZ: dog.position.z,

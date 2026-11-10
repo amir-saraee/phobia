@@ -2319,6 +2319,16 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     container.classList.toggle("fp-view", !inTP);
   }
   refreshCameraLabel();
+  // A scene may change the view itself (the dog room steps into the
+  // traveler's eyes when the dog comes close on a phone; the cellar does for
+  // "look closer"): the chip and the first-person vignette follow those too.
+  if (controls) {
+    const syncAvatar = controls.onCameraModeChange;
+    controls.onCameraModeChange = (m) => {
+      try { if (syncAvatar) syncAvatar(m); } catch {}
+      try { refreshCameraLabel(); } catch {}
+    };
+  }
   // Mark that the user has explicitly toggled the camera mode. Session-scoped
   // so the toggle preference sticks within this tab but doesn't override the
   // scene's default the next time they reopen the page.
@@ -2326,6 +2336,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     try { sessionStorage.setItem("fobia.userToggledCamera", "1"); } catch {}
     // Durable too: the choice survives a reload (read at mount, above).
     try { localStorage.setItem("fobia.userToggledCamera", "1"); } catch {}
+    if (controls) controls._userPickedView = true;   // scenes stop choosing the view for this trial
   }
   cameraToggle.addEventListener("click", (e) => {
     e.stopPropagation();

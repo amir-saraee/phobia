@@ -49,7 +49,8 @@ const CONSENT_KEY = "fobia.consent.v1";
 function hasConsented() {
   return prefGet(CONSENT_KEY) === "1";
 }
-// Three things and a phone number, not five paragraphs: what this is (and
+// Three short lines and a phone number (about 40 words — it was 95, and it
+// stands between the first tap and the first room): what this is (and
 // isn't), that nothing leaves the device, that every scene can be left. The
 // long form lives on the About page ("Read more").
 function showConsent(rereading, onOk) {
@@ -61,13 +62,13 @@ function showConsent(rereading, onOk) {
     <div class="goal-modal consent-modal" role="dialog" aria-modal="true" aria-label="${t("consent.title", "Before you begin")}">
       <h3 class="consent-h">${brandLamp()} ${t("consent.title", "Before you begin")}</h3>
       <ul class="consent-list">
-        <li><span>🎮</span><span>${t("consent.game2", "Lanternwalk is a practice game about how fear works — not therapy, and no substitute for a clinician. If a fear is seriously limiting your life, a professional can help; this can start that conversation.")}</span></li>
-        <li><span>🔒</span><span>${t("consent.privacy2", "Everything stays on this device. No account, no tracking.")} <a href="${PRIVACY_URL}" target="_blank" rel="noopener">${t("legal.privacy", "Privacy policy")}</a></span></li>
+        <li><span>🎮</span><span>${t("consent.game3", "A practice game about how fear works — not therapy, and no substitute for a professional.")}</span></li>
+        <li><span>🔒</span><span>${t("consent.privacy3", "Everything stays on this device.")} <a href="${PRIVACY_URL}" target="_blank" rel="noopener">${t("legal.privacy", "Privacy policy")}</a></span></li>
         <li><span>🚪</span><span>${touch
-          ? t("consent.control2m", "You're in control: leave any scene, any time — 🛟 grounds you. Stepping out is never a failure.")
-          : t("consent.control2d", "You're in control: leave any scene, any time — Esc grounds you. Stepping out is never a failure.")}</span></li>
+          ? t("consent.control3m", "Leave any scene, any time — 🛟 grounds you.")
+          : t("consent.control3d", "Leave any scene, any time — Esc grounds you.")}</span></li>
       </ul>
-      <p class="consent-crisis">☎️ ${t("consent.crisis", "If you're in crisis right now, please reach a real person:")} <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a>${isRtl() ? /* «|» — a «·» beside Persian digits reads as a zero (see faDigitsIn) */ " | اورژانس اجتماعی <b>۱۲۳</b> | صدای مشاور بهزیستی <b>۱۴۸۰</b>" : ""}</p>
+      <p class="consent-crisis">☎️ ${t("consent.crisis2", "In crisis right now?")} <a href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a>${isRtl() ? /* «|» — a «·» beside Persian digits reads as a zero (see faDigitsIn) */ " | اورژانس اجتماعی <b>۱۲۳</b> | صدای مشاور بهزیستی <b>۱۴۸۰</b>" : ""}</p>
       <div class="actions" style="margin-top:14px">
         ${rereading ? "" : `<button class="btn-ghost" id="consentAbout">${t("consent.more", "Read more")}</button>`}
         <button class="btn-primary" id="consentOk">${rereading ? t("consent.close", "Close") : t("consent.ok", "I understand — begin")}</button>
