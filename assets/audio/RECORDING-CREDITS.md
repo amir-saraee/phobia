@@ -31,6 +31,8 @@ The recordings below were trimmed, filtered, level-matched and encoded for Lante
 | `bounce` | [Tennis Ball: Bounce](https://bigsoundbank.com/tennis-ball-bounce-s0584.html) |
 | `ceramic` | [Cup on a Table](https://bigsoundbank.com/cup-on-a-table-s0627.html) |
 | `wood_hit` | [Clapperboard](https://bigsoundbank.com/clapperboard-s1011.html) |
+| `dog_paw` | [Skittering Dog by sittingmonkeyanim](https://freesound.org/people/sittingmonkeyanim/sounds/199919/) |
+| `snake_hiss` | [Mexican Black Kingsnake by TheKingOfGeeks360](https://freesound.org/people/TheKingOfGeeks360/sounds/846337/) and [Angry Snake Hissing by JesterWhoo](https://freesound.org/people/JesterWhoo/sounds/706977/) |
 | `metal_hit` | [Metal Ball, Bounce #3](https://bigsoundbank.com/metal-ball-bounce-3-s2244.html) |
 | `door` | [Door Squeaks and Rubs #1](https://bigsoundbank.com/door-squeaks-and-rubs-1-s1159.html) |
 | `floor` | [Floating Floor Squeaks](https://bigsoundbank.com/floating-floor-squeaks-s0518.html) |

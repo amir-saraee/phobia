@@ -2105,7 +2105,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // "safety" is a context prompt marked urgent (contextPrompt opts.urgent):
   // it outranks a lesson but still waits for an open read-the-moment question.
   const LANE_RANK = { caption: 1, prompt: 2, callout: 3, safety: 3.5, read: 4 };
-  const LANE_BREATH_MS = 900;
+  const LANE_BREATH_MS = 3000;
   const lane = { kind: null, since: 0, until: 0, quietUntil: 0, drop: null, timer: null, promptWaiting: null };
   const laneFree = () => {
     lane.kind = null; lane.drop = null;
@@ -2174,7 +2174,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   window.PhobiaFX._recentPrompts = window.PhobiaFX._recentPrompts || new Map();
   window.PhobiaFX.promptGate = function (channel, text, windowMs = 6000) {
     const m = window.PhobiaFX._recentPrompts;
-    const k = String(text).toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 26);
+    const k = String(text).normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "").slice(0, 26);
     if (!k) return true;
     const now = performance.now();
     if (m.size > 40) { for (const [kk, ee] of m) { if (now - ee.t > 30000) m.delete(kk); } }
@@ -2194,7 +2194,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // Latest per text, at most CTX_QUEUE_CAP waiting, each for `ttl` ms (it
   // was about a moment); retried whenever the lane could have freed. The
   // queue dies with the mount, so no line leaks into the next trial.
-  const CTX_QUEUE_CAP = 4;
+  const CTX_QUEUE_CAP = 1;
   const ctxQueue = [];          // { text, ms, urgent, until }
   let ctxRetryT = null, ctxDead = false;
   const ctxLane = window.PhobiaFX.lane;   // this mount's lane, never the next one's
@@ -2257,14 +2257,14 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     if (!text) return false;
     const o = opts || {};
     const urgent = !!o.urgent;
-    const ttl = o.ttl > 0 ? o.ttl : 15000;   // a lesson holds the lane ~7 s; 8 s left too little room after one
+    const ttl = o.ttl > 0 ? o.ttl : (urgent ? 5000 : 3500);
     const ms = durationMs > 0 ? durationMs : 6000;
     const now = performance.now();
     if (seenRecently(text)) return false;
     const queued = ctxQueue.find((q) => q.text === text);
     if (queued) {
-      // Latest per text: the newest ask's duration, priority and deadline.
-      queued.ms = ms; queued.urgent = queued.urgent || urgent; queued.until = now + ttl;
+      // Repeated scene updates should not keep a stale message alive.
+      queued.urgent = queued.urgent || urgent;
       return true;
     }
     if (!window.PhobiaFX.promptGate("ctx", text)) return false;
@@ -2276,6 +2276,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     }
     if (ctxQueue.length >= CTX_QUEUE_CAP) {
       let drop = ctxQueue.findIndex((q) => !q.urgent);
+      if (drop < 0 && !urgent) return false;
       if (drop < 0) drop = 0;
       ctxQueue.splice(drop, 1);
     }

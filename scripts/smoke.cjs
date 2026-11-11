@@ -198,6 +198,7 @@ async function firstRunAndTrial(browser, base) {
     while (Date.now() < tEnd) {
       diag = await page.evaluate(() => {
         const C = window.__coach;
+        document.querySelector(".dc-read-offer:not([hidden])")?.click();
         if (C && C.readId) { const K = CREATURE_KITS.dogs; const b = document.querySelector(`.dc-read .dc-opt[data-c="${K.signals[C.readId].cls}"]`); b && b.click(); }
         const A = window.__active; let dog = null;
         A.scene.traverse((o) => { if (!dog && o.userData && o.userData.parts && o.userData.parts.mixer && o.userData.parts.model) dog = o; });
@@ -341,6 +342,7 @@ async function creatures(browser, base) {
     await page.keyboard.up("KeyW");
     const met = await waitFor(page, (stop) => {
       const C = window.__coach;
+      document.querySelector(".dc-read-offer:not([hidden])")?.click();
       if (C && C.readId) { const K = CREATURE_KITS[location.hash.split("/")[1]]; const b = document.querySelector(`.dc-read .dc-opt[data-c="${K.signals[C.readId].cls}"]`); b && b.click(); }
       // Keep within reach if it wanders (a small step, like a player would).
       const A = window.__active; let cr = null;
@@ -405,6 +407,7 @@ async function places(browser, base) {
     while (Date.now() - t0 < 60000) {
       diag = await page.evaluate((realm) => {
         const C = window.__coach;
+        document.querySelector(".dc-read-offer:not([hidden])")?.click();
         if (C && C.readId) { const K = CREATURE_KITS[realm]; const b = document.querySelector(`.dc-read .dc-opt[data-c="${K.signals[C.readId].cls}"]`); b && b.click(); }
         return JSON.stringify({ eng: C && C.engaged, alarm: C && Math.round(C.alarm), hold: (document.getElementById("holdLabel") || {}).textContent });
       }, realm);

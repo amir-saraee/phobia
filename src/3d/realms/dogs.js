@@ -1802,6 +1802,11 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     }
     return parts._headBone;
   }
+  const voicePoint = new THREE.Vector3();
+  function dogVoicePosition() {
+    const head = dogHeadBone() || dog.userData.parts.mouth;
+    return head.getWorldPosition(voicePoint);
+  }
 
   const barkAnchor = { x: dog.position.x, z: dog.position.z };
   let barkState = "watching";    // watching | warning | settling
@@ -2368,7 +2373,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       case "bark":
         if (window.PhobiaAudio && window.PhobiaAudio.dogVocal) {
           window.PhobiaAudio.dogVocal("bark", 0.85,
-            { x: dog.position.x, y: dog.position.y + 0.7, z: dog.position.z },
+            dogVoicePosition(),
             { f0: dogF0, count: 1, reverb: 0.22 });
         } else if (window.PhobiaAudio) {
           window.PhobiaAudio.bark(0.85);
@@ -2723,9 +2728,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
               if (window.PhobiaAudio?.dogVocal) {
                 // dogPos/barkOpts (built later in update) aren't in scope here.
                 const sYaw = dog.rotation.y;
-                window.PhobiaAudio.dogVocal("bark", 0.55, {
-                  x: dog.position.x, y: dog.position.y + 0.7, z: dog.position.z,
-                }, {
+                window.PhobiaAudio.dogVocal("bark", 0.55, dogVoicePosition(), {
                   f0: dogF0, count: 1, gap: 0.18, air: true, reverb: 0.22,
                   forward: { x: Math.sin(sYaw), y: 0, z: Math.cos(sYaw) },
                   coneInnerAngle: 80, coneOuterAngle: 220, coneOuterGain: 0.30,
@@ -3128,7 +3131,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         const near = Math.max(0, Math.min(1, (2.2 - nearD) / 1.7));   // 1 at ≤0.5 m → 0 past 2.2 m
         if ((calm || dogExertion > 0.2) && window.PhobiaAudio?.dogPant) {
           try {
-            const muzzle = { x: dog.position.x, y: dog.position.y + dogHeight * 0.62, z: dog.position.z };
+            const muzzle = dogVoicePosition();
             if (near > 0.55 && calm && Math.random() < 0.16 && window.PhobiaAudio.dogSniff) {
               window.PhobiaAudio.dogSniff(0.4 + near * 0.3, muzzle);   // smelling you
             } else if (window.PhobiaAudio.dogVocal) {
@@ -4348,10 +4351,11 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         kPrev.x = ppl.x; kPrev.z = ppl.z; kPrev.t = t;
         const pos = { x: dog.position.x, y: dog.position.y + 0.7, z: dog.position.z };
         const bark = (n, vol) => {
-          dogCtrl.barkBurst(n, 0.2);
+          const gap = 0.34 + Math.random() * 0.06;
+          dogCtrl.barkBurst(n, gap);
           if (window.PhobiaAudio?.dogVocal) {
-            window.PhobiaAudio.dogVocal(Math.random() < 0.3 ? "woof" : "bark", vol, pos, Object.assign({
-              f0: dogF0 * 1.08, count: n, gap: 0.2, air: true, reverb: 0.22,
+            window.PhobiaAudio.dogVocal("bark", vol, dogVoicePosition(), Object.assign({
+              f0: dogF0 * 1.08, count: n, gap, reverb: 0.16,
             }, barkOpts));
           } else if (window.PhobiaAudio) {
             window.PhobiaAudio.bark(vol, pos, barkOpts);
@@ -4403,14 +4407,14 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
             dogCtrl.setMood("alert");
             dogCtrl.growlPulse(1.4);
             if (window.PhobiaAudio?.dogVocal) {
-              window.PhobiaAudio.dogVocal("growl", 0.5, pos, { dur: 1.1, reverb: 0.18 });
+              window.PhobiaAudio.dogVocal("growl", 0.5, dogVoicePosition(), { ...barkOpts, dur: 1.1, reverb: 0.12 });
             } else if (window.PhobiaAudio?.growl) {
               window.PhobiaAudio.growl(0.5, pos, 1.1);
             }
             coach.pulse(0.3, "growl", distP);
-            const read = coachSignal("warning");
+            coachSignal("warning");
             // A safety line: it outranks one of Mira's lessons.
-            if (!read && window.PhobiaFX?.contextPrompt) {
+            if (window.PhobiaFX?.contextPrompt) {
               window.PhobiaFX.contextPrompt(window.tf("dc.warnPrompt",
                 "{dog} stiffened and growled — a warning. Pause and soften your eyes. Growls are how dogs avoid biting.", { dog: dogName }), 5000, { urgent: true });
             }
@@ -4648,10 +4652,12 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           nextSpontaneousBark = t;
         }
         if (barkReady && t > nextSpontaneousBark) {
-          dogCtrl.barkSmall();
+          const count = 1 + Math.floor(Math.random() * 3);
+          const gap = 0.34 + Math.random() * 0.08;
+          dogCtrl.barkBurst(count, gap);
           if (window.PhobiaAudio && window.PhobiaAudio.dogVocal) {
-            window.PhobiaAudio.dogVocal("bark", 0.7 * trustQuiet, dogPos, Object.assign({
-              f0: dogF0, count: 1 + Math.floor(Math.random() * 3), gap: 0.18, air: true, reverb: 0.25,
+            window.PhobiaAudio.dogVocal("bark", 0.7 * trustQuiet, dogVoicePosition(), Object.assign({
+              f0: dogF0, count, gap, reverb: 0.18,
             }, barkOpts));
           } else if (window.PhobiaAudio) {
             window.PhobiaAudio.bark(0.7 * trustQuiet, dogPos, barkOpts);

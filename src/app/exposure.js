@@ -284,6 +284,7 @@ function mountExposure(phobiaKey, levelIdx) {
   // Closed captions for voice (respect user's preference)
   let captions = null;
   let captionsTimer = null;
+  const shownCaptions = new Set();
   const captionsEnabled = (() => {
     try { return localStorage.getItem("fobia.captions") !== "0"; } catch { return true; }
   })();
@@ -306,14 +307,16 @@ function mountExposure(phobiaKey, levelIdx) {
     // The player's own commands ("You: Go fetch.") were echoed back as
     // captions on every press — they did the thing; they don't need to read
     // it. And during grounding the 5-4-3-2-1 text is already mid-screen.
-    if (e.detail.speaker === "you") return;
+    if (e.detail.speaker === "you" || !e.detail.text || shownCaptions.has(e.detail.text)) return;
     try { if (window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding()) return; } catch {}
     // One message at a time: a caption waits its turn behind a lesson, a
     // question or a beat already on screen (and is simply dropped — it was
     // about this moment).
-    const ms = e.detail.durationMs || 3000;
+    const ms = Math.min(6500, e.detail.durationMs || 3000);
     const L = window.PhobiaFX && window.PhobiaFX.lane;
+    if (L?.busy()) return;
     if (L && !L.claim("caption", ms, hideCaption)) return;
+    shownCaptions.add(e.detail.text);
     captions.textContent = e.detail.text;
     captions.classList.remove("you");
     captions.classList.add("show");

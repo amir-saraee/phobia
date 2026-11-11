@@ -1021,7 +1021,7 @@ class DogController {
     // ---- Bark burst: re-arm the head-toss for each remaining audible bark.
     if (this._burstN > 0) {
       this._burstT -= d;
-      if (this._burstT <= 0) { this._burstN--; this._burstT = this._burstGap; this.barkSmall(); }
+      if (this._burstT <= 0) { this._burstN--; this._burstT += this._burstGap; this.barkSmall(); }
     }
 
     // ---- Turn-in-place step shuffle (fallback) ----

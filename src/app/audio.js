@@ -250,7 +250,6 @@ const PhobiaAudio = (() => {
     dogPant:       [0.0144, 0.052],
     dogSniff:      [0.0132, 0.055],
     dogFootfall:   [0.0234, 0.058],
-    dogSample:     [0.50, 0.48],      // recorded bark/growl/pant/woof — keep close to the take
     collarJingle:  [0.040, 0.048],
     dogMouthGrab:  [0.0438, 0.052],
     dogLapping:    [0.0300, 0.044],
@@ -463,6 +462,7 @@ const PhobiaAudio = (() => {
     metal_hit: [4, 0.25], door: [2, 1.45], floor: [5, 0.8],
     glass: [5, 0.29], switch: [4, 0.22], drip: [4, 0.36], clock: [2, 0.24], fridge: [1, 4.5],
     splash: [1, 1.75], thunder_near: [1, 10.75], thunder_far: [1, 4.65],
+    dog_paw: [6, 0.20], snake_hiss: [3, 0.95],
   };
   const foleyBanks = new Map();
   const activeFoley = new Map();
@@ -515,14 +515,20 @@ const PhobiaAudio = (() => {
     return true;
   }
 
+  function fadeFoley(src, gain, now) {
+    if (gain.gain.cancelAndHoldAtTime) gain.gain.cancelAndHoldAtTime(now);
+    else gain.gain.cancelScheduledValues(now);
+    gain.gain.setTargetAtTime(0, now, 0.015);
+    src.stop(now + 0.075);
+  }
+
   function stopFoley() {
     if (!ctx) return;
     const now = ctx.currentTime;
-    for (const [src, gain] of activeFoley) {
-      gain.gain.setTargetAtTime(0, now, 0.02);
-      src.stop(now + 0.10);
-    }
+    for (const [src, gain] of activeFoley) fadeFoley(src, gain, now);
     activeFoley.clear();
+    _dogBreath = null;
+    _dogVoiceUntil = 0;
   }
 
   function preloadFoley(realm) {
@@ -533,8 +539,8 @@ const PhobiaAudio = (() => {
       flying: ["hard"], driving: ["hard"], storms: ["hard"],
     };
     const objects = {
-      dogs: ["bounce", "ceramic", "wood_hit", "floor", "metal_hit"],
-      spiders: ["drip", "metal_hit"], heights: ["metal_hit", "switch"],
+      dogs: ["bounce", "ceramic", "wood_hit", "floor", "metal_hit", "dog_paw"],
+      spiders: ["drip", "metal_hit"], snakes: ["snake_hiss"], heights: ["metal_hit", "switch"],
       dark: ["floor", "glass", "switch", "clock", "fridge"], enclosed: ["door", "switch", "metal_hit"],
       water: ["splash"], driving: ["switch"], flying: ["switch"], speaking: ["switch"],
       storms: ["thunder_near", "thunder_far", "switch"],
@@ -866,50 +872,50 @@ const PhobiaAudio = (() => {
   // has no recordings (whine, sniff) or the manifest is empty/offline. The
   // bark IS the cynophobia trigger — a real recording lands where any synth
   // reads as videogame beep.
-  let _dogBank = null;   // null=not attempted | 'loading' | 'absent' | bank
+  // Offsets and lengths isolate the first vocalization in each existing take.
+  const DOG_TAKES = {
+    bark_a: [0.175, 0.36], bark_b: [0.005, 0.35], bark_c: [0.025, 0.43], bark_d: [0.060, 0.40],
+    bark_big_a: [0.045, 0.28], bark_big_b: [0.005, 0.30], bark_big_c: [0.100, 0.31],
+    bark_big_d: [0.020, 0.32], bark_big_e: [0.025, 0.27],
+    woof_a: [0, 0.35], woof_b: [0, 0.40], woof_c: [0.005, 0.16],
+    growl_a: [0.03, 1.65], growl_b: [0, 1.55], growl_c: [0.68, 0.50],
+  };
+  const DOG_VOICE_GAIN = { bark: 0.46, woof: 0.32, growl: 0.27, pant: 0.15 };
+  let _dogBank = null;
+  let _dogBreath = null, _dogVoiceUntil = 0;
   function preloadDogSamples() {
-    if (_dogBank !== null) return;
-    _dogBank = "loading";
-    const c = ensureCtx();
-    if (!c) { _dogBank = "absent"; return; }
+    if (_dogBank || !ensureCtx()) return;
+    const bank = { kinds: {} };
+    _dogBank = bank;
     fetch("assets/audio/dog/manifest.json")
       .then((r) => (r.ok ? r.json() : null))
-      .then((man) => {
-        const kindsIn = man && man.kinds ? man.kinds : null;
-        if (!kindsIn || !Object.keys(kindsIn).length) { _dogBank = "absent"; return; }
-        const bank = { kinds: {} };
-        const jobs = [];
-        for (const kind of Object.keys(kindsIn)) {
-          const entry = { bufs: [], order: [], idx: 0, last: -1 };
+      .then(async (man) => {
+        if (!man?.kinds) { _dogBank = null; return; }
+        const jobs = Object.entries(man.kinds).flatMap(([kind, files]) => {
+          const entry = { takes: [], order: [], idx: 0, last: -1 };
           bank.kinds[kind] = entry;
-          for (const f of kindsIn[kind]) {
-            jobs.push(
-              fetch("assets/audio/dog/" + f)
-                .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject()))
-                .then((ab) => c.decodeAudioData(ab))
-                .then((buf) => { entry.bufs.push(buf); })
-                .catch(() => {})            // per-file failure = smaller bank
-            );
-          }
-        }
-        Promise.allSettled(jobs).then(() => {
-          const any = Object.values(bank.kinds).some((k) => k.bufs.length > 0);
-          _dogBank = any ? bank : "absent";
+          return files.map(async (file) => {
+            const buffer = await _loadBed("assets/audio/dog/" + file);
+            if (!buffer) return;
+            const [offset, length] = DOG_TAKES[file.replace(/\.m4a$/, "")] || [0, buffer.duration];
+            entry.takes.push({ buffer, offset, length: Math.min(length, buffer.duration - offset) });
+          });
         });
+        await Promise.all(jobs);
+        if (!Object.values(bank.kinds).some((entry) => entry.takes.length)) _dogBank = null;
       })
-      .catch(() => { _dogBank = "absent"; });
+      .catch(() => { _dogBank = null; });
   }
   function _takeSample(kind, opts = {}) {
-    if (!_dogBank || typeof _dogBank === "string") return null;
+    if (!_dogBank) return null;
     // A deep bark prefers the large-breed bank when present.
     let k = kind;
-    if (kind === "bark" && (opts.f0 || 400) < 320 && _dogBank.kinds.bark_big
-        && _dogBank.kinds.bark_big.bufs.length) k = "bark_big";
+    if (kind === "bark" && (opts.f0 || 400) < 320 && _dogBank.kinds.bark_big?.takes.length) k = "bark_big";
     const entry = _dogBank.kinds[k];
-    if (!entry || !entry.bufs.length) return null;
+    if (!entry?.takes.length) return null;
     // Round-robin over a shuffled order; reshuffle avoiding immediate repeats.
-    if (entry.order.length !== entry.bufs.length || entry.idx >= entry.order.length) {
-      const order = entry.bufs.map((_, i) => i);
+    if (entry.order.length !== entry.takes.length || entry.idx >= entry.order.length) {
+      const order = entry.takes.map((_, i) => i);
       for (let i = order.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [order[i], order[j]] = [order[j], order[i]];
@@ -920,30 +926,42 @@ const PhobiaAudio = (() => {
     }
     const pick = entry.order[entry.idx++];
     entry.last = pick;
-    return entry.bufs[pick];
+    return entry.takes[pick];
   }
-  function _playSample(buf, intensity, pos, opts = {}) {
-    const c = ensureCtx(); if (!c) return;
+  function playDogSample(kind, take, intensity, pos, opts) {
+    const c = ctx;
     const src = c.createBufferSource();
-    src.buffer = buf;
-    src.playbackRate.value = Math.pow(2, (Math.random() * 2 - 1) / 12) * (opts.rate || 1);
-    // Route through SFX_CAL so recordings sit at the same loudness as synth
-    // fallbacks — raw 0.9*intensity was ~6 dB hotter and fought the mix.
-    const out = sfxOut(opts.cal || "dogSample", pos, {
+    src.buffer = take.buffer;
+    const rate = (0.97 + Math.random() * 0.06) * (opts.rate || 1);
+    src.playbackRate.value = rate;
+    const out = spatial(pos, {
       refDistance: 1.5, maxDistance: 30, rolloffFactor: 1.6, creature: true,
-      air: opts.air, reverb: opts.reverb,
+      air: true, reverb: opts.reverb,
       forward: opts.forward, coneInnerAngle: opts.coneInnerAngle,
       coneOuterAngle: opts.coneOuterAngle, coneOuterGain: opts.coneOuterGain,
     });
     if (!out) return;
     const g = c.createGain();
-    const peak = Math.max(0.0002, 0.55 * intensity);
-    const when = opts.when || c.currentTime;
-    g.gain.setValueAtTime(0.0001, when);
-    g.gain.exponentialRampToValueAtTime(peak, when + 0.008);
+    const when = Math.max(c.currentTime, opts.when);
+    const duration = Math.min(take.length / rate, opts.limit ?? Infinity);
+    const end = when + duration;
+    const peak = DOG_VOICE_GAIN[kind] * intensity;
+    g.gain.setValueAtTime(0, when);
+    g.gain.linearRampToValueAtTime(peak, when + 0.004);
+    g.gain.setValueAtTime(peak, end - Math.min(0.065, duration * 0.3));
+    g.gain.linearRampToValueAtTime(0, end);
     src.connect(g);
     g.connect(out);
-    src.start(when);
+    src.onended = () => {
+      activeFoley.delete(src);
+      if (_dogBreath === src) _dogBreath = null;
+      src.disconnect();
+      g.disconnect();
+    };
+    src.start(when, take.offset, duration * rate);
+    activeFoley.set(src, g);
+    if (kind === "pant") _dogBreath = src;
+    else _dogVoiceUntil = Math.max(_dogVoiceUntil, end);
   }
 
   // Formant-based bark synthesis — the fallback voice when no recording
@@ -1069,8 +1087,7 @@ const PhobiaAudio = (() => {
   }
 
   // Unified dog vocal entry: recorded sample when the bank covers the kind,
-  // synthesis otherwise. Supports bark SEQUENCES (count/gap with micro-timing
-  // + per-shot intensity jitter) — real dogs rarely bark exactly once.
+  // synthesis otherwise. Burst spacing is shared with the head animation.
   function dogVocal(kind, intensity = 0.8, pos = null, opts = {}) {
     const c = ensureCtx(); if (!c) return;
     // Aggressive vocals reach the hand as a short tick (once per call, not per
@@ -1085,14 +1102,23 @@ const PhobiaAudio = (() => {
     // through a bark" is a star. Name the sound on screen (pants and sniffs
     // are ambience, not events).
     if (kind === "bark" || kind === "woof" || kind === "growl" || kind === "whine") soundCaption(kind, opts.count || 1);
+    if (muted) return;
+    if (kind === "pant" || kind === "sniff") {
+      if (_dogBreath || c.currentTime < _dogVoiceUntil) return;
+    } else if (_dogBreath) {
+      fadeFoley(_dogBreath, activeFoley.get(_dogBreath), c.currentTime);
+      _dogBreath = null;
+    }
     const count = opts.count || 1;
-    const gap = opts.gap || 0.16;
+    const gap = opts.gap || 0.36;
+    const now = c.currentTime;
     for (let i = 0; i < count; i++) {
-      const when = c.currentTime + i * (gap + (Math.random() * 0.06 - 0.03));
-      const shot = Math.max(0, Math.min(1, intensity * (1 + (Math.random() * 0.3 - 0.15))));
-      const buf = _takeSample(kind, opts);
-      if (buf) {
-        _playSample(buf, shot, pos, Object.assign({}, opts, { when }));
+      const when = now + i * gap;
+      const shot = Math.max(0, Math.min(1, intensity * (0.95 + Math.random() * 0.1) * (1 - Math.min(i, 3) * 0.10)));
+      const take = _takeSample(kind, opts);
+      if (take) {
+        const limit = count > 1 ? gap - 0.025 : kind === "growl" ? opts.dur : undefined;
+        playDogSample(kind, take, shot, pos, { ...opts, when, limit });
       } else if (kind === "bark") {
         _barkFormant(shot, pos, Object.assign({}, opts, { when }));
       } else if (kind === "woof") {
@@ -1266,7 +1292,7 @@ const PhobiaAudio = (() => {
   function skitterTicks(pos = null, opts = {}) {
     const c = ensureCtx(); if (!c) return;
     const duration = opts.duration || 0.35, legRate = opts.legRate || 42;
-    const k = Math.max(0.2, Math.min(1, opts.intensity == null ? 1 : opts.intensity));
+    const k = Math.max(0.1, Math.min(1, opts.intensity ?? 1));
     const out = sfxOut("skitterTicks", pos, { refDistance: 1.0, maxDistance: 22, rolloffFactor: 1.9, creature: true, air: true, reverb: 0.14 });
     const nb = noiseBuffer(1);
     const now = c.currentTime;
@@ -1274,11 +1300,11 @@ const PhobiaAudio = (() => {
     while (when < now + duration) {
       const src = c.createBufferSource(); src.buffer = nb;
       const bp = c.createBiquadFilter();
-      bp.type = "bandpass"; bp.frequency.value = 3000 + Math.random() * 3400; bp.Q.value = 1.4;
+      bp.type = "bandpass"; bp.frequency.value = 1600 + Math.random() * 3600; bp.Q.value = 0.65;
       const g = c.createGain();
       g.gain.setValueAtTime(0.0001, when);
-      g.gain.exponentialRampToValueAtTime(0.028 * k + 0.014, when + 0.0008);
-      g.gain.exponentialRampToValueAtTime(0.0006, when + 0.010);
+      g.gain.exponentialRampToValueAtTime(k * (tick % 4 === 0 ? 0.035 : 0.016 + Math.random() * 0.014), when + 0.0015);
+      g.gain.exponentialRampToValueAtTime(0.0006, when + 0.012);
       src.connect(bp).connect(g).connect(out);
       src.start(when); src.stop(when + 0.05);
       // Every 4th click: a faint low body-drag layer (reads as 8 legs, a body).
@@ -1790,10 +1816,12 @@ const PhobiaAudio = (() => {
   // left untouched). Outdoors → no reverb, air lowpass for distance. ----
   // Breathy sibilant hiss with a warn/strike intensity contour.
   function snakeHiss(pos = null, opts = {}) {
-    const c = ensureCtx(); if (!c) return;
     const intensity = Math.max(0.2, Math.min(1, opts.intensity == null ? 0.6 : opts.intensity));
+    const space = { refDistance: 1.0, maxDistance: 26, rolloffFactor: 1.7, creature: true, air: true };
+    if (playFoley("snake_hiss", 0.22 * intensity, pos, { ...space, lowpass: 4200 + 4600 * intensity })) return;
+    const c = ensureCtx(); if (!c) return;
     const dur = (opts.dur != null ? opts.dur : 0.85 + Math.random() * 0.35) * (0.7 + 0.3 * intensity);
-    const out = sfxOut("snakeHiss", pos, { refDistance: 1.0, maxDistance: 26, rolloffFactor: 1.7, creature: true, air: true });
+    const out = sfxOut("snakeHiss", pos, space);
     const now = c.currentTime;
     const nb = noiseBuffer(dur + 0.1);
     const src = c.createBufferSource(); src.buffer = nb;
@@ -2475,8 +2503,10 @@ const PhobiaAudio = (() => {
   // encode the dog's real speed — the charge becomes a hard, accelerating
   // click-train approaching through the HRTF panner.
   function dogFootfall(strength = 0.5, pos = null) {
+    const space = { refDistance: 1.2, maxDistance: 20, rolloffFactor: 1.5, creature: true, reverb: 0.10, air: true };
+    if (playFoley("dog_paw", 0.10 * strength, pos, { ...space, lowpass: 3200 + 3000 * strength })) return;
     const c = ensureCtx(); if (!c) return;
-    const out = sfxOut("dogFootfall", pos, { refDistance: 1.2, maxDistance: 20, rolloffFactor: 1.5, creature: true, reverb: 0.18 });
+    const out = sfxOut("dogFootfall", pos, space);
     if (!out) return;
     const t0 = c.currentTime;
     const tick = (at, gain, hz) => {
@@ -3642,6 +3672,7 @@ const PhobiaAudio = (() => {
   function preloadEnv(realm, levelIdx) {
     try { const c = navigator.connection; if (c && (c.saveData || /(^|-)2g$/.test(c.effectiveType || ""))) return; } catch {}
     preloadFoley(realm);
+    if (realm === "dogs") preloadDogSamples();
     for (const { name } of envBeds(realm, levelIdx | 0)) loadEnvironmentBed(name);
   }
   // Start a realm's whole environment: its beds, its life, and the synth beds

@@ -54,6 +54,7 @@ function scheduleReminders() {
   try { if (localStorage.getItem("fobia.reminders") !== "1") return; } catch { return; }
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   const tick = () => {
+    if (document.querySelector(".exposure-panel #stage")) return;
     let last = 0;
     try { last = parseInt(localStorage.getItem("fobia.lastReminder") || "0", 10) || 0; } catch { return; }
     const now = Date.now();

@@ -659,6 +659,8 @@ const PACKS = {
     "dc.pPaused": "مکث",
     "dc.pSettle": "در حال فروکش…",
     "dc.readQ": "<b>{dog}</b>: {look}. حالش چطور است؟",
+    "dc.readOffer": "خواندنِ این لحظه",
+    "dc.readSkip": "رد کردن",
     "dc.newSignal": "تازه در راهنمای میدانی‌ات",
     "dc.tPredict": "پیش‌بینی زنگ خطرت: <b>«{f}»</b>{b}. این آزمون همان سنجش است — ببین {dog} واقعاً چه می‌کند.",
     "dc.tPredictSure": " — {n}٪ مطمئن",

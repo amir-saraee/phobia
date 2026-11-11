@@ -107,6 +107,19 @@ function makeCreatureCoach(opts) {
   callout.setAttribute("role", "status"); callout.setAttribute("aria-live", "polite");
   const readBox = document.createElement("div");
   readBox.className = "dc-read";
+  const readButton = document.createElement("button");
+  readButton.type = "button";
+  readButton.className = "dc-read-offer";
+  readButton.textContent = t("dc.readOffer", "Read the moment");
+  if (!o.coarse) {
+    const key = document.createElement("kbd");
+    key.textContent = "J";
+    readButton.append(" ", key);
+    readButton.setAttribute("aria-keyshortcuts", "J");
+  }
+  readButton.hidden = true;
+  root.querySelector(".dc-foot").before(readButton);
+  readButton.addEventListener("click", openRead);
   if (stage) { stage.appendChild(root); stage.appendChild(callout); stage.appendChild(readBox); }
   // Tap the card header on phones to show/hide the goals — the wave stays.
   root.querySelector(".dc-head").addEventListener("click", () => root.classList.toggle("dc-open"));
@@ -119,9 +132,6 @@ function makeCreatureCoach(opts) {
   // the part of exposure that does the work.
   const goals = (o.goals || []).map((g) => Object.assign({ n: 0, need: 1, done: false }, g));
   const starsDone = () => goals.filter((g) => g.done).length;
-  // Skill goals with no hotbar verb that are still the player's to take
-  // after the hold (the "one star still open" nudge names them too).
-  const STILL_ON_OFFER = ["glassLook", "scan"];
   // A skill goal that names a hotbar verb (`verb: "treat"`) lights that
   // button while the goal is open, so "what do I do here?" has an answer on
   // screen without another line of text; when the star lands the button
@@ -141,8 +151,8 @@ function makeCreatureCoach(opts) {
     if (!g || g.done || g.verb === cmd) return;
     g.verb = cmd; syncVerb();
   }
-  const starRow = (n, fresh = -1) => goals.map((_, i) =>
-    `<i class="${i < n ? "on" : ""}${i === fresh ? " new" : ""}">★</i>`).join("");
+  const starRow = (n) => goals.map((_, i) =>
+    `<i class="${i < n ? "on" : ""}">★</i>`).join("");
   function renderGoals() {
     const next = goals.find((g) => !g.done);
     const n = starsDone();
@@ -153,27 +163,6 @@ function makeCreatureCoach(opts) {
     syncVerb();
   }
   renderGoals();
-  // A star landing: a gold card drops in at the top of the view, one at a
-  // time (two goals can land in the same second), and the coach card glints.
-  let popFreeAt = 0;
-  function starPop(g) {
-    if (!stage) return;
-    const n = starsDone(), all = n === goals.length;
-    const html = `<span class="sp-row">${starRow(n, n - 1)}</span><span class="sp-txt"><b>${all ? t("dc.starAll", "All three stars!") : t("dc.starOne", "Star earned")}</b><span>${esc(g.text)}</span></span>`;
-    const now = performance.now();
-    const wait = Math.max(0, popFreeAt - now);
-    popFreeAt = now + wait + 1500;
-    setTimeout(() => {
-      if (!root.isConnected) return;
-      stage.querySelectorAll(".star-pop").forEach((e) => e.remove());
-      const el = document.createElement("div");
-      el.className = "star-pop" + (all ? " all" : "");
-      el.setAttribute("role", "status");
-      el.innerHTML = html;
-      stage.appendChild(el);
-      setTimeout(() => { try { el.remove(); } catch {} }, 2900);
-    }, wait);
-  }
   function goalDone(id) {
     const g = goals.find((x) => x.id === id);
     if (!g || g.done) return;
@@ -188,28 +177,6 @@ function makeCreatureCoach(opts) {
     // a glint on the card and the star itself say it instead.
     try { if (window.PhobiaFX && window.PhobiaFX.haptic) window.PhobiaFX.haptic(12); } catch {}
     root.classList.remove("dc-ping"); void root.offsetWidth; root.classList.add("dc-ping");
-    starPop(g);
-    // A star landing makes a queued/showing "one star still open" stale. Only
-    // then: retiring it before it was ever said marked it said, so any star
-    // earned before the hold silenced the nudge for the whole trial.
-    if (id !== "settle" && said.has("starsLeft")) retire("starsLeft");
-    // Held, and this star leaves exactly one open: that's the moment to say so
-    // (two were open at the hold, then the read landed — it never came).
-    if (heldSeen) nudgeOpen();
-  }
-  // One star still open, and it's one the animal can still give: say so,
-  // once, and leave the choice with the player.
-  // A verb goal is always still on offer — it's the player's move, not
-  // the animal's — so it gets the same one-line nudge; so do the skill
-  // goals that are the player's move without a hotbar verb (look down
-  // through the glass, lie through a scan).
-  function nudgeOpen() {
-    const open = goals.filter((x) => !x.done && x.id !== "settle");
-    if (open.length === 1 && (open[0].id === "read" || open[0].id === "threeSounds" || open[0].verb || STILL_ON_OFFER.includes(open[0].id))) {
-      teach("starsLeft", tf("dc.tStarsLeft",
-        "Trial held — continue whenever you like. <b>One star is still open:</b> {g}. Stay a little longer if you want all three.",
-        { g: esc(open[0].text) }), 8000);
-    }
   }
   function goalCount(id, n) {
     const g = goals.find((x) => x.id === id);
@@ -237,14 +204,11 @@ function makeCreatureCoach(opts) {
   // At most a few lessons a trial. Up to ten could queue back-to-back, so a
   // text box was on screen for most of a trial; the urgent beats (you just
   // stepped back, it settled) always get through.
-  const LESSON_CAP = replay ? 0 : 3;
+  const LESSON_CAP = replay ? 0 : 2;
   let lessons = 0;
   function teach(key, html, ms = 7000, urgent = false) {
     if (said.has(key)) return false;
-    // The play invite is an offer, not a lesson — it isn't counted; nor is
-    // the "one star still open" nudge (counted, it rarely got through the cap,
-    // and never on a replay, where the cap is 0).
-    const counted = !urgent && key !== "play" && key !== "starsLeft";
+    const counted = !urgent && key !== "play";
     if (counted && lessons >= LESSON_CAP) { said.add(key); return false; }
     said.add(key);
     if (counted) lessons++;
@@ -322,7 +286,7 @@ function makeCreatureCoach(opts) {
     if (calloutT > 0) {
       calloutT -= dt;
       if (calloutT <= 0) {
-        callout.classList.remove("show"); calloutCur = null; calloutGap = 5;
+        callout.classList.remove("show"); calloutCur = null; calloutGap = 8;
         const L = lane(); if (L) L.release("callout");
       }
       return;
@@ -378,48 +342,51 @@ function makeCreatureCoach(opts) {
 
   // ---------------- reading the dog ----------------
   let readOpen = null;       // { id, t0, until }
+  let readOffer = null;      // { id, until }
   // seconds before the first prompt may appear. A traveler's first trial
   // ever gets room to look around and take a step before the quiz starts.
   let readCooldown = (o.novice != null ? o.novice : window.__lwNovice) ? 16 : 6;
   let readResultT = 0;
   const readPos = { x: null, y: null };
-  const seenThisTrial = new Set();
-  // Reading questions are the game's quiz — and they used to reopen every
-  // 10–25 s for the whole trial, long after their star was earned. Now: none
-  // in the first moments, a real gap between them, never over one of Mira's
-  // lessons, and once the read star has landed only a rare one (a moment
-  // worth naming) for the rest of the trial.
-  let readsOffered = 0;
   const readStarDone = () => { const g = goals.find((x) => x.id === "read"); return !g || g.done; };
   function signal(id, s = {}) {
-    const S = K.signals[id];
-    if (!S) return false;
-    if (readOpen || readResultT > 0 || readCooldown > 0) return false;
-    // Never a quiz over the grounding exercise (it used to cover the text).
+    if (!K.signals[id] || readStarDone() || readOffer || readOpen || readResultT > 0 || readCooldown > 0) return false;
     if (window.PhobiaFear && window.PhobiaFear.isGrounding && window.PhobiaFear.isGrounding()) return false;
-    if (stage && stage.classList.contains("breathing")) return false;   // nor over the breath
+    if (stage && stage.classList.contains("breathing")) return false;
     if (s.onScreen === false) return false;
     if (s.dist != null && s.dist > 9.5) return false;
-    // Variety: a signal already read this trial comes back only rarely.
-    if (seenThisTrial.has(id) && Math.random() < 0.7) return false;
-    if (readStarDone() && (replay || readsOffered >= 3 || Math.random() < 0.6)) return false;
+    readOffer = { id, until: clock + 16 };
+    readButton.hidden = false;
+    return true;
+  }
+  function clearReadOffer() {
+    readOffer = null;
+    readButton.hidden = true;
+  }
+  function openRead() {
+    if (!readOffer || readStarDone()) return;
+    if (stage?.classList.contains("breathing") || window.PhobiaFear?.isGrounding?.()) return;
     const L = lane();
-    // Until its star lands, reading the animal outranks a lesson on screen
-    // (the lesson steps back and returns); after that a lesson isn't cut.
-    if (L && L.busy("callout") && (readStarDone() || L.kind === "read")) return false;
+    if (L && L.busy("safety")) return;
     const openFor = o.coarse ? 11 : 9;
-    if (L && !L.claim("read", (openFor + 4) * 1000, null)) return false;
+    if (L && !L.claim("read", (openFor + 4) * 1000, null)) return;
+    const { id } = readOffer;
+    clearReadOffer();
     readOpen = { id, t0: clock, until: clock + openFor };
-    readsOffered++;
-    seenThisTrial.add(id);
     readPos.x = null;
     readBox.innerHTML = `
       <div class="dc-read-q"><span class="dc-read-eye">👁</span> ${tf(K.readQKey || "dc.readQ", K.readQ || "<b>{dog}</b>: {look}. How is it feeling?", { dog: esc(o.title || o.dogName), look: esc(K.place ? (() => { const l = K.signalText(id, "look"); return l.charAt(0).toUpperCase() + l.slice(1); })() : K.signalText(id, "look")) })}</div>
       <div class="dc-read-opts">${Object.keys(K.classes).map((c) =>
         `<button type="button" class="dc-opt dc-${K.classes[c].tone || c}" data-c="${c}"><span>${K.classes[c].dot}</span> ${esc(K.classLabel(c))}${o.coarse ? "" : ` <kbd>${K.classes[c].key}</kbd>`}</button>`).join("")}</div>
+      <button type="button" class="dc-read-skip">${t("dc.readSkip", "Skip")}</button>
       <div class="dc-read-timer"><i></i></div>`;
     readBox._sz = null;
     readBox.querySelectorAll(".dc-opt").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); answer(b.dataset.c); }));
+    readBox.querySelector(".dc-read-skip").addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeRead();
+      readCooldown = 20;
+    });
     readBox.classList.remove("result");
     readBox.classList.add("show");
     try { if (window.PhobiaFX && window.PhobiaFX.haptic) window.PhobiaFX.haptic(8); } catch {}
@@ -452,7 +419,7 @@ function makeCreatureCoach(opts) {
     readBox._sz = null;
     readResultT = 4.5;
     { const L = lane(); if (L) L.claim("read", 8000, null); }
-    readCooldown = readStarDone() ? 30 + Math.random() * 6 : 8 + Math.random() * 3;
+    readCooldown = 10;
     if (right && ev.readsRight === 1) teach("firstRead", K.texts.firstRead(), 7500);
   }
   // Close an open question quietly, without credit: the moment it asked
@@ -468,6 +435,7 @@ function makeCreatureCoach(opts) {
     return true;
   }
   function closeRead() {
+    clearReadOffer();
     if (!readOpen) return false;
     readOpen = null;
     readBox.classList.remove("show");
@@ -476,8 +444,10 @@ function makeCreatureCoach(opts) {
     return true;
   }
   function onKey(e) {
-    if (!readOpen || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+    if (e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
+    if (readOffer && e.code === "KeyJ") { e.preventDefault(); openRead(); return; }
+    if (!readOpen) return;
     const k = e.key;
     const cls = Object.keys(K.classes).find((c) => K.classes[c].key === k);
     if (cls) { e.preventDefault(); answer(cls); }
@@ -596,6 +566,10 @@ function makeCreatureCoach(opts) {
     const d = Math.min(0.1, dt || 0.016);
     clock += d;
     if (readCooldown > 0) readCooldown -= d;
+    if (readOffer && clock > readOffer.until) {
+      clearReadOffer();
+      readCooldown = 12;
+    }
     // Tonic trigger: closeness scaled by how big/intense this rung's dog is,
     // plus a little for facing it (looking straight at the fear is harder).
     const dist = s.dist != null ? s.dist : 99;
@@ -718,7 +692,6 @@ function makeCreatureCoach(opts) {
         sg.text = t("dc.gStayedLong", "Stayed the long way — a stubborn alarm today");
         goalDone("settle");
       }
-      nudgeOpen();
     }
 
     // Rise / fall teaching beats
@@ -962,7 +935,7 @@ function makeCreatureCoach(opts) {
       const bar = readBox._bar && readBox._bar.isConnected ? readBox._bar : (readBox._bar = readBox.querySelector(".dc-read-timer i"));
       if (bar) bar.style.transform = `scaleX(${k.toFixed(3)})`;
       if (stage && stage.classList.contains("breathing")) readOpen.until += d;   // the question waits out a breath
-      if (clock > readOpen.until) { readOpen = null; readBox.classList.remove("show"); readCooldown = readStarDone() ? 30 : 8; const L = lane(); if (L) L.release("read"); }
+      if (clock > readOpen.until) closeRead();
     }
     if (readResultT > 0) { readResultT -= d; if (readResultT <= 0) { readBox.classList.remove("show", "result"); const L = lane(); if (L) L.release("read"); } }
     pumpCallout(d, grounding, s.exposureBlocked);
