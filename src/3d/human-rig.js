@@ -3,7 +3,7 @@
 // soft sunbeam.
 
 import * as THREE from "three";
-import { _hsat, _sstep, SkinGeom, _sweep, BODY_TYPES_3D, pbrMat } from "./human-base.js";
+import { surfaceDetail, _hsat, _sstep, SkinGeom, _sweep, BODY_TYPES_3D, pbrMat } from "./human-base.js";
 import { _hairReach, getHairStrandTex, HEAD_LIFT, buildHead } from "./human-head.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
@@ -587,8 +587,8 @@ function buildHumanRig(o = {}) {
 
   // ---------- body mesh ----------
   const sg = new SkinGeom();
-  const RAD_T = o.lowDetail ? 16 : 22;      // torso radial segments
-  const RAD_L = o.lowDetail ? 12 : 16;      // limb radial segments
+  const RAD_T = o.lowDetail ? 20 : 32;      // torso radial segments
+  const RAD_L = o.lowDetail ? 14 : 24;      // limb radial segments
 
   // Torso + neck as ONE surface, so the collar/shoulder/neck junction is
   // continuous rather than three primitives poking through each other.
@@ -608,8 +608,8 @@ function buildHumanRig(o = {}) {
     // The crew neck: high at the nape, dipping ~5 cm at the front so the
     // throat shows the way it does above a real tee. Level rings put the whole
     // neckline up under the chin, which read as a turtleneck.
-    { ay: SHY + 0.080, rx: .0575, rz: .0560, w: [[bi(neck), .65], [bi(chest), .35]], mat: shirtTop, sq: 1, cap: 1, capH: 0.10, ymod: _crewDip(0.050) },
-    { ay: SHY + 0.062, rx: .0720, rz: .0700, w: [[bi(neck), .38], [bi(chest), .62]], mat: shirtTop, sq: .97, ymod: _crewDip(0.040) },
+    { ay: SHY + 0.080, rx: .0575, rz: .0560, w: [[bi(neck), .65], [bi(chest), .35]], mat: shirtTop, sq: 1, cap: 1, capH: 0.10, ymod: _crewDip(0.070) },
+    { ay: SHY + 0.062, rx: .0720, rz: .0700, w: [[bi(neck), .38], [bi(chest), .62]], mat: shirtTop, sq: .97, ymod: _crewDip(0.052) },
     { ay: SHY + 0.040, rx: .1030, rz: .0870, w: [[bi(chest), 1]], mat: shirtTop, sq: .93, ymod: _crewDip(0.020) },
     // The acromion shelf stays WIDE up to just above the joint — that is what
     // the deltoid sits on. Narrowing it here (which the first attempt did) left
@@ -620,7 +620,7 @@ function buildHumanRig(o = {}) {
     { ay: SHY + 0.018, rx: .1390, rz: .0955, w: [[bi(chest), 1]], mat: shirtTop, sq: .99 },
     { ay: SHY - 0.010, rx: .1550, rz: .1030, w: [[bi(chest), 1]], mat: shirtTop, sq: .97 },
     { ay: SHY - 0.055, rx: .1955, rz: .1130, w: [[bi(chest), 1]], mat: shirtTop, sq: .93 },
-    { y: 1.212, rx: .1950, rz: .1160, w: [[bi(chest), .70], [bi(breath), .30]], mat: shirtTop, sq: sqT },
+    { ay: SHY - 0.090, rx: .1950, rz: .1160, w: [[bi(chest), .70], [bi(breath), .30]], mat: shirtTop, sq: sqT },
     { y: 1.150, rx: .1805, rz: .1195, w: [[bi(breath), 1]], mat: shirtTop, sq: sqT },
     { y: 1.078, rx: .1580, rz: .1090, w: [[bi(breath), .55], [bi(spine), .45]], mat: shirtTop, sq: sqT },
     { y: 1.008, rx: .1415, rz: .0975, w: [[bi(spine), 1]], mat: shirtTop, sq: sqT },
@@ -882,6 +882,14 @@ function buildHumanRig(o = {}) {
     color: shoeCol.clone().lerp(new THREE.Color(0x8c8378), 0.35), roughness: 0.85, metalness: 0,
   });
   const mDark = new THREE.MeshStandardMaterial({ color: shirtCol.clone().multiplyScalar(0.74), roughness: 0.95 });
+  if (!o.lowDetail) {
+    mSkin.bumpMap = surfaceDetail("skin", 5); mSkin.bumpScale = 0.00012;
+    mSkin.addEventListener("dispose", () => mSkin.bumpMap.dispose());
+    for (const material of [mShirt, mPants, mShoe]) {
+      material.bumpMap = surfaceDetail("cloth", 12); material.bumpScale = 0.00028;
+      material.addEventListener("dispose", () => material.bumpMap.dispose());
+    }
+  }
   const mats = [mSkin, mShirt, mPants, mShoe, mDark, mSole];
 
   const mesh = new THREE.SkinnedMesh(geo, mats);

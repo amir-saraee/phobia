@@ -172,7 +172,49 @@ class SkinGeom {
 // station: { p:[x,y,z], rx, rz, w:[[bone,weight],…], mat, sq?, cap? }
 //   sq   — superellipse exponent (<1 squares the section off; torso uses it)
 //   cap  — "start" / "end" closes that end with a rounded pole
+// Interpolate the cross sections before meshing. Monotone cubic radii round
+// the silhouette without overshooting cuffs, kneecaps or the shirt hem.
+function roundedStations(source) {
+  const result = [];
+  const length = (a, b) => Math.hypot(...a.p.map((v, k) => v - b.p[k]));
+  const weights = (a, b, t) => {
+    const values = new Map();
+    for (const [list, gain] of [[a, 1 - t], [b, t]]) for (const [bone, w] of list)
+      values.set(bone, (values.get(bone) || 0) + w * gain);
+    return [...values].sort((a, b) => b[1] - a[1]).slice(0, 4);
+  };
+  for (let i = 0; i < source.length - 1; i++) {
+    const a = source[i], b = source[i + 1];
+    result.push(a);
+    if (a.mat !== b.mat) continue; // keep material boundaries and hems sharp
+    const prev = source[Math.max(0, i - 1)], next = source[Math.min(source.length - 1, i + 2)];
+    const span = Math.max(1e-6, length(a, b));
+    const curve = (key, t) => {
+      const d = (b[key] - a[key]) / span;
+      const slope = (v) => d * v <= 0 ? 0 : Math.sign(d) * Math.min(Math.abs(v), 2 * Math.abs(d));
+      const m0 = slope((b[key] - prev[key]) / Math.max(1e-6, length(prev, a) + span)) * span;
+      const m1 = slope((next[key] - a[key]) / Math.max(1e-6, span + length(b, next))) * span;
+      return (2*t*t*t - 3*t*t + 1)*a[key] + (t*t*t - 2*t*t + t)*m0
+        + (-2*t*t*t + 3*t*t)*b[key] + (t*t*t - t*t)*m1;
+    };
+    for (const t of [1 / 3, 2 / 3]) {
+      result.push({
+        p: a.p.map((v, k) => v + (b.p[k] - v) * t),
+        rx: curve("rx", t), rz: curve("rz", t), mat: a.mat,
+        sq: (a.sq || 1) * (1-t) + (b.sq || 1) * t,
+        w: weights(a.w, b.w, t),
+        wAt: a.wAt || b.wAt ? ang => weights(a.wAt ? a.wAt(ang) : a.w, b.wAt ? b.wAt(ang) : b.w, t) : null,
+        rmod: ang => (a.rmod ? a.rmod(ang) : 1) * (1-t) + (b.rmod ? b.rmod(ang) : 1) * t,
+        ymod: ang => (a.ymod ? a.ymod(ang) : 0) * (1-t) + (b.ymod ? b.ymod(ang) : 0) * t,
+      });
+    }
+  }
+  result.push(source[source.length - 1]);
+  return result;
+}
+
 function _sweep(sg, stations, radial) {
+  stations = roundedStations(stations);
   const N = radial;
   const rings = [];
   const T = new THREE.Vector3(), X = new THREE.Vector3(), Z = new THREE.Vector3(), R = new THREE.Vector3();
@@ -265,7 +307,7 @@ const BODY_TYPES_3D = {
   man:   { h: 1.00, shoulder: 1.00, hip: 1.00, head: 1.00, sway: 1.0, chestZ: 1.00, waist: 1.00, limb: 1.00, seat: 1.00, armOut: 0.025, carry: 0.07 },
   // Tuned against assets/refs/protagonist-turnaround.png: narrower shoulders,
   // slightly longer limb read, fuller hips/seat, softer chest depth.
-  woman: { h: 0.96, shoulder: 0.84, hip: 1.16, head: 0.97, sway: 1.40, chestZ: 1.08, waist: 0.84, limb: 0.94, seat: 1.12, armOut: 0.11, carry: 0.10 },
+  woman: { h: 0.96, shoulder: 0.84, hip: 1.08, head: 0.97, sway: 1.20, chestZ: 1.04, waist: 0.91, limb: 0.94, seat: 1.06, armOut: 0.11, carry: 0.10 },
   boy:   { h: 0.80, shoulder: 0.80, hip: 0.96, head: 1.16, sway: 0.9,  chestZ: 0.94, waist: 0.96, limb: 0.90, seat: 0.96, armOut: 0.07, carry: 0.09 },
   girl:  { h: 0.78, shoulder: 0.76, hip: 1.02, head: 1.18, sway: 1.15, chestZ: 0.96, waist: 0.90, limb: 0.88, seat: 1.02, armOut: 0.105, carry: 0.10 },
 };
@@ -284,4 +326,26 @@ function pbrMat(lowDetail, params) {
   return new THREE.MeshStandardMaterial(p);
 }
 
-export { _hsat, _sstep, _falloff, _wob, _GAIT, _track, _solePitch, _legReach, _legIK, SkinGeom, _sweep, WRIST_REST_FOLD, BODY_TYPES_3D, pbrMat };
+// Neutral, tileable microstructure: colour stays with the creator's palette.
+// Each material owns its texture so disposing a preview cannot affect a scene.
+function surfaceDetail(kind, repeat = 1) {
+  const size = 64, pixels = new Uint8Array(size * size * 4);
+  let seed = 173;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const noise = seed / 4294967296;
+    const value = kind === "cloth"
+      ? 128 + 27 * Math.sin(x * Math.PI / 2) * Math.cos(y * Math.PI / 2) + noise * 8
+      : 150 + noise * 35 - (noise < 0.12 ? 42 : 0);
+    const i = (y * size + x) * 4;
+    pixels[i] = pixels[i + 1] = pixels[i + 2] = value; pixels[i + 3] = 255;
+  }
+  const texture = new THREE.DataTexture(pixels, size, size);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(repeat, repeat);
+  texture.magFilter = THREE.LinearFilter; texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true; texture.needsUpdate = true;
+  return texture;
+}
+
+export { surfaceDetail, _hsat, _sstep, _falloff, _wob, _GAIT, _track, _solePitch, _legReach, _legIK, SkinGeom, _sweep, WRIST_REST_FOLD, BODY_TYPES_3D, pbrMat };

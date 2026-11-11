@@ -74,6 +74,10 @@ npm run smoke                  # ~3 min: the SW precache + modulepreload lists, 
 
 The same smoke test runs as a git `pre-push` hook (`git config core.hooksPath .githooks`, already set in this clone). Skip it once with `SKIP_SMOKE=1 git push`. `SMOKE_SHOTS=1` keeps screenshots in `.smoke-shots/`.
 
+Dog modeling check: `node scripts/dog-diagnostic.cjs` renders both breeds from three angles into `/tmp/fobia-dogs` and checks skin weights and posed vertices through idle, walking, trotting, and galloping. Set `CHROME` to override the browser path. The runtime adds one curved subdivision pass before animation, preserving the source landmarks and UVs; normalized source skin weights are decoded before interpolation.
+
+Character modeling check: `node scripts/face-diagnostic.cjs` writes full-body and expression previews to `/tmp/fobia-face`, exercises all four body types with varied skin tones, and checks animated vertices and skin weights. `node scripts/shoot-scenes.cjs /tmp/fobia-character` captures the creator and in-game walking poses.
+
 After re-baking dog coats, run `npm run compress-textures` — the game loads the JPEG copies.
 
 The dogs ship as binary `.glb`. To swap in a re-exported `.gltf` (one embedded base64 buffer), `node scripts/pack-glb.cjs path/to/Model.gltf` writes the `.glb` beside it — same JSON and bytes, ~40% smaller, round trip checked.

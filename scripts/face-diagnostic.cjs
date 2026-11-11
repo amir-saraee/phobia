@@ -42,7 +42,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1400, height: 1000, deviceScaleFactor: 1 });
-    page.on("pageerror", (e) => console.log("[pageerror]", String(e).slice(0, 300)));
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
     await page.evaluateOnNewDocument(() => {
       const c = {
         id: "c-shot", name: "Mira", bodyType: "woman", skinTone: "fair",
@@ -93,7 +94,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const info = await page.evaluate(() => {
       const out = { hasMap: false, vertexColors: null, matColor: null };
       window.__avatarFigure.traverse((o) => {
-        if (o.isMesh && o.material && o.material.isMeshPhysicalMaterial && o.material.sheen > 0.3 && o.geometry.attributes.color) {
+        if (o.isMesh && o.material && o.material.isMeshPhysicalMaterial && o.morphTargetDictionary?.jawOpen != null && o.geometry.attributes.color) {
           out.hasMap = !!o.material.map;
           out.vertexColors = o.material.vertexColors;
           out.matColor = o.material.color.getHexString();
@@ -102,6 +103,54 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       return out;
     });
     console.log("face material:", JSON.stringify(info));
+    // Exercise all body types, skin tones and facial channels on the real
+    // creator builder. Verify skinning after animation, not just bind arrays.
+    for (const [bodyType, skinHex] of [["woman", "#e8b794"], ["man", "#734b36"], ["boy", "#b67d55"], ["girl", "#a26845"]]) {
+      await page.evaluate(({ bodyType, skinHex }) => {
+        window.AvatarPreview.update({ ...window.Character.loadCharacter(), bodyType, skinHex });
+      }, { bodyType, skinHex });
+      await sleep(700);
+      await page.evaluate(async () => {
+        const THREE = await import('/assets/vendor/three/three.module.min.js');
+        const figure = window.__avatarFigure;
+        const v = new THREE.Vector3();
+        for (const t of [0, 0.2, 0.5, 0.8]) {
+          figure.userData.animate(t);
+          figure.updateMatrixWorld(true);
+          figure.traverse(mesh => {
+            if (!mesh.isSkinnedMesh) return;
+            mesh.skeleton.update();
+            const weights = mesh.geometry.attributes.skinWeight;
+            for (let i = 0; i < weights.count; i++) {
+              let sum = 0; for (let k = 0; k < 4; k++) sum += weights.getComponent(i, k);
+              if (Math.abs(sum - 1) > 0.001) throw Error('Invalid skin weights');
+              mesh.getVertexPosition(i, v);
+              if (![v.x, v.y, v.z].every(Number.isFinite)) throw Error('Invalid posed vertex');
+            }
+          });
+        }
+        figure.userData.animate = () => {};
+        figure.rotation.y = 0;
+        figure.traverse(o => { if (o.userData.face) o.userData.face.setBlink(0); });
+      });
+      await sleep(60);
+      await page.screenshot({ path: path.join(OUT, bodyType + "-full.png") });
+      for (const expression of ["neutral", "smile", "fear", "talk", "blink"]) {
+        await page.evaluate(expression => {
+          window.__avatarFigure.traverse(o => {
+            const face = o.userData.face; if (!face) return;
+            face.setFear(expression === "fear" ? 0.75 : 0);
+            face.setSmile(expression === "smile" ? 0.8 : 0);
+            face.setTalk(expression === "talk" ? 0.6 : 0);
+            face.setBlink(expression === "blink" ? 1 : 0);
+          });
+        }, expression);
+        await sleep(60);
+        await page.screenshot({ path: path.join(OUT, `${bodyType}-${expression}.png`), clip: headClip });
+      }
+    }
+    if (errors.length) throw Error(errors.join("\n"));
+    console.log("Body variants, skin weights, animation and expressions passed");
     console.log("shots →", OUT);
   } finally {
     await browser.close();

@@ -100,6 +100,119 @@ function attachDogCollar(model, parts, rawH) {
   };
 }
 
+// Sculpt in the shared bind space of the two bundled breeds. The same
+// displacement applies across material seams and to the eye and nose meshes,
+// so they remain seated in the head as the original skeleton animates.
+function sculptDogGeometry(geometry, breed) {
+  const source = geometry.getAttribute("position");
+  const positions = new Float32Array(source.count * 3);
+  const husky = breed === "husky";
+  const blend = THREE.MathUtils.smoothstep;
+  for (let i = 0; i < source.count; i++) {
+    const x = source.getX(i);
+    const y = source.getY(i);
+    const z = source.getZ(i);
+
+    // Draw the bridge into a tapered muzzle and round the cheek behind it.
+    // The husky has a longer muzzle and a less abrupt forehead transition.
+    const head = blend(y, 2.05, 2.45) * blend(z, 1.28, 1.72);
+    const muzzle = head * blend(z, husky ? 1.96 : 2.08, husky ? 2.40 : 2.48);
+    const cheek = head * (1 - blend(z, 1.65, 2.04)) * (1 - blend(y, 2.70, 2.92));
+    const ear = head * blend(y, 2.81, 3.16);
+
+    // Give the rib cage more depth behind the shoulders and taper the
+    // abdomen before it meets the hind legs. Keep the paw contact surfaces.
+    const trunk = blend(y, 0.80, 1.36) * (1 - blend(y, 1.92, 2.38));
+    const ribs = trunk * blend(z, -0.42, 0.35) * (1 - blend(z, 0.88, 1.45));
+    const waist = trunk * blend(z, -1.27, -0.83) * (1 - blend(z, -0.62, 0.12));
+    const underside = 1 - blend(y, 1.24, 1.84);
+
+    positions[3 * i] = x * (1 - 0.24 * muzzle + 0.12 * cheek
+      + (husky ? 0.07 : 0.18) * ear + 0.13 * ribs - 0.17 * waist);
+    positions[3 * i + 1] = y - 0.08 * muzzle + (husky ? 0.04 : 0.13) * ear
+      + underside * (0.18 * waist - 0.16 * ribs);
+    positions[3 * i + 2] = z + (husky ? 0.22 : 0.10) * muzzle - 0.08 * ear;
+  }
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.boundingBox = null;
+  geometry.boundingSphere = null;
+  geometry.deleteAttribute("normal");
+  geometry.computeVertexNormals();
+  smoothCreaseNormals(geometry, Math.cos(Math.PI / 3));
+}
+
+// One curved subdivision pass adds silhouette detail while retaining the
+// authored UV seams and animation weights. Project edge midpoints onto the
+// endpoint tangent planes (a quadratic normal patch), with a bounded bulge.
+// Unlike smoothing the original vertices, this preserves paws, ear tips and
+// the locations where separate eye/nose meshes meet the face.
+function refineDogSurface(geometry) {
+  const attrs = geometry.attributes;
+  const pos = attrs.position, normal = attrs.normal;
+  if (!pos || !normal || !attrs.skinWeight || geometry.morphAttributes.position) return;
+  // Decode normalized integer attributes before interpolating; storing a
+  // fractional bone weight back into a Uint8Array would truncate it to zero.
+  const data = Object.fromEntries(Object.entries(attrs).map(([name, a]) =>
+    [name, Array.from({ length: a.count * a.itemSize }, (_, i) =>
+      a.getComponent(Math.floor(i / a.itemSize), i % a.itemSize))]));
+  const indices = geometry.index ? Array.from(geometry.index.array)
+    : Array.from({ length: pos.count }, (_, i) => i);
+  const edges = new Map(), triangles = [];
+  const a = new THREE.Vector3(), b = new THREE.Vector3();
+  const na = new THREE.Vector3(), nb = new THREE.Vector3();
+  const delta = new THREE.Vector3(), bend = new THREE.Vector3();
+  const midpoint = (i, j) => {
+    const key = i < j ? `${i}:${j}` : `${j}:${i}`;
+    if (edges.has(key)) return edges.get(key);
+    const out = data.position.length / 3;
+    for (const [name, attr] of Object.entries(attrs)) {
+      for (let k = 0; k < attr.itemSize; k++) {
+        data[name].push((attr.getComponent(i, k) + attr.getComponent(j, k)) * 0.5);
+      }
+    }
+    // Bone indices are categorical: merge influences, keep the strongest
+    // four, then normalize. Averaging indices would bind to unrelated bones.
+    const weights = new Map();
+    for (const v of [i, j]) for (let k = 0; k < 4; k++) {
+      const bone = attrs.skinIndex.getComponent(v, k);
+      weights.set(bone, (weights.get(bone) || 0) + attrs.skinWeight.getComponent(v, k) * 0.5);
+    }
+    const top = [...weights].sort((a, b) => b[1] - a[1]).slice(0, 4);
+    const total = top.reduce((sum, entry) => sum + entry[1], 0) || 1;
+    for (let k = 0; k < 4; k++) {
+      data.skinIndex[out * 4 + k] = top[k]?.[0] || 0;
+      data.skinWeight[out * 4 + k] = (top[k]?.[1] || 0) / total;
+    }
+    a.fromBufferAttribute(pos, i); b.fromBufferAttribute(pos, j);
+    na.fromBufferAttribute(normal, i); nb.fromBufferAttribute(normal, j);
+    delta.subVectors(b, a);
+    bend.copy(na).multiplyScalar(-delta.dot(na))
+      .addScaledVector(nb, delta.dot(nb)).multiplyScalar(0.125);
+    bend.clampLength(0, delta.length() * 0.10);
+    // Keep the sole flat, including along edges leading up from the toes.
+    bend.multiplyScalar(THREE.MathUtils.smoothstep(Math.min(a.y, b.y), 0.08, 0.30));
+    a.add(b).multiplyScalar(0.5).add(bend);
+    a.toArray(data.position, out * 3);
+    edges.set(key, out);
+    return out;
+  };
+  for (let t = 0; t < indices.length; t += 3) {
+    const [a, b, c] = indices.slice(t, t + 3);
+    const ab = midpoint(a, b), bc = midpoint(b, c), ca = midpoint(c, a);
+    triangles.push(a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca);
+  }
+  for (const [name, attr] of Object.entries(attrs)) {
+    geometry.setAttribute(name, new THREE.BufferAttribute(
+      new (attr.normalized ? Float32Array : attr.array.constructor)(data[name]), attr.itemSize, false));
+  }
+  geometry.setIndex(triangles);
+  for (const group of geometry.groups) { group.start *= 4; group.count *= 4; }
+  geometry.computeVertexNormals();
+  smoothCreaseNormals(geometry, Math.cos(Math.PI / 3));
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+}
+
 function buildDog(opts = {}) {
   const breed = opts.breed || "shiba";
   const targetHeight = opts.targetHeight || 0.7;   // world height, feet→ears
@@ -132,13 +245,6 @@ function buildDog(opts = {}) {
         o.castShadow = true;
         o.receiveShadow = true;
         o.frustumCulled = false;     // skinned bounds are unreliable once posed
-        // Soften the faceting: these models ship per-face normals, so every
-        // triangle reads as a hard plate — a paper dog in a soft-lit room.
-        // Average normals across position-duplicate vertices, but only within
-        // ~60° (crease limit), so the body curves like a coat while ear rims,
-        // snout and paw edges stay crisp. Positions/UVs/skin attrs untouched —
-        // safe for the skinned mesh — and the fur normal map layers on top.
-        smoothCreaseNormals(o.geometry, Math.cos(Math.PI / 3));
       }
     });
     // Coat tint only for legacy procedural maps. Photo-projected coats already
@@ -164,6 +270,9 @@ function buildDog(opts = {}) {
       if (o.isMesh && o.geometry) {
         if (coatIsPhoto) applySidePhotoUVs(o.geometry, rawBox);
         else ensureBoxUV(o.geometry, rawSize);
+        // Keep the original coat registration when the surface is sculpted.
+        sculptDogGeometry(o.geometry, breed);
+        refineDogSurface(o.geometry);
       }
     });
 
@@ -184,13 +293,22 @@ function buildDog(opts = {}) {
         mats.forEach((m) => {
           if (!m || !m.color) return;
           const lum = 0.299 * m.color.r + 0.587 * m.color.g + 0.114 * m.color.b;
-          // Eyes / nose / pads — dark wet specular, no fur tiling.
-          if (lum < 0.06) {
+          // The bundled Husky uses Blender's default material names.
+          const eye = m.name.startsWith("Eyes_")
+            || m.name === "Material.002" || m.name === "Material.003";
+          // Keep facial details and pads out of the projected coat maps.
+          if (eye || lum < 0.06) {
             if (mode === "base") {
-              m.metalness = 0.15;
-              m.roughness = 0.22;
-              m.envMapIntensity = 0.85;
-              if (m.clearcoat != null) { m.clearcoat = 0.55; m.clearcoatRoughness = 0.18; }
+              m.metalness = 0;
+              m.roughness = eye ? 0.16 : 0.38;
+              m.envMapIntensity = eye ? 0.85 : 0.5;
+              if (m.name === "Eyes_White" || m.name === "Material.003") {
+                m.color.setHex(0xd6cfc4);
+              }
+              if (m.clearcoat != null) {
+                m.clearcoat = eye ? 0.55 : 0.2;
+                m.clearcoatRoughness = eye ? 0.08 : 0.24;
+              }
               m.needsUpdate = true;
             }
             return;
@@ -229,7 +347,7 @@ function buildDog(opts = {}) {
             m.normalMap.wrapS = m.normalMap.wrapT = wrap;
             m.normalMap.repeat.set(rep, rep);
             m.normalMap.needsUpdate = true;
-            if (m.normalScale) m.normalScale.set(photo ? 1.15 : 0.95, photo ? 1.15 : 0.95);
+            if (m.normalScale) m.normalScale.set(photo ? 0.38 : 0.75, photo ? 0.38 : 0.75);
           }
           if (rghSrc) {
             m.roughnessMap = rghSrc.clone();
@@ -472,7 +590,7 @@ function addDogFurShells(model, parts) {
   const S = parts.modelScale || 1;
   const H = parts.height || 0.6;
   const sz = Math.sqrt(H / 0.56);
-  const furLen = 0.011 * sz;              // metres of fur at the outermost shell
+  const furLen = 0.007 * sz;              // metres of fur at the outermost shell
   const cell = 0.0021 * sz;               // strand spacing, metres
   const targets = [];
   model.traverse((o) => {
@@ -483,9 +601,10 @@ function addDogFurShells(model, parts) {
   const fade = { value: 1 };
   for (const src of targets) {
     const baseMat = Array.isArray(src.material) ? src.material[0] : src.material;
-    if (!baseMat || !baseMat.isMeshStandardMaterial) continue;
+    if (!baseMat || !baseMat.isMeshStandardMaterial || !baseMat.map) continue;
+    if (baseMat.name.startsWith("Eyes_") || ["Material.002", "Material.003"].includes(baseMat.name)) continue;
     for (let i = 1; i <= N; i++) {
-      const h = i / N;
+      const h = i / (N + 1);
       const mat = baseMat.clone();
       const u = {
         uFurH: { value: h },
@@ -499,7 +618,10 @@ function addDogFurShells(model, parts) {
           .replace("#include <common>", `#include <common>
 uniform float uFurH; uniform float uFurLen; varying vec3 vFurP;`)
           .replace("#include <skinning_vertex>", `#include <skinning_vertex>
-transformed += normalize(objectNormal) * (uFurH * uFurLen);
+// Short hair at the feet and muzzle, fuller coat around the ruff.
+float bodyFur = smoothstep(0.3, 1.0, position.y);
+float muzzleFur = 1.0 - 0.75 * smoothstep(1.8, 2.5, position.z);
+transformed += normalize(objectNormal) * (uFurH * uFurLen * mix(0.22, 1.0, bodyFur) * muzzleFur);
 vFurP = position;`);
         shader.fragmentShader = shader.fragmentShader
           .replace("#include <common>", `#include <common>

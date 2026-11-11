@@ -2,7 +2,7 @@
 // locks and the strand texture.
 
 import * as THREE from "three";
-import { _hsat, _sstep, _falloff, pbrMat } from "./human-base.js";
+import { surfaceDetail, _hsat, _sstep, _falloff, pbrMat } from "./human-base.js";
 
 // ---- sculpted head surface ---------------------------------------------
 // Returns a function (theta, phi) -> THREE.Vector3 giving a point on a REAL
@@ -175,8 +175,8 @@ const LIP = {
   halfW: 0.0245,                 // seam centre to the corner of the mouth
   // Vermilion heights at the midline. The upper lip was 7.4 mm less a bow dip —
   // 5.5 mm, most of it facing the floor — and read as a line over a lower lip.
-  upH: 0.0094, loH: 0.0110,
-  upA: 0.0029, loA: 0.0033,      // how far each lip stands proud — lower is fuller
+  upH: 0.0076, loH: 0.0088,
+  upA: 0.0023, loA: 0.0028,      // how far each lip stands proud — lower is fuller
   bow: 0.33,                     // depth of the cupid's-bow dip, as a share of upH
   // The lip line is not ruled: it dips a hair under the tubercle and the
   // corners rest a little ABOVE the middle — the difference between a mouth at
@@ -312,7 +312,7 @@ function makeHeadSurface(shape) {
     // it the side of the face caves in under the cheekbone (the gaunt look).
     d = _smin(d, _sdEll(ax - 0.0380, y + 0.0440, z - 0.0450, 0.0160 - 0.0020 * sq, 0.0230, 0.0300), 0.030);
     // Brow ridge — a soft shelf over the eye, heavier on square heads.
-    d = _smin(d, _sdEll(ax - 0.0260, y - 0.0215, z - 0.0770, 0.0260, 0.0088 + 0.0015 * sq, 0.0105 + 0.0040 * sq), 0.016);
+    d = _smin(d, _sdEll(ax - 0.0260, y - 0.0215, z - 0.0770, 0.0260, 0.0075 + 0.0015 * sq, 0.0080 + 0.0030 * sq), 0.016);
 
     // --- eyes -----------------------------------------------------------
     // An orbit recessed around each eye, a skin "lid ball" hugging the globe
@@ -321,7 +321,7 @@ function makeHeadSurface(shape) {
     // set the actual aperture, so blinking and fear still work unchanged.
     {
       const ex = ax - EX, ey = y - EY, ez = z - EZ;
-      d = _smax(d, -_sdEll(ex, ey - 0.0010, ez - 0.0140, 0.0190, 0.0130, 0.0110), 0.008);
+      d = _smax(d, -_sdEll(ex, ey - 0.0010, ez - 0.0140, 0.0180, 0.0120, 0.0090), 0.008);
       const lidR = FACE.eyeR * 1.096;
       d = _smin(d, Math.sqrt(ex * ex + ey * ey + ez * ez) - lidR, 0.005);
       // Fissure, tilted a few degrees up at the outer corner.
@@ -1123,6 +1123,12 @@ function buildHead(o) {
     sheenColor: skinCol.clone().lerp(new THREE.Color(0xff6a5a), 0.58),
     envMapIntensity: 0.42, vertexColors: true,
   });
+  if (!o.lowDetail) {
+    faceM.bumpMap = surfaceDetail("skin", 6); faceM.bumpScale = 0.00010;
+    skinM.bumpMap = surfaceDetail("skin", 6); skinM.bumpScale = 0.00010;
+    for (const material of [faceM, skinM]) material.addEventListener("dispose", () => material.bumpMap.dispose());
+    faceM.specularIntensity = 0.65; skinM.specularIntensity = 0.65;
+  }
   // The photo bake is NOT applied: it was registered to the old gaussian
   // sculpt, and on any other surface its painted nostrils, lip line and
   // sockets land beside the real ones. The face is shaded by its own
@@ -1143,7 +1149,7 @@ function buildHead(o) {
   // Bust the geometry cache when the sculpt/tint changes so creator previews
   // pick up the new face immediately (old keys would serve stale morphs).
   const skull = buildHeadShell(headPoint, faceM, {
-    nu: dense.nu, nv: dense.nv + dense.seamRows, morphs: true, cacheKey: "skull|v11|" + shape + "|" + dense.nu,
+    nu: dense.nu, nv: dense.nv + dense.seamRows, morphs: true, cacheKey: "skull|v12|" + shape + "|" + dense.nu,
     seamY: FACE.mouthY, seamHalfW: LIP.halfW, seamRows: dense.seamRows,
     // Cavity shading baked from the sculpt's own distance field: sockets, the
     // nostrils, the lip seam, the corners of the mouth and the folds read as
@@ -1229,21 +1235,31 @@ function buildHead(o) {
   // --- eyes ----------------------------------------------------------------
   // A real eyeball in a real socket, with lids that ROTATE shut. (Squashing a
   // lid's scale.y was the old blink and it looked like a shutter.)
-  // Wet cornea + clearer limbal read (face-closeup ref): lower roughness,
-  // stronger clearcoat, a touch more iris emissive so eyes catch room light.
   const scleraM = pbrMat(o.lowDetail, {
-    color: 0xf2ebe3, roughness: 0.10, clearcoat: 1.0, clearcoatRoughness: 0.035,
+    color: 0xe5dcd3, roughness: 0.16, clearcoat: 0.8, clearcoatRoughness: 0.06,
     envMapIntensity: 0.7,
   });
   const irisM = pbrMat(o.lowDetail, {
-    color: new THREE.Color(o.eyeColor), roughness: 0.11, metalness: 0.12,
-    clearcoat: 1.0, clearcoatRoughness: 0.03,
-    // Stronger emissive: at night-scene light levels an unlit iris collapses
-    // to a black bead, which is how every eye read before the realistic
-    // reference pass. 0.32 keeps the creator's colour visible without glowing.
-    emissive: new THREE.Color(o.eyeColor).multiplyScalar(0.32),
+    color: new THREE.Color(o.eyeColor), roughness: 0.16, vertexColors: true,
+    clearcoat: 0.8, clearcoatRoughness: 0.06,
+    emissive: new THREE.Color(o.eyeColor).multiplyScalar(0.12),
     envMapIntensity: 0.65,
   });
+  // Pigment varies along radial fibres, with a lighter collar around the
+  // pupil and a gradual darkening toward the outer edge.
+  const irisGeometry = new THREE.SphereGeometry(FACE.eyeR * 1.002, 64, 14, 0, Math.PI * 2, 0, 0.470);
+  irisGeometry.rotateX(Math.PI / 2);
+  const irisUV = irisGeometry.attributes.uv;
+  const pigment = [];
+  for (let i = 0; i < irisUV.count; i++) {
+    const angle = irisUV.getX(i) * Math.PI * 2;
+    const radius = 1 - irisUV.getY(i);
+    const fibres = Math.cos(angle * 17 + radius * 2) * 0.11 + Math.cos(angle * 27) * 0.08;
+    const collar = 0.22 * Math.exp(-Math.pow((radius - 0.53) / 0.13, 2));
+    const shade = 0.88 + fibres + collar - 0.34 * Math.pow(radius, 5);
+    pigment.push(shade, shade, shade);
+  }
+  irisGeometry.setAttribute("color", new THREE.Float32BufferAttribute(pigment, 3));
   const pupilM = new THREE.MeshBasicMaterial({ color: 0x050408 });
   const lashM  = new THREE.MeshStandardMaterial({
     color: hairCol.clone().multiplyScalar(0.22), roughness: 1.0,
@@ -1276,12 +1292,6 @@ function buildHead(o) {
     // Limbal ring: the dark band where iris meets sclera. It is the single
     // cheapest thing that stops an eye reading as a painted bead — real irises
     // are never a flat disc of colour with a hard edge.
-    //
-    // Cap angles are anatomical, not cosmetic: a real iris is ~11.5 mm on a
-    // ~24 mm globe, so the iris spans ~0.30 rad of the front cap, the limbal
-    // ring a hair past it, the pupil ~0.13. The old 0.50/0.545 covered the
-    // whole visible globe in dark iris — the "dead black bead" eye — and
-    // doubled up with the photographic iris the baked albedo already paints.
     const limbal = new THREE.Mesh(
       cap(FACE.eyeR * 1.0005, 0.500),
       new THREE.MeshStandardMaterial({
@@ -1291,13 +1301,13 @@ function buildHead(o) {
     globe.add(limbal);
     // Chord = 2·R·sin(a): on this 13.1 mm globe 0.47 rad is an 11.9 mm iris,
     // 0.175 a 4.6 mm pupil. The old 0.345 was an 8.9 mm iris lost in white.
-    const iris = new THREE.Mesh(cap(FACE.eyeR * 1.002, 0.470), irisM);
+    const iris = new THREE.Mesh(irisGeometry, irisM);
     globe.add(iris);
     const pupil = new THREE.Mesh(cap(FACE.eyeR * 1.010, 0.175), pupilM);
     globe.add(pupil);
     const glint = new THREE.Mesh(
-      cap(FACE.eyeR * 1.020, 0.085),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.92 })
+      cap(FACE.eyeR * 1.020, 0.048),
+      new THREE.MeshBasicMaterial({ color: 0xfff5e8, transparent: true, opacity: 0.45 })
     );
     glint.rotation.set(-0.42, 0.38, 0);
     globe.add(glint);
