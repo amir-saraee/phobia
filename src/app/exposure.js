@@ -1010,6 +1010,7 @@ function mountExposure(phobiaKey, levelIdx) {
   function stopAllAudio() {
     stageAudio.forEach(a => { try { a.stop && a.stop(); } catch {} });
     stageAudio = [];
+    window.PhobiaAudio?.stopFoley?.();
     voiceTimers.forEach(id => clearTimeout(id));
     voiceTimers = [];
     if (window.PhobiaVoice) window.PhobiaVoice.stop();

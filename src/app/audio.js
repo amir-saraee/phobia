@@ -202,7 +202,7 @@ const PhobiaAudio = (() => {
   }
 
   // ---- Output calibration ----
-  // Every one-shot below is white or pink noise pushed through a narrow filter,
+  // Many synthesized one-shots are white or pink noise pushed through a narrow filter,
   // and the gain constants were all written as if the filter were transparent.
   // It is not: a lowpass at 250 Hz throws away ~97% of white noise's energy, a
   // bandpass at Q 2 rather less, so the level a sound ACTUALLY reaches depends
@@ -446,9 +446,101 @@ const PhobiaAudio = (() => {
     const p = fetch(url)
       .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject()))
       .then((ab) => c.decodeAudioData(ab))
-      .catch(() => null);
+      .catch(() => {
+        _bedCache.delete(url);
+        return null;
+      });
     _bedCache.set(url, p);
     return p;
+  }
+
+  // One mono file per effect, with isolated takes in equal-length slots.
+  // Start a sound on the current animation frame even if its bank is still loading.
+  const FOLEY = {
+    step_hard: [6, 0.5], step_wood: [6, 0.5], step_soft: [6, 0.5],
+    step_grass: [6, 0.5], step_splash: [6, 0.65], step_glass: [6, 0.5],
+    bounce: [6, 0.25], ceramic: [2, 0.4], wood_hit: [4, 0.32],
+    metal_hit: [4, 0.25], door: [2, 1.45], floor: [5, 0.8],
+    glass: [5, 0.29], switch: [4, 0.22], drip: [4, 0.36], clock: [2, 0.24], fridge: [1, 4.5],
+    splash: [1, 1.75], thunder_near: [1, 10.75], thunder_far: [1, 4.65],
+  };
+  const foleyBanks = new Map();
+  const activeFoley = new Map();
+  function loadFoley(kind, retry = false) {
+    const existing = foleyBanks.get(kind);
+    if (existing && !(retry && existing.failed)) return existing;
+    const bank = { buffer: null, last: -1, failed: false };
+    foleyBanks.set(kind, bank);
+    _loadBed("assets/audio/foley/" + kind + ".m4a").then((buffer) => {
+      bank.buffer = buffer;
+      bank.failed = !buffer;
+    });
+    return bank;
+  }
+
+  function playFoley(kind, peak, pos, opts = {}) {
+    const bank = loadFoley(kind);
+    if (!bank.buffer) return false;
+    if (muted || peak <= 0) return true;
+    const [count, duration] = FOLEY[kind];
+    let take = Math.floor(Math.random() * (count - (bank.last >= 0 && count > 1 ? 1 : 0)));
+    if (count > 1 && bank.last >= 0 && take >= bank.last) take++;
+    bank.last = take;
+
+    const src = ctx.createBufferSource();
+    src.buffer = bank.buffer;
+    src.playbackRate.value = (opts.rate || 1) * (0.96 + Math.random() * 0.08);
+    const gain = ctx.createGain();
+    gain.gain.value = peak / 0.72;
+    const out = opts.output || spatial(pos, opts);
+    let node = gain;
+    if (opts.lowpass) {
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = opts.lowpass;
+      filter.Q.value = 0.5;
+      gain.connect(filter);
+      node = filter;
+    }
+    src.connect(gain);
+    node.connect(out);
+    src.onended = () => {
+      activeFoley.delete(src);
+      src.disconnect();
+      gain.disconnect();
+      if (node !== gain) node.disconnect();
+    };
+    src.start(opts.when ?? ctx.currentTime, take * duration, duration);
+    activeFoley.set(src, gain);
+    return true;
+  }
+
+  function stopFoley() {
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    for (const [src, gain] of activeFoley) {
+      gain.gain.setTargetAtTime(0, now, 0.02);
+      src.stop(now + 0.10);
+    }
+    activeFoley.clear();
+  }
+
+  function preloadFoley(realm) {
+    const steps = {
+      dogs: ["wood", "grass"], spiders: ["hard"], snakes: ["grass"],
+      heights: ["hard", "glass"], dark: ["wood", "soft"], enclosed: ["wood", "soft", "hard"],
+      water: ["soft", "splash"], needles: ["hard"], speaking: ["hard"],
+      flying: ["hard"], driving: ["hard"], storms: ["hard"],
+    };
+    const objects = {
+      dogs: ["bounce", "ceramic", "wood_hit", "floor", "metal_hit"],
+      spiders: ["drip", "metal_hit"], heights: ["metal_hit", "switch"],
+      dark: ["floor", "glass", "switch", "clock", "fridge"], enclosed: ["door", "switch", "metal_hit"],
+      water: ["splash"], driving: ["switch"], flying: ["switch"], speaking: ["switch"],
+      storms: ["thunder_near", "thunder_far", "switch"],
+    };
+    for (const surface of steps[realm] || []) loadFoley("step_" + surface, true);
+    for (const kind of objects[realm] || []) loadFoley(kind, true);
   }
   function startAmbienceBed(kind, opts = {}) {
     const c = ensureCtx(); if (!c) return { stop() {} };
@@ -554,11 +646,11 @@ const PhobiaAudio = (() => {
     };
     // The building settling: a short woody creak from somewhere in the room.
     const creak = () => {
+      const pos = { x: room.x + (Math.random() - 0.5) * room.rx * 1.6, y: -0.6, z: room.z + (Math.random() - 0.5) * room.rz * 1.6 };
+      later(creak, 22000 + Math.random() * 34000);
+      if (playFoley("floor", 0.052 * level, pos, { refDistance: 1.5, maxDistance: 14 })) return;
       const now = c.currentTime;
-      const out = spatial(
-        { x: room.x + (Math.random() - 0.5) * room.rx * 1.6, y: -0.6, z: room.z + (Math.random() - 0.5) * room.rz * 1.6 },
-        { refDistance: 1.5, maxDistance: 14 }
-      );
+      const out = spatial(pos, { refDistance: 1.5, maxDistance: 14 });
       const dur = 0.18 + Math.random() * 0.22;
       const o = c.createOscillator(); o.type = "sawtooth";
       const f0 = 120 + Math.random() * 90;
@@ -571,7 +663,6 @@ const PhobiaAudio = (() => {
       g.gain.exponentialRampToValueAtTime(0.014 * level, now + 0.04);
       g.gain.exponentialRampToValueAtTime(0.0004, now + dur);
       o.connect(lp).connect(g).connect(out); o.start(now); o.stop(now + dur + 0.05);
-      later(creak, 22000 + Math.random() * 34000);
     };
     // A car, streets away. A slow swell of low noise through the window.
     const car = () => {
@@ -591,7 +682,7 @@ const PhobiaAudio = (() => {
       src.connect(lp).connect(g).connect(out); src.start(now); src.stop(now + dur + 0.2);
       later(car, 45000 + Math.random() * 70000);
     };
-    later(bird, 2500 + Math.random() * 5000);
+    if (opts.birds !== false) later(bird, 2500 + Math.random() * 5000);
     later(creak, 12000 + Math.random() * 20000);
     later(car, 20000 + Math.random() * 40000);
     return {
@@ -608,6 +699,15 @@ const PhobiaAudio = (() => {
   // pops as pockets of sap burst. Sparse pops + a dark bed reads as wood fire
   // instead of a gas ring.
   function startFireCrackle(opts = {}) {
+    return startEnvLayer("fire", {
+      gain: (opts.gain ?? 0.055) * 2.8,
+      pos: opts.pos || { x: 0, y: 0.3, z: 0 },
+      spatial: { refDistance: 1.4, maxDistance: 18 },
+      fallback: () => synthFireCrackle(opts),
+    });
+  }
+
+  function synthFireCrackle(opts) {
     const c = ensureCtx(); if (!c) return { stop() {} };
     const level = opts.gain == null ? 0.055 : opts.gain;
     const pos = opts.pos || { x: 0, y: 0.3, z: 0 };
@@ -748,13 +848,13 @@ const PhobiaAudio = (() => {
     };
   }
 
-  // Night valley bed for the 3D landing: wind + muffled forest + fire + life.
+  // Night valley bed for the 3D landing.
   function startNightValley(opts = {}) {
-    const handles = [];
-    try { handles.push(startAmbienceBed("wind", { gain: opts.windGain == null ? 0.028 : opts.windGain })); } catch {}
-    try { handles.push(startAmbienceBed("forest", { gain: opts.forestGain == null ? 0.018 : opts.forestGain, lowpass: 1400 })); } catch {}
-    try { handles.push(startFireCrackle({ gain: opts.fireGain == null ? 0.048 : opts.fireGain, pos: opts.firePos || { x: 0, y: 0.25, z: 0 } })); } catch {}
-    try { handles.push(startOutdoorLife({ night: true, level: opts.life == null ? 0.85 : opts.life })); } catch {}
+    const handles = [
+      startEnvLayer("wind_low", { gain: (opts.windGain ?? 0.028) * 3 }),
+      startEnvLayer("insects_dusk", { gain: (opts.forestGain ?? 0.018) * 5 * (opts.life ?? 0.85) }),
+      startFireCrackle({ gain: opts.fireGain ?? 0.048, pos: opts.firePos || { x: 0, y: 0.25, z: 0 } }),
+    ];
     return {
       stop() { handles.forEach((h) => { try { h && h.stop && h.stop(); } catch {} }); },
     };
@@ -1551,6 +1651,9 @@ const PhobiaAudio = (() => {
 
   // Single splash — used when user paddles the water
   function splash(intensity = 1.0, pos = null) {
+    const space = { refDistance: 1, maxDistance: 30, rolloffFactor: 1.2, air: true };
+    const small = intensity < 0.6;
+    if (playFoley(small ? "step_splash" : "splash", 0.30 * intensity, pos, space)) return;
     const c = ensureCtx(); if (!c) return;
     const out = sfxOut("splash", pos, { refDistance: 1, maxDistance: 30, rolloffFactor: 1.2 });
     const now = c.currentTime;
@@ -1959,6 +2062,8 @@ const PhobiaAudio = (() => {
   // front. When `pos` is provided, the sound is HRTF-panned from that world
   // location (so a bolt off to the left actually rumbles from your left).
   function thunder(intensity = 0.6, withCrack = true, pos = null) {
+    const space = { refDistance: 8, maxDistance: 200, rolloffFactor: 0.6, air: true };
+    if (playFoley(withCrack ? "thunder_near" : "thunder_far", 0.39 * intensity, pos, space)) return;
     const c = ensureCtx(); if (!c) return;
     const out = sfxOut("thunder", pos, { refDistance: 8, maxDistance: 200, rolloffFactor: 0.6 });
     const now = c.currentTime;
@@ -2051,6 +2156,7 @@ const PhobiaAudio = (() => {
 
   // Indicator click (subtle tick)
   function indicatorClick(pos = null) {
+    if (playFoley("switch", 0.063, pos, { refDistance: 0.5, maxDistance: 6 })) return;
     const c = ensureCtx(); if (!c) return;
     const out = sfxOut("indicatorClick", pos, { refDistance: 0.5, maxDistance: 6 });
     const now = c.currentTime;
@@ -2105,8 +2211,6 @@ const PhobiaAudio = (() => {
     const now = c.currentTime;
     const S = FOOT_SURFACES[surface] || FOOT_SURFACES.hard;
     const surName = FOOT_SURFACES[surface] ? surface : "hard";
-    const out = sfxOut("footstep_" + surName, null, { reverb: surName === "wood" ? 0.12 : 0.06 });
-    if (!out) return;
     const speed = opts.speed == null ? 1 : Math.max(0.05, Math.min(1, opts.speed));
     const side = opts.side || 0;                         // -1 L / +1 R
     // Left slightly lower & duller, right a touch brighter — breaks the
@@ -2115,6 +2219,12 @@ const PhobiaAudio = (() => {
     const sideAmp = 1 + side * 0.04;
     const k = Math.max(0.05, softness) * (0.55 + 0.45 * Math.pow(speed, 0.85)) * sideAmp;
     const bright = 0.75 + 0.35 * speed;                  // creep = darker
+    if (playFoley("step_" + surName, 0.125 * k, null, {
+      rate: sidePitch,
+      lowpass: 2300 + 6800 * speed,
+    })) return;
+    const out = sfxOut("footstep_" + surName, null);
+    if (!out) return;
 
     const contact = (at, amp, isHeel) => {
       const src = c.createBufferSource(); src.buffer = noiseBuffer(S.dur);
@@ -2190,6 +2300,7 @@ const PhobiaAudio = (() => {
   // partials that decay fast. Pure hardware — no envelope or formant shared
   // with any creature sound. Call it a few times at 40–90 ms gaps for a shake.
   function metalRattle(intensity = 1.0, pos = null) {
+    if (playFoley("metal_hit", 0.18 * intensity, pos, { refDistance: 0.8, maxDistance: 12, air: true })) return;
     const c = ensureCtx(); if (!c) return;
     const out = sfxOut("metalRattle", pos, { refDistance: 0.8, maxDistance: 12 });
     const now = c.currentTime;
@@ -2417,6 +2528,7 @@ const PhobiaAudio = (() => {
   // Rubber ball on wood. v = normalized impact 0..1. Master bus (it's not a
   // creature vocal, so it correctly ducks under the therapist voice).
   function ballBounce(v = 0.5, pos = null) {
+    if (playFoley("bounce", 0.19 * v, pos, { refDistance: 1.2, maxDistance: 18, reverb: 0.12, air: true })) return;
     const c = ensureCtx(); if (!c) return;
     const out = sfxOut("ballBounce", pos, { refDistance: 1.2, maxDistance: 18, reverb: 0.2 });
     const t0 = c.currentTime;
@@ -2442,6 +2554,21 @@ const PhobiaAudio = (() => {
       src.connect(bp); bp.connect(ng); ng.connect(out);
       src.start(t0); src.stop(t0 + 0.05);
     }
+  }
+
+  function propImpact(material, strength, pos) {
+    if (material === "rubber") {
+      ballBounce(strength, pos);
+      return;
+    }
+    const kind = material === "ceramic" ? "ceramic" : "wood_hit";
+    const space = { refDistance: 1.2, maxDistance: 18, air: true };
+    if (playFoley(kind, 0.20 * strength, pos, space)) return;
+    const c = ensureCtx(); if (!c) return;
+    const ceramic = material === "ceramic";
+    const out = spatial(pos, space);
+    _tick(out, c.currentTime, ceramic ? 2200 : 580, ceramic ? 3.5 : 0.9, 0.09, 0.21 * strength);
+    if (ceramic) _tone(out, c.currentTime, "sine", 2650, 2500, 0.14, 0.06 * strength, 0.002);
   }
 
   // Collar-tag jingle: 2–4 tiny metal pings, inharmonic partials with fast
@@ -2745,6 +2872,7 @@ const PhobiaAudio = (() => {
 
   // Door creak — used at the start of the enclosed scene's tighter rungs
   function doorCreak(pos = null) {
+    if (playFoley("door", 0.16, pos, { refDistance: 1, maxDistance: 12, air: true })) return;
     const c = ensureCtx(); if (!c) return;
     const out = sfxOut("doorCreak", pos, { refDistance: 1, maxDistance: 12 });
     const now = c.currentTime;
@@ -2779,6 +2907,7 @@ const PhobiaAudio = (() => {
   // prompt that follows ("a creak…", "tap… tap…") names what you just heard.
   // Floor creak: the door creak's stick-slip, lower and shorter — wood under load.
   function floorCreak(pos = null) {
+    if (playFoley("floor", 0.12, pos, { refDistance: 1, maxDistance: 10, air: true })) return;
     const c = ensureCtx(); if (!c) return;
     const out = sfxOut("doorCreak", pos, { refDistance: 1, maxDistance: 10 });
     const now = c.currentTime, dur = 0.45 + Math.random() * 0.25;
@@ -2798,6 +2927,16 @@ const PhobiaAudio = (() => {
   // A twig on glass: 2–4 small, bright, slightly irregular ticks.
   function windowTap(pos = null, n = 3) {
     const c = ensureCtx(); if (!c) return;
+    const space = { refDistance: 1, maxDistance: 10, air: true };
+    if (loadFoley("glass").buffer) {
+      let when = c.currentTime;
+      const output = spatial(pos, space);
+      for (let i = 0; i < n; i++) {
+        playFoley("glass", 0.10 * (0.72 + Math.random() * 0.28), pos, { output, when });
+        when += 0.28 + Math.random() * 0.35;
+      }
+      return;
+    }
     const out = sfxOut("doorCreak", pos, { refDistance: 1, maxDistance: 10 });
     let tt = c.currentTime;
     for (let i = 0; i < n; i++) {
@@ -2814,6 +2953,7 @@ const PhobiaAudio = (() => {
   }
   // Fridge downstairs: a muffled compressor hum that fades out, then a click.
   function fridgeHum(dur = 4.5, pos = null) {
+    if (playFoley("fridge", 0.12, pos, { refDistance: 2, maxDistance: 20, lowpass: 280, rate: 4.5 / dur })) return;
     const c = ensureCtx(); if (!c) return;
     const out = sfxOut("doorCreak", pos, { refDistance: 2, maxDistance: 20 });
     const now = c.currentTime;
@@ -2937,13 +3077,23 @@ const PhobiaAudio = (() => {
     }
   }
 
-  // ---------- Environment beds (rendered) ----------
-  // Each realm has its own set of beds in assets/audio/env/, rendered by
-  // scripts/render-ambience.cjs and normalised to one RMS, so the `gain` a
-  // palette plays a layer at is the whole story of how loud it is. A layer
-  // loops by crossfading two copies of itself at the seam (equal-power), so
-  // the codec's priming/padding can't click and a 20 s file plays for ever.
+  // Recorded beds and synthesized fallbacks share a nominal RMS. The loop
+  // crossfades adjacent copies so the seam and codec padding stay inaudible.
   const ENV_BASE = "assets/audio/env/";
+  const FIELD_LAYERS = new Set([
+    "yard_day", "insects_dusk", "rain_glass", "rain_leaves", "meadow_breeze",
+    "wind_low", "wind_high", "city_near", "city_far", "house_night",
+    "vent_small", "vent_large", "office_beyond", "audience", "lake_shore",
+    "driving", "cabin_jet", "fire",
+  ]);
+  const ENV_FALLBACKS = { vent_large: "cellar", audience: "hall_large", driving: "car_idle" };
+  async function loadEnvironmentBed(name) {
+    if (FIELD_LAYERS.has(name)) {
+      const recorded = await _loadBed("assets/audio/field/" + name + ".m4a");
+      if (recorded || name === "fire") return recorded;
+    }
+    return _loadBed(ENV_BASE + (ENV_FALLBACKS[name] || name) + ".m4a");
+  }
   const ENV_XF = 1.6;   // crossfade seconds at the loop seam
   let _xfCurves = null;
   function _xfCurve() {
@@ -2955,7 +3105,8 @@ const PhobiaAudio = (() => {
   function startEnvLayer(name, opts = {}) {
     const c = ensureCtx(); if (!c) return { stop() {}, setGain() {} };
     let level = opts.gain == null ? 0.3 : opts.gain;
-    let stopped = false, timer = null, buf = null, dest = null, g = null;
+    let stopped = false, timer = null, buf = null, g = null, fallback = null;
+    const sources = new Set();
     const chain = () => {
       // level → optional filters → (spatial | master)
       g = c.createGain();
@@ -2966,7 +3117,6 @@ const PhobiaAudio = (() => {
       if (opts.highpass) { const hp = c.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = opts.highpass; hp.Q.value = 0.5; node.connect(hp); node = hp; }
       const out = opts.pos ? spatial(opts.pos, Object.assign({ refDistance: 2, maxDistance: 60, rolloffFactor: 1.0 }, opts.spatial || {})) : master;
       node.connect(out);
-      dest = g;
     };
     const { up, down } = _xfCurve();
     const play = (at) => {
@@ -2986,16 +3136,21 @@ const PhobiaAudio = (() => {
         sg.gain.setValueCurveAtTime(up, at, xf);
         sg.gain.setValueAtTime(1, at + xf + 0.001);
         sg.gain.setValueCurveAtTime(down, at + D - xf, xf);
-        src.connect(sg).connect(dest);
-        src.start(at); src.stop(at + D + 0.02);
-        src.onended = () => { try { src.disconnect(); sg.disconnect(); } catch {} };
+        src.connect(sg).connect(g);
+        src.start(at);
+        sources.add(src);
+        src.onended = () => { sources.delete(src); src.disconnect(); sg.disconnect(); };
       } catch (e) { try { console.warn("[env bed]", name, e && e.message); } catch {} }
       const next = at + D - xf;
       // Schedule the next copy well ahead (background tabs throttle timers to ≥1 s).
       timer = setTimeout(() => play(next), Math.max(50, (next - c.currentTime - 3) * 1000));
     };
-    _loadBed(ENV_BASE + name + ".m4a").then((b) => {
-      if (stopped || !b) return;
+    loadEnvironmentBed(name).then((b) => {
+      if (stopped) return;
+      if (!b) {
+        fallback = opts.fallback?.();
+        return;
+      }
       buf = b; chain(); play(c.currentTime + 0.05);
     });
     return {
@@ -3005,11 +3160,15 @@ const PhobiaAudio = (() => {
         try { g.gain.cancelScheduledValues(c.currentTime); g.gain.setTargetAtTime(Math.max(0.0002, v), c.currentTime, ramp / 3); } catch {}
       },
       stop() {
+        if (stopped) return;
         stopped = true;
         if (timer) clearTimeout(timer);
+        fallback?.stop();
         if (!g) return;
-        try { const t = c.currentTime; g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(0.0001, t, 0.25); } catch {}
-        setTimeout(() => { try { g.disconnect(); } catch {} }, 1500);
+        const t = c.currentTime;
+        g.gain.cancelScheduledValues(t);
+        g.gain.setTargetAtTime(0, t, 0.12);
+        for (const src of sources) src.stop(t + 0.65);
       },
     };
   }
@@ -3081,8 +3240,11 @@ const PhobiaAudio = (() => {
     const L = _life(), k = opts.intensity == null ? 0.5 : opts.intensity, low = _lowTier();
     const R = opts.room || { x: 0, z: -1.5, rx: 3, rz: 3.5 };
     const drip = () => {
+      const pos = { x: R.x + (Math.random() - 0.5) * 2 * R.rx, y: _rnd(0.0, 0.3), z: R.z + (Math.random() - 0.5) * 2 * R.rz };
+      const space = { refDistance: 1, maxDistance: 16, reverb: 0.45, air: true };
+      if (playFoley("drip", 0.09, pos, space)) return;
       const now = c.currentTime;
-      const out = spatial({ x: R.x + (Math.random() - 0.5) * 2 * R.rx, y: _rnd(0.0, 0.3), z: R.z + (Math.random() - 0.5) * 2 * R.rz }, { refDistance: 1, maxDistance: 16, reverb: 0.45, air: true });
+      const out = spatial(pos, space);
       const f = _rnd(1400, 2600);
       _tone(out, now, "sine", f, f * 0.35, 0.07, 0.07, 0.003);        // the drop
       _tick(out, now, f * 1.6, 14, 0.09, 0.03);                        // its ring on the puddle
@@ -3295,6 +3457,7 @@ const PhobiaAudio = (() => {
     const clock = () => {
       // one shared panner — a clock doesn't move
       if (!clockOut) clockOut = spatial(clockPos, { refDistance: 1.2, maxDistance: 14, rolloffFactor: 1.8, reverb: 0.15 });
+      if (playFoley("clock", 0.06 * k, clockPos, { output: clockOut })) return;
       const now = c.currentTime;
       tock = !tock;
       _tick(clockOut, now, tock ? 2500 : 3300, 6, 0.012, 0.02 * k);
@@ -3382,12 +3545,8 @@ const PhobiaAudio = (() => {
   }
 
   // ---------- Per-realm environment palettes ----------
-  // THE table: what each realm sounds like, by rung, hour and weather. Beds
-  // are the rendered layers above (gain is everything — they share one RMS);
-  // life is the realm's own placed one-shots; the synth beds that still earn
-  // their place (engine drone, murmur, underwater) are started here too.
-  // Nothing here is a score, a heartbeat or a breath pacer: every sound has a
-  // source the player could point at.
+  // Mix each realm's beds by rung, time of day and weather. Positioned
+  // effects and underwater sound are added by startEnvironment.
   const _duskish = (h) => h === "dusk" || h === "golden" || h === "dawn";
   function envBeds(realm, levelIdx, info = {}) {
     const hour = info.hour || null, weather = info.weather || null;
@@ -3399,22 +3558,20 @@ const PhobiaAudio = (() => {
     const bed = (name, gain, extra) => beds.push(Object.assign({ name, gain }, extra || {}));
     switch (realm) {
       case "dogs": {
-        // A living room onto a yard. The room's own air is the recorded bed;
-        // the yard comes through the glass, by the hour and the weather.
-        if (any || !dusk) bed("yard_day", rain ? 0.14 : 0.26);
-        if (any || dusk) bed("yard_dusk", 0.26);
-        if (any || rain) bed("rain_glass", 0.48, { pos: { x: -2.2, y: 0.8, z: -5.6 }, spatial: { refDistance: 3, maxDistance: 30, rolloffFactor: 0.8 } });
-        if (any || overcast) bed("wind_low", 0.12, { lowpass: 600 });
+        const windowSound = { pos: { x: -2.2, y: 0.8, z: -5.6 }, spatial: { refDistance: 3, maxDistance: 30, rolloffFactor: 0.8 } };
+        bed("house_night", 0.12);
+        if (any || (!dusk && !rain)) bed("yard_day", 0.26, { ...windowSound, lowpass: 2400 });
+        if (any || (dusk && !rain)) bed("insects_dusk", 0.21, { ...windowSound, lowpass: 1850 });
+        if (any || rain) bed("rain_glass", 0.40, windowSound);
         break;
       }
       case "spiders": {
         const size = lv.size == null ? 0.5 : lv.size;
-        bed("cellar", 0.26 + size * 0.10);
+        bed("vent_large", 0.19 + size * 0.06, { lowpass: 620 });
         break;
       }
       case "snakes": {
         bed("meadow_breeze", rain ? 0.14 : overcast ? 0.30 : 0.22);
-        if (any || (!dusk && !rain)) bed("insects_day", overcast ? 0.08 : 0.13);
         if (any || (dusk && !rain)) bed("insects_dusk", 0.16);
         if (any || rain) bed("rain_leaves", 0.30);
         if (any || overcast) bed("wind_low", 0.14);
@@ -3441,9 +3598,9 @@ const PhobiaAudio = (() => {
         const r = levelIdx | 0;
         if (any || r === 0) { bed("vent_small", 0.24); bed("fluorescent", 0.07); }
         if (any || r === 1) { bed("office_beyond", 0.36, { pos: { x: 0, y: 1.4, z: -1.6 }, spatial: { refDistance: 1.5, maxDistance: 20, rolloffFactor: 0.9 } }); bed("vent_small", 0.12); }
-        if (any || r === 2) { bed("lift_cab", 0.28); bed("fluorescent", 0.05); }
+        if (any || r === 2) bed("vent_large", 0.22, { lowpass: 480 });
         if (any || r === 3) { bed("house_night", 0.26, { lowpass: 320 }); }
-        if (any || r === 4) { bed("mri_room", 0.26); }
+        if (any || r === 4) bed("vent_large", 0.24);
         break;
       }
       case "water": {
@@ -3455,19 +3612,20 @@ const PhobiaAudio = (() => {
       }
       case "flying": {
         const r = levelIdx | 0;
-        if (any || r <= 1) bed("airport_gate", r === 0 ? 0.30 : 0.16);
+        if (any || r <= 1) bed("audience", r === 0 ? 0.28 : 0.13, { lowpass: 1750 });
         if (any || r >= 1) bed("cabin_jet", r === 1 ? 0.08 : r === 2 ? 0.14 : 0.20 + (r - 3) * 0.04);
         break;
       }
-      case "needles": bed("clinic", 0.26); break;
+      case "needles": bed("vent_small", 0.20); break;
       case "speaking": {
         const r = levelIdx | 0;
         if (any || r === 0) bed("vent_small", 0.18);
-        if (any || r > 0) bed("hall_large", 0.12 + r * 0.05);
+        if (any || r > 0) bed("audience", 0.10 + (lv.crowd ?? r / 4) * 0.17);
         break;
       }
       case "driving": {
-        bed("car_idle", 0.30 - levelIdx * 0.04);
+        if (any || levelIdx === 0) bed("car_idle", 0.20);
+        if (any || levelIdx > 0) bed("driving", 0.19 + levelIdx * 0.045, { lowpass: 1100 + levelIdx * 750 });
         if (any || levelIdx >= 4) bed("rain_glass", 0.16);
         break;
       }
@@ -3483,14 +3641,14 @@ const PhobiaAudio = (() => {
   // calls this). Skipped on data-saver / 2G, like the model prefetch.
   function preloadEnv(realm, levelIdx) {
     try { const c = navigator.connection; if (c && (c.saveData || /(^|-)2g$/.test(c.effectiveType || ""))) return; } catch {}
-    const beds = envBeds(realm, levelIdx | 0, {});
-    const seen = new Set();
-    beds.forEach((b) => { if (!seen.has(b.name)) { seen.add(b.name); _loadBed(ENV_BASE + b.name + ".m4a"); } });
+    preloadFoley(realm);
+    for (const { name } of envBeds(realm, levelIdx | 0)) loadEnvironmentBed(name);
   }
   // Start a realm's whole environment: its beds, its life, and the synth beds
   // it still uses. Returns handles with stop(); the caller owns them.
   function startEnvironment(realm, levelIdx, info = {}) {
     const c = ensureCtx(); if (!c) return [];
+    preloadFoley(realm);
     const H = [];
     const low = _lowTier();
     const beds = envBeds(realm, levelIdx, info);
@@ -3499,23 +3657,12 @@ const PhobiaAudio = (() => {
     kept.forEach((b) => { if (b.gain > 0.005) H.push(startEnvLayer(b.name, b)); });
     const hour = info.hour || "noon", weather = info.weather || "clear", lv = info.lv || {};
     const rain = weather === "rain";
-    const lifeLevel = low ? 0.7 : 1;
     switch (realm) {
-      case "dogs": {
-        // Indoor air stays the recorded bed; birds come through the glass in
-        // daylight; the room's own life (bird, creak, a car) is spatialised.
-        H.push(startAmbienceBed("room", { gain: 0.032 }));
-        if (!rain && !_duskish(hour)) H.push(startAmbienceBed("birds", { gain: hour === "noon" ? 0.024 : 0.034, lowpass: 2200 }));
-        H.push(startRoomLife({ window: { x: -2.2, y: 0.5, z: -5.6 }, room: { x: 0, z: -0.2, rx: 4.6, rz: 5.4 }, level: rain ? 0.5 : 1 }));
-        if (!rain) H.push(startOutdoorLife({ night: _duskish(hour), level: 0.45 * lifeLevel }));
+      case "dogs":
+        H.push(startRoomLife({ window: { x: -2.2, y: 0.5, z: -5.6 }, room: { x: 0, z: -0.2, rx: 4.6, rz: 5.4 }, level: rain ? 0.5 : 1, birds: false }));
         break;
-      }
       case "spiders":
         H.push(startCellarLife({ intensity: 0.3 + (lv.size || 0.5) * 0.6 }));
-        break;
-      case "snakes":
-        if (!rain && !_duskish(hour)) { H.push(startAmbienceBed("forest", { gain: 0.03 })); H.push(startAmbienceBed("birds", { gain: 0.016 })); }
-        H.push(startMeadowLife({ hour, weather }));
         break;
       case "heights":
         H.push(startCityLife({ height: lv.height == null ? 0.5 : lv.height, hour }));
@@ -3540,20 +3687,8 @@ const PhobiaAudio = (() => {
         H.push(startShoreLife({ deep }));
         break;
       }
-      case "flying": {
-        const r = levelIdx | 0;
-        // Engine pod outside the left window — coordinates match the mesh in the flying realm.
-        if (r >= 3) H.push(startEngineDrone(0.4 + ((r + 1) / 5) * 0.6, { x: -4.0, y: -0.05, z: -4.2 }));
-        break;
-      }
       case "needles":
         if (startMonitorBeep) H.push(startMonitorBeep(72));
-        break;
-      case "speaking":
-        H.push(startAudienceMurmur(lv.crowd != null ? lv.crowd : (levelIdx + 1) / 5));
-        break;
-      case "driving":
-        H.push(startDrivingDrone(lv.speed != null ? lv.speed : (levelIdx + 1) / 5));
         break;
       case "storms":
         // thunder is the scene's own (it has to match the flash)
@@ -3563,7 +3698,7 @@ const PhobiaAudio = (() => {
   }
 
   return {
-    unlock, setMuted, isMuted, duck, ui,
+    unlock, setMuted, isMuted, duck, ui, stopFoley,
     startMonitorBeep, startCreaks,
     startWind, startWaterLap, startUnderwater, startRoomTone, startAmbienceBed, startCityHum,
     startRoomLife, startFireCrackle, startOutdoorLife, startNightValley,
@@ -3589,7 +3724,7 @@ const PhobiaAudio = (() => {
     // Crowd foley + applause (speaking scene)
     crowdCough, crowdShuffle,
     // Dog movement foley
-    dogFootfall, ballBounce, dogMouthGrab, dogLapping, collarJingle,
+    dogFootfall, ballBounce, propImpact, dogMouthGrab, dogLapping, collarJingle,
     // Room acoustics
     roomReverb,
     // Wind events

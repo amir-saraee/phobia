@@ -791,9 +791,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       return m;
     };
     const specs = [
-      { build: mkMug,   x: tblX - 0.28, z: tblZ + 0.16, half: { x: 0.05, y: 0.05, z: 0.045 }, name: "mug" },
-      { build: mkBlock, x: tblX + 0.05, z: tblZ + 0.20, half: { x: 0.043, y: 0.043, z: 0.043 }, name: "block" },
-      { build: mkBall,  x: tblX + 0.30, z: tblZ + 0.12, shape: "ball", r: 0.048, name: "softball" },
+      { build: mkMug,   x: tblX - 0.28, z: tblZ + 0.16, half: { x: 0.05, y: 0.05, z: 0.045 }, name: "mug", material: "ceramic" },
+      { build: mkBlock, x: tblX + 0.05, z: tblZ + 0.20, half: { x: 0.043, y: 0.043, z: 0.043 }, name: "block", material: "wood" },
+      { build: mkBall,  x: tblX + 0.30, z: tblZ + 0.12, shape: "ball", r: 0.048, name: "softball", material: "rubber" },
     ];
     for (const s of specs) {
       const m = s.build();
@@ -822,7 +822,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       if (!w || dog.userData.disposed) return;
       const n = PhobiaPhysics.addStaticFromScene(scene, camera);
       physProps.forEach(({ mesh, spec }) =>
-        PhobiaPhysics.addProp(mesh, { shape: spec.shape, r: spec.r, half: spec.half, name: spec.name }));
+        PhobiaPhysics.addProp(mesh, spec));
       // The dog reads the room: a real clatter earns the head-cock "hm?" and
       // a glance — the same attention any real dog gives a dropped mug.
       PhobiaPhysics.setOnImpact((rec, strength, pos) => {

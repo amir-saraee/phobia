@@ -82,7 +82,7 @@ After re-baking dog coats, run `npm run compress-textures` — the game loads th
 
 The dogs ship as binary `.glb`. To swap in a re-exported `.gltf` (one embedded base64 buffer), `node scripts/pack-glb.cjs path/to/Model.gltf` writes the `.glb` beside it — same JSON and bytes, ~40% smaller, round trip checked.
 
-Every realm's sound bed (`assets/audio/env/*.m4a` — the cellar, the clearing's insects by the hour, the city from each height, the house at night, the vent, the lift, the MRI room…) is synthesized from first principles by `node scripts/render-ambience.cjs` (needs ffmpeg): noise shaping, oscillators, modal resonators and a small reverb, rendered seamless and normalised to one level, so the gains in `PhobiaAudio.envBeds` (src/app/audio.js) are the whole mix. No recordings, nothing to license. Re-run it after editing a generator; pass layer names to render just those.
+Realm ambience uses crossfaded recordings from `assets/audio/field/`, mixed by weather, time of day and location in `PhobiaAudio.envBeds`. Synthesized beds in `assets/audio/env/` cover additional sounds and serve as fallbacks. Run `node scripts/render-ambience.cjs` with ffmpeg to rebuild those synthesized beds. Pass layer names to render only those layers. The clips in `assets/audio/foley/` contain isolated takes at the offsets described by the `FOLEY` table in `src/app/audio.js`. [Recording credits](assets/audio/RECORDING-CREDITS.md).
 
 The traveler's arms are driven by one clip from the CC0 animation library. `node scripts/strip-anim.cjs [Clip_Name …]` writes `assets/anim/human-walk.gltf` (61 KB, the clips you name) from the 4 MB source; re-run it if `HUMAN_CLIPS` starts using another clip.
 

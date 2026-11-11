@@ -512,7 +512,7 @@ function setupStorms(scene, camera, level) {
         setTimeout(() => {
           if (disposed) return;
           if (window.PhobiaAudio && window.PhobiaAudio.thunder) {
-            window.PhobiaAudio.thunder((isClose ? 0.95 : 0.4) + intensity * 0.25, true, strikePos);
+            window.PhobiaAudio.thunder((isClose ? 0.95 : 0.4) + intensity * 0.25, isClose, strikePos);
           }
           if (isClose) {
             shakeAmt = Math.max(shakeAmt, 1.0);            // the concussion you feel

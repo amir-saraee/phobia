@@ -124,7 +124,7 @@ const PhobiaPhysics = (() => {
       : R.ColliderDesc.cuboid(opts.half?.x ?? 0.05, opts.half?.y ?? 0.05, opts.half?.z ?? 0.05);
     col.setRestitution(opts.restitution ?? 0.3).setFriction(0.75).setDensity(opts.density ?? 500);
     world.createCollider(col, rb);
-    const rec = { mesh, rb, held: false, lastSpeed: 0, name: opts.name || "prop" };
+    const rec = { mesh, rb, held: false, lastSpeed: 0, name: opts.name || "prop", material: opts.material };
     mesh.userData.grabbable = opts.grab !== false;
     mesh.userData._phys = rec;
     // Invisible to the SCENES' own pickers (dogs' floor-throw must not fire
@@ -183,9 +183,7 @@ const PhobiaPhysics = (() => {
       if (rec.lastSpeed - sp > 1.0 && rec.lastSpeed > 1.3) {
         const strength = Math.min(1, (rec.lastSpeed - sp) / 5);
         try {
-          if (window.PhobiaAudio && PhobiaAudio.ballBounce) {
-            PhobiaAudio.ballBounce(0.25 + strength * 0.5, { x: tr.x, y: tr.y, z: tr.z });
-          }
+          window.PhobiaAudio?.propImpact(rec.material, strength, tr);
         } catch {}
         if (onImpact) { try { onImpact(rec, strength, tr); } catch {} }
       }
