@@ -387,6 +387,19 @@ async function places(browser, base) {
     check(`${realm}: scene + coach mount`, await waitFor(page, () => !!(window.__active && window.__active.scene && window.__coach && document.querySelector(".dog-coach")), 15000));
     await sleep(2500);
     await page.keyboard.down("KeyW"); await sleep(walk); await page.keyboard.up("KeyW");
+    if (realm === "dark") {
+      await page.keyboard.down("KeyF");
+      const paused = await waitFor(page, () =>
+        !window.__holdPolicy?.engaged() && /paused while the light is on/i.test(document.getElementById("holdLabel")?.textContent), 4000);
+      const before = await page.evaluate(() => lastRungOutcome?.heldSec);
+      await sleep(1200);
+      const after = await page.evaluate(() => lastRungOutcome?.heldSec);
+      await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+      const released = await waitFor(page, () =>
+        !/paused while the light is on/i.test(document.getElementById("holdLabel")?.textContent), 4000);
+      await page.keyboard.up("KeyF");
+      check("dark: flashlight pauses credit and releases on focus loss", paused && before === after && released);
+    }
     let lastE = 0;
     const t0 = Date.now(); let met = false, diag = "";
     while (Date.now() - t0 < 60000) {

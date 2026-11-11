@@ -500,7 +500,7 @@ function viewArrival() {
   <div class="home-main">
     <header class="home-hero">
       <h1 class="home-title">${t("arrive.title2", "Every fear is a path<br>you stopped walking.")}</h1>
-      <p class="home-sub">${t("home.story", "Six lanterns went dark in this valley — one for each fear. Mira, the lantern-keeper, walks beside you. Light them again, one small step at a time.")}</p>
+      <p class="home-sub">${t("home.story", "The valley’s paths fell dark when people stopped walking them. Choose a path and help Mira, the lantern-keeper, light it again.")}</p>
     </header>
     <section class="home-sheet" aria-labelledby="homeQ">
       <h2 class="home-q" id="homeQ">${t("arrive.pickQ", "Which fear do you want to face?")}</h2>
@@ -612,7 +612,7 @@ function viewTraveler() {
     <button class="mob-icon-btn" data-action="arrival-back" aria-label="${t("a11y.back", "Back")}">‹</button>
     <span class="mob-top-title">${t("tw.title", "Your traveler")}</span>
     <span class="mob-spacer"></span>
-    <button class="mob-icon-btn" data-action="traveler-dice" aria-label="${t("tw.random", "Randomise")}">🎲</button>
+    <button class="mob-icon-btn" data-action="traveler-dice" aria-label="${t("tw.random", "Randomize appearance")}">🎲</button>
   </div>
   <div class="mob-sheet mob-sheet-compact">
     <div class="mob-sheet-grab"></div>

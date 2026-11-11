@@ -299,7 +299,7 @@ function makeCreatureCoach(opts) {
     const hi = stage && stage.querySelector(".controls-hint");
     return !!hi && hi.style.opacity !== "0" && !!hi.textContent.trim();
   };
-  function pumpCallout(dt, grounding) {
+  function pumpCallout(dt, grounding, exposureBlocked) {
     // Never over the grounding exercise: the 5-4-3-2-1 is the one thing on
     // screen. A lesson showing steps back into the queue (if it hadn't been
     // read yet) and the queue waits until a beat after the exercise ends.
@@ -313,6 +313,10 @@ function makeCreatureCoach(opts) {
       groundQuietT = 1.5;
       return;
     }
+    if (exposureBlocked && calloutCur && !calloutCur.urgent) {
+      dropCallout();
+      const L = lane(); if (L) L.release("callout");
+    }
     if (groundQuietT > 0) { groundQuietT -= dt; return; }
     if (calloutGap > 0) calloutGap -= dt;
     if (calloutT > 0) {
@@ -324,7 +328,7 @@ function makeCreatureCoach(opts) {
       return;
     }
     if (!calloutQueue.length || readOpen || readResultT > 0) return;
-    if (calloutGap > 0 && !calloutQueue[0].urgent) return;
+    if ((exposureBlocked || calloutGap > 0) && !calloutQueue[0].urgent) return;
     if (document.querySelector(".tour-overlay:not(.dismiss), .countdown")) return;
     // The trial's orientation line (the engine's .controls-hint) stays up
     // until the player first moves. A lesson waits for it: the first seconds
@@ -587,7 +591,7 @@ function makeCreatureCoach(opts) {
 
   // ---------------- per-frame ----------------
   // s: { dist, gaze (0..1), dogToward (m/s the dog closes on you), playerSpeed,
-  //      onScreen, dogGazing, trust }
+  //      onScreen, dogGazing, trust, exposureBlocked }
   function update(dt, s) {
     const d = Math.min(0.1, dt || 0.016);
     clock += d;
@@ -629,7 +633,7 @@ function makeCreatureCoach(opts) {
     // told to stay put, so the hold doesn't pause ("come back within 3 m")
     // while it runs it back.
     if (s.dogAway) lastAwayT = clock;
-    engaged = engaged ? (dist < o.inZoneDist + 0.6 || !!s.dogAway) : dist < o.inZoneDist;
+    engaged = !s.exposureBlocked && (engaged ? (dist < o.inZoneDist + 0.6 || !!s.dogAway) : dist < o.inZoneDist);
     if (engaged) {
       engagedSec += d;
       // (Read by the engine's "walk closer" hint: once the exposure has
@@ -961,7 +965,7 @@ function makeCreatureCoach(opts) {
       if (clock > readOpen.until) { readOpen = null; readBox.classList.remove("show"); readCooldown = readStarDone() ? 30 : 8; const L = lane(); if (L) L.release("read"); }
     }
     if (readResultT > 0) { readResultT -= d; if (readResultT <= 0) { readBox.classList.remove("show", "result"); const L = lane(); if (L) L.release("read"); } }
-    pumpCallout(d, grounding);
+    pumpCallout(d, grounding, s.exposureBlocked);
     if (s.trust != null) setTrust(s.trust);
   }
   // Discrete spikes, habituated per kind: the fifth bark lands at about a

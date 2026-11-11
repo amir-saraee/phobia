@@ -926,14 +926,15 @@ function handleAction(d, params) {
     case "traveler-dice": {
       const C = window.Character;
       if (!C) break;
-      const rolled = C.randomCharacter();
-      // Never overwrite a name the player typed themselves.
-      const keptName = (_travelerDraft && _travelerDraft.name) || "";
-      // A roll restyles the traveler being edited — it keeps that one's id,
-      // or saving would add a second character next to it.
-      const keep = {};
-      if (_travelerDraft && _travelerDraft.id) { keep.id = _travelerDraft.id; keep.createdAt = _travelerDraft.createdAt; }
-      _travelerDraft = Object.assign({}, rolled, keep, keptName ? { name: keptName } : {});
+      const {
+        bodyType, skinTone, hairColor, hairStyle, topColor, topStyle,
+        eyeColor, glasses, facialHair, headwear,
+      } = C.randomCharacter();
+      _travelerDraft = {
+        ...(_travelerDraft || C.loadCharacter() || C.defaultCharacter()),
+        bodyType, skinTone, hairColor, hairStyle, topColor, topStyle,
+        eyeColor, glasses, facialHair, headwear,
+      };
       render("traveler", {});
       break;
     }

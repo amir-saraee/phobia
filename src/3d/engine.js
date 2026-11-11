@@ -2304,7 +2304,8 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
   // V on the keyboard for the same toggle. Persists in localStorage.
   const cameraToggle = document.createElement("button");
   cameraToggle.className = "camera-toggle";
-  cameraToggle.title = window.t("stage.camTip", "Toggle first-person / third-person (V)");
+  cameraToggle.type = "button";
+  cameraToggle.setAttribute("aria-keyshortcuts", "V");
   function refreshCameraLabel() {
     if (!controls) return;
     // Show CURRENT mode + a hint that it's tappable. The previous label
@@ -2313,6 +2314,10 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // both their current mode and that the chip is interactive.
     const inTP = controls.cameraMode === "tp";
     cameraToggle.innerHTML = `${window.tf("stage.cam", "View: {m}", { m: inTP ? window.t("stage.camTP", "3rd") : window.t("stage.camFP", "1st") })} <span style="opacity:.7">⇄</span>`;
+    const action = inTP ? window.t("stage.camEyes", "Switch to the traveler’s eyes")
+      : window.t("stage.camTraveler", "Show your traveler");
+    cameraToggle.title = action;
+    cameraToggle.setAttribute("aria-label", action);
     // First-person gets a soft CSS vignette on the stage (.fp-view::after) —
     // the through-the-eyes cue. Class-driven so it tracks every toggle path
     // (chip, V key, scene default).
@@ -2338,27 +2343,20 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     try { localStorage.setItem("fobia.userToggledCamera", "1"); } catch {}
     if (controls) controls._userPickedView = true;   // scenes stop choosing the view for this trial
   }
+  function switchCamera() {
+    if (!controls || controls._cameraModeLocked) return;
+    markUserToggled();
+    controls.toggleCameraMode();
+  }
   cameraToggle.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (!controls) return;
-    if (controls._cameraModeLocked) return;
-    const next = controls.toggleCameraMode();
-    if (body) body.setCameraMode(next);
-    if (hands && hands.setCameraMode) hands.setCameraMode(next);
-    refreshCameraLabel();
-    markUserToggled();
+    switchCamera();
   });
   // Keyboard shortcut "V"
   function onCameraKey(e) {
-    if (e.code !== "KeyV") return;
-    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
-    if (!controls) return;
-    if (controls._cameraModeLocked) return;
-    const next = controls.toggleCameraMode();
-    if (body) body.setCameraMode(next);
-    if (hands && hands.setCameraMode) hands.setCameraMode(next);
-    refreshCameraLabel();
-    markUserToggled();
+    if (e.code !== "KeyV" || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
+    switchCamera();
   }
   window.addEventListener("keydown", onCameraKey);
   container.appendChild(cameraToggle);

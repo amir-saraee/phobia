@@ -26,13 +26,18 @@ class TouchJoystick {
     this._down = this._down.bind(this);
     this._move = this._move.bind(this);
     this._up = this._up.bind(this);
+    this._reset = this._reset.bind(this);
     this.dom.addEventListener("pointerdown", this._down, { passive: false });
     window.addEventListener("pointermove", this._move, { passive: false });
     window.addEventListener("pointerup",   this._up);
     window.addEventListener("pointercancel", this._up);
+    this.dom.addEventListener("lostpointercapture", this._up);
+    window.addEventListener("blur", this._reset);
+    document.addEventListener("visibilitychange", this._reset);
   }
   _down(e) {
     e.preventDefault(); e.stopPropagation();
+    if (this.active || e.button !== 0) return;
     this.active = true;
     this.pid = e.pointerId;
     const r = this.dom.getBoundingClientRect();
@@ -58,8 +63,13 @@ class TouchJoystick {
   }
   _up(e) {
     if (!this.active || e.pointerId !== this.pid) return;
+    this._reset();
+  }
+  _reset() {
+    const pid = this.pid;
     this.active = false;
     this.pid = -1;
+    if (pid !== -1 && this.dom.hasPointerCapture(pid)) this.dom.releasePointerCapture(pid);
     this.thumb.style.transform = "";
     this.controls.setMoveAxis(0, 0);
   }
@@ -68,6 +78,10 @@ class TouchJoystick {
     window.removeEventListener("pointermove", this._move);
     window.removeEventListener("pointerup",   this._up);
     window.removeEventListener("pointercancel", this._up);
+    this.dom.removeEventListener("lostpointercapture", this._up);
+    window.removeEventListener("blur", this._reset);
+    document.removeEventListener("visibilitychange", this._reset);
+    this._reset();
     if (this.dom.parentNode) this.dom.parentNode.removeChild(this.dom);
   }
 }
@@ -167,7 +181,7 @@ class FPControls {
     // Clear all held keys when the window loses focus / is hidden — otherwise a
     // keyup lands on another window while W is down and the avatar keeps walking
     // forward (into the phobia trigger) on its own until you tap the key again.
-    this._onBlur = () => { this.keys = Object.create(null); this._moveAxis = null; };
+    this._onBlur = () => { this.keys = Object.create(null); this._moveAxis = null; this._onUp(); };
 
     dom.style.touchAction = "none";
     dom.style.cursor = "grab";
@@ -175,6 +189,7 @@ class FPControls {
     window.addEventListener("pointermove", this._onMove);
     window.addEventListener("pointerup", this._onUp);
     window.addEventListener("pointercancel", this._onUp);
+    dom.addEventListener("lostpointercapture", this._onUp);
     window.addEventListener("keydown", this._onKey);
     window.addEventListener("keyup",   this._onKeyUp);
     window.addEventListener("blur", this._onBlur);
@@ -254,7 +269,7 @@ class FPControls {
   }
 
   _onDown(e) {
-    if (!this.enabled) return;
+    if (!this.enabled || this.dragging || e.button !== 0) return;
     // Pointer-lock opt-in: a mouse click captures the pointer. A denied or
     // cooldown-blocked request rejects — swallow it and fall through to the
     // regular drag setup so look never dies.
@@ -306,7 +321,9 @@ class FPControls {
   }
   _onUp(e) {
     if (e && this._lookPid != null && e.pointerId !== this._lookPid) return;
+    const pid = this._lookPid;
     this.dragging = false; this._lookPid = null;
+    if (pid != null && this.dom.hasPointerCapture(pid)) this.dom.releasePointerCapture(pid);
     if (!this._plLocked) this.dom.style.cursor = "grab";
   }
   _onKey(e) {
@@ -1298,6 +1315,8 @@ class FPControls {
     window.removeEventListener("pointermove", this._onMove);
     window.removeEventListener("pointerup", this._onUp);
     window.removeEventListener("pointercancel", this._onUp);
+    this.dom.removeEventListener("lostpointercapture", this._onUp);
+    this._onUp();
     window.removeEventListener("keydown", this._onKey);
     window.removeEventListener("keyup",   this._onKeyUp);
     window.removeEventListener("blur", this._onBlur);

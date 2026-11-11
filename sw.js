@@ -9,7 +9,7 @@
 //     round trip for each before a trial.
 //   - Cross-origin (CDN) requests: network-first with cache fallback.
 
-const VERSION = "lanternwalk-v33";
+const VERSION = "lanternwalk-v34";
 // Installed on the first visit, in the background — so it holds only what the
 // six open realms need to boot and play offline: their code, plus the models
 // and textures of the creature realms (dogs, spiders, snakes; the place realms

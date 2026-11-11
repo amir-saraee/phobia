@@ -415,9 +415,20 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
   window.__coach = coach;
   let lastDist = 9;
   if (window.PhobiaFear && window.PhobiaFear.setDirect) window.PhobiaFear.setDirect(() => coach.target(), (st) => coach.pulse(st, "event", lastDist));
-  window.__holdPolicy = coach.holdPolicy;
+  const holdPolicy = {
+    ...coach.holdPolicy,
+    engaged: () => !flashlightHeld && matchT <= 0.05 && coach.holdPolicy.engaged(),
+    ready: (sec, minHold) => {
+      const ready = coach.holdPolicy.ready(sec, minHold);
+      return !flashlightHeld && matchT <= 0.05 && ready;
+    },
+    label: (sec, minHold, engaged, ready) => flashlightHeld || matchT > 0.05
+      ? { label: window.t("sc.d.lightPaused", "Paused while the light is on"), pill: window.t("dc.pPaused", "paused") }
+      : coach.holdPolicy.label(sec, minHold, engaged, ready),
+  };
+  window.__holdPolicy = holdPolicy;
   const sig = (id) => {
-    if (document.querySelector(".tour-overlay:not(.dismiss), .countdown")) return false;
+    if (disposed || document.hidden || document.querySelector(".tour-overlay:not(.dismiss), .countdown")) return false;
     // A read is of the dark, met in the dark: none while the torch is held
     // or a match burns, or before you're in it. (With the light on the
     // whole trial — never engaged, the trial paused — the read star still
@@ -557,7 +568,13 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
     if (e.code !== "KeyF" || e.repeat || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) return;
     if (e.type === "keydown") { flashlightHeld = true; coach.safety("light"); } else flashlightHeld = false;
   };
+  const releaseLight = () => {
+    flashlightHeld = false;
+    document.querySelector('.scene-cmd-bar[data-scene="dark"] [data-cmd="flashlight"]')?.classList.remove("pressed");
+  };
   window.addEventListener("keydown", onKey); window.addEventListener("keyup", onKey);
+  window.addEventListener("blur", releaseLight);
+  document.addEventListener("visibilitychange", releaseLight);
 
   const spawnZ = hall ? 1.4 : 1.95;
   return {
@@ -669,7 +686,7 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
         dist: lastDist, gaze: facing, dogToward: 0,
         px, pz, dogX: HEART.x, dogZ: HEART.z,
         onScreen: true, dogGazing: false, trust: null,
-        anchorX: sw / 2, anchorY: 0, stageW: sw, stageH: 0,
+        anchorX: sw / 2, anchorY: 0, stageW: sw, stageH: 0, exposureBlocked: lightOn,
       });
       const eng = coach.engaged;
       if (prevX != null) moved += Math.hypot(px - prevX, pz - prevZ);
@@ -701,6 +718,8 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
     dispose() {
       disposed = true;
       timers.forEach((id) => clearTimeout(id));
+      window.removeEventListener("blur", releaseLight);
+      document.removeEventListener("visibilitychange", releaseLight);
       try { window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKey); } catch {}
       try {
         const ev = coach.evidence();
@@ -710,7 +729,7 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
       } catch {}
       try { coach.dispose(); } catch {}
       try { if (window.PhobiaFear && window.PhobiaFear.setDirect) window.PhobiaFear.setDirect(null); } catch {}
-      try { if (window.__holdPolicy === coach.holdPolicy) window.__holdPolicy = null; } catch {}
+      try { if (window.__holdPolicy === holdPolicy) window.__holdPolicy = null; } catch {}
       try { if (window.__coach === coach) window.__coach = null; } catch {}
       try { const bar = document.querySelector('.scene-cmd-bar[data-scene="dark"]'); if (bar) bar.dataset.wired = ""; } catch {}
       void disposed; void pieces;
