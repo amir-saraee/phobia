@@ -310,9 +310,7 @@ function handleRateSubmit(d, params) {
   const peakSlider = document.getElementById("sudsPeak");
   let peak = peakSlider ? parseInt(peakSlider.value, 10) : NaN;
   if (Number.isNaN(peak)) peak = Math.round(Math.min(100, Math.max(0, lastRungPeakFear)) / 10);
-  // A peak below the end-of-trial reading is self-contradictory; trust the
-  // higher of the two rather than showing the user an impossible record.
-  peak = Math.max(peak, suds);
+  // The second rating is after leaving the scene and can exceed the in-scene peak.
   lastRungPeakFear = 0;
   // Attach the hold outcome (finished vs early exit) written by the hold timer.
   const outcome = lastRungOutcome;
@@ -491,22 +489,22 @@ function viewArrival() {
         <span class="ft-text">
           <span class="ft-name">${escapeHtml(phLabel(k))}</span>
           <span class="ft-realm">${escapeHtml(realmOf(k).realmName)}</span>
+          ${!fresh && n > 0 ? homePips(n, m) : ""}
         </span>
-        ${!fresh && n > 0 ? homePips(n, m) : ""}
       </button>`;
   }).join("");
   if (fresh || !tgt) {
     return `${top}
   <div class="home-main">
     <header class="home-hero">
-      <h1 class="home-title">${t("arrive.title2", "Every fear is a path<br>you stopped walking.")}</h1>
-      <p class="home-sub">${t("home.story", "The valley’s paths fell dark when people stopped walking them. Choose a path and help Mira, the lantern-keeper, light it again.")}</p>
+      <h1 class="home-title">${t("arrive.title2", "Light a path through the valley")}</h1>
+      <p class="home-sub">${t("home.story", "Explore a fear in 3D and help Mira light the valley’s paths.")}</p>
     </header>
     <section class="home-sheet" aria-labelledby="homeQ">
-      <h2 class="home-q" id="homeQ">${t("arrive.pickQ", "Which fear do you want to face?")}</h2>
+      <h2 class="home-q" id="homeQ">${t("arrive.pickQ", "Choose a fear")}</h2>
       <div class="fear-tiles">${tiles}</div>
-      <p class="home-note">${t("home.promise", "You start where it's small and far away. You choose every step — and you can stop any time.")}</p>
-      <button class="home-link" data-action="open-quiz">${t("arrive.quiz2", "Not sure which fear? Take the 1-minute check")}</button>
+      <p class="home-note">${t("home.promise", "Start with the easiest trial. You can stop any time.")}</p>
+      <button class="home-link" data-action="open-quiz">${t("arrive.quiz2", "Not sure where to start? Take the self-check")}</button>
     </section>
   </div>`;
   }
@@ -818,20 +816,19 @@ function viewReport() {
 function viewAbout() {
   return `
     <div class="panel about-view">
-      <span class="badge">${t("about.badge", "About")}</span>
-      <h2 style="margin-top:10px">${t("about.title", "Lanternwalk — a tiny game about big fears")}</h2>
-      <p>${t("about.intro4", "Lanternwalk is a free practice game about how fear works. You make a traveler and face a fear — dogs, spiders, snakes, heights, the dark or tight spaces — in small, safe, always-optional steps: first in 3D scenes, then through tiny real-world quests.")}</p>
+      <h2>${t("about.title", "Lanternwalk — a tiny game about big fears")}</h2>
+      <p>${t("about.intro4", "Lanternwalk is a free practice game about fear. Choose from six 3D realms: dogs, spiders, snakes, heights, darkness and enclosed spaces. Each realm also offers optional real-world steps.")}</p>
 
       <h3>${t("about.scienceH", "The science it leans on")}</h3>
-      <p>${t("about.science1", "The whole game is built around graded exposure — the best-studied approach for specific fears. Anxiety rises, peaks, and falls on its own when you stay; avoidance is what keeps a fear alive. Each 'trial' asks you to predict how bad it will be, stay a little, and then compare — that prediction gap is where the brain updates.")}</p>
-      <p>${t("about.science2", "Progress is measured, not just played: short fear check-ins (avoidance, intensity, body reaction, interference, belief) tracked over time, and a printable report you could hand to a clinician.")}</p>
+      <p>${t("about.science1", "The game takes inspiration from graded exposure. Each trial gives you a chance to approach a fear in small steps and compare what you expected with what happened. You can pause or leave at any time.")}</p>
+      <p>${t("about.science2", "You can track your ratings and check-ins over time and print a report to share if you choose.")}</p>
 
       <h3>${t("about.limitsH", "What Lanternwalk is not")}</h3>
       <p>${t("about.limits", "Not therapy, not diagnosis, not a medical device. It was made for curiosity and education. If a fear is seriously limiting your life, a trained clinician can run real exposure work with you safely — bring the report; it makes a good first conversation.")}
       <a class="crisis-link" href="https://findahelpline.com" target="_blank" rel="noopener">findahelpline.com</a>${isRtl() ? " · اورژانس اجتماعی <b>۱۲۳</b> · صدای مشاور بهزیستی <b>۱۴۸۰</b>" : ""}</p>
 
       <h3>${t("about.privacyH", "Privacy")}</h3>
-      <p>${t("about.privacy", "Everything stays in your browser: characters, sessions, check-ins — all of it lives in this device's local storage. No account, no analytics, no server. Your data leaves only when you export it yourself (Settings → Export).")}
+      <p>${t("about.privacy", "Your characters, trial ratings and check-ins are stored in this browser. Settings lets you download a backup or erase your saved data.")}
       <a href="${PRIVACY_URL}" target="_blank" rel="noopener">${t("about.privacyLink", "The full privacy policy")}</a></p>
 
       <h3>${t("about.contactH", "Contact and support")}</h3>

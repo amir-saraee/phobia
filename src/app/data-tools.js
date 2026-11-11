@@ -468,11 +468,11 @@ function generateProgressCard() {
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
     ctx.stroke();
-    // Average SUDS pill
-    const avg = (sessions.reduce((s, l) => s + l.suds, 0) / sessions.length).toFixed(1);
+    // Average of the ratings plotted above
+    const avg = (sessions.reduce((s, l) => s + feltFor(l), 0) / sessions.length).toFixed(1);
     ctx.fillStyle = "#94a3b8";
     ctx.font = `500 20px ${FONT}`;
-    ctx.fillText(tf("card.avg", "avg {n}", { n: avg }), X(80), baseY + 24);
+    ctx.fillText(tf("card.avg", "average peak {n}", { n: avg }), X(80), baseY + 24);
     row++;
   }
 

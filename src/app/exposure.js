@@ -944,7 +944,7 @@ function mountExposure(phobiaKey, levelIdx) {
         continueBtn.classList.add("ready-pulse");
         continueBtn.textContent = window.__demoMode
           ? t("demo.stepOut", "Step out — I've had a taste")
-          : t("hold.ready", "I'm ready — continue");
+          : t("hold.ready", "Continue");
         holdLabel.textContent = tf("hold.held", "held {n}s — well done", { n: facingSec });
         window.__rungHoldComplete = true;   // scenes read this for a diegetic beat
         // The story's spine, in the HUD: holding a trial lights its flame in

@@ -4274,7 +4274,7 @@ body.light-mode .tf { background: #cbd3e0; }
    cartoon head looming over a small real dog. Keep only its colour wash. */
 .realm-hero.has3d .realm-hero-art { opacity: .16; filter: blur(6px) saturate(.8); }
 .realm-hero.has3d .realm-hero-text { text-shadow: 0 1px 3px rgba(0,0,0,.85), 0 0 14px rgba(0,0,0,.6); }
-.realm-hero.has3d .realm-hero-text, .realm-hero.has3d .ground-box { z-index: 2; pointer-events: none; }
+.realm-hero.has3d .realm-hero-grad, .realm-hero.has3d .realm-hero-text { z-index: 2; pointer-events: none; }
 /* Title screen: swap the flat SVG for the 3D turntable when it mounts */
 .story-figure { width: 200px; height: 230px; display: flex; align-items: center; justify-content: center; }
 .story-figure.has3d svg { display: none; }
@@ -5816,7 +5816,7 @@ body.home-mode #view.view-enter { animation: none; }
 .home-top {
   position: relative; z-index: 2; width: 100%; max-width: 1120px; margin: 0 auto;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: max(12px, env(safe-area-inset-top)) 16px 0;
+  padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
 }
 .home-mark { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; letter-spacing: .2px; color: #fbf1dc;
   font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif; }
@@ -5824,7 +5824,7 @@ html[lang="fa"] .home-mark { font-family: inherit; }
 .home-mark .lw-lamp { width: 20px; height: 26px; color: var(--lamp); }
 .home-top-r { display: inline-flex; align-items: center; gap: 8px; }
 .home-chip {
-  min-height: 40px; padding: 0 14px; border-radius: 999px; cursor: pointer;
+  min-height: 44px; padding: 0 14px; border-radius: 999px; cursor: pointer;
   background: rgba(255, 255, 255, .07); border: 1px solid var(--g-line-2); color: var(--text);
   font: inherit; font-size: 14px; font-weight: 600;
 }
@@ -5832,16 +5832,16 @@ html[lang="fa"] .home-mark { font-family: inherit; }
 .home-main {
   position: relative; z-index: 1; flex: 1;
   width: 100%; max-width: 600px; margin: 0 auto;
-  display: flex; flex-direction: column; justify-content: space-between; gap: 22px;
-  padding: clamp(18px, 6vh, 64px) 16px max(20px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; justify-content: center; gap: clamp(28px, 7vh, 68px);
+  padding: 28px max(16px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
 }
 .home-hero { text-align: center; }
 .home-title {
-  margin: 0; font-size: clamp(30px, 7.2vw, 48px); line-height: 1.08; font-weight: 780; letter-spacing: -.6px;
+  margin: 0 auto; max-width: 17ch; font-size: clamp(34px, 8vw, 54px); line-height: 1.12; font-weight: 760; letter-spacing: -.025em; text-wrap: balance; overflow-wrap: anywhere;
   text-shadow: 0 4px 30px rgba(0, 0, 0, .55);
 }
 .home-sub {
-  margin: 14px auto 0; max-width: 34em; font-size: clamp(15px, 2.2vw, 17px); line-height: 1.55;
+  margin: 12px auto 0; max-width: 32em; font-size: clamp(15px, 2.2vw, 17px); line-height: 1.55; text-wrap: balance;
   color: #c9d2e3; text-shadow: 0 2px 16px rgba(0, 0, 0, .6);
 }
 .home-sheet {
@@ -5854,8 +5854,8 @@ html[lang="fa"] .home-mark { font-family: inherit; }
 .home-q { margin: 2px 0 0; font-size: 17px; font-weight: 700; text-align: center; opacity: 1; color: #fbf1dc; letter-spacing: 0; }
 .home-sheet .fear-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .home-sheet .fear-tile {
-  position: relative; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-  min-height: 96px; padding: 12px 6px 10px; border-radius: 18px;
+  position: relative; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  min-height: 96px; padding: 12px 8px; border-radius: 16px;
   background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .1);
 }
 .home-sheet .fear-tile:hover, .home-sheet .fear-tile:focus-visible {
@@ -5864,17 +5864,25 @@ html[lang="fa"] .home-mark { font-family: inherit; }
 }
 .home-sheet .fear-tile.cur { border-color: rgba(255, 207, 110, .45); }
 .home-sheet .fear-tile.done .ft-icon { filter: drop-shadow(0 0 12px rgba(255, 200, 100, .7)); }
-.home-sheet .ft-icon { font-size: 28px; }
+.home-sheet .ft-icon {
+  display: grid; place-items: center; flex: none;
+  width: 42px; height: 42px; border-radius: 12px;
+  background: rgba(255, 207, 110, .10); font-size: 24px; filter: none;
+}
+.home-sheet .fear-tile[data-phobia="spiders"] .ft-icon,
+.home-sheet .fear-tile[data-phobia="dark"] .ft-icon { background: rgba(171, 161, 246, .14); }
+.home-sheet .fear-tile[data-phobia="snakes"] .ft-icon,
+.home-sheet .fear-tile[data-phobia="heights"] .ft-icon { background: rgba(124, 209, 197, .13); }
 .home-sheet .ft-text { display: flex; flex-direction: column; align-items: center; gap: 1px; }
-.home-sheet .ft-name { font-size: 15px; font-weight: 700; }
-.home-sheet .ft-realm { font-size: 11.5px; color: var(--muted); }
+.home-sheet .ft-name { font-size: 15px; font-weight: 700; text-align: inherit; }
+.home-sheet .ft-realm { font-size: 12px; color: var(--muted); text-align: inherit; }
 .hp-pips { display: inline-flex; gap: 3px; vertical-align: middle; }
 .hp-pips i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, .18); }
 .hp-pips i.on { background: var(--lamp); box-shadow: 0 0 6px rgba(255, 207, 110, .7); }
 .home-sheet .fear-tile .hp-pips { margin-top: 3px; }
 .home-note { margin: 2px 0 0; font-size: 13.5px; line-height: 1.5; text-align: center; color: var(--muted); }
 .home-link {
-  align-self: center; min-height: 40px; padding: 6px 10px; border: 0; background: none; cursor: pointer;
+  align-self: center; min-height: 44px; padding: 6px 10px; border: 0; background: none; cursor: pointer;
   color: var(--accent); font: inherit; font-size: 14px; text-decoration: underline; text-underline-offset: 3px;
   text-decoration-color: rgba(124, 209, 197, .4);
 }
@@ -5899,16 +5907,21 @@ html[lang="fa"] .home-mark { font-family: inherit; }
 .home-btn-primary:active { transform: translateY(1px); }
 .hn-all { align-self: center; margin-top: 2px; font-size: 13.5px; }
 .home-sheet .mira-note { margin: 0; }
-@media (max-width: 420px) {
-  .home-sheet { padding: 14px; border-radius: 22px; }
-  .home-sheet .fear-tiles { gap: 8px; }
-  .home-sheet .fear-tile { min-height: 88px; border-radius: 16px; }
+@media (max-width: 560px) {
+  .home-main { gap: clamp(24px, 7vh, 58px); }
+  .home-sheet { padding: 12px; border-radius: 22px; }
+  .home-sheet .fear-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .home-sheet .fear-tile {
+    min-height: 72px; flex-direction: row; justify-content: flex-start;
+    padding: 8px; border-radius: 14px; text-align: start;
+  }
+  .home-sheet .ft-icon { width: 34px; height: 34px; border-radius: 10px; font-size: 21px; }
+  .home-sheet .ft-text { align-items: flex-start; min-width: 0; }
+  .home-sheet .ft-name { font-size: 14px; overflow-wrap: anywhere; }
 }
-@media (max-height: 700px) and (max-width: 700px) {
-  .home-main { gap: 14px; padding-top: 12px; }
-  .home-sub { margin-top: 8px; font-size: 14px; }
-  .home-sheet .fear-tile { min-height: 74px; padding: 8px 4px; }
-  .home-sheet .ft-realm { display: none; }
+@media (max-height: 700px) and (max-width: 560px) {
+  .home-main { gap: 22px; padding-block-start: 20px; }
+  .home-sub { margin-top: 8px; }
 }
 @media (min-width: 960px) {
   .home-main { max-width: 640px; }
@@ -5918,7 +5931,7 @@ html[lang="fa"] .home-mark { font-family: inherit; }
 @media (orientation: landscape) and (max-height: 520px) {
   .home-main { max-width: 980px; flex-direction: row; align-items: center; gap: 24px; }
   .home-hero { flex: 1 1 0; text-align: start; }
-  .home-sheet { flex: 1.2 1 0; max-height: calc(100dvh - 80px); overflow-y: auto; }
+  .home-sheet { flex: 1.2 1 0; min-width: 0; }
   .home-title { font-size: 28px; }
 }
 .app:has(.home-sheet .fear-tile[data-phobia="dogs"]:is(:hover, :focus-visible)) .vh-lantern[data-k="dogs"] .vh-glow { opacity: .9; }
@@ -5952,7 +5965,7 @@ body.trial-mode .exposure-panel .step-controls {
 .trial-intro {
   position: fixed; inset: 0; z-index: 60;
   display: flex; align-items: center; justify-content: center;
-  padding: max(14px, env(safe-area-inset-top)) 14px 14px;
+  padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
   background: radial-gradient(ellipse 90% 80% at 50% 55%, rgba(5, 8, 20, .35) 0%, rgba(5, 8, 20, .72) 100%);
   overflow-y: auto; overscroll-behavior: contain;
   animation: tiIn .45s var(--ease-out) both;
@@ -5979,7 +5992,7 @@ body.trial-mode .exposure-panel .step-controls {
 .ti-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .ti-kicker { font-size: 12.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--lamp); }
 .ti-x {
-  flex: none; width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 12px; cursor: pointer;
+  flex: none; width: 44px; height: 44px; min-height: 44px; padding: 0; border-radius: 12px; cursor: pointer;
   background: rgba(255, 255, 255, .06); border: 1px solid var(--g-line); color: var(--muted); font-size: 15px;
 }
 .ti-x:hover { color: var(--text); background: rgba(255, 255, 255, .1); }
@@ -6060,7 +6073,7 @@ body.trial-mode .exposure-panel .step-controls {
 .db-card .db-step2 .db-q { margin-top: 0; padding-top: 0; border-top: 0; }
 @media (prefers-reduced-motion: reduce) { .db-step2 { animation: none; } }
 @media (max-width: 600px) {
-  .trial-intro { align-items: flex-end; padding: 10px; }
+  .trial-intro { align-items: flex-end; padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
   .ti-card { padding: 16px 14px 10px; border-radius: 24px; gap: 10px; margin: auto 0 0; }
   .ti-story .gs-mira { display: none; }
   .ti-story .gate-story { padding: 10px 12px 4px; }
@@ -6234,7 +6247,7 @@ a.btn-ghost, a.btn-primary {
      short heading row took the tall chip block's height and left a ~150px
      hole above the trial's title, pushing it below the fold. */
   .ti-card {
-    width: min(920px, 100%); display: grid; grid-template-columns: 1fr 1.1fr;
+    width: min(920px, 100%); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
     column-gap: 18px; row-gap: 8px; align-items: start; padding: 12px 16px 8px;
   }
   /* The kicker heads the left column; ✕ sits in the card's corner, so the
@@ -6299,7 +6312,7 @@ body.trial-mode .step-controls > #continueBtn:not(.holding) {
 }
 @media (max-width: 600px) {
   body.trial-mode .exposure-panel .step-controls {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-areas: "bar bar" "label label" "breathe exit";
     column-gap: 10px; row-gap: 8px;
     padding-top: 0; padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right));
@@ -6307,7 +6320,7 @@ body.trial-mode .step-controls > #continueBtn:not(.holding) {
   body.trial-mode .step-controls > .hold-bar { height: 3px; border-radius: 0; margin: 0 calc(-1 * max(12px, env(safe-area-inset-left))); width: auto; align-self: start; }
   body.trial-mode .exposure-panel .step-controls > .hold-label { display: block; text-align: center; font-size: 12px; }
   body.trial-mode .exposure-panel .step-controls > .timer { display: none; }
-  body.trial-mode .step-controls > button { min-height: 46px; padding: 0 12px; font-size: 15px; }
+  body.trial-mode .step-controls > button { min-height: 46px; padding: 6px 10px; font-size: 15px; white-space: normal; }
   body.trial-mode .stage .hold-pill { display: none !important; }
 }
 /* Big text keeps the dock on one screen. */
@@ -6371,13 +6384,15 @@ body.light-mode .debrief .story-card .sc-read { color: var(--text); border-color
 
 /* ---- Realm page on a phone: the trial cards get the width ---- */
 @media (max-width: 600px) {
+  .realm-view .realm-hero.has3d { min-height: 200px; }
+  .realm-view .ground-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
   .realm-view .trial { gap: 10px; }
   .realm-view .trial-marker { flex: 0 0 34px; width: 34px; height: 34px; font-size: 14px; border-width: 2px; }
   .realm-view .trial.done .trial-marker { font-size: 16px; }
   .realm-view .trial-link { height: 14px; margin-left: 0; margin-inline-start: 16px; }
   .realm-view .trial-card { padding: 10px 12px; border-radius: 16px; }
   .realm-view .trial-whisper.misty { display: none; }
-  .realm-view .trial-foot .btn-ghost, .realm-view .trial-foot .btn-primary { min-height: 40px; padding: 0 14px; border-radius: 999px; font-size: 14px; }
+  .realm-view .trial-foot .btn-ghost, .realm-view .trial-foot .btn-primary { min-height: 44px; padding: 0 14px; border-radius: 999px; font-size: 14px; }
   .realm-view .path-block, .realm-view .bridge-block { padding: 14px 12px; border-radius: 20px; }
 }
 

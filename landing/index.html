@@ -48,7 +48,7 @@
   }
   :root {
     --night: #050816; --bg: #0b1124; --panel: #121a33; --panel-2: #172042; --line: #26315a;
-    --text: #e9eef8; --muted: #a3b1c9; --cream: #fbf1dc; --amber: #ffc56b; --amber-2: #ffad42; --teal: #7cd1c5;
+    --text: #e9eef8; --muted: #a3b1c9; --cream: #fbf1dc; --amber: #ffc56b;
     --r: 18px;
   }
   * { box-sizing: border-box; }
@@ -62,7 +62,7 @@
   a { color: var(--amber); }
   a:focus-visible, summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; border-radius: 6px; }
   img { max-width: 100%; height: auto; display: block; }
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding-inline: max(16px, env(safe-area-inset-left), env(safe-area-inset-right)); }
   /* Hidden ABOVE the page, never off to the left: an RTL page scrolls sideways
      to reach anything parked at left:-9999px. */
   .skip { position: absolute; top: -60px; right: 12px; background: var(--amber); color: #1b1300; padding: 8px 14px; border-radius: 10px; z-index: 10; }
@@ -70,93 +70,111 @@
 
   /* ---- header ---- */
   .top { position: absolute; inset: 0 0 auto 0; z-index: 3; }
-  .top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 14px; }
+  .top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: max(10px, env(safe-area-inset-top)); }
   .brand { display: inline-flex; align-items: center; gap: 8px; color: var(--cream); text-decoration: none; font-weight: 800; font-size: 18px; }
   .brand .lamp { width: 20px; height: 27px; color: var(--amber); }
   .top nav { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
-  .top nav a { color: var(--muted); text-decoration: none; font-size: 14px; padding: 8px 10px; border-radius: 999px; min-height: 40px; display: inline-flex; align-items: center; }
+  .top nav a { color: var(--muted); text-decoration: none; font-size: 14px; padding: 8px 10px; border-radius: 999px; min-height: 44px; display: inline-flex; align-items: center; }
   .top nav a:hover { color: var(--cream); background: rgba(255,255,255,.06); }
   @media (max-width: 560px) { .top nav .opt { display: none; } }
 
-  /* ---- hero: the title screen's valley ---- */
-  .hero { position: relative; min-height: min(100svh, 860px); display: flex; align-items: flex-start; overflow: hidden; background: var(--night); isolation: isolate; }
-  .hero .sky { position: absolute; inset: 0; z-index: -1; }
-  .hero .sky svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-  .hero::after { content: ""; position: absolute; inset: auto 0 0 0; height: 30%; background: linear-gradient(to bottom, transparent, var(--bg)); z-index: -1; }
-  .hero .wrap { padding-top: clamp(96px, 16vh, 150px); padding-bottom: 48px; text-align: center; }
-  .kicker { display: inline-block; font-size: 14px; color: var(--teal); border: 1px solid rgba(124,209,197,.35); background: rgba(5,8,22,.45); padding: 4px 14px; border-radius: 999px; margin: 0 0 16px; }
-  .mark { margin: 0; font-weight: 900; font-size: clamp(44px, 12vw, 84px); line-height: 1.15; color: var(--cream); text-shadow: 0 0 36px rgba(255,186,92,.35), 0 4px 24px rgba(0,0,0,.6); display: inline-flex; align-items: center; gap: .18em; }
-  .mark .lamp { width: .5em; height: .66em; color: var(--amber); filter: drop-shadow(0 0 14px rgba(255,190,100,.6)); }
-  .tagline { margin: 10px auto 0; max-width: 17em; font-size: clamp(20px, 4.6vw, 30px); line-height: 1.6; color: var(--cream); font-weight: 600; text-shadow: 0 2px 16px rgba(0,0,0,.7); }
-  .sub { margin: 6px auto 0; color: #d7cfbd; font-size: clamp(15px, 3.6vw, 18px); text-shadow: 0 2px 12px rgba(0,0,0,.8); }
-  .lead { margin: 22px auto 0; max-width: 36em; color: var(--text); font-size: 16.5px; background: rgba(5,8,22,.55); border: 1px solid rgba(255,255,255,.06); border-radius: var(--r); padding: 14px 18px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-  .cta { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 22px; }
-  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 50px; padding: 10px 22px; border-radius: 999px; text-decoration: none; font-weight: 800; font-size: 17px; }
-  .btn-primary { color: #251700; background: linear-gradient(180deg, #ffd387, var(--amber-2)); box-shadow: 0 8px 28px rgba(255,173,66,.35), inset 0 1px 0 rgba(255,255,255,.5); }
-  .btn-primary:hover { filter: brightness(1.06); }
-  .btn-ghost { color: var(--cream); border: 1px solid rgba(251,241,220,.35); background: rgba(5,8,22,.5); }
-  .facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; list-style: none; padding: 0; margin: 18px 0 0; color: #cbd5e6; font-size: 14.5px; }
-  .facts li::before { content: "✦"; color: var(--amber); margin-inline-end: 6px; font-size: 11px; }
+  /* Hero and section layout */
+  .hero { position: relative; isolation: isolate; overflow: hidden; background: var(--night); }
+  .hero .sky { position: absolute; inset: 0; z-index: -2; }
+  .hero .sky svg { width: 100%; height: 100%; display: block; }
+  .hero::after {
+    content: ""; position: absolute; inset: 0; z-index: -1;
+    background: linear-gradient(180deg, transparent 45%, var(--bg)),
+                radial-gradient(ellipse at 65% 30%, #050816c9, transparent 80%);
+  }
+  .hero .wrap { padding-block: clamp(108px, 12vw, 156px) clamp(80px, 9vw, 112px); }
+  .mark {
+    margin: 0; color: var(--cream); font-size: clamp(40px, 8vw, 78px); font-weight: 900;
+    line-height: 1.25; text-shadow: 0 5px 36px #050816;
+  }
+  .tagline { margin: 10px 0 0; font-size: clamp(19px, 4vw, 28px); line-height: 1.6; color: var(--amber); font-weight: 650; }
+  .lead { margin: 14px 0 0; max-width: 36em; color: var(--text); text-shadow: 0 2px 10px var(--night); }
+  .cta { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; margin-top: 24px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 9px 20px;
+    border-radius: 14px; text-decoration: none; font-weight: 750;
+  }
+  .btn-primary { color: #251700; background: var(--amber); box-shadow: 0 6px 24px #ffad4229; }
+  .btn-primary:hover { background: #ffd38f; }
+  .btn-ghost { color: var(--cream); border: 1px solid #fbf1dc54; background: #05081655; }
+  .btn-ghost:hover { background: #fbf1dc18; }
+  .facts { margin: 14px 0 0; color: #cbd5e6; font-size: 14px; }
 
-  /* ---- sections ---- */
-  section { padding: 56px 0; }
-  .eyebrow { color: var(--teal); font-size: 14px; font-weight: 700; margin: 0 0 4px; }
-  h2 { font-size: clamp(24px, 5.4vw, 34px); line-height: 1.45; margin: 0 0 10px; color: var(--cream); }
-  .intro { color: var(--muted); max-width: 40em; margin: 0 0 24px; }
-  .grid { display: grid; gap: 14px; grid-template-columns: 1fr; }
-  @media (min-width: 560px) { .grid.two, .grid.three { grid-template-columns: 1fr 1fr; } }
-  @media (min-width: 900px) { .grid.three { grid-template-columns: 1fr 1fr 1fr; } }
-  .card { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: var(--r); padding: 18px; }
-  .card h3 { margin: 0 0 4px; font-size: 18.5px; color: var(--cream); display: flex; align-items: center; gap: 10px; }
-  .card h3 .ic { font-size: 26px; line-height: 1; }
-  .card .what { color: var(--amber); font-size: 14px; font-weight: 700; margin: 0 0 6px; }
-  .card p { margin: 0; color: #c9d3e4; }
-  .note { margin-top: 16px; color: var(--muted); font-size: 15px; }
+  section { padding-block: clamp(30px, 6vw, 64px); }
+  h2 { font-size: clamp(24px, 4.6vw, 36px); line-height: 1.4; margin: 0 0 10px; color: var(--cream); }
+  .intro { color: var(--muted); max-width: 45em; margin: 0 0 20px; }
+  .grid { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 560px) { .grid.two, .grid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (min-width: 900px) { .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; }
+  .card h3 { margin: 0 0 4px; font-size: 18px; color: var(--cream); }
+  .card p { margin: 0; color: var(--muted); }
+  .realm-link {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px;
+    padding: 14px; text-decoration: none;
+  }
+  .realm-link:hover { border-color: var(--amber); background: var(--panel-2); }
+  .realm-link strong { display: block; font-size: 16px; color: var(--cream); }
+  .realm-link small { display: block; font-size: 14px; color: var(--muted); }
+  .realm-link .ic { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: #ffc56b16; font-size: 22px; }
+  .steps { list-style: none; padding: 0; margin: 0; counter-reset: step; }
+  .steps .card { counter-increment: step; }
+  .steps h3::before { content: counter(step, persian); color: var(--amber); margin-inline-end: .65em; }
+  .features { margin: 18px 0 0; max-width: 46em; color: var(--muted); }
 
-  .steps { counter-reset: s; }
-  .steps .card { position: relative; padding-top: 22px; }
-  .steps .card::before { counter-increment: s; content: counter(s, persian); position: absolute; top: -14px; inset-inline-start: 18px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--amber); color: #251700; font-weight: 900; }
-  .feat { list-style: none; padding: 0; margin: 22px 0 0; display: grid; gap: 10px; }
-  @media (min-width: 760px) { .feat { grid-template-columns: 1fr 1fr; } }
-  .feat li { display: flex; gap: 12px; align-items: flex-start; background: rgba(255,255,255,.03); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
-  .feat .ic { font-size: 22px; line-height: 1.5; flex: none; }
-  .feat b { color: var(--cream); }
+  #screens { padding-block-start: 0; }
+  .shots {
+    display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding-inline: 16px;
+    padding: 4px 16px 14px; margin-inline: -16px; scrollbar-width: thin; scrollbar-color: var(--line) var(--bg);
+  }
+  .shots:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
+  .shots figure { flex: 0 0 clamp(160px, 49vw, 240px); margin: 0; scroll-snap-align: start; }
+  .shots img { border-radius: 18px; border: 1px solid var(--line); width: 100%; background: var(--panel); }
+  .shots figcaption { color: var(--muted); font-size: 14px; margin-top: 6px; }
 
-  /* ---- screens: a strip that scrolls inside itself, never the page ---- */
-  .shots { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 6px 2px 16px; margin: 0 -16px; padding-inline: 16px; scrollbar-width: thin; }
-  .shots figure { flex: 0 0 auto; width: min(62vw, 250px); margin: 0; scroll-snap-align: center; }
-  .shots img { border-radius: 22px; border: 1px solid var(--line); box-shadow: 0 16px 40px rgba(0,0,0,.45); aspect-ratio: 9 / 16; object-fit: cover; width: 100%; background: var(--panel); }
-  .shots figcaption { text-align: center; color: var(--muted); font-size: 14px; margin-top: 8px; }
+  .story .wrap { display: grid; align-items: start; gap: 10px 28px; }
+  .story .intro { margin: 0; }
+  @media (min-width: 760px) { .story .wrap { grid-template-columns: 1fr 2fr; } }
+  .honest { border-inline-start: 3px solid var(--amber); }
+  .help { margin-top: 12px !important; }
 
-  .story { background: radial-gradient(900px 400px at 50% 0%, rgba(255,186,92,.10), transparent 70%); }
-  .cast { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 18px 0 0; }
-  .cast li { background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-size: 14.5px; color: #d2dbe9; }
-  .cast b { color: var(--cream); }
-
-  .honest { border-inline-start: 4px solid var(--amber); }
-  .help { margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: rgba(124,209,197,.08); border: 1px solid rgba(124,209,197,.3); }
-  .help b { color: var(--cream); }
-
-  details { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 0 16px; margin: 0 0 10px; }
-  summary { cursor: pointer; list-style: none; padding: 14px 0; font-weight: 700; color: var(--cream); display: flex; justify-content: space-between; gap: 12px; min-height: 44px; }
+  details { border-block-end: 1px solid var(--line); }
+  details:first-of-type { border-block-start: 1px solid var(--line); }
+  summary {
+    cursor: pointer; list-style: none; min-height: 48px; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px; padding: 10px 2px; font-weight: 700; color: var(--cream);
+  }
   summary::-webkit-details-marker { display: none; }
-  summary::after { content: "+"; color: var(--amber); font-weight: 900; }
+  summary::after { content: "+"; color: var(--amber); font-size: 20px; line-height: 1; }
   details[open] summary::after { content: "−"; }
-  details p { margin: 0 0 14px; color: #c9d3e4; }
-
-  .play { text-align: center; }
-  .play .card { max-width: 720px; margin: 0 auto; padding: 26px 18px; }
-  .play .small { color: var(--muted); font-size: 14.5px; margin: 14px 0 0; }
+  details p { margin: 0 0 14px; color: var(--muted); max-width: 48em; }
 
   .en { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.65; border-top: 1px solid var(--line); }
-  .en h2 { font-size: clamp(22px, 4.6vw, 30px); }
-  .en p { color: #c9d3e4; max-width: 44em; }
-  .en ul { color: #c9d3e4; padding-inline-start: 20px; }
+  .en p { color: var(--muted); max-width: 44em; }
 
-  footer { border-top: 1px solid var(--line); padding: 26px 0 40px; color: var(--muted); font-size: 14.5px; }
-  footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: space-between; align-items: center; }
-  footer ul { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 0; margin: 0; }
-  footer a { color: var(--cream); }
+  footer { border-top: 1px solid var(--line); padding-block: 18px max(24px, env(safe-area-inset-bottom)); color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 0 18px; justify-content: space-between; align-items: center; }
+  footer ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0 16px; padding: 0; margin: 0; }
+  footer a { display: inline-flex; align-items: center; min-height: 44px; color: var(--cream); }
+
+  @media (max-width: 560px) {
+    .hero .wrap { padding-block: 104px 72px; }
+    .hero .cta { gap: 8px; }
+    .hero .btn { flex: 1 1 auto; padding-inline: 12px; }
+  }
+
+  @media (orientation: landscape) and (max-height: 480px) {
+    .hero .wrap { padding-block: 64px 36px; }
+    .mark { font-size: clamp(36px, 6vw, 48px); }
+    .tagline { margin-top: 6px; font-size: 20px; }
+    .lead { margin-top: 8px; line-height: 1.55; }
+    .hero .cta { margin-top: 12px; }
+  }
 
   /* the valley's own motion (as on the title screen) */
   .vh-glass { fill: rgba(18,22,38,.85); }
@@ -198,101 +216,73 @@
   <section class="hero" aria-labelledby="hero-title">
     <div class="sky" aria-hidden="true"><svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMax slice" aria-hidden="true" focusable="false"><defs><linearGradient id="vhSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#050816"/><stop offset=".55" stop-color="#141c44"/><stop offset="1" stop-color="#2a2550"/></linearGradient><radialGradient id="vhGlow"><stop offset="0" stop-color="#ffd98f" stop-opacity=".9"/><stop offset=".4" stop-color="#ffb24d" stop-opacity=".32"/><stop offset="1" stop-color="#ffb24d" stop-opacity="0"/></radialGradient><radialGradient id="vhDawn" cx=".5" cy="1" r=".75"><stop offset="0" stop-color="#ffb070" stop-opacity="0.22"/><stop offset="1" stop-color="#ffb070" stop-opacity="0"/></radialGradient><linearGradient id="vhPath" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#e9dcc0" stop-opacity=".16"/><stop offset="1" stop-color="#e9dcc0" stop-opacity=".04"/></linearGradient></defs><rect width="1600" height="1000" fill="url(#vhSky)"/><circle cx="0" cy="331" r="1.0" fill="#fff" opacity="0.37"/><circle cx="852" cy="119" r="1.7" fill="#fff" opacity="0.67"/><circle cx="1095" cy="229" r="1.8" fill="#fff" opacity="0.38"/><circle cx="1133" cy="251" r="0.6" fill="#fff" opacity="0.63"/><circle cx="1476" cy="291" r="0.7" fill="#fff" opacity="0.53"/><circle cx="1102" cy="232" r="1.4" fill="#fff" opacity="0.75"/><circle cx="596" cy="121" r="1.8" fill="#fff" opacity="0.43" class="vh-tw" style="--d:3.2s"/><circle cx="686" cy="106" r="2.0" fill="#fff" opacity="0.56"/><circle cx="1405" cy="21" r="0.9" fill="#fff" opacity="0.56"/><circle cx="674" cy="69" r="2.0" fill="#fff" opacity="0.28"/><circle cx="551" cy="239" r="2.0" fill="#fff" opacity="0.53" class="vh-tw" style="--d:3.6s"/><circle cx="454" cy="131" r="1.2" fill="#fff" opacity="0.43"/><circle cx="982" cy="84" r="2.0" fill="#fff" opacity="0.50"/><circle cx="1016" cy="228" r="1.3" fill="#fff" opacity="0.53"/><circle cx="1503" cy="143" r="1.6" fill="#fff" opacity="0.39"/><circle cx="561" cy="119" r="1.1" fill="#fff" opacity="0.69"/><circle cx="178" cy="295" r="0.6" fill="#fff" opacity="0.47" class="vh-tw" style="--d:2.3s"/><circle cx="1594" cy="79" r="1.5" fill="#fff" opacity="0.33"/><circle cx="949" cy="50" r="2.0" fill="#fff" opacity="0.74"/><circle cx="1416" cy="327" r="1.7" fill="#fff" opacity="0.40" class="vh-tw" style="--d:3.0s"/><circle cx="122" cy="1" r="1.5" fill="#fff" opacity="0.38"/><circle cx="783" cy="248" r="0.9" fill="#fff" opacity="0.74" class="vh-tw" style="--d:3.5s"/><circle cx="1431" cy="43" r="1.3" fill="#fff" opacity="0.25"/><circle cx="1019" cy="332" r="0.5" fill="#fff" opacity="0.75" class="vh-tw" style="--d:5.9s"/><circle cx="904" cy="245" r="0.9" fill="#fff" opacity="0.37" class="vh-tw" style="--d:4.3s"/><circle cx="84" cy="277" r="1.6" fill="#fff" opacity="0.64"/><circle cx="52" cy="40" r="2.0" fill="#fff" opacity="0.32"/><circle cx="1429" cy="13" r="1.9" fill="#fff" opacity="0.72"/><circle cx="1527" cy="275" r="1.2" fill="#fff" opacity="0.39"/><circle cx="1412" cy="143" r="0.9" fill="#fff" opacity="0.47"/><circle cx="894" cy="127" r="1.5" fill="#fff" opacity="0.65"/><circle cx="1160" cy="152" r="0.8" fill="#fff" opacity="0.42"/><circle cx="1591" cy="228" r="1.9" fill="#fff" opacity="0.76" class="vh-tw" style="--d:4.6s"/><circle cx="217" cy="179" r="1.4" fill="#fff" opacity="0.67"/><circle cx="771" cy="67" r="1.2" fill="#fff" opacity="0.34"/><circle cx="835" cy="202" r="1.3" fill="#fff" opacity="0.67"/><circle cx="1201" cy="9" r="1.0" fill="#fff" opacity="0.55" class="vh-tw" style="--d:4.9s"/><circle cx="465" cy="85" r="1.6" fill="#fff" opacity="0.49" class="vh-tw" style="--d:5.1s"/><circle cx="1317" cy="330" r="2.0" fill="#fff" opacity="0.62"/><circle cx="40" cy="274" r="1.5" fill="#fff" opacity="0.65"/><circle cx="59" cy="49" r="0.6" fill="#fff" opacity="0.31" class="vh-tw" style="--d:2.0s"/><circle cx="968" cy="340" r="0.8" fill="#fff" opacity="0.32" class="vh-tw" style="--d:4.7s"/><circle cx="389" cy="164" r="2.1" fill="#fff" opacity="0.48"/><circle cx="1239" cy="143" r="1.2" fill="#fff" opacity="0.28" class="vh-tw" style="--d:5.2s"/><circle cx="1559" cy="55" r="2.0" fill="#fff" opacity="0.53" class="vh-tw" style="--d:2.8s"/><circle cx="964" cy="61" r="0.6" fill="#fff" opacity="0.40"/><circle cx="890" cy="173" r="2.1" fill="#fff" opacity="0.29"/><circle cx="503" cy="1" r="0.5" fill="#fff" opacity="0.48" class="vh-tw" style="--d:2.9s"/><circle cx="1479" cy="280" r="1.7" fill="#fff" opacity="0.49"/><circle cx="1540" cy="288" r="1.6" fill="#fff" opacity="0.56"/><circle cx="651" cy="179" r="1.3" fill="#fff" opacity="0.56"/><circle cx="1064" cy="228" r="1.7" fill="#fff" opacity="0.74"/><circle cx="1581" cy="158" r="1.3" fill="#fff" opacity="0.78"/><circle cx="572" cy="29" r="1.0" fill="#fff" opacity="0.74"/><circle cx="1181" cy="344" r="1.8" fill="#fff" opacity="0.36" class="vh-tw" style="--d:5.2s"/><circle cx="167" cy="330" r="1.8" fill="#fff" opacity="0.60"/><circle cx="857" cy="159" r="1.9" fill="#fff" opacity="0.56"/><circle cx="433" cy="247" r="1.2" fill="#fff" opacity="0.47" class="vh-tw" style="--d:4.4s"/><circle cx="370" cy="324" r="1.8" fill="#fff" opacity="0.44"/><circle cx="1404" cy="42" r="1.0" fill="#fff" opacity="0.76" class="vh-tw" style="--d:2.5s"/><circle cx="636" cy="8" r="1.6" fill="#fff" opacity="0.74" class="vh-tw" style="--d:2.8s"/><circle cx="1516" cy="252" r="0.8" fill="#fff" opacity="0.31"/><circle cx="25" cy="292" r="1.4" fill="#fff" opacity="0.66" class="vh-tw" style="--d:3.3s"/><circle cx="1144" cy="344" r="1.4" fill="#fff" opacity="0.57"/><circle cx="1124" cy="264" r="1.5" fill="#fff" opacity="0.31" class="vh-tw" style="--d:4.5s"/><circle cx="360" cy="209" r="0.9" fill="#fff" opacity="0.37"/><circle cx="1007" cy="293" r="0.9" fill="#fff" opacity="0.75" class="vh-tw" style="--d:4.8s"/><circle cx="651" cy="285" r="1.6" fill="#fff" opacity="0.69" class="vh-tw" style="--d:5.7s"/><circle cx="801" cy="296" r="1.2" fill="#fff" opacity="0.73"/><circle cx="1163" cy="327" r="1.9" fill="#fff" opacity="0.35"/><circle cx="247" cy="45" r="2.0" fill="#fff" opacity="0.78" class="vh-tw" style="--d:2.3s"/><circle cx="419" cy="339" r="1.9" fill="#fff" opacity="0.78" class="vh-tw" style="--d:2.8s"/><circle cx="48" cy="169" r="1.4" fill="#fff" opacity="0.33"/><circle cx="770" cy="82" r="0.6" fill="#fff" opacity="0.27" class="vh-tw" style="--d:4.5s"/><circle cx="749" cy="291" r="1.7" fill="#fff" opacity="0.53"/><circle cx="621" cy="221" r="2.0" fill="#fff" opacity="0.67"/><circle cx="1138" cy="217" r="1.8" fill="#fff" opacity="0.34" class="vh-tw" style="--d:4.9s"/><circle cx="1035" cy="155" r="1.4" fill="#fff" opacity="0.46"/><circle cx="195" cy="24" r="0.6" fill="#fff" opacity="0.44"/><circle cx="320" cy="230" r="0.7" fill="#fff" opacity="0.28" class="vh-tw" style="--d:5.3s"/><circle cx="1391" cy="16" r="1.7" fill="#fff" opacity="0.43"/><circle cx="1453" cy="287" r="0.5" fill="#fff" opacity="0.80" class="vh-tw" style="--d:4.6s"/><circle cx="684" cy="12" r="0.8" fill="#fff" opacity="0.67"/><circle cx="399" cy="309" r="1.8" fill="#fff" opacity="0.42"/><circle cx="478" cy="91" r="1.9" fill="#fff" opacity="0.73"/><circle cx="798" cy="312" r="1.8" fill="#fff" opacity="0.70"/><circle cx="1553" cy="249" r="1.0" fill="#fff" opacity="0.64"/><circle cx="1382" cy="59" r="1.9" fill="#fff" opacity="0.61"/><circle cx="747" cy="286" r="1.8" fill="#fff" opacity="0.27" class="vh-tw" style="--d:2.8s"/><circle cx="37" cy="208" r="1.8" fill="#fff" opacity="0.59"/><g class="vh-moon-w"><circle cx="1250" cy="168" r="34" fill="#efe6cf" opacity=".9"/><circle cx="1264" cy="160" r="31" fill="#0b1029"/></g><g class="vh-moon-n"><circle cx="935" cy="300" r="26" fill="#efe6cf" opacity=".9"/><circle cx="946" cy="294" r="24" fill="#0f163a"/></g><ellipse cx="800" cy="430" rx="900" ry="210" fill="url(#vhDawn)"/><path d="M0 430 L120 392 L240 420 L380 360 L520 410 L640 372 L760 404 L860 366 L980 400 L1100 352 L1240 404 L1380 370 L1600 410 V1000 H0z" fill="#121935"/><path d="M0 520 C200 470, 380 500, 560 470 S900 440, 1100 466 S1450 500, 1600 476 V1000 H0z" fill="#0d1330"/><g fill="#0a1028"><path d="M120 430 L148.8 520 H91.2z"/><path d="M190 392 L228.4 512 H151.6z"/><path d="M260 426 L285.6 506 H234.4z"/><path d="M380 392 L412 492 H348z"/><path d="M450 416 L472.4 486 H427.6z"/><path d="M1150 390 L1175.6 470 H1124.4z"/><path d="M1230 358 L1268.4 478 H1191.6z"/><path d="M1310 396 L1338.8 486 H1281.2z"/><path d="M1420 382 L1455.2 492 H1384.8z"/><path d="M1500 412 L1524.32 488 H1475.68z"/></g><path d="M0 700 C260 640, 520 690, 760 640 S1240 620, 1600 660 V1000 H0z" fill="#0a0f24"/><path d="M676 1000 C740 860, 640 760, 758 660 S826 520, 806 436 L816 436 C840 520, 860 600, 836 680 S900 860, 940 1000z" fill="url(#vhPath)"/><g class="vh-lantern on" data-k="dogs" transform="translate(905 650) scale(1)"><circle class="vh-glow" cx="16" cy="-112" r="74" fill="url(#vhGlow)"/><path d="M0 0 V-150 M-4 -150 H22 M18 -150 V-140" stroke="#151826" stroke-width="5" fill="none" stroke-linecap="round"/><path class="vh-glass" d="M6 -138 h20 l4 7 v26 l-4 6 h-20 l-4 -6 v-26z" stroke="#262a3b" stroke-width="2.5"/><path class="vh-flame" d="M16 -128 q8 9 0 18 q-8 -9 0 -18z"/><ellipse cx="0" cy="2" rx="16" ry="4" fill="#05070f" opacity=".5"/></g><g class="vh-lantern on" data-k="spiders" transform="translate(700 592) scale(0.8)"><circle class="vh-glow" cx="16" cy="-112" r="74" fill="url(#vhGlow)"/><path d="M0 0 V-150 M-4 -150 H22 M18 -150 V-140" stroke="#151826" stroke-width="5" fill="none" stroke-linecap="round"/><path class="vh-glass" d="M6 -138 h20 l4 7 v26 l-4 6 h-20 l-4 -6 v-26z" stroke="#262a3b" stroke-width="2.5"/><path class="vh-flame" d="M16 -128 q8 9 0 18 q-8 -9 0 -18z"/><ellipse cx="0" cy="2" rx="16" ry="4" fill="#05070f" opacity=".5"/></g><g class="vh-lantern waiting" data-k="snakes" transform="translate(880 540) scale(0.64)"><circle class="vh-glow" cx="16" cy="-112" r="74" fill="url(#vhGlow)"/><path d="M0 0 V-150 M-4 -150 H22 M18 -150 V-140" stroke="#151826" stroke-width="5" fill="none" stroke-linecap="round"/><path class="vh-glass" d="M6 -138 h20 l4 7 v26 l-4 6 h-20 l-4 -6 v-26z" stroke="#262a3b" stroke-width="2.5"/><path class="vh-flame" d="M16 -128 q8 9 0 18 q-8 -9 0 -18z"/><ellipse cx="0" cy="2" rx="16" ry="4" fill="#05070f" opacity=".5"/></g><g class="vh-lantern" data-k="heights" transform="translate(742 500) scale(0.5)"><circle class="vh-glow" cx="16" cy="-112" r="74" fill="url(#vhGlow)"/><path d="M0 0 V-150 M-4 -150 H22 M18 -150 V-140" stroke="#151826" stroke-width="5" fill="none" stroke-linecap="round"/><path class="vh-glass" d="M6 -138 h20 l4 7 v26 l-4 6 h-20 l-4 -6 v-26z" stroke="#262a3b" stroke-width="2.5"/><path class="vh-flame" d="M16 -128 q8 9 0 18 q-8 -9 0 -18z"/><ellipse cx="0" cy="2" rx="16" ry="4" fill="#05070f" opacity=".5"/></g><g class="vh-lantern" data-k="dark" transform="translate(852 466) scale(0.4)"><circle class="vh-glow" cx="16" cy="-112" r="74" fill="url(#vhGlow)"/><path d="M0 0 V-150 M-4 -150 H22 M18 -150 V-140" stroke="#151826" stroke-width="5" fill="none" stroke-linecap="round"/><path class="vh-glass" d="M6 -138 h20 l4 7 v26 l-4 6 h-20 l-4 -6 v-26z" stroke="#262a3b" stroke-width="2.5"/><path class="vh-flame" d="M16 -128 q8 9 0 18 q-8 -9 0 -18z"/><ellipse cx="0" cy="2" rx="16" ry="4" fill="#05070f" opacity=".5"/></g><g class="vh-lantern" data-k="enclosed" transform="translate(784 441) scale(0.32)"><circle class="vh-glow" cx="16" cy="-112" r="74" fill="url(#vhGlow)"/><path d="M0 0 V-150 M-4 -150 H22 M18 -150 V-140" stroke="#151826" stroke-width="5" fill="none" stroke-linecap="round"/><path class="vh-glass" d="M6 -138 h20 l4 7 v26 l-4 6 h-20 l-4 -6 v-26z" stroke="#262a3b" stroke-width="2.5"/><path class="vh-flame" d="M16 -128 q8 9 0 18 q-8 -9 0 -18z"/><ellipse cx="0" cy="2" rx="16" ry="4" fill="#05070f" opacity=".5"/></g><circle class="vh-fly" cx="975.421576916902" cy="681.4900896192948" r="2.0" style="--d:8.4s;--k:0"/><circle class="vh-fly" cx="780.6619449987364" cy="570.3760299553983" r="2.6" style="--d:9.5s;--k:1"/><circle class="vh-fly" cx="808.4503018522869" cy="569.787583667686" r="2.5" style="--d:6.5s;--k:2"/><circle class="vh-fly" cx="897.5956682942788" cy="670.6317202191017" r="2.1" style="--d:6.5s;--k:3"/><circle class="vh-fly" cx="854.7215328247853" cy="613.4345175062467" r="3.3" style="--d:8.4s;--k:4"/><circle class="vh-fly" cx="711.8110385499015" cy="626.0676586050855" r="2.6" style="--d:8.8s;--k:5"/><circle class="vh-fly" cx="834.1189692700835" cy="511.98811624291733" r="2.0" style="--d:5.7s;--k:6"/><circle class="vh-fly" cx="720.0657046586581" cy="634.8281906195116" r="3.2" style="--d:8.9s;--k:7"/><circle class="vh-fly" cx="746.8463564789139" cy="560.3030597652788" r="2.3" style="--d:5.8s;--k:8"/></svg></div>
     <div class="wrap">
-      <p class="kicker">بازی رایگان · فارسی و انگلیسی</p>
-      <h1 id="hero-title" class="mark"><svg class="lamp" viewBox="0 0 24 32" aria-hidden="true" focusable="false"><path d="M12 1.5v3.5M7 5h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M6.5 8h11l2 3v12l-2 3h-11l-2-3V11z" fill="rgba(255,200,110,.16)" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 12.2c3 3.3 3 6.3 0 8.8c-3-2.5-3-5.5 0-8.8z" fill="#ffc86b"/></svg>فانوس‌به‌دست</h1>
-      <p class="tagline">هر ترس راهی است که دیگر از آن نرفتی.</p>
-      <p class="sub">دوباره روشنش کن — هر بار یک قدمِ کوچک.</p>
-      <p class="lead">فانوس‌به‌دست بازی سه‌بعدیِ کوچکی دربارهٔ ترس‌های بزرگ است: سگ، عنکبوت، مار، ارتفاع، تاریکی و جای تنگ. با سرعت خودت جلو می‌روی، هر لحظه که بخواهی بیرون می‌آیی، و می‌بینی ترس وقتی بمانی چطور خودش آرام می‌گیرد.</p>
+      <h1 id="hero-title" class="mark">فانوس‌به‌دست</h1>
+      <p class="tagline">راه‌های تاریکِ دره را دوباره روشن کن</p>
+      <p class="lead">بازی سه‌بعدی دربارهٔ ترس‌های آشنا، از سگ و عنکبوت تا ارتفاع و تاریکی. از آزمون‌های ساده شروع کن، با سرعت خودت پیش برو و هر وقت خواستی بیرون بیا.</p>
       <div class="cta">
-        <a class="btn btn-primary" href="../?lang=fa">شروع بازی در مرورگر</a>
+        <a class="btn btn-primary" href="../?lang=fa">شروع بازی</a>
         <a class="btn btn-ghost" href="#how">چطور کار می‌کند؟</a>
       </div>
-      <ul class="facts">
-        <li>رایگان و بدون تبلیغ</li>
-        <li>بدون ثبت‌نام</li>
-        <li>روی گوشی، تبلت و رایانه</li>
-        <li>بعد از بار اول، بدون اینترنت هم</li>
-      </ul>
-    </div>
-  </section>
-
-  <section id="realms" aria-labelledby="realms-title">
-    <div class="wrap">
-      <p class="eyebrow">شش ترس، شش فانوس</p>
-      <h2 id="realms-title">هر ترس، یک قلمرو با پنج آزمون</h2>
-      <p class="intro">هر قلمرو از آسان‌ترین قدم شروع می‌شود و خودت انتخاب می‌کنی کی سراغ قدم بعدی بروی. سه قلمرو جانورانی دارند که به حرکت تو واکنش نشان می‌دهند، و سه قلمرو جاهایی‌اند که اصلاً حرکت نمی‌کنند — نکته هم همین است.</p>
-      <div class="grid three">
-        <article class="card"><h3><span class="ic" aria-hidden="true">🐕</span>حیاطِ چمن‌زار</h3><p class="what">ترس از سگ</p><p>از سگی کوچک که آن سرِ اتاق سرگرمِ کار خودش است، تا سگی بزرگ و پرشور که به طرفت می‌دود. یاد می‌گیری حالِ سگ را از بدنش بخوانی.</p></article>
-        <article class="card"><h3><span class="ic" aria-hidden="true">🕷</span>زیرزمینِ قدیمی</h3><p class="what">ترس از عنکبوت</p><p>از عنکبوتی خانگی در دوردست، تا عنکبوتی درشت روی دیوار، هم‌قدِ چشم‌هایت. اندازه‌ها واقعی‌اند و می‌توانی از نزدیک نگاه کنی.</p></article>
-        <article class="card"><h3><span class="ic" aria-hidden="true">🐍</span>چمن‌زارِ آفتابی</h3><p class="what">ترس از مار</p><p>از ماری علفی که دور از تو آفتاب می‌گیرد، تا ماری چنبره‌زده و هوشیار روی همان مسیری که از آن می‌گذری.</p></article>
-        <article class="card"><h3><span class="ic" aria-hidden="true">🏙</span>قله</h3><p class="what">ترس از ارتفاع</p><p>از لبه‌ای به بلندیِ زانو کنار یک میدان، تا گذرگاهی شیشه‌ای ۱۶۵ متر بالاتر از شهر، دمِ غروب.</p></article>
-        <article class="card"><h3><span class="ic" aria-hidden="true">🌙</span>خانه در شب</h3><p class="what">ترس از تاریکی</p><p>از اتاق‌خوابت با چراغِ روشن، تا تاریکیِ کامل و فقط صداهای خانه. چراغ‌قوه هست، و بازی می‌شمارد با آن چه می‌کنی.</p></article>
-        <article class="card"><h3><span class="ic" aria-hidden="true">🚪</span>گذرگاهِ تنگ</h3><p class="what">ترس از جای تنگ</p><p>از اتاقی کوچک که درش پشتِ سرت بسته می‌شود، تا باجهٔ تلفن، آسانسور، انباری و دراز کشیدن در دستگاه ام‌آرآی.</p></article>
-      </div>
-      <p class="note">در قلمروهای جا هیچ‌چیز به طرفت نمی‌آید: دیوارها سر جایشان می‌مانند و در همیشه باز می‌شود.</p>
-    </div>
-  </section>
-
-  <section id="how" aria-labelledby="how-title">
-    <div class="wrap">
-      <p class="eyebrow">بر پایهٔ روان‌شناسیِ واقعی</p>
-      <h2 id="how-title">چطور کار می‌کند؟</h2>
-      <p class="intro">بازی بر اصولِ «مواجههٔ تدریجی» ساخته شده، شناخته‌شده‌ترین روش در روان‌شناسیِ شناختی‌رفتاری برای ترس‌های خاص. هر آزمون سه قدم دارد:</p>
-      <div class="grid three steps">
-        <article class="card"><h3>پیش‌بینی کن</h3><p>پیش از ورود می‌گویی فکر می‌کنی ترست تا کجا بالا می‌رود و چه اتفاقی می‌افتد: «به طرفم می‌دود»، «نفسم بند می‌آید»، «چیزی در اتاق هست».</p></article>
-        <article class="card"><h3>بمان</h3><p>در صحنه می‌مانی تا موجِ ترس اوج بگیرد و خودش فروکش کند. آزمون وقتی تمام می‌شود که آرام شده‌ای، نه وقتی زمان سر آمد.</p></article>
-        <article class="card"><h3>مقایسه کن</h3><p>آنچه انتظارش را داشتی کنارِ آنچه واقعاً پیش آمد می‌گذاری. همین فاصله همان جایی است که مغز از آن یاد می‌گیرد.</p></article>
-      </div>
-      <ul class="feat">
-        <li><span class="ic" aria-hidden="true">⭐</span><span><b>سه ستاره در هر آزمون</b> — برای نزدیک شدن، دقیق خواندنِ لحظه و ماندن تا آرام شدن؛ هرگز برای سرعت.</span></li>
-        <li><span class="ic" aria-hidden="true">🌍</span><span><b>راهِ واقعی</b> — هر آزمونِ بازی یک قدمِ کوچک در زندگیِ واقعی را باز می‌کند، که از هر آزمونی ارزشمندتر است.</span></li>
-        <li><span class="ic" aria-hidden="true">🪞</span><span><b>آینه</b> — خودسنجیِ پنج‌پرسشی دربارهٔ ترسِ بیرون از بازی، تا تغییرش را با عدد ببینی.</span></li>
-        <li><span class="ic" aria-hidden="true">📄</span><span><b>گزارش پیشرفت</b> — گزارشی چاپی به فارسی (و انگلیسی) که می‌توانی به روان‌شناست نشان بدهی.</span></li>
-      </ul>
+      <p class="facts">رایگان، بدون تبلیغ و ثبت‌نام، به فارسی و انگلیسی</p>
     </div>
   </section>
 
   <section id="screens" aria-labelledby="screens-title">
     <div class="wrap">
-      <p class="eyebrow">از درونِ بازی</p>
-      <h2 id="screens-title">همان‌طور که روی گوشی می‌بینی</h2>
+      <h2 id="screens-title">نگاهی به بازی</h2>
       <div class="shots" tabindex="0" aria-label="تصویرهای بازی">
-        <figure><img src="../landing/img/shot-title.jpg" alt="صفحهٔ آغاز: درهٔ شب با شش فانوس و پرسشِ «با کدام ترس می‌خواهی رو‌به‌رو شوی؟»" width="540" height="960" loading="lazy" decoding="async" /><figcaption>درهٔ فانوس‌ها</figcaption></figure>
+        <figure><img src="../landing/img/shot-title.jpg" alt="صفحهٔ آغاز با درهٔ شب و گزینه‌های انتخابِ شش قلمرو" width="540" height="960" loading="lazy" decoding="async" /><figcaption>درهٔ فانوس‌ها</figcaption></figure>
         <figure><img src="../landing/img/shot-dog.jpg" alt="آزمونِ سگ: سگی کوچک در اتاق و پرسشِ «حالش چطور است؟»" width="540" height="960" loading="lazy" decoding="async" /><figcaption>حالِ سگ را بخوان</figcaption></figure>
         <figure><img src="../landing/img/shot-heights.jpg" alt="آزمونِ ارتفاع: لبهٔ پشت‌بامی بالای شهر" width="540" height="960" loading="lazy" decoding="async" /><figcaption>قله</figcaption></figure>
         <figure><img src="../landing/img/shot-spider.jpg" alt="آزمونِ عنکبوت در زیرزمینی قدیمی" width="540" height="960" loading="lazy" decoding="async" /><figcaption>زیرزمینِ قدیمی</figcaption></figure>
-        <figure><img src="../landing/img/shot-ladder.jpg" alt="صفحهٔ قلمروی سگ‌ها با سگِ سه‌بعدی و پیشرفتِ آزمون‌ها" width="540" height="960" loading="lazy" decoding="async" /><figcaption>هر قلمرو، پنج آزمون</figcaption></figure>
+        <figure><img src="../landing/img/shot-ladder.jpg" alt="صفحهٔ قلمروی سگ‌ها با سگِ سه‌بعدی و دکمهٔ شروع آزمون" width="540" height="960" loading="lazy" decoding="async" /><figcaption>هر قلمرو، پنج آزمون</figcaption></figure>
         <figure><img src="../landing/img/shot-report.jpg" alt="گزارش تمرین مواجهه به فارسی" width="540" height="960" loading="lazy" decoding="async" /><figcaption>گزارشِ پیشرفت</figcaption></figure>
       </div>
     </div>
   </section>
 
+  <section id="realms" aria-labelledby="realms-title">
+    <div class="wrap">
+      <h2 id="realms-title">شش قلمرو برای کشف کردن</h2>
+      <p class="intro">هر قلمرو پنج آزمون دارد. یکی را انتخاب کن و از ساده‌ترین آزمون شروع کن.</p>
+      <div class="grid three">
+        <a class="card realm-link" href="../?lang=fa#/dogs"><span class="ic" aria-hidden="true">🐕</span><span><strong>ترس از سگ</strong><small>حیاطِ چمن‌زار</small></span><span aria-hidden="true">←</span></a>
+        <a class="card realm-link" href="../?lang=fa#/spiders"><span class="ic" aria-hidden="true">🕷</span><span><strong>ترس از عنکبوت</strong><small>زیرزمینِ قدیمی</small></span><span aria-hidden="true">←</span></a>
+        <a class="card realm-link" href="../?lang=fa#/snakes"><span class="ic" aria-hidden="true">🐍</span><span><strong>ترس از مار</strong><small>چمن‌زارِ آفتابی</small></span><span aria-hidden="true">←</span></a>
+        <a class="card realm-link" href="../?lang=fa#/heights"><span class="ic" aria-hidden="true">🏙</span><span><strong>ترس از ارتفاع</strong><small>قله</small></span><span aria-hidden="true">←</span></a>
+        <a class="card realm-link" href="../?lang=fa#/dark"><span class="ic" aria-hidden="true">🌙</span><span><strong>ترس از تاریکی</strong><small>خانه در شب</small></span><span aria-hidden="true">←</span></a>
+        <a class="card realm-link" href="../?lang=fa#/enclosed"><span class="ic" aria-hidden="true">🚪</span><span><strong>ترس از فضای بسته</strong><small>گذرگاهِ تنگ</small></span><span aria-hidden="true">←</span></a>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" aria-labelledby="how-title">
+    <div class="wrap">
+      <h2 id="how-title">چطور کار می‌کند؟</h2>
+      <p class="intro">بازی از ایدهٔ مواجههٔ تدریجی الهام گرفته است. در هر آزمون می‌توانی ترست را در قدم‌های کوچک بررسی کنی.</p>
+      <ol class="grid three steps">
+        <li class="card"><h3>پیش‌بینی کن</h3><p>اگر خواستی، قبل از ورود حدس بزن ترست تا کجا بالا می‌رود.</p></li>
+        <li class="card"><h3>صحنه را کشف کن</h3><p>صحنهٔ سه‌بعدی را با سرعت خودت تجربه کن. هر وقت خواستی می‌توانی مکث کنی یا بیرون بیایی.</p></li>
+        <li class="card"><h3>مرور کن</h3><p>بعد از بیرون آمدن، شدت ترس در آزمون و همین لحظه را ثبت کن. اگر حدس زده بودی، آن را با تجربه‌ات مقایسه کن.</p></li>
+      </ol>
+      <p class="features">قدم‌های اختیاری در دنیای واقعی، خودسنجی کوتاه و گزارش قابل چاپ هم در بازی در دسترس‌اند.</p>
+    </div>
+  </section>
+
   <section class="story" aria-labelledby="story-title">
     <div class="wrap">
-      <p class="eyebrow">داستانی که با هر آزمون ورق می‌خورد</p>
       <h2 id="story-title">فانوس‌های دره</h2>
-      <p class="intro">در دره، هر راهی که کسی از آن نرود تاریک می‌شود. میرا، فانوس‌بانِ دره، کنارت راه می‌آید تا دوباره روشنشان کنی. در هر قلمرو کسی زندگی می‌کند که ترسش از جای دیگری شروع شده، تا ببینی ترس‌ها از کجا می‌آیند. هر صفحه یک ایده از روان‌شناسیِ ترس دارد — ۳۸ درس، بی‌تکرار.</p>
-      <ul class="cast">
-        <li><b>آرام</b>، باغبان — هفت‌ساله بود که سگی گازش گرفت</li>
-        <li><b>لیلا</b> — ترس را از چهرهٔ مادرش یاد گرفت</li>
-        <li><b>بهمن</b>، چوپان — از قصه‌های مادربزرگش</li>
-        <li><b>سحر</b> — از بدنی که پیامش را اشتباه خواند</li>
-        <li><b>نیما</b>، ده‌ساله — از چراغی که هیچ‌وقت خاموش نشد</li>
-        <li><b>شیرین</b> — از یک بار گیر کردن در آسانسور</li>
-      </ul>
+      <p class="intro">هر راهی که کسی از آن نگذرد تاریک می‌شود. با میرا، فانوس‌بانِ دره، راه‌ها را روشن کن و در دفتر داستان بخوان ترسِ ساکنانِ هر قلمرو از کجا شروع شده است.</p>
     </div>
   </section>
 
   <section aria-labelledby="honest-title">
     <div class="wrap">
       <div class="card honest">
-        <h2 id="honest-title">یک بازی تمرینی، نه درمان</h2>
-        <p>فانوس‌به‌دست برای کنجکاوی و آموزش ساخته شده است. جای روان‌شناس را نمی‌گیرد و ابزار پزشکی یا تشخیص نیست. اگر ترسی زندگی‌ات را محدود کرده، یک متخصصِ آموزش‌دیده می‌تواند همراهی‌ات کند — و گزارشِ بازی شروعِ خوبی برای این گفت‌وگوست.</p>
+        <h2 id="honest-title">دربارهٔ بازی و حریم خصوصی</h2>
+        <p>فانوس‌به‌دست یک بازی آموزشی است. اگر ترسی زندگی روزمره‌ات را محدود کرده، می‌توانی با متخصص سلامت روان صحبت کنی.</p>
         <p class="help">اگر همین حالا حالت خوب نیست، با یک انسان حرف بزن: اورژانس اجتماعی <b>۱۲۳</b> · صدای مشاور بهزیستی <b>۱۴۸۰</b></p>
-      </div>
-      <div class="grid two" style="margin-top:14px">
-        <article class="card"><h3><span class="ic" aria-hidden="true">🚪</span>اختیار با توست</h3><p>هر صحنه را هر لحظه می‌توانی ترک کنی و دکمهٔ «آرامم کن» تو را به تمرینی کوتاه برای آرام شدن می‌برد. بیرون آمدن هرگز شکست حساب نمی‌شود.</p></article>
-        <article class="card"><h3><span class="ic" aria-hidden="true">🔒</span>حریم خصوصی</h3><p>بدون حساب کاربری، بدون تبلیغ، بدون ردیاب. هر چه در بازی ثبت می‌کنی فقط روی دستگاهِ خودت می‌ماند. <a href="../privacy.html">سیاست حریم خصوصی</a></p></article>
+        <p>پیشرفت و پاسخ‌هایت در همین مرورگر ذخیره می‌شوند. <a href="../privacy.html">سیاست حریم خصوصی</a></p>
       </div>
     </div>
   </section>
@@ -301,37 +291,22 @@
     <div class="wrap">
       <h2 id="faq-title">پرسش‌های پرتکرار</h2>
       <details><summary>رایگان است؟</summary><p>بله. کلِ بازی رایگان است و تبلیغ و خرید درون‌برنامه‌ای ندارد.</p></details>
-      <details><summary>به اینترنت نیاز دارد؟</summary><p>برای بار اول بله. بعد از آن، قلمروهایی که یک بار باز کرده‌ای بدون اینترنت هم اجرا می‌شوند.</p></details>
-      <details><summary>روی چه دستگاهی اجرا می‌شود؟</summary><p>روی هر مرورگرِ به‌روزی که سه‌بعدی (WebGL) را پشتیبانی کند: کروم، فایرفاکس، اج و سافاری، روی گوشی، تبلت یا رایانه. روی اندروید، نسخهٔ ۷ به بالا با کروم یا Android System WebView به‌روز.</p></details>
-      <details><summary>برای چه سنی مناسب است؟</summary><p>برای نوجوانان و بزرگسالان. صحنه‌ها آرام‌اند و هیچ خشونتی ندارند، ولی موضوعشان ترس است؛ بچه‌های کوچک‌تر بهتر است همراهِ یک بزرگ‌تر بازی کنند.</p></details>
+      <details><summary>به اینترنت نیاز دارد؟</summary><p>برای بار اول بله. بعد از اینکه مرورگر فایل‌های بازی را ذخیره کرد، می‌توانی آفلاین بازی کنی. بعضی صداها و فایل‌ها ممکن است در اولین استفاده به اینترنت نیاز داشته باشند.</p></details>
+      <details><summary>روی چه دستگاهی اجرا می‌شود؟</summary><p>روی گوشی، تبلت یا رایانه با مرورگر به‌روز و پشتیبانی از WebGL. سرعت اجرای صحنه‌های سه‌بعدی به دستگاه بستگی دارد.</p></details>
+      <details><summary>برای چه سنی مناسب است؟</summary><p>برای نوجوانان و بزرگسالان. بعضی صحنه‌ها صدای پارس، ارتفاع یا تاریکی دارند. هر زمان خواستی می‌توانی آزمون را ترک کنی.</p></details>
       <details><summary>اگر وسطِ آزمون خیلی ترسیدم چه کنم؟</summary><p>هر وقت خواستی بیرون بیا یا «آرامم کن» را بزن. بازی هرگز مجبورت نمی‌کند جلوتر بروی و هر وقت بخواهی می‌توانی به قدمِ آسان‌تر برگردی.</p></details>
       <details><summary>داده‌هایم کجا ذخیره می‌شود؟</summary><p>فقط در حافظهٔ مرورگرِ همان دستگاه. از تنظیمات می‌توانی پشتیبان بگیری، آن را برگردانی یا همه‌چیز را پاک کنی.</p></details>
       <details><summary>پیشنهاد یا اشکالی دارم.</summary><p>از منوی بازی «نظرت را بگو» را بزن، یا مستقیم به <a href="mailto:info@go2game.ir" dir="ltr" lang="en">info@go2game.ir</a> بنویس.</p></details>
     </div>
   </section>
 
-  <section class="play" aria-labelledby="play-title">
-    <div class="wrap">
-      <div class="card">
-        <h2 id="play-title">اولین فانوس را روشن کن</h2>
-        <p>چند دقیقه وقت لازم است و هیچ نصبی نمی‌خواهد.</p>
-        <div class="cta"><a class="btn btn-primary" href="../?lang=fa">شروع بازی</a></div>
-        <p class="small">اگر بازی باز نشد، مرورگرت را به‌روز کن یا آن را در کروم باز کن.</p>
-      </div>
-    </div>
-  </section>
-
   <section id="en" class="en" lang="en" dir="ltr" aria-labelledby="en-title">
     <div class="wrap">
-      <h2 id="en-title">Lanternwalk — in English</h2>
-      <p><strong>Every fear is a path you stopped walking. Light it again — one small step at a time.</strong></p>
-      <p>Lanternwalk is a free, gentle 3D game about big fears: dogs, spiders, snakes, heights, the dark and tight spaces. Each is a realm with five trials, from the easiest step up. You predict how bad it will be, stay until the alarm settles on its own, then compare — the core of graded exposure, the best-studied approach to specific fears. A story, <em>The Lanterns of the Valley</em>, carries 38 short lessons on why fears start and how they unwind; real-world steps, a five-item self-check and a printable progress report sit beside the game.</p>
-      <ul>
-        <li>Free, no ads, no sign-up; English and Persian.</li>
-        <li>Everything stays on your device. <a href="../privacy.html#en">Privacy policy</a></li>
-        <li>A practice game, not therapy. If a fear is limiting your life, a clinician can help; <a href="https://findahelpline.com" rel="noopener">findahelpline.com</a> lists free help lines.</li>
-      </ul>
-      <p class="cta" style="justify-content:flex-start"><a class="btn btn-primary" href="../?lang=en">Play in your browser</a></p>
+      <h2 id="en-title">Lanternwalk</h2>
+      <p>Explore six 3D realms inspired by familiar fears, from dogs and spiders to heights and the dark. Each realm has five trials. Start with the easiest, try it at your pace and step out whenever you want.</p>
+      <div class="cta"><a class="btn btn-primary" href="../?lang=en">Play in English</a></div>
+      <p>Before a trial, you can predict how scared you’ll feel. Afterwards, rate what you felt and compare it with your guess. The game also includes a story, optional real-world steps and a printable progress report.</p>
+      <p>Free to play without an account or ads. Your progress is stored in this browser. <a href="../privacy.html#en">Privacy policy</a></p>
     </div>
   </section>
 </main>
