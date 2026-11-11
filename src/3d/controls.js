@@ -169,7 +169,7 @@ class FPControls {
     this._hesT = null;        // countdown to the next hesitation catch
     this._hesHold = 0;        // active catch remaining
     this._trmT = 0;           // tremble phase
-    this._speedNorm = 1;      // normalized velocity, smoothed (bob/step gain)
+    this._speedNorm = 0;      // normalized velocity, smoothed (bob/step gain)
 
     this._onDown = this._onDown.bind(this);
     this._onMove = this._onMove.bind(this);
@@ -334,6 +334,9 @@ class FPControls {
       // Don't scroll the page when arrow keys are used in the stage
       if (e.code.startsWith("Arrow")) e.preventDefault();
     }
+    if (e.code === "KeyX" && this.opts.runSpeed && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      this.keys.KeyX = true;
+    }
     // Looking without a mouse: Q / R turn, Page Up / Page Down tilt. Turning
     // and looking down used to need a mouse or a finger, which put the
     // heights "look straight down" star out of reach from a keyboard.
@@ -416,7 +419,6 @@ class FPControls {
     // "lookOnly" mode WASD/arrows still allow a small lean (±0.6 m around
     // the starting position) so users on a keyboard can shift weight without
     // the scene allowing full traversal.
-    let movingNow = false;
     // Input direction in world space (unit length) — assembled from key flags.
     let ix = 0, iz = 0;
     let moveMag = 1;     // analog push magnitude (1 for keyboard / full stick)
@@ -459,9 +461,12 @@ class FPControls {
     // Strafe is also a touch slower than forward — humans don't side-step
     // at full walk speed.
     const isLean = this.opts.mode === "lookOnly";
-    let maxSpeed = (isLean
-      ? 0.85
-      : Math.min(this.opts.speed, this._walkCap == null ? Infinity : this._walkCap)) * moveMag;
+    const runSpeed = this.opts.mode === "walkable" && this.opts.speed > 0 ? (this.opts.runSpeed || 0) : 0;
+    const walkSpeed = isLean ? 0.85 : Math.min(this.opts.speed, this._walkCap ?? Infinity);
+    const forwardInput = -(ix * Math.sin(this.yaw) + iz * Math.cos(this.yaw));
+    const runRequested = runSpeed > walkSpeed && this.keys.KeyX
+      && moveMag === 1 && forwardInput > 0.65;
+    let maxSpeed = (runRequested ? runSpeed : walkSpeed) * moveMag;
     // ---- Fear-modulated gait (opt-in) ----
     // Fear slows the APPROACH, never the retreat: walking toward the fear at
     // fear ≥ 80 runs at 0.55×; backing away or strafing is always full speed
@@ -469,8 +474,7 @@ class FPControls {
     // catches interrupt the forward walk — the legs are the most honest
     // fear channel the body has.
     if (this._fearGaitOn && movable) {
-      const sY0 = Math.sin(this.yaw), cY0 = Math.cos(this.yaw);
-      const fwdInput = -(ix * sY0 + iz * cY0);   // W → 1, S → −1, strafe → 0
+      const fwdInput = forwardInput;
       const fear = this._getFear();
       const fearRamp = Math.max(0, Math.min(1, (fear - 30) / 50));
       this._fearRampSm += (fearRamp - this._fearRampSm) * Math.min(1, dt * 3);
@@ -535,21 +539,7 @@ class FPControls {
     if (!hasInput && Math.hypot(this._vel.x, this._vel.z) < 0.012) {
       this._vel.x = 0; this._vel.z = 0;
     }
-    // Normalized velocity (0..1 of full pace), smoothed — scales bob/sway
-    // amplitude and footstep gain so a slow creep is quiet and low-bob
-    // instead of a full-volume stomp at 0.1 m/s.
-    {
-      // Normalize against the speed actually reachable, not the one the scene
-      // asked for — otherwise the walk-capped scenes never read as "full pace"
-      // and their footsteps, bob and lean all sit permanently at 80%.
-      const denomV = (isLean
-        ? 0.85
-        : Math.min(this.opts.speed, this._walkCap == null ? Infinity : this._walkCap)) || 1;
-      const rawSN = Math.min(1, Math.hypot(this._vel.x, this._vel.z) / denomV);
-      this._speedNorm += (rawSN - this._speedNorm) * Math.min(1, dt * 6);
-    }
     if (this._vel.x !== 0 || this._vel.z !== 0) {
-      movingNow = hasInput;
       this.position.x += this._vel.x * dt;
       this.position.z += this._vel.z * dt;
       if (isLean) {
@@ -643,10 +633,31 @@ class FPControls {
     // lockstep with the ground and the feet don't slide. ~0.62 m per half-step.
     const _mdx = this.position.x - _prevX, _mdz = this.position.z - _prevZ;
     const _movedDist = Math.hypot(_mdx, _mdz);
-    movingNow = movingNow && _movedDist > 1e-4;
-    if (this._walkAmt == null) this._walkAmt = 0;
-    if (this._walkPhase == null) this._walkPhase = 0;
-    this._walkAmt += ((movingNow ? 1 : 0) - this._walkAmt) * Math.min(1, dt * (movingNow ? 5.5 : 4.0));
+    const intendedSpeed = Math.hypot(this._vel.x, this._vel.z);
+    const travel = intendedSpeed > 0
+      ? Math.max(0, (_mdx * this._vel.x + _mdz * this._vel.z) / intendedSpeed)
+      : 0;
+    // Keep the tangential speed when sliding along a wall. Ignore a
+    // displacement mostly caused by a moving obstacle pushing the player.
+    const actualSpeed = dt > 0 && travel > _movedDist * 0.1
+      ? Math.min(_movedDist / dt, intendedSpeed)
+      : 0;
+    if (intendedSpeed > 0.08 && actualSpeed < 0.025) {
+      // A blocked step has no momentum to carry into the next direction.
+      this._vel.x = 0;
+      this._vel.z = 0;
+    }
+    const movingNow = actualSpeed > 0.025;
+    const speedNorm = Math.min(1, actualSpeed / (walkSpeed || 1));
+    this._speedNorm += (speedNorm - this._speedNorm) * (1 - Math.exp(-dt * 9));
+    const run = runSpeed > walkSpeed && forwardInput > 0.4
+      ? _hsat((actualSpeed - walkSpeed) / (runSpeed - walkSpeed))
+      : 0;
+    this._runBlend = (this._runBlend || 0) + (run - (this._runBlend || 0)) * (1 - Math.exp(-dt * 9));
+    this._walkAmt ??= 0;
+    this._walkPhase ??= 0;
+    const amount = _hsat(actualSpeed / 0.32);
+    this._walkAmt += (amount - this._walkAmt) * (1 - Math.exp(-dt * (movingNow ? 8 : 6)));
     // Travel direction in BODY-LOCAL space: fwd ∈ [-1,1] (+ = the way you
     // face), side ∈ [-1,1] (+ = your right). The gait engine reads this to
     // step backward when you back up and scissor sideways when you strafe —
@@ -667,9 +678,9 @@ class FPControls {
       // cadence. Without this, raising the walk cap re-created the trudge the
       // cap existed to prevent: reach at heel strike grows with stride, and
       // the hips must drop to meet it — long strides ARE the 8 cm heave.
-      const _v = Math.max(0.12, Math.hypot(this._vel.x, this._vel.z));
+      const _v = Math.max(0.12, actualSpeed);
       const _vc = (this._walkCap || 1.3) * 0.8;
-      const paceK = Math.sqrt(Math.min(_v, _vc)) + 0.12 * Math.max(0, _v - _vc);
+      const paceK = Math.sqrt(Math.min(_v, _vc)) + 0.12 * Math.max(0, _v - _vc) + 0.42 * this._runBlend;
       const sb = this._strideBase || 0.56;
       // Nobody strides out sideways or backwards the way they do forwards —
       // both are shorter, quicker steps. Keeping one step length for every
@@ -682,7 +693,7 @@ class FPControls {
       const dirK = (1 - 0.22 * backShare) * (1 - 0.38 * sideDom);
       const stride = (this._fearGaitOn ? sb * (1 - 0.25 * this._fearRampSm) : sb) * paceK * dirK;
       this._strideLen = stride;
-      this._walkPhase += (_movedDist / stride) * Math.PI;   // distance-driven stride
+      this._walkPhase += (actualSpeed * dt / stride) * Math.PI;   // distance-driven stride
       const inv = 1 / _movedDist;
       const wx = _mdx * inv, wz = _mdz * inv;
       const sY = Math.sin(this.yaw), cY = Math.cos(this.yaw);
@@ -1139,6 +1150,7 @@ class FPControls {
     w.side = this._moveSide || 0;
     w.shuffle = this._shuffleAmt || 0;
     w.speedNorm = this._speedNorm == null ? 1 : this._speedNorm;
+    w.run = this._runBlend || 0;
     w.stride = this._strideLen == null ? 0.62 : this._strideLen;
     return w;
   }

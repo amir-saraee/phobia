@@ -1281,7 +1281,8 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
     const hx = controls.position.x - Math.sin(controls.yaw) * 0.4;
     const hz = controls.position.z - Math.cos(controls.yaw) * 0.4;
     const hy = controls.position.y - 0.3;
-    if (active && active.hands && active.hands.setReachTarget && !coinDropAnim) {
+    if (coinDropAnim) return;
+    if (active?.hands) {
       coinDropAnim = { t: 0, pos: new THREE.Vector3(hx, hy, hz) };
       return;
     }
@@ -1446,6 +1447,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
       // The user has to actively peer over the edge to trigger vertigo.
       initialPitch: -0.05,
       bounds: { minX: -halfLen + 1, maxX: halfLen - 1, minZ: -0.2, maxZ: Math.max(2.0, platDepth - 1.0) },
+      runSpeed: 1.95,
       speed: 1.4,
       lookSpeed: 0.0035,
       // Default to third-person so the user immediately SEES their character
@@ -1469,6 +1471,15 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
     // signal even before they look around. Heights amplifies it dynamically
     // when the user steps close to the edge / looks down.
     windExposure: 0.20 + h * 0.50,
+    afterPose(_t, controls) {
+      if (!coinDropAnim || coinDropAnim.t < 0.35) return;
+      const rig = controls.cameraMode === "tp" ? active?.body : active?.hands;
+      const p = coinDropAnim.pos;
+      if (rig) rig.palmPoint(p);
+      spawnCoin(p.x, p.y, p.z);
+      active?.hands?.clearReachTarget();
+      coinDropAnim = null;
+    },
     interact(controls, hands) {
       if (!controls) return null;
       const lookingDown = controls.pitch < -0.3;
@@ -2068,7 +2079,7 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
             }
             _railGrip.set(controls.position.x, gripY, -0.4);
             active.hands.setReachTarget(_railGrip, {
-              hand: "both", grip: "wrap", normal: _UP, spread: 0.24, maxReach: 0.74,
+              hand: "both", grip: "wrap", normal: _UP, palm: true, spread: 0.24, maxReach: 0.74,
             });
             _gripSteady = reach;
           } else {
@@ -2243,13 +2254,8 @@ function setupHeights(scene, camera, level, levelIdx, ctx) {
         coinDropAnim.t += dt || 0.016;
         if (active.hands && active.hands.setReachTarget) {
           active.hands.setReachTarget(coinDropAnim.pos, {
-            hand: "right", grip: "wrap", curl: 0.5, maxReach: 0.7,
+            hand: "right", grip: "wrap", curl: 0.5, normal: _UP, palm: true, contact: false, maxReach: 0.7,
           });
-        }
-        if (coinDropAnim.t >= 0.35) {
-          spawnCoin(coinDropAnim.pos.x, coinDropAnim.pos.y, coinDropAnim.pos.z);
-          if (active.hands && active.hands.clearReachTarget) active.hands.clearReachTarget();
-          coinDropAnim = null;
         }
       }
       // Falling coins — gravity + spin until they hit the ground (groundY)

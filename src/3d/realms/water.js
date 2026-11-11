@@ -363,12 +363,13 @@ function setupWater(scene, camera, level) {
   const pebbles = [];
   let heldPebble = null;
   let pebbleActionAt = -1;   // timestamp of the last pebble pickup/throw (suppresses the generic tap-splash)
-  let heldPebbleMesh = null;     // visible mesh in user's hand (anchored to the FP right hand)
-  // Pickup is a short embodied sequence, not a teleport: the eye dips
-  // (setEyeDrop), the right hand reaches to the stone on the sand
-  // (setReachTarget), THEN the stone comes up in the fingers. Phase 0 = idle,
-  // 1 = dipping/reaching, 2 = stone in hand, rising.
+  let heldPebbleMesh = null;
+  // The pebble stays on the shore while the player bends and reaches.
   let pickupPhase = 0, pickupT = 0;
+  let pebbleThrow = null;
+  const pebbleUp = new THREE.Vector3(0, 1, 0);
+  const pebbleDown = new THREE.Vector3(0, -1, 0);
+  const pebblePalm = new THREE.Vector3();
   const pickupPt = new THREE.Vector3();
   function buildPebble(rxBase, ryBase, rzBase) {
     const geo = new THREE.SphereGeometry(0.06 + Math.random() * 0.05, 10, 8);
@@ -420,17 +421,9 @@ function setupWater(scene, camera, level) {
     });
     heldPebbleMesh = new THREE.Mesh(heldGeo, heldMat);
     heldPebbleMesh.scale.set(1, 0.55, 1.1);
-    // Anchor to the FP right hand so the fingers visually hold it — it rides
-    // every reach/gesture the hand makes (and hides with the hands in TP).
-    // Falls back to the old camera offset if the hands rig isn't up.
-    if (active && active.hands && active.hands.right) {
-      heldPebbleMesh.position.set(0, -0.055, -0.10);
-      active.hands.right.add(heldPebbleMesh);
-    } else {
-      heldPebbleMesh.position.set(0.16, -0.20, -0.32);
-      camera.add(heldPebbleMesh);
-      if (!scene.children.includes(camera)) scene.add(camera);
-    }
+    heldPebbleMesh.position.copy(sourcePebble.position);
+    heldPebbleMesh.userData.noPick = true;
+    scene.add(heldPebbleMesh);
   }
   function hideHeldPebble() {
     if (heldPebbleMesh) {
@@ -466,8 +459,10 @@ function setupWater(scene, camera, level) {
       wRaycaster.setFromCamera(wMouse, camera);
       // First check: did we click an unheld pebble?
       const pebbleHits = wRaycaster.intersectObjects(pebbles, false);
-      if (pebbleHits.length > 0 && !heldPebble) {
+      if (pebbleHits.length > 0 && !heldPebble && !flyingPebble) {
         const target = pebbleHits[0].object;
+        const pos = waterControls?.position;
+        if (!target.visible || !pos || Math.hypot(pos.x - target.position.x, pos.z - target.position.z) > 0.65) return;
         // Reach-down beat (run by update()): the body dips and the FP hand
         // extends to the stone on the sand — the stone only appears in the
         // hand once the fingers get there, instead of teleporting a metre up
@@ -478,11 +473,8 @@ function setupWater(scene, camera, level) {
         // Start the crouch-and-reach sequence (runs in update()) — the stone
         // stays on the sand until the hand actually gets there.
         pickupPhase = 1; pickupT = 0;
-        pickupPt.copy(target.position);
+        pickupPt.copy(pebbleHits[0].point);
         if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
-        if (window.PhobiaVoice && Math.random() < 0.4) {
-          window.PhobiaVoice.speak("A small stone in your hand. Notice the weight.");
-        }
         return;
       }
       // Second check: if holding a pebble + clicked anywhere on the water
@@ -490,45 +482,16 @@ function setupWater(scene, camera, level) {
       // pebble adds a real arcing throw with a heavier splash on landing.
       // (heldPebbleMesh exists only once the pickup reach has closed the
       // fingers around the stone — no throwing mid-crouch.)
-      if (heldPebble && heldPebbleMesh) {
+      if (heldPebbleMesh && !pebbleThrow) {
         pebbleActionAt = performance.now();
-        // Compute target world position from the click ray hitting y=waterY
         const ray = wRaycaster.ray;
-        if (ray.direction.y < -0.05) {
-          const t2 = (waterY - ray.origin.y) / ray.direction.y;
-          const tx = ray.origin.x + ray.direction.x * t2;
-          const tz = ray.origin.z + ray.direction.z * t2;
-          // Spawn a flying pebble at hand position
-          const flyMesh = new THREE.Mesh(
-            new THREE.SphereGeometry(0.07, 12, 10),
-            heldPebbleMesh.material.clone()
-          );
-          flyMesh.scale.set(1, 0.55, 1.1);
-          const startW = new THREE.Vector3();
-          heldPebbleMesh.getWorldPosition(startW);
-          flyMesh.position.copy(startW);
-          scene.add(flyMesh);
-          // Throw velocity — gravity-driven arc to (tx, waterY, tz)
-          const ddx = tx - startW.x, ddz = tz - startW.z;
-          const dist = Math.hypot(ddx, ddz);
-          const T = Math.max(0.5, dist * 0.20);
-          const g = 9.8;
-          const vy = (g * T / 2) + 1.6;
-          flyingPebble = {
-            mesh: flyMesh,
-            vel: new THREE.Vector3(ddx / T, vy, ddz / T),
-            target: { x: tx, z: tz },
-          };
-          // Remove the source pebble + clear held state
-          scene.remove(heldPebble);
-          heldPebble.geometry.dispose();
-          heldPebble.material.dispose();
-          const idx = pebbles.indexOf(heldPebble);
-          if (idx >= 0) pebbles.splice(idx, 1);
-          heldPebble = null;
-          hideHeldPebble();
-          if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
-        }
+        const distance = (waterY - ray.origin.y) / ray.direction.y;
+        if (ray.direction.y >= -0.05 || distance <= 0) return;
+        const target = ray.at(distance, new THREE.Vector3());
+        pebbleThrow = { target, time: 0 };
+        active?.body?.playThrow({ release: 0.5, target });
+        active?.hands?.playToss(0.5);
+        if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
       }
     });
   }
@@ -543,6 +506,7 @@ function setupWater(scene, camera, level) {
       initialYaw: 0,
       initialPitch: -0.10,            // looking forward toward the water
       bounds: { minX: -3, maxX: 3, minZ: deepZ, maxZ: shoreZ + 2.2 },
+      runSpeed: 1.85,
       speed: 0.9,                     // wading is slower than walking
       lookSpeed: 0.004,
       // First-person by default so the water rises up YOUR view as you wade in,
@@ -558,7 +522,24 @@ function setupWater(scene, camera, level) {
     // water is genuinely around the ankles (a static "splash" made the user
     // audibly wade while still on the beach).
     surface: "soft",
-    interact(controls) {
+    groundY: -1,
+    eyeY: 0,
+    interact(controls, hands) {
+      if (pickupPhase === 1) {
+        hands.setReachTarget(pickupPt, { grip: "wrap", normal: pebbleUp,
+          palm: true, curl: 0.45, maxReach: 0.88 });
+        return { gesture: "rest" };
+      }
+      if (heldPebbleMesh && !pebbleThrow) {
+        const yaw = controls.yaw;
+        pebblePalm.set(controls.position.x + Math.cos(yaw) * 0.22 - Math.sin(yaw) * 0.34,
+          controls.position.y - 0.46, controls.position.z - Math.sin(yaw) * 0.22 - Math.cos(yaw) * 0.34);
+        hands.setReachTarget(pebblePalm, { grip: "wrap", normal: pebbleDown,
+          palm: true, curl: 1.12, contact: false, maxReach: 0.78 });
+        return { gesture: "rest" };
+      }
+      hands.clearReachTarget();
+      if (pebbleThrow) return { gesture: "rest" };
       const z = controls ? controls.position.z : shoreZ;
       const k = Math.max(0, Math.min(1, (shoreZ - z) / (shoreZ - deepZ)));
       const depth = k * maxDepth;
@@ -608,6 +589,7 @@ function setupWater(scene, camera, level) {
       const k = Math.max(0, Math.min(1, (shoreZ - z) / (shoreZ - deepZ)));
       const depth = k * maxDepth;
       if (controls) controls.position.y = -depth;
+      if (active?.body) active.body.opts.groundY = -1 - depth;
       const dW = dt || 0.016;
       // Depth the EYE actually sees. The water plane sits at waterY while the
       // feet stand 1 m below the eye (beach at y=-1, spawn eye at 0) — on the
@@ -662,33 +644,10 @@ function setupWater(scene, camera, level) {
         wadeRing.visible = false;
       }
 
-      // ---- Pebble pickup: crouch + reach, then lift ----
-      // Timeline: eye dips + right hand drives to the stone (0.30 s), fingers
-      // close (stone leaves the sand and appears in the hand, 0.22 s), body
-      // rises (0.25 s). setEyeDrop / setReachTarget do the embodied work.
-      if (pickupPhase > 0 && controls) {
-        pickupT += dW;
-        const DIP = 0.30, HOLD = 0.22, RISE = 0.25;
-        if (controls.setEyeDrop) {
-          const dropK = pickupT < DIP ? (pickupT / DIP)
-                      : pickupT < DIP + HOLD ? 1
-                      : Math.max(0, 1 - (pickupT - DIP - HOLD) / RISE);
-          controls.setEyeDrop(dropK * 0.45);
-        }
-        if (active && active.hands && active.hands.setReachTarget && pickupT < DIP + HOLD) {
-          active.hands.setReachTarget(pickupPt, { hand: "right", grip: "wrap", curl: 1.2, maxReach: 0.9 });
-        }
-        if (pickupPhase === 1 && pickupT >= DIP + HOLD * 0.5) {
-          pickupPhase = 2;
-          if (heldPebble) { heldPebble.visible = false; showHeldPebble(heldPebble); }
-        }
-        if (pickupT >= DIP + HOLD && active && active.hands && active.hands.clearReachTarget) {
-          active.hands.clearReachTarget();
-        }
-        if (pickupT >= DIP + HOLD + RISE) {
-          pickupPhase = 0;
-          if (controls.setEyeDrop) controls.setEyeDrop(0);
-        }
+      if (controls) {
+        controls.opts.runSpeed = effDepth < 0.05 ? 1.85 : 0;
+        controls.opts.speed = 0.9 - Math.min(0.36, effDepth * 0.18);
+        controls.setEyeDrop(pickupPhase === 1 ? 0.52 : 0);
       }
 
       // ---- Feed fear state from water depth + walking forward ----
@@ -772,9 +731,9 @@ function setupWater(scene, camera, level) {
       if (active && active.body && active.body.setPosture && controls) {
         const armSpread = Math.min(1.0, effDepth * 0.5);            // 0..1
         const lean = Math.min(0.45, effDepth * 0.18);                // mild forward lean
-        const crouch = effDepth > 0.6 ? Math.min(0.4, (effDepth - 0.6) * 0.35) : 0;
+        const crouch = pickupPhase === 1 ? 0.94 : Math.min(0.4, Math.max(0, effDepth - 0.6) * 0.35);
         const reach = 0;                                            // no railing to grab
-        active.body.setPosture({ armSpread, lean, crouch, reach });
+        active.body.setPosture({ armSpread, lean, crouch, reach, hinge: pickupPhase === 1 ? 1 : 0 });
       }
       // Update HUD — visible-waterline depth, so the label agrees with the eye
       if (wadeDepthHud) {
@@ -882,18 +841,47 @@ function setupWater(scene, camera, level) {
             const dzf = f.position.z - sz;
             if (Math.hypot(dxf, dzf) < 6) f.userData.scared = 1.0;
           }
-          // Pebble sinks below the surface, then remove
-          fp.mesh.position.y = waterY - 0.05;
-          setTimeout(() => {
-            if (!flyingPebble || flyingPebble.mesh !== fp.mesh) return;
-            scene.remove(fp.mesh);
-            fp.mesh.geometry.dispose(); fp.mesh.material.dispose();
-            flyingPebble = null;
-          }, 1000);
-          flyingPebble.landed = true;
+          scene.remove(fp.mesh);
+          fp.mesh.geometry.dispose();
+          fp.mesh.material.dispose();
           flyingPebble = null;
         }
       }
+    },
+    afterPose(_t, controls, dt) {
+      const rig = controls.cameraMode === "tp" ? active?.body : active?.hands;
+      if (!rig) return;
+      if (pickupPhase === 1) {
+        pickupT += dt;
+        if (rig.palmPoint(pebblePalm).distanceTo(pickupPt) < 0.115 && active.hands._reachStrength > 0.65) {
+          pickupPhase = 0;
+          heldPebble.visible = false;
+          showHeldPebble(heldPebble);
+          if (window.PhobiaVoice && Math.random() < 0.4) {
+            window.PhobiaVoice.speak("A small stone in your hand. Notice the weight.");
+          }
+        } else if (pickupT > 1.75) {
+          pickupPhase = 0;
+          heldPebble = null;
+        }
+      }
+      if (!heldPebbleMesh) return;
+      rig.palmPoint(heldPebbleMesh.position, 0.036);
+      if (!pebbleThrow) return;
+      pebbleThrow.time += dt;
+      if (pebbleThrow.time < 0.5) return;
+      const { target } = pebbleThrow;
+      const delta = target.clone().sub(heldPebbleMesh.position);
+      const flight = Math.max(0.45, Math.min(1.3, Math.hypot(delta.x, delta.z) * 0.2));
+      delta.multiplyScalar(1 / flight);
+      delta.y += 4.9 * flight;
+      flyingPebble = { mesh: heldPebbleMesh, vel: delta };
+      heldPebbleMesh = pebbleThrow = null;
+      pebbles.splice(pebbles.indexOf(heldPebble), 1);
+      scene.remove(heldPebble);
+      heldPebble.geometry.dispose();
+      heldPebble.material.dispose();
+      heldPebble = null;
     },
     dispose() {
       const stage = document.getElementById("stage");
@@ -907,13 +895,7 @@ function setupWater(scene, camera, level) {
         wadeRing.material.dispose();
         wadeRing = null;
       }
-      // Clean up held pebble + flying pebble + scattered pebbles on unmount
-      if (heldPebbleMesh) {
-        if (heldPebbleMesh.parent) heldPebbleMesh.parent.remove(heldPebbleMesh);
-        heldPebbleMesh.geometry.dispose();
-        heldPebbleMesh.material.dispose();
-        heldPebbleMesh = null;
-      }
+      hideHeldPebble();
     },
   };
   return resultObj;

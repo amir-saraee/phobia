@@ -62,6 +62,8 @@ class Hands {
     this._reach = null;
     this._reachStrength = 0;
     this._reachWorld   = new THREE.Vector3();
+    this._rcTarget     = new THREE.Vector3();
+    this._rcSpread     = new THREE.Vector3();
     this._rcLocal      = new THREE.Vector3();
     this._rcShoulder   = new THREE.Vector3();
     this._rcArm        = new THREE.Vector3();
@@ -303,13 +305,12 @@ class Hands {
     return this.camera.worldToLocal(out);
   }
 
-  // Underhand toss with the right hand, `dur` seconds to the release. The
-  // scene parents the item to this.right (palm-up, see tossHoldOffset) and
-  // lets go when its own windup ends; the swing carries on into a short
-  // follow-through and hands back to the normal pose.
+  // Underhand toss with the right hand. The scene samples the palm after
+  // the pose update and releases the item at the end of the windup.
   playToss(dur = 0.5) { this._toss = { t: 0, dur: Math.max(0.2, dur) }; }
-  // Where an item of radius r sits in the palm-up right hand (root-local).
-  tossHoldOffset(r) { return new THREE.Vector3(0, -(0.016 + r), -0.05); }
+  palmPoint(out, radius = 0) {
+    return this.right.localToWorld(out.set(0, -0.011 - radius, -0.029));
+  }
 
   setGesture(type) {
     if (this.gestureType !== type) {
@@ -331,6 +332,9 @@ class Hands {
   //   curl:    optional explicit finger curl override (0..1.4)
   //   fingers: optional world direction for the fingers (default: the reach)
   //   contact: false for a hand held out in the air (never reports contactK)
+  //   palm: aim the palm center at the world point
+  //   offset: distance beyond the palm for the center of a held object
+  //   spreadAxis: optional world direction between the two grip points
   setReachTarget(world, opts = {}) {
     if (!world) { this._reach = null; return; }
     this._reachWorld.copy(world);
@@ -340,12 +344,15 @@ class Hands {
       normal: opts.normal || null,
       maxReach: opts.maxReach || 0.62,
       curl: opts.curl,
+      spreadAxis: opts.spreadAxis || null,
       spread: opts.spread || 0,   // for "both" on a bar: lateral half-gap per hand
       // World direction the fingers point (default: along the reach). A hand
       // held OUT rather than laid ON something wants its own attitude.
       fingers: opts.fingers || null,
       // false = a hand held out in the air: it never reports contact.
       contact: opts.contact !== false,
+      palm: !!opts.palm,
+      offset: opts.offset || 0,
     };
   }
   clearReachTarget() { this._reach = null; }
@@ -623,9 +630,13 @@ class Hands {
         this.camera.updateWorldMatrix(true, false);
         const local = this._rcLocal.copy(this._reachWorld);
         this.camera.worldToLocal(local);
-        // Two-handed bar grip: spread the hands shoulder-width along the bar
-        // (camera-local x ≈ the bar's tangent when you face it).
-        if (reach.spread) local.x += side * reach.spread;
+        if (reach.spreadAxis) {
+          this._rcSpread.copy(reach.spreadAxis).transformDirection(this.camera.matrixWorldInverse);
+          local.addScaledVector(this._rcSpread, side * reach.spread);
+        } else {
+          local.x += side * reach.spread;
+        }
+        const contactPoint = this._rcTarget.copy(local);
         // Clamp to arm reach from a per-side shoulder anchor: a too-far target
         // reads as "reaching at full stretch" rather than teleporting out.
         const sh = this._rcShoulder.set(side * 0.17, -0.22, -0.02);
@@ -639,7 +650,7 @@ class Hands {
         // Published so the scene loop can tell that first person has ACTUALLY
         // made contact — third person measures this off the body's wrist, and
         // without this the whole event-beat channel was blind in first person.
-        if (reach.contact) this.contactK = Math.max(this.contactK || 0, contactK * rk);
+        if (reach.contact && !reach.palm) this.contactK = Math.max(this.contactK || 0, contactK * rk);
         // Fingers (-Z) point at the target; palm (+Y local) faces the surface
         // normal so the hand lies flat on / wraps the surface.
         const reachDir = this._rcDir.copy(local).sub(sh);
@@ -655,19 +666,33 @@ class Hands {
           if (zAxis.lengthSq() < 1e-6) zAxis.copy(reachDir).negate();
           zAxis.normalize();
         }
+        if (reach.palm) {
+          zAxis.addScaledVector(nrm, -zAxis.dot(nrm));
+          if (zAxis.lengthSq() < 1e-6) {
+            if (Math.abs(nrm.x) < 0.9) zAxis.set(1, 0, 0).addScaledVector(nrm, -nrm.x);
+            else zAxis.set(0, 1, 0).addScaledVector(nrm, -nrm.y);
+          }
+          zAxis.normalize();
+        }
         const yAxis = this._rcY.copy(nrm);
         yAxis.addScaledVector(zAxis, -yAxis.dot(zAxis));          // orthonormalise vs z
         if (yAxis.lengthSq() < 1e-6) { yAxis.set(0, 1, 0).addScaledVector(zAxis, -zAxis.y); }
         yAxis.normalize();
         const xAxis = this._rcX.crossVectors(yAxis, zAxis).normalize();
         const q = this._rcQ.setFromRotationMatrix(this._rcMat.makeBasis(xAxis, yAxis, zAxis));
+        if (reach.palm) {
+          arm.set(0, -0.011 - reach.offset, -0.029).applyQuaternion(q);
+          local.copy(contactPoint).sub(arm);
+          arm.copy(local).sub(sh);
+          if (arm.lengthSq() > maxR * maxR) local.copy(sh).add(arm.setLength(maxR));
+        }
         // ---- contact compliance ----
         // Skin, fur and padded rails all GIVE. A hand that halts on the exact
         // mathematical surface point reads as a decal laid over the object, so
         // the palm sinks a centimetre or so in, the pressure breathes with the
         // stroke, and the arm's momentum spends itself in one small damped
         // bounce the moment it lands instead of stopping like a servo.
-        {
+        if (reach.contact) {
           const ud = hand.userData;
           const nowOn = contactK > 0.7 ? 1 : 0;
           if (nowOn && !(ud._onSurface || 0)) ud._settle = 1;
@@ -683,9 +708,15 @@ class Hands {
         // contact) — the straight full-speed beeline read as a robotic poke.
         const distNow = hand.position.distanceTo(local);
         local.y += Math.min(0.055, distNow * 0.35);
-        const k = Math.min(1, d * (4.5 + 6 * Math.min(1, distNow * 2.5))) * rk;
+        const reachRate = (reach.palm ? 8 : 4.5) + 6 * Math.min(1, distNow * 2.5);
+        const k = Math.min(1, d * reachRate) * rk;
         hand.position.lerp(local, k);
         hand.quaternion.slerp(q, k);
+        if (reach.palm && reach.contact) {
+          this._rcArm.set(0, -0.011 - reach.offset, -0.029).applyQuaternion(hand.quaternion).add(hand.position);
+          const gap = this._rcArm.distanceTo(contactPoint);
+          this.contactK = Math.max(this.contactK, Math.max(0, 1 - gap / 0.10) * rk);
+        }
         // Finger conform: relaxed flat for petting, full wrap for a grip,
         // closing as contact is made.
         const baseCurl = reach.curl != null ? reach.curl : (reach.grip === "wrap" ? 1.25 : 0.20);

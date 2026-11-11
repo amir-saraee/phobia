@@ -731,6 +731,9 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         : (walkable
             ? T("intro.any.dw", "Drag with the mouse to look (or <b>Q R</b> · <b>PgUp PgDn</b>) · <b>W A S D</b> or arrow keys to walk · click to interact")
             : T("intro.any.d", "Drag with the mouse to look · <b>W A S D</b> / arrows to lean · click to interact")));
+      if (walkable && !IS_COARSE_POINTER && controls.opts.runSpeed > 0) {
+        hint.innerHTML += " " + T("intro.run", "Hold <b>X</b> while moving forward to jog.");
+      }
       // Approach-style hints get a longer reveal — 16 s — because the user
       // is doing something deliberate (walking) and might not have started
       // yet. Other scenes auto-hide after 11 s as before.
@@ -1057,7 +1060,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // onPointerUpInteract has already rejected real drags by the time we're
     // here. (Scene click systems use their own listeners and are unaffected.)
     try {
-      if (window.PhobiaGrab && PhobiaGrab.click(e, camera, scene, renderer, hands, controls)) return;
+      if (window.PhobiaGrab && PhobiaGrab.click(e, camera, scene, renderer, hands, controls, body)) return;
     } catch {}
     // Only treat short clicks as interactions, not drags
     if (controls && controls.dragging) return;
@@ -1369,6 +1372,8 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         }
       }
     } catch (e) { console.warn("scene interact:", e); }
+    try { PhobiaGrab.pose(camera, hands, controls); }
+    catch (e) { console.warn("prop reach:", e); }
     try { if (hands) hands.update(t, dt, controls); }
     catch (e) { console.warn("hands.update:", e); }
     try {
@@ -1377,6 +1382,8 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
         body.update(t, w.phase, w.amount, controls, hands);
       }
     } catch (e) { console.warn("body.update:", e); }
+    try { result?.afterPose?.(t, controls, dt); }
+    catch (e) { console.warn("scene after pose:", e); }
     // ---- Event beats ----
     // The narrator's normal tick is a poll on an 8-second gap, so the moments
     // that actually land — it came at you, you touched it, it startled you and
@@ -1389,7 +1396,7 @@ function mount(phobiaKey, container, level, levelIdx, opts = {}) {
     // BEFORE the world steps), then advance the simulation.
     try {
       if (window.PhobiaPhysics && PhobiaPhysics.active()) {
-        PhobiaGrab.update(camera, hands);
+        PhobiaGrab.update(camera, hands, controls, body, dt);
         PhobiaPhysics.step(dt);
       }
     } catch (e) { console.warn("physics:", e); }

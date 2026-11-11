@@ -93,7 +93,7 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
   // Interior lights (switchable), exterior lights (always on).
   const inLights = [], inGlow = [];
   let lightOn = true;
-  let doorPivot = null, doorLeaves = [], handleWorld = new THREE.Vector3();
+  let doorPivot = null, doorLeaves = [];
   let doorAmt = MRI ? 0 : 1, doorTarget = MRI ? 0 : 1;   // 1 = open. You come in through an open door.
   const doorBox = { minX: 1e6, maxX: 1e6 + 0.1, minZ: 1e6, maxZ: 1e6 + 0.1 };
   const clickables = [];     // { obj, act, reach }
@@ -828,6 +828,7 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
       mode: "walkable",
       initialPos: [L.spawn.x, 0, L.spawn.z], initialYaw: 0, initialPitch: -0.05,
       bounds: { minX: Math.min(I.x0, L.out.x0) + 0.3, maxX: Math.max(I.x1, L.out.x1) - 0.3, minZ: Math.min(I.z0, L.out.z0 != null ? L.out.z0 : 0) + 0.3, maxZ: L.out.z1 - 0.3 },
+      runSpeed: 1.75,
       speed: 1.1, lookSpeed: 0.0035,
       cameraModeLocked: "fp",
     },
@@ -849,14 +850,17 @@ function setupEnclosed(scene, camera, level, levelIdx, ctx) {
       // Hands: onto the handle as you work the door; flat on a wall when you touch it.
       if (hands && hands.setReachTarget) {
         if (reachT > 0 && doorPivot) {
-          doorPivot.localToWorld(_wp.set(L.door.w - 0.08, 1.0, pz < 0 ? -0.05 : 0.05));
-          hands.setReachTarget(_wp, { hand: "right", grip: "wrap", maxReach: 0.8 });
+          _wp.set(px, controls.position.y, pz);
+          const side = doorPivot.worldToLocal(_wp).z < 0 ? -1 : 1;
+          doorPivot.localToWorld(_wp.set(L.door.w - 0.08, 1.0, side * 0.075));
+          _n.set(0, 0, side).transformDirection(doorPivot.matrixWorld);
+          hands.setReachTarget(_wp, { grip: "wrap", normal: _n, palm: true, maxReach: 0.8 });
         } else if (touchT > 0 && inside && touchWall) {
           // The wall chosen at the touch, tracked as you shift: the side
           // walls follow your z, the back wall your x.
           const w = touchWall;
           const wx = w[0] === "back" ? px : w[1], wz = w[0] === "back" ? w[2] : pz;
-          if (Math.hypot(px - wx, pz - wz) < 0.95) { _wp.set(wx, 0.35, wz); _n.set(w[3], 0, w[4]); hands.setReachTarget(_wp, { hand: "right", grip: "flat", normal: _n, maxReach: 0.85 }); }
+          if (Math.hypot(px - wx, pz - wz) < 0.95) { _wp.set(wx, 0.35, wz); _n.set(w[3], 0, w[4]); hands.setReachTarget(_wp, { hand: "right", grip: "flat", normal: _n, palm: true, maxReach: 0.85 }); }
           else hands.clearReachTarget();
         } else hands.clearReachTarget();
       }

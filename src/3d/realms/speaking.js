@@ -1,6 +1,7 @@
 // Public speaking — a legacy realm, behind LAUNCH_OPEN (?all=1 to play).
 
 import * as THREE from "three";
+import { active } from "../live.js";
 import { IS_COARSE_POINTER } from "../renderer.js";
 import { sceneContext } from "../scene-context.js";
 import { _hexMix } from "../creature-kit.js";
@@ -123,18 +124,24 @@ function setupSpeaking(scene, camera, level, levelIdx, ctx) {
   // Resting position on the podium top
   glass.position.set(0.36, 0.04, -0.55);
   scene.add(glass);
-  const glassBaseY = glass.position.y;
+  const glassRest = glass.position.clone();
+  const glassGrip = new THREE.Vector3();
+  const glassHeld = new THREE.Vector3();
+  const lecternGrip = new THREE.Vector3(0, 0.035, -0.33);
+  const up = new THREE.Vector3(0, 1, 0);
+  const towardPlayer = new THREE.Vector3(0, 0, 1);
+  let sipReachT = 0;
   let sipPhase = 0;       // 0 = on podium, 1 = at lips, fades back down
   let sipsTaken = 0;
   let waterLevel = 1.0;   // 0..1 — visual water remaining
   let confidence = 0.0;   // 0..1 — grows with sustained speaking + sips (declared here so takeSip() has no TDZ)
   function takeSip() {
-    if (sipPhase > 0.05) return;       // already sipping
-    sipPhase = 1.0;
+    if (sipPhase > 0 || sipReachT > 0) return;       // already sipping
+    sipReachT = 0.85;
+  }
+  function beginSip() {
+    sipPhase = 1;
     sipsTaken++;
-    // The right hand actually picks the glass up (see interact()) — pulse
-    // the action so the reach reads as a deliberate grab, not a drift.
-    if (skHands && skHands.fireAction) skHands.fireAction();
     waterLevel = Math.max(0.10, waterLevel - 0.18);
     if (window.PhobiaAudio && window.PhobiaAudio.indicatorClick) {
       try { window.PhobiaAudio.indicatorClick(); } catch {}
@@ -402,7 +409,6 @@ function setupSpeaking(scene, camera, level, levelIdx, ctx) {
   let applauseT = 0;               // >0 — the room is applauding; everyone looks up
   let nextCrowdFx = 5 + Math.random() * 8;   // next positioned cough/shuffle
   let murmurVoice = null;          // the user's own muffled speech (lazy — needs an unlocked ctx)
-  let skHands = null;              // Hands rig captured from interact() for the sip carry
   const _lectPt = new THREE.Vector3();
   function wireSpeakingCmds() {
     const bar = document.querySelector('.scene-cmd-bar[data-scene="speaking"]');
@@ -534,15 +540,47 @@ function setupSpeaking(scene, camera, level, levelIdx, ctx) {
     },
     hands: { sleeveColor: 0x2a2a30 },
     bloom: { strength: 0.6, threshold: 0.85 },
-    interact(controls) {
-      // Looking down at the podium → grip it
-      if (controls.pitch < -0.15) return { gesture: "grab", hint: "click the glass to sip · grip the lectern" };
+    interact(controls, hands) {
+      if (sipReachT > 0 || sipPhase > 0) {
+        const arc = sipPhase > 0 ? Math.sin((1 - sipPhase) * Math.PI) : 0;
+        glassGrip.set(glassRest.x - arc * 0.22, glassRest.y + 0.055 + arc * 0.28,
+          glassRest.z + arc * 0.19);
+        hands.setReachTarget(glassGrip, { grip: "wrap", normal: towardPlayer,
+          palm: true, offset: 0.047, contact: false, maxReach: 0.85 });
+        return { gesture: "rest" };
+      }
+      if (controls.pitch < -0.15) {
+        hands.setReachTarget(lecternGrip, { hand: "both", grip: "wrap", normal: up,
+          palm: true, spread: 0.24, maxReach: 0.74 });
+        return { gesture: "rest", hint: "click the glass to sip · grip the lectern" };
+      }
+      hands.clearReachTarget();
       return {
         gesture: "rest",
         hint: speakingPressed
           ? "speaking · keep going at your own pace"
           : "hold Space to speak · click the glass to sip · click notes for your bullets",
       };
+    },
+    afterPose(_t, _controls, dt) {
+      if (sipReachT > 0) {
+        sipReachT = Math.max(0, sipReachT - dt);
+        if (sipReachT <= 0.45 && active?.hands?.palmPoint(glassHeld, 0.047).distanceTo(glassGrip) < 0.12) {
+          sipReachT = 0;
+          beginSip();
+        }
+        return;
+      }
+      if (sipPhase <= 0) return;
+      sipPhase = Math.max(0, sipPhase - dt * 0.65);
+      const arc = Math.sin((1 - sipPhase) * Math.PI);
+      glass.position.copy(glassRest);
+      if (sipPhase > 0 && active?.hands) {
+        active.hands.palmPoint(glass.position, 0.047);
+        glass.position.y -= 0.055;
+        glass.position.lerp(glassRest, Math.max(0, 1 - sipPhase / 0.14));
+      }
+      glass.rotation.x = arc * 0.6;
     },
     onClick() {},
     update(t, controls, dt) {
@@ -631,32 +669,6 @@ function setupSpeaking(scene, camera, level, levelIdx, ctx) {
         window.PhobiaFear.setInput("gaze", speakingPressed ? (0.85 - confidence * 0.45) : 0.12);
       }
 
-      // ---- Sip animation ----
-      // sipPhase 1.0 → 0 over ~1.6s. The glass lifts toward the camera, tips
-      // slightly, then returns. Camera also tilts up subtly so it reads as
-      // "I'm raising the glass to my lips" rather than "the glass is moving."
-      if (sipPhase > 0) {
-        sipPhase = Math.max(0, sipPhase - d * 0.65);
-        // Tracking arc: glass rises from podium toward where the lips would be
-        // (close to camera, slightly forward of mouth)
-        const k = 1 - sipPhase;       // 0..1 over the sip
-        // Bell curve so it goes up, holds at lips, comes back down
-        const arc = Math.sin(k * Math.PI);
-        glass.position.y = glassBaseY + arc * 0.35;
-        // Move slightly toward the camera as it lifts
-        glass.position.z = -0.55 + arc * 0.20;
-        // Tip the glass when at the lips
-        glass.rotation.x = arc * 0.6;
-        if (controls && k > 0.3 && k < 0.7) {
-          // Camera tips up a touch during the sip
-          controls.pitch = Math.min(0.3, controls.pitch + d * 0.15);
-        }
-      } else if (Math.abs(glass.position.y - glassBaseY) > 0.001) {
-        // Snap back any residual offset
-        glass.position.y = glassBaseY;
-        glass.position.z = -0.55;
-        glass.rotation.x = 0;
-      }
       // Water level tween
       water.scale.y = 0.1 + waterLevel * 0.9;
       water.position.y = 0.005 + (water.scale.y * 0.08) / 2;

@@ -749,13 +749,16 @@ function setupNeedles(scene, camera, level, levelIdx, ctx) {
       const d = dt || 0.016;
       // Smooth the fist toward its target — quick clench, slow release
       const k = fistTarget > fistAmt ? 8.0 : 4.0;
-      fistAmt += (fistTarget - fistAmt) * Math.min(1, d * k);
+      fistAmt += (fistTarget - fistAmt) * (1 - Math.exp(-d * k));
       // Drive each finger joint. Real fingers curl ~90° at the proximal
       // and ~60° at the distal — so a "tight fist" rotates them by those
       // angles (Math.PI/2 and Math.PI/3).
-      for (const f of fingerJoints) {
-        f.proximal.rotation.x = fistAmt * (Math.PI / 2);
-        f.distal.rotation.x   = fistAmt * (Math.PI / 3);
+      for (let i = 0; i < fingerJoints.length; i++) {
+        const f = fingerJoints[i];
+        const delay = (fingerJoints.length - 1 - i) * 0.035;
+        const curl = Math.max(0, (fistAmt - delay) / (1 - delay));
+        f.proximal.rotation.x = curl * (Math.PI / 2);
+        f.distal.rotation.x = curl * (Math.PI / 3);
       }
       if (thumbJoint) {
         thumbJoint.rotation.z = -0.6 + fistAmt * 0.7;     // thumb folds in

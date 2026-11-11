@@ -521,6 +521,13 @@ function buildDog(opts = {}) {
     // extent of the bounds.
     parts.mouth.position.set(0, parts.height * 0.66, box.max.z * S + 0.04);
 
+    const head = model.getObjectByName("Head");
+    if (head) {
+      parts.muzzle = new THREE.Object3D();
+      parts.muzzle.position.copy(head.worldToLocal(parts.mouth.position.clone()));
+      head.add(parts.muzzle);
+    }
+
     // Collar + tag: sized from the raw bind height, rides the neck bone.
     try { attachDogCollar(model, parts, rawH); } catch {}
 

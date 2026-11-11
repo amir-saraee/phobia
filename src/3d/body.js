@@ -29,6 +29,8 @@ const _bM1 = new THREE.Matrix4(), _bQ1 = new THREE.Quaternion(), _bQ2 = new THRE
 const _rsHead = new THREE.Vector3(), _rsP = new THREE.Vector3();   // _rigStrength scratch
 const _bV7 = new THREE.Vector3(), _bV8 = new THREE.Vector3(), _bUP = new THREE.Vector3(0, 1, 0);   // arm-IK basis (was two allocations a call)
 
+const _palmX = new THREE.Vector3(), _palmY = new THREE.Vector3(), _palmZ = new THREE.Vector3();
+const _palmQ = new THREE.Quaternion(), _wristQ = new THREE.Quaternion();
 const _thE = new THREE.Euler(), _thQ = new THREE.Quaternion();
 class Body {
   constructor(scene, camera, opts = {}) {
@@ -513,6 +515,11 @@ class Body {
             while (aR < -Math.PI) aR += Math.PI * 2;
             offTarget = Math.max(-2.4, Math.min(2.4, aR));
           }
+        } else if (this._throwAct?.target && wsT.amount < 0.3) {
+          const target = this._throwAct.target;
+          const heading = Math.atan2(target.x - this.group.position.x, target.z - this.group.position.z);
+          const turn = controls.yaw + Math.PI - heading;
+          offTarget = THREE.MathUtils.clamp(Math.atan2(Math.sin(turn), Math.cos(turn)), -0.9, 0.9);
         } else if (wsT.amount > 0.2 && Math.hypot(wsT.fwd, wsT.side) > 0.2) {
           let aT = Math.atan2(wsT.side, wsT.fwd);
           // Past 90° the traveler is going BACKWARDS. Facing is flipped so
@@ -724,9 +731,10 @@ class Body {
     // A real human stride: the leg swings forward with the KNEE flexing to
     // clear the ground (peak flex at mid-swing), lands almost straight, then
     // stays near-straight through stance while the body vaults over it.
-    let gaitFwd = 1, gaitSide = 0, strideK = 1, speedNorm = 1;
+    let gaitFwd = 1, gaitSide = 0, strideK = 1, speedNorm = 1, run = 0;
     if (controls && controls.getWalkState) {
       const ws = controls.getWalkState();
+      run = ws.run || 0;
       gaitFwd = ws.fwd;
       gaitSide = ws.side;
       speedNorm = ws.speedNorm == null ? 1 : ws.speedNorm;
@@ -812,7 +820,12 @@ class Body {
     const legLen = (this.opts.hipY - this.opts.ankleY);
     const strideLen = this._strideLen || legLen * 0.795 * strideK;
     const G = _GAIT;
-    const STANCE = G.stance;
+    run *= _sstep(0.4, 0.9, gaitFwd);
+    const STANCE = G.stance + (0.43 - G.stance) * run;
+    const heelOff = G.heelOff * STANCE / G.stance;
+    const solePhase = (s) => s < STANCE
+      ? s * G.stance / STANCE
+      : G.stance + (s - STANCE) * (1 - G.stance) / (1 - STANCE);
     const ft = this._foot;
     // Half the fore-aft sweep of a planted foot. NOT half a stride: the body
     // covers two strides per gait cycle, so during one foot's 62% stance it
@@ -944,7 +957,7 @@ class Body {
           ? (leadLeg ? 0.55 + 0.25 * latDom : 0.55 + 0.55 * latDom)
           : 0.55;
       }
-      const pitch = _solePitch(s) * rollK * pitchSign;
+      const pitch = _solePitch(solePhase(s)) * rollK * pitchSign;
       const planted = s < STANCE;
       // No two steps are the same length. Real walking carries ~3% step-to-step
       // variability and a standing 1–2% left/right asymmetry (everyone has a
@@ -972,7 +985,7 @@ class Body {
       const halfL = half * leg._stepVar * (leg.side > 0 ? 1.014 : 0.986);
       // Which point of the sole carries the weight right now. Swapping at
       // heel-off is what makes the body vault over the forefoot.
-      const pz = planted ? (s < G.heelOff ? leadZ : pushZ) : pushZ;
+      const pz = planted ? (s < heelOff ? leadZ : pushZ) : pushZ;
       // Ankle offsets from the contact anchor. `A + pz(1−cos) + drop·sin` is
       // the ankle of a rigid sole rotated by `pitch` about a pivot `pz` along
       // it — at pitch 0 that collapses to the anchor itself, so a flat-footed
@@ -1017,7 +1030,7 @@ class Body {
         // Toe-off pose → next contact pose. The ankle does not travel straight
         // between them: it stays high and BEHIND for the first third (the knee
         // whip that gives swing its 60° of flexion), then skims forward low.
-        const pTO = _solePitch(STANCE - 1e-4) * rollK * pitchSign;
+        const pTO = _solePitch(G.stance - 1e-4) * rollK * pitchSign;
         const pIC = G.pitchIC * rollK * pitchSign;
         const zTO = -halfL * gaitFwd + pushZ * (1 - Math.cos(pTO)) + ft.soleDrop * Math.sin(pTO);
         const yTO = ft.soleDrop * Math.cos(pTO) + pushZ * Math.sin(pTO);
@@ -1027,7 +1040,7 @@ class Body {
         // Mid-swing skim height. Scaled by walkAmt so the settle-step pose (which
         // parks one leg at s ≈ 0.75, mid-swing) puts the foot back on the floor
         // instead of leaving the character standing on one leg.
-        const lift = 0.055 * (legLen / 0.78) * walkAmt * leg._liftVar;
+        const lift = (0.055 + run * 0.14) * (legLen / 0.78) * walkAmt * leg._liftVar;
         const low = ft.soleDrop + lift;
         const kz = this._swZ, ky = this._swY;
         kz[0][1] = zTO; kz[1][1] = zTO * 0.38; kz[2][1] = zMid; kz[3][1] = zIC;
@@ -1092,7 +1105,7 @@ class Body {
       if (planted) { T.icZ = null; T.icY = 0; T.icS = 0; }
       T.s = s; T.planted = planted; T.pitch = pitch;
       T.alongF = alongF; T.alongS = alongS; T.swingT = swingT; T.leadLeg = leadLeg;
-      T.pivotToe = planted && s >= G.heelOff;
+      T.pivotToe = planted && s >= heelOff;
     }
 
     // ---- pass 2: how high the pelvis rides ----
@@ -1124,12 +1137,14 @@ class Body {
     const kneeMidS = G.kneeKeys[2][0], kneeMid = G.kneeKeys[2][1];
     for (const T of legT) {
       if (!T.planted) continue;
-      let kneeN = _track(G.kneeKeys, T.s);
-      if (T.s > kneeMidS && kneeN > kneeMid) kneeN = kneeMid + (kneeN - kneeMid) * preSwingK;
+      const kneePhase = solePhase(T.s);
+      let kneeN = _track(G.kneeKeys, kneePhase) + run * 0.16 * Math.sin(Math.PI * T.s / STANCE);
+      if (kneePhase > kneeMidS && kneeN > kneeMid) kneeN = kneeMid + (kneeN - kneeMid) * preSwingK;
       const L = _legReach(kneeN, A, Bl);
       const horiz = T.alongF * T.alongF + T.alongS * T.alongS;
       hipH = Math.min(hipH, T.ankleH + Math.sqrt(Math.max(0, L * L - horiz)));
     }
+    if (!Number.isFinite(hipH)) hipH = hipStand;
     // Terminal swing: the body is already lowering to meet the floor before the
     // heel lands. Without it the pelvis holds high until contact and then drops
     // three centimetres in a single frame — a visible hitch at every footfall.
@@ -1151,7 +1166,6 @@ class Body {
       const cand = T.icY + Math.sqrt(Math.max(0, L * L - horiz));
       if (cand < hipH) hipH += (cand - hipH) * w;
     }
-    if (!isFinite(hipH)) hipH = hipStand;
     // Walking never sinks the hips into a squat. A foot can be left out of reach
     // — reverse direction mid-stance and the trailing one always is — and
     // without this floor the pelvis chases it all the way down. Capped, the
@@ -1265,9 +1279,14 @@ class Body {
       const r = hands._reach;
       contact = {
         k: hands._reachStrength,
-        side: r.hand === "left" ? -1 : (r.hand === "both" ? 0 : 1),
+        side: r.hand === "left" ? 1 : (r.hand === "both" ? 0 : -1),
         world: hands._reachWorld,
         normal: r.normal || null,
+        palm: r.palm,
+        offset: r.offset,
+        spreadAxis: r.spreadAxis,
+        fingers: r.fingers,
+        surface: r.contact,
         grip: r.grip || "flat",
         curl: r.curl != null ? r.curl : (r.grip === "wrap" ? 0.95 : 0.12),
         // Two hands on a bar: each takes its own place along it (the lateral
@@ -1305,7 +1324,8 @@ class Body {
       // resting on it, and 20 cm is a hand still on its way.
       contact.strain = _hsat(over / 0.30) * contact.k;
       const gap = this._contactGap == null ? 9 : this._contactGap;
-      contact.landed = _hsat((0.20 - gap) / 0.09) * contact.k;
+      const landed = contact.palm ? _hsat((0.10 - gap) / 0.07) : _hsat((0.20 - gap) / 0.09);
+      contact.landed = contact.surface ? landed * contact.k : 0;
     }
     if (!contact) this._contactGap = null;
     this._contactStrain = (this._contactStrain || 0)
@@ -1325,7 +1345,7 @@ class Body {
     // folding at the sternum.
     // Walking is a controlled fall forward, and the faster you go the further
     // you lean into it. A fixed lean read as strolling at every pace.
-    const walkLean = walkAmt * (0.030 + 0.055 * speedNorm);
+    const walkLean = walkAmt * (0.030 + 0.055 * speedNorm + 0.15 * run);
     const postureLean = (this.cameraMode === "tp" ? ps.lean : 0) * 0.42;
     const totalLean = walkLean + postureLean;
     // Hip hinge for reach assist — applied to the spine chain below so it
@@ -1564,7 +1584,12 @@ class Body {
           }
         }
       }
-      const clampDy = floorY - lowest;
+      // Short flight between toe-off and the opposite footfall.
+      const airPhase = Math.min(legT[0].s, legT[1].s);
+      const flight = STANCE < 0.5 && airPhase > STANCE
+        ? Math.sin(Math.PI * (airPhase - STANCE) / (0.5 - STANCE)) * 0.042 * run
+        : 0;
+      const clampDy = floorY + flight - lowest;
       this.group.position.y += clampDy;
       // The clamp moves the group ORIGIN below the floor as the legs fold (the
       // feet are what stay put), so the contact shadow has to be pushed back up
@@ -1878,7 +1903,8 @@ class Body {
       // opposite-arm counter-swing (~42–50° shoulder arc at full stride) and
       // a soft elbow lead so the forearm trails the upper arm like a whip.
       const armVar = 1 + _wob(t * 0.6, side > 0 ? 2.9 : 6.2) * 0.13;
-      const swing = Math.sin(armPhase) * (side > 0 ? 0.72 : 0.78) * walkAmt * strideK * armVar;
+      const swing = Math.sin(armPhase) * (side > 0 ? 0.72 : 0.78)
+        * walkAmt * strideK * armVar * (1 - 0.2 * run) + 0.16 * run;
       const shoulderTarget = side > 0 ? rS : lS;
       const elbowTarget    = side > 0 ? rE : lE;
       const gestureWeight = this.cameraMode === "tp" ? gestureStrength : 0;
@@ -1911,7 +1937,7 @@ class Body {
       // FORWARD swing; parked near 15° the whole cycle the arms read as two
       // straight sticks hinged at the shoulder.
       const passiveBend = 0.42 + Math.max(0, Math.sin(armPhase - 0.55)) * 0.48 * walkAmt
-        + fearK * 0.22 + idleSway * 0.5;
+        + run * 0.92 + fearK * 0.22 + idleSway * 0.5;
       const elbX =
           elbowTarget   * gestureWeight
         + reachElbow    * reachWeight
@@ -1961,7 +1987,26 @@ class Body {
         // Stand-off is measured from the WRIST, so it tracks the hand's size —
         // the palm now sits ~3 cm past the wrist rather than ~2.2.
         const give = 0.070 - (contact.landed || 0) * (0.018 + 0.008 * Math.sin(t * 3.1));
-        if (n) tgt.addScaledVector(n, give);
+        const palmAim = contact.palm && n && arm.hand;
+        if (palmAim) {
+          _palmZ.copy(n).normalize();
+          if (contact.fingers) _palmY.copy(contact.fingers).negate();
+          else this.group.getWorldDirection(_palmY).negate();
+          _palmY.addScaledVector(_palmZ, -_palmY.dot(_palmZ));
+          if (_palmY.lengthSq() < 1e-6) {
+            _palmY.set(Math.abs(_palmZ.y) < 0.9 ? 0 : 1, Math.abs(_palmZ.y) < 0.9 ? 1 : 0, 0);
+            _palmY.addScaledVector(_palmZ, -_palmY.dot(_palmZ));
+          }
+          _palmY.normalize();
+          _palmX.crossVectors(_palmY, _palmZ);
+          _palmQ.setFromRotationMatrix(_bM1.makeBasis(_palmX, _palmY, _palmZ));
+          _wristQ.copy(arm.hand.quaternion).invert().premultiply(_palmQ);
+          _bV4.set(0, -0.038, -0.014).multiply(arm.hand.scale);
+          _bV4.z -= contact.offset;
+          _bV4.applyQuaternion(_palmQ);
+          _bV4.add(_bV5.copy(arm.hand.position).applyQuaternion(_wristQ));
+          tgt.sub(_bV4);
+        } else if (n) tgt.addScaledVector(n, give);
         else tgt.y += give;
         // Both hands on one bar used to be sent to the SAME point: two fists
         // stacked on the centre line. Each goes out to its own side instead,
@@ -1973,14 +2018,18 @@ class Body {
           _bV4.setFromMatrixColumn(this.group.matrixWorld, 0).normalize();
           _bV5.setFromMatrixPosition(arm.root.matrixWorld)
             .sub(_bV6.setFromMatrixPosition(this.chest.matrixWorld));
-          arm._cOff.copy(_bV4).multiplyScalar((_bV5.dot(_bV4) < 0 ? -1 : 1) * contact.spread);
+          if (contact.spreadAxis) arm._cOff.copy(contact.spreadAxis).multiplyScalar(-side * contact.spread);
+          else arm._cOff.copy(_bV4).multiplyScalar(Math.sign(_bV5.dot(_bV4)) * contact.spread);
           tgt.add(arm._cOff);
         }
         this.chest.updateMatrixWorld();
         this.chest.worldToLocal(tgt);
         if (this._armIK(arm, tgt, k)) {
           // Roll the palm onto the surface: the hand's palm side is local −Z.
-          if (n) {
+          if (palmAim) {
+            arm.wrist.parent.getWorldQuaternion(_bQ2).invert().multiply(_wristQ);
+            arm.wrist.quaternion.slerp(_bQ2, k);
+          } else if (n) {
             arm.wrist.updateMatrixWorld();
             const nl = _bV4.copy(n);
             arm.wrist.parent.updateMatrixWorld();
@@ -1999,21 +2048,9 @@ class Body {
           wantCurl = contact.curl;
           wantSpread = contact.grip === "flat" ? 0.65 : 0;
         }
-        // Where did the wrist ACTUALLY end up? This is the honest measure of
-        // whether the hand is on the object, and next frame's `contact.landed`
-        // reads it (see the contact block above). Measured OUTSIDE the IK's
-        // success branch on purpose: a solver that reports failure on an
-        // out-of-range target still leaves the arm stretched toward it, and
-        // gating on success froze the gap at whatever it was when the reach
-        // began — permanently "not touching" however close the hand got.
-        // The whole chain has to be current, not just the wrist: the IK just
-        // rewrote the shoulder and elbow rotations, and Object3D.updateMatrix-
-        // World() recomputes a node from its PARENT'S cached world matrix — so
-        // asking the wrist alone returns a position built on stale ancestors,
-        // and the measured gap sat ~0.28 m while the palm was demonstrably
-        // 0.055 m from the coat.
-        this.group.updateMatrixWorld(true);
-        _bV6.setFromMatrixPosition(arm.wrist.matrixWorld);
+        // Measure the pose after IK, including reaches clamped at full extension.
+        if (palmAim) this.palmPoint(_bV6, contact.offset, side);
+        else arm.wrist.getWorldPosition(_bV6);
         const gapNow = _bV6.sub(arm._cOff).distanceTo(contact.world);
         this._contactGap = this._contactGap == null
           ? gapNow : this._contactGap + (gapNow - this._contactGap) * Math.min(1, dtB * 8);
@@ -2159,7 +2196,7 @@ class Body {
               (ps2.reach || 0) * 2.2, ((ps2.crouch || 0) - 0.15) * 2, (ps2.armSpread || 0) * 2.2)));
             // Ease in so the first frame after the library streams in does not
             // snap, and ease the arms back over ~0.2 s when a reach starts.
-            const want = (moving ? Math.min(1, (walkAmt || 0) * 1.6) : 0) * (1 - posedK);
+            const want = (moving ? Math.min(1, (walkAmt || 0) * 1.6) : 0) * (1 - posedK) * (1 - run);
             this._motionBlend = (this._motionBlend == null)
               ? 0
               : this._motionBlend + (want - this._motionBlend) * Math.min(1, dtB * 5);
@@ -2202,6 +2239,10 @@ class Body {
           _thQ.setFromEuler(_thE);
           arm.root.quaternion.slerp(_thQ, w);
           arm.elbow.rotation.x += (-L(2) - arm.elbow.rotation.x) * w;
+          arm.elbow.getWorldQuaternion(_wristQ).invert();
+          _palmZ.set(0, 1, 0).applyQuaternion(_wristQ);
+          const roll = Math.atan2(-_palmZ.x, -_palmZ.z) - arm.hand.rotation.y;
+          arm.wrist.rotation.y += Math.atan2(Math.sin(roll), Math.cos(roll)) * w;
           // The shoulders turn into it: back on the windup, through on the swing.
           if (this.chest) this.chest.rotation.y += A.side * 0.22 * L(4) * w;
           if (this.spine) this.spine.rotation.y += A.side * 0.10 * L(4) * w;
@@ -2345,6 +2386,12 @@ class Body {
   // honest bob of this walk. The FP camera rides it (FPControls.setBobSource).
   headBobY() { return this._headBobY || 0; }
 
+  palmPoint(out, radius = 0, side = -1) {
+    const hand = this.arms.find(arm => arm.side === side).hand;
+    out.set(0, -0.038, -0.014 - radius / hand.scale.z);
+    return hand.localToWorld(out);
+  }
+
   // Step length for these legs AT 1 m/s; the phase engine scales it by √speed.
   // 0.72 × leg length reproduces the measured step length / leg length ratio of
   // ordinary walking, so at this scene's 1.45 m/s the character takes ~0.68 m
@@ -2373,7 +2420,8 @@ class Body {
   // so it wins over the idle, walk clip and reach poses for its ~1.3 s.
   // `release` is when the item should leave the hand, in seconds.
   playThrow(opts = {}) {
-    this._throwAct = { t: 0, side: opts.side || 1, release: opts.release || 0.62, soft: !!opts.soft };
+    this._throwAct = { t: 0, side: opts.side || -1, release: opts.release || 0.62,
+      soft: !!opts.soft, target: opts.target };
     this._gestAct = null;
   }
 

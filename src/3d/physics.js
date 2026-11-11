@@ -124,7 +124,7 @@ const PhobiaPhysics = (() => {
       : R.ColliderDesc.cuboid(opts.half?.x ?? 0.05, opts.half?.y ?? 0.05, opts.half?.z ?? 0.05);
     col.setRestitution(opts.restitution ?? 0.3).setFriction(0.75).setDensity(opts.density ?? 500);
     world.createCollider(col, rb);
-    const rec = { mesh, rb, held: false, lastSpeed: 0, name: opts.name || "prop", material: opts.material };
+    const rec = { mesh, rb, held: false, lastSpeed: 0, name: opts.name || "prop", material: opts.material, gripRadius: opts.r ?? opts.half?.z ?? 0.05 };
     mesh.userData.grabbable = opts.grab !== false;
     mesh.userData._phys = rec;
     // Invisible to the SCENES' own pickers (dogs' floor-throw must not fire
@@ -208,9 +208,16 @@ window.PhobiaPhysics = PhobiaPhysics;
 // unless the click actually lands on a physical prop.
 const PhobiaGrab = (() => {
   let held = null;
+  let pickup = null;
+  let releaseT = null;
+  let liftT = 0;
+  let ownsReach = null;
   const _ray = new THREE.Raycaster();
   const _ndc = new THREE.Vector2();
-  const _hold = new THREE.Vector3();
+  const _target = new THREE.Vector3();
+  const _palm = new THREE.Vector3();
+  const _start = new THREE.Vector3();
+  const _up = new THREE.Vector3(0, 1, 0), _down = new THREE.Vector3(0, -1, 0);
   const _dir = new THREE.Vector3();
 
   // When this module last took a click (grab or throw). Scenes with their
@@ -218,9 +225,21 @@ const PhobiaGrab = (() => {
   // the dog room used to also throw a fetch ball at whatever was behind the
   // prop you had just picked up.
   let lastConsumedAt = -1e9;
-  function click(e, camera, scene, renderer, hands, controls) {
-    if (!PhobiaPhysics.active()) return false;
-    if (held) { throwHeld(camera); lastConsumedAt = performance.now(); return true; }
+  function click(e, camera, scene, renderer, hands, controls, body) {
+    if (!PhobiaPhysics.active() || !hands) return false;
+    if (held) {
+      if (releaseT == null) {
+        releaseT = 0;
+        body?.playThrow({ release: 0.5 });
+        hands.playToss(0.5);
+      }
+      lastConsumedAt = performance.now();
+      return true;
+    }
+    if (pickup) {
+      lastConsumedAt = performance.now();
+      return true;
+    }
     const locked = controls && controls.isPointerLocked && controls.isPointerLocked();
     if (locked || !e) { _ndc.set(0, 0); }
     else {
@@ -231,52 +250,86 @@ const PhobiaGrab = (() => {
     _ray.setFromCamera(_ndc, camera);
     const hits = _ray.intersectObjects(scene.children, true);
     for (const h of hits) {
+      if (!h.object.isMesh) continue;
       let rec = null;
+      let ignored = false;
       for (let p = h.object; p; p = p.parent) {
-        if (p.userData && p.userData._phys && p.userData.grabbable) { rec = p.userData._phys; break; }
-        if (p.userData && p.userData.noPick) break;
+        if (!p.visible) { ignored = true; break; }
+        if (p.userData.grabbable && p.userData._phys) { rec = p.userData._phys; break; }
+        if (p.userData.noPick) { ignored = true; break; }
       }
-      if (!rec) continue;
-      // Reach is measured from the PLAYER, not the camera: in third person
-      // the camera hangs metres behind the body, and camera-relative reach
-      // made every prop untouchable exactly there.
-      const px = controls && controls.position ? controls.position.x : camera.position.x;
-      const pz = controls && controls.position ? controls.position.z : camera.position.z;
-      const pd = Math.hypot(h.point.x - px, h.point.z - pz);
-      if (pd > 1.9) return false;   // visible but out of reach — the scene may still want the click
-      held = rec;
-      _ctl = controls || null;
-      try { window.PhobiaAudio && PhobiaAudio.ui && PhobiaAudio.ui("tick"); } catch {}
-      PhobiaPhysics.setHeld(rec, true);
+      if (ignored) continue;
+      if (!rec) {
+        const material = Array.isArray(h.object.material)
+          ? h.object.material[h.face?.materialIndex || 0] : h.object.material;
+        if (material?.transparent && material.opacity < 0.95) continue;
+        break;
+      }
+      const pos = controls?.position || camera.position;
+      if (Math.hypot(h.point.x - pos.x, h.point.z - pos.z) > 1.05) break;
+      pickup = { rec, point: rec.mesh.worldToLocal(h.point.clone()), time: 0 };
       lastConsumedAt = performance.now();
       return true;
     }
     return false;
   }
 
-  // Per-frame: carry the held prop at the BODY's hold point — chest height,
-  // half a metre ahead of the way the player faces. Camera-relative holding
-  // parked the object beside the orbit camera in third person. The throw
-  // still aims with the camera (throw where you look). MUST run before
-  // PhobiaPhysics.step().
-  let _ctl = null;
-  function update(camera, hands) {
-    if (!held) return;
-    if (_ctl && _ctl.position) {
-      const yaw = _ctl.yaw || 0;
-      _hold.set(
-        _ctl.position.x - Math.sin(yaw) * 0.48,
-        _ctl.position.y - 0.28,
-        _ctl.position.z - Math.cos(yaw) * 0.48
-      );
+  // Set the reach before either view evaluates its pose. Retain ownership of
+  // only this target so a finished grab never clears a new scene interaction.
+  function pose(camera, hands, controls) {
+    if (!hands) return;
+    if (ownsReach && hands._reach === ownsReach) hands.clearReachTarget();
+    ownsReach = null;
+    if (!pickup && (!held || releaseT != null)) return;
+    if (pickup) {
+      pickup.rec.mesh.localToWorld(_target.copy(pickup.point));
+      if (controls?.cameraMode === "fp") {
+        controls.setEyeDrop(Math.min(0.42, Math.max(0, controls.position.y - _target.y - 0.38)));
+      }
+    } else if (controls) {
+      const { position, yaw } = controls;
+      const sin = Math.sin(yaw), cos = Math.cos(yaw);
+      _target.set(position.x - sin * 0.37 + cos * 0.23,
+                  position.y - 0.52,
+                  position.z - cos * 0.37 - sin * 0.23);
     } else {
-      camera.getWorldPosition(_hold);
-      _dir.set(0.16, -0.18, -0.52).applyQuaternion(camera.quaternion);
-      _hold.add(_dir);
+      camera.localToWorld(_target.set(0.23, -0.52, -0.37));
     }
-    PhobiaPhysics.moveHeld(held, _hold, null);
-    if (hands && hands.setReachTarget) {
-      hands.setReachTarget(_hold, { hand: "right", grip: "wrap", curl: 1.0, maxReach: 1.1 });
+    hands.setReachTarget(_target, { grip: "wrap", curl: held ? 1.12 : 0.45,
+      normal: held ? _down : _up, palm: true, contact: false, maxReach: 0.79 });
+    ownsReach = hands._reach;
+  }
+
+  function update(camera, hands, controls, body, dt) {
+    if (!pickup && !held) return;
+    const rig = controls?.cameraMode === "tp" && body ? body : hands;
+    if (!rig) return;
+    if (pickup) {
+      pickup.time += dt;
+      pickup.rec.mesh.localToWorld(_target.copy(pickup.point));
+      if (rig.palmPoint(_palm).distanceTo(_target) < 0.115 && hands._reachStrength > 0.55) {
+        held = pickup.rec;
+        pickup = null;
+        liftT = 0;
+        held.mesh.getWorldPosition(_start);
+        PhobiaPhysics.setHeld(held, true);
+        try { window.PhobiaAudio?.ui?.("tick"); } catch {}
+      } else if (pickup.time > 1.25) {
+        pickup = null;
+      }
+    }
+    if (!held) return;
+    liftT = Math.min(1, liftT + dt / 0.20);
+    rig.palmPoint(_palm, held.gripRadius).lerp(_start, (1 - liftT) ** 2);
+    PhobiaPhysics.moveHeld(held, _palm, null);
+    if (releaseT != null) {
+      releaseT += dt;
+      if (releaseT >= 0.5) {
+        // Use the posed hand's position even if release lands between steps.
+        held.rb.setTranslation(_palm, true);
+        throwHeld(camera);
+        releaseT = null;
+      }
     }
   }
 
@@ -290,10 +343,11 @@ const PhobiaGrab = (() => {
   }
   function reset() {
     if (held) { try { PhobiaPhysics.setHeld(held, false); } catch {} }
-    held = null;
+    held = pickup = ownsReach = releaseT = null;
+    lastConsumedAt = -1e9;
   }
   return {
-    click, update, reset,
+    click, pose, update, reset,
     holding() { return !!held; },
     consumedRecently(ms = 150) { return performance.now() - lastConsumedAt < ms; },
   };

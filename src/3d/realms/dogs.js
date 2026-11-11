@@ -1166,7 +1166,12 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   // Scratch vectors for driving the FP hand onto the real dog (no per-frame GC).
   const _petPt = new THREE.Vector3();
   const _petN  = new THREE.Vector3();
-  const _petProbe = new THREE.Vector3();   // scratch for the reachability scan
+  const _petProbe = new THREE.Vector3();
+  const _petFingers = new THREE.Vector3();
+  const _coatPoint = new THREE.Vector3();
+  const _palmPt = new THREE.Vector3();
+  let petBone = null;
+  let petAimActive = false;
   // Shared threat focus (the avatar's gaze fixates an active threat): ONE
   // reused object written per frame — never re-allocated.
   const threatPos = { x: 0, y: 0, z: 0 };
@@ -1395,6 +1400,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   function completePet() {
     petRequestT = 0;
     petPulse = 1.0;
+    sniffGreetT = 0;
+    dogCtrl.stopMove();
+    dogCtrl._moveLockT = Math.max(dogCtrl._moveLockT || 0, 1.1);
     dogCtrl.tailWag += 8;
     // A successful pet is a greeting beat: brief head-cock + lean impulse so
     // the dog visibly answers the touch, not just absorbs it.
@@ -1464,14 +1472,13 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     t.castShadow = true;
     return t;
   }
-  // Throw an item from the player toward (tx, tz). The throw has two phases:
-  //   1. "windup" — the item is parented to the camera so it appears in the
-  //      user's hand. The hand visibly arcs upward + back over ~0.4 s as the
-  //      user "winds up" for the throw. This is the anticipation that turns
-  //      a teleporting orb into a felt physical action.
-  //   2. "flying" — the item is re-parented to the scene and follows a
-  //      gravity-driven arc until it lands. Existing fetch state machine
-  //      then takes over.
+  // Held items sample the freshly posed palm in either camera mode.
+  function placeInHand(mesh, radius) {
+    const rig = dogsControls?.cameraMode === "tp" ? active?.body : active?.hands;
+    if (rig) rig.palmPoint(mesh.position, radius);
+    else camera.localToWorld(mesh.position.set(0.18, -0.16, -0.50));
+  }
+
   function throwItem(kind, tx, tz) {
     clearItem();
     hideAim();
@@ -1482,94 +1489,32 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     // through the same navigation resolver used by the dog before the throw.
     const target = dogCtrl && dogCtrl._resolve ? dogCtrl._resolve(tx, tz) : { x: tx, z: tz };
     const mesh = kind === "ball" ? buildBall() : buildTreatMesh();
-    // Never a raycast answer: during the windup it sits 0.3 m in front of
-    // the camera, where it swallowed any quick second click and turned it
-    // into a throw-at-your-own-feet.
+    // The ball in the hand must not intercept clicks aimed into the room.
     mesh.userData.noPick = true;
-    // Windup parent depends on the camera mode. FP: ride the camera so the
-    // item sits in "your" hand. TP: the camera is metres BEHIND the avatar —
-    // camera-parenting there made the windup completely invisible (the ball
-    // popped into existence mid-flight). Instead, put it in the avatar's
-    // actual right hand (end of the forearm) so the throw reads on-body.
-    const tpHold = !!(dogsControls && dogsControls.cameraMode === "tp"
-      && active && active.body && active.body.arms);
-    if (tpHold) {
-      const arm = active.body.arms.find(a => a.side > 0);
-      mesh.position.set(0, -0.30, -0.04);   // just past the forearm tip
-      arm.elbow.add(mesh);
-      // A real underhand toss: the arm swings back, then through, and lets go
-      // on the way up. Timed so the release lands on the windup's end.
-      if (active.body.playThrow) active.body.playThrow({ side: 1, release: kind === "ball" ? 0.62 : 0.55, soft: kind !== "ball" });
-    } else if (active && active.hands && active.hands.playToss && active.hands.cameraMode !== "tp") {
-      // First person: the item rests in your right palm and the hand swings
-      // it — it used to float in front of the camera beside two empty hands.
-      const hh = active.hands;
-      mesh.position.copy(hh.tossHoldOffset(kind === "ball" ? FETCH_BALL_R : TREAT_R));
-      hh.right.add(mesh);
-      hh.playToss(0.5);
-    } else {
-      // The local position is in front-right of the camera, at hand height.
-      mesh.position.set(0.18, -0.16, -0.32);
-      camera.add(mesh);
-      if (!scene.children.includes(camera)) scene.add(camera);
-    }
-    const inHand = !tpHold && mesh.parent && active && active.hands && mesh.parent === active.hands.right;
+    const duration = kind === "ball" ? 0.62 : 0.55;
+    active?.body?.playThrow({ release: duration, soft: kind !== "ball", target });
+    active?.hands?.playToss(duration);
+    placeInHand(mesh, kind === "ball" ? FETCH_BALL_R : TREAT_R);
+    scene.add(mesh);
     item = {
-      mesh, kind, tpHold, inHand,
+      mesh, kind,
       state: "windup",
       windupT: 0,
-      // TP: matches Body.playThrow's release. FP: long enough for the hand to
-      // come up and close round the item before it leaves.
-      windupDuration: tpHold ? (kind === "ball" ? 0.62 : 0.55) : 0.5,
+      windupDuration: duration,
       // Capture target so we can compute the throw velocity at release time
       target: { x: target.x, z: target.z },
       vel: new THREE.Vector3(0, 0, 0),
       bounces: 0,
     };
   }
-  // Called from update each frame while item is in windup. Animates the
-  // mesh's local position in an upward-back arc; on completion, re-parents
-  // the mesh to the scene at the current world position and applies the
-  // throw velocity computed from the captured target.
   function tickWindup(d) {
-    if (!item || item.state !== "windup") return;
+    placeInHand(item.mesh, item.kind === "ball" ? FETCH_BALL_R : TREAT_R);
     item.windupT += d;
-    const k = Math.min(1, item.windupT / item.windupDuration);
-    // Anticipation arc: mesh moves UP (y) and slightly BACK (z) then forward
-    // as the throw releases. We use a curve that goes back-up-forward.
-    // 0..0.7: hand winds back/up; 0.7..1: hand snaps forward (throw).
-    if (item.tpHold || item.inHand) {
-      // Held in a hand — the swing is Body.playThrow's (third person) or
-      // Hands.playToss's (first person); the item just rides the palm.
-    } else {
-      // Held out at arm's length, not under your nose: at 0.3 m a 20 cm ball
-      // filled a third of the view and swallowed the hand holding it.
-      let lx = 0.19, ly = -0.13, lz = -0.52;
-      if (k < 0.7) {
-        const u = k / 0.7;       // 0..1 windup
-        ly = -0.13 + u * 0.10;   // rises
-        lz = -0.52 + u * 0.08;   // pulls back slightly (z increases = closer to camera)
-      } else {
-        const u = (k - 0.7) / 0.3;   // 0..1 release
-        ly = -0.03 - u * 0.10;       // snaps down + forward
-        lz = -0.44 - u * 0.14;       // and forward into release
-      }
-      item.mesh.position.set(lx, ly, lz);
-    }
-    if (k >= 1) releaseItem();
+    if (item.windupT >= item.windupDuration) releaseItem();
   }
   function releaseItem() {
     if (!item || item.state !== "windup") return;
-    // World position of the mesh at release moment
-    const worldStart = new THREE.Vector3();
-    item.mesh.getWorldPosition(worldStart);
-    // Re-parent to scene (parent is the camera in FP, the avatar arm in TP)
-    if (item.mesh.parent) item.mesh.parent.remove(item.mesh);
-    item.mesh.position.copy(worldStart);
-    item.mesh.rotation.set(0, 0, 0);
-    item.mesh.scale.setScalar(1);
-    if (item.mesh.userData.baseScale) item.mesh.scale.copy(item.mesh.userData.baseScale);
-    scene.add(item.mesh);
+    const worldStart = item.mesh.position;
     // Compute throw velocity from current world pos to target
     const tx = item.target.x, tz = item.target.z;
     const dx = tx - worldStart.x, dz = tz - worldStart.z;
@@ -1618,21 +1563,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     clearItem();
     const mesh = buildTreatMesh();
     mesh.userData.noPick = true;
-    const tpHold = !!(dogsControls && dogsControls.cameraMode === "tp" && active && active.body && active.body.arms);
-    const hh = active && active.hands;
-    if (tpHold) {
-      const arm = active.body.arms.find(a => a.side > 0);
-      mesh.position.set(0, -0.30, -0.04);
-      arm.elbow.add(mesh);
-    } else if (hh && hh.right && hh.tossHoldOffset && hh.cameraMode !== "tp") {
-      mesh.position.copy(hh.tossHoldOffset(TREAT_R));
-      hh.right.add(mesh);
-    } else {
-      mesh.position.set(0.16, -0.24, -0.46);
-      camera.add(mesh);
-      if (!scene.children.includes(camera)) scene.add(camera);
-    }
-    item = { mesh, kind: "treat", tpHold, inHand: true, state: "offer", offerT: 0, rewalkAt: 1.2, vel: new THREE.Vector3(), bounces: 0 };
+    placeInHand(mesh, TREAT_R);
+    scene.add(mesh);
+    item = { mesh, kind: "treat", state: "offer", offerT: 0, rewalkAt: 1.2, vel: new THREE.Vector3(), bounces: 0 };
     // Up to your hand, not past it: a closer stand-off than a call.
     walkToPlayer(0.15);
     dogCtrl._moveLockT = Math.max(dogCtrl._moveLockT || 0, 8);
@@ -1663,16 +1596,15 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     if (item.mesh.userData.baseScale) item.mesh.scale.copy(item.mesh.userData.baseScale);
     scene.add(item.mesh);
     item.vel.set(0, 0, 0);
-    item.state = "flying"; item.inHand = false;
+    item.state = "flying";
     fetchPhase = "flying";
   }
-  function tickOffer(d, controls) {
+  function tickOffer(d) {
     item.offerT += d;
-    item.mesh.getWorldPosition(_offerPt);
-    const pp = controls ? controls.position : camera.position;
-    const dHand = Math.hypot(dog.position.x - _offerPt.x, dog.position.z - _offerPt.z);
-    const dPl = Math.hypot(dog.position.x - pp.x, dog.position.z - pp.z);
-    if (dHand < (dogCtrl.radius || 0.35) + 0.34 || (dogCtrl.state === "idle" && dPl < playerStandOffCenter(0.3))) takeFromHand();
+    placeInHand(item.mesh, TREAT_R);
+    const parts = dog.userData.parts;
+    const muzzle = (parts.muzzle || parts.mouth).getWorldPosition(_offerPt);
+    if (muzzle.distanceTo(item.mesh.position) < 0.14 + dogHeight * 0.12) takeFromHand();
     else if (item.offerT > 10) setTreatDown();
     else if (dogCtrl.state === "idle" && item.offerT > item.rewalkAt) { item.rewalkAt = item.offerT + 1.5; walkToPlayer(0.15); }
   }
@@ -2007,7 +1939,6 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
   const coachSubj = { x: 0, z: 0 };
   const _coachV = new THREE.Vector3();
   let coachToward = 0, coachPlayerSpeed = 0, coachOnScreen = false;
-  let petIntentT = 0;          // seconds of "the player chose contact" left
   let lifeNextAt = 0;          // idle-life director clock (scene time)
   let lastCmdAt = -99;         // scene time of the player's last command
   // Body language the player can read. Anything the player just ASKED for
@@ -2185,12 +2116,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       if (playerDogSurfaceDist(pp0) > PET_INVITE_SURFACE) return;
     }
     if (hitDog) {
-      // Grip feedback only for clicks that DO something — a pulse on a dead
-      // click promised an action that never happened.
-      if (window.PhobiaFX && window.PhobiaFX.firePulse) window.PhobiaFX.firePulse();
       // A click on the dog is the player choosing contact — the only thing
       // that lets the avatar crouch and reach (see the posture block).
-      petIntentT = 6;
       // Petting is physical: an invite just outside arm's reach asks the dog
       // to close the gap, while a real pet starts only after its body is in
       // contact range. This keeps the user, hand animation and trust reward
@@ -2203,13 +2130,13 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       const dx = pp.x - dog.position.x, dz = pp.z - dog.position.z;
       const dogDist = Math.hypot(dx, dz) || 1;
       if (surf <= PET_CONTACT_SURFACE) {
-        completePet();
+        petRequestT = 2.5;
       } else if (surf <= PET_INVITE_SURFACE) {
         petRequestT = 4.5;
         arcApproachTgt = null;   // the pet invite reroutes any pending curve
         if (dogCtrl.mood !== "aggressive") {
           const pr = dogCtrl.playerRadius || 0.30;
-          const stopAt = PET_CONTACT_SURFACE * 0.85 + pr + (dogCtrl.radius || 0.35);
+          const stopAt = PET_CONTACT_SURFACE * 0.45 + pr + (dogCtrl.radius || 0.35);
           const k = Math.max(0, (dogDist - stopAt) / dogDist);
           dogCtrl.walkTo(dog.position.x + dx * k, dog.position.z + dz * k);
         }
@@ -2411,6 +2338,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       // physical option so the user can always increase distance.
       bounds: { minX: ROOM.x0 + 0.4, maxX: ROOM.x1 - 0.4, minZ: minZ, maxZ: intensity === "barking" ? 4.9 : 4.5 },
       speed: 1.45,
+      runSpeed: 2.35,
       lookSpeed: 0.0035,
       // Embodiment upgrades (all opt-in, desktop pointer lock is mouse-only):
       // click-to-capture FPS look, 10 Hz look smoothing, and fear-modulated
@@ -2468,7 +2396,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     hands: { skinColor: 0xd4a07a, sleeveColor: 0x3a3d4f },
     surface: "wood",
     groundY: -1,       // room floor — feet + eye line anchored to it
-    interact(controls, hands, t) {
+    interact(controls, hands, t, dt) {
+      petAimActive = false;
       if (!controls) return null;
       const surf = playerDogSurfaceDist(controls.position);
       const dist = Math.hypot(controls.position.x - dog.position.x, controls.position.z - dog.position.z);
@@ -2489,101 +2418,58 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           _petPt.set(controls.position.x + ox / ol * 0.42,
             Math.max(controls.position.y - 1.05, dog.position.y + dogH * 0.62),
             controls.position.z + oz / ol * 0.42);
-          _petN.set(0, 1, 0);
-          hands.setReachTarget(_petPt, { hand: "right", grip: "flat", normal: _petN, maxReach: 0.8 });
+          _petN.set(0, -1, 0);
+          _petFingers.set(ox / ol, 0, oz / ol);
+          hands.setReachTarget(_petPt, { grip: "flat", normal: _petN, fingers: _petFingers,
+            palm: true, contact: false, maxReach: 0.8 });
         }
-        return { gesture: "touch", hint: window.tf("dc.hintOffer", "Hold it out and stay still — let {dog} come and take it", { dog: dogName }) };
+        return { gesture: "rest", hint: window.tf("dc.hintOffer", "Hold it out and stay still — let {dog} come and take it", { dog: dogName }) };
       }
-      // Mid-windup the throw rides IN the hand — wrap the fingers around the
-      // item instead of leaving them open beside a floating ball. Both the
-      // FP hands and the TP body read this gesture (curl + grip pose).
-      if (item && item.state === "windup") {
-        // FP: the right hand is already on the item (tickWindup's reach);
-        // "grab" would also raise the left hand onto an imaginary bar.
-        return { gesture: (dogsControls && dogsControls.cameraMode === "tp") ? "grab" : "rest", hint: "" };
+      if (item?.state === "windup") {
+        hands?.clearReachTarget();
+        return { gesture: "rest", hint: "" };
       }
-      // Within reach, drive the ACTUAL right hand onto a live bone on the dog
-      // (Back / Torso / Head) so petting tracks the posed body — not a fixed
-      // height guess that drifts off the coat when the dog sits, coils, or
-      // leans into the stroke.
-      const wantsContact = petIntentT > 0 || petPulse > 0.05 || petRequestT > 0;
-      if (hands && surf <= PET_CONTACT_SURFACE && dog.userData.ready && wantsContact) {
+      const wantsContact = petRequestT > 0 || petPulse > 0.05;
+      const steady = (controls.getWalkState()?.speedNorm || 0) < 0.46;
+      if (hands && surf <= PET_CONTACT_SURFACE && dog.userData.ready && wantsContact && steady
+          && dogCtrl.mood !== "aggressive") {
         const parts = dog.userData.parts;
-        const dogH = (parts && parts.height) || 0.6;
-        const dx = controls.position.x - dog.position.x;
-        const dz = controls.position.z - dog.position.z;
-        const inv = 1 / (dist || 1);
-        const tpx = dx * inv, tpz = dz * inv;          // unit vector dog → player
-        // Candidate contact bones, withers first and then forward along the
-        // spine to the neck and head. Collected once; CHOSEN every frame.
-        if (parts._petBones === undefined && parts.model) {
-          const prefer = ["Back", "Torso3", "Torso2", "Torso", "Neck1", "Neck2", "Head"];
-          const found = {};
-          parts.model.traverse(o => { if (o.isBone && prefer.includes(o.name)) found[o.name] = o; });
-          parts._petBones = prefer.map(n => found[n]).filter(Boolean);
-          parts._petBone = parts._petBones[0] || null;
+        const dogH = parts.height || 0.6;
+        const tpx = (controls.position.x - dog.position.x) / (dist || 1);
+        const tpz = (controls.position.z - dog.position.z) / (dist || 1);
+        if (!parts._petBones) {
+          const names = ["Back", "Torso3", "Torso2", "Torso", "Neck1", "Neck2", "Head"];
+          parts._petBones = names.map(name => parts.model?.getObjectByName(name)).filter(bone => bone?.isBone);
         }
-        // Which part of this dog can the arm actually get to? A lying dog puts
-        // its back about 10 cm off the floor — measured, the player's shoulder
-        // ends up 0.72 m from it against a 0.52 m arm, so the hand hangs in the
-        // air beside the animal no matter how deep the crouch goes. A person
-        // petting a dog lying down reaches its neck and head instead, which sit
-        // 20 cm higher. So the target is picked by reachability each frame,
-        // with a standing preference for the withers.
-        const bone = (() => {
-          const list = parts._petBones;
-          if (!list || !list.length) return parts._petBone;
-          const shY = controls.position.y - 0.34;         // eye → shoulder
-          const ARM = 0.52;
-          let best = list[0], bestCost = Infinity;
-          for (let i = 0; i < list.length; i++) {
-            list[i].getWorldPosition(_petProbe);
-            const need = Math.hypot(
-              Math.hypot(_petProbe.x - controls.position.x, _petProbe.z - controls.position.z),
-              shY - _petProbe.y);
-            // Shortfall dominates; the small index term keeps the withers the
-            // default whenever two candidates are equally reachable.
-            const cost = Math.max(0, need - ARM) + i * 0.012;
-            if (cost < bestCost) { bestCost = cost; best = list[i]; }
+        // Pick a reachable patch once per touch and follow the same bone as
+        // the dog breathes, sits, and turns.
+        if (!petBone) {
+          let bestCost = Infinity;
+          for (const [i, bone] of parts._petBones.entries()) {
+            bone.getWorldPosition(_petProbe);
+            const cost = Math.hypot(_petProbe.x - controls.position.x,
+              (controls.position.y - 0.88) - _petProbe.y, _petProbe.z - controls.position.z) + i * 0.016;
+            if (cost < bestCost) { bestCost = cost; petBone = bone; }
           }
-          parts._petBone = best;
-          return best;
-        })();
-        if (bone) {
-          bone.getWorldPosition(_petPt);
-          // Stroke along the spine while actively petting: nudge toward the
-          // player (neck) then back over the withers.
-          const stroke = petPulse > 0.05 ? Math.sin((t || 0) * 3) * dogH * 0.10 * petPulse : 0;
-          // Toward the NEAR flank, not the spine's centre line: the contact
-          // bone sits mid-body, and reaching across a whole dog is a metre of
-          // arm nobody has.
-          const flank = Math.max(dogH * 0.08, ((parts && parts.span) || dogH) * 0.34);
-          _petPt.x += tpx * (flank - stroke);
-          _petPt.y += dogH * 0.04;   // land on the coat, not inside the mesh
-          _petPt.z += tpz * (flank - stroke);
-        } else {
-          const stroke = petPulse > 0.05 ? Math.sin((t || 0) * 3) * dogH * 0.12 * petPulse : 0;
-          const nearNudge = dogH * 0.42 - stroke;
-          _petPt.set(
-            dog.position.x + tpx * nearNudge,
-            dog.position.y + dogH * (0.74 - petPulse * 0.05),
-            dog.position.z + tpz * nearNudge
-          );
         }
-        _petN.set(tpx * 0.4, 1, tpz * 0.4).normalize();
-        // During the first-contact sniff, aim the hand as a closed fist at
-        // muzzle height so the dog can investigate before a full pet.
-        if (sniffGreetT > 0 && !dogPlayerState.petted) {
-          const muzzleY = dog.position.y + dogH * 0.62;
-          _petPt.y = muzzleY;
-          _petPt.x = dog.position.x + tpx * dogH * 0.55;
-          _petPt.z = dog.position.z + tpz * dogH * 0.55;
-          hands.setReachTarget(_petPt, { hand: "right", grip: "wrap", curl: 1.1, normal: _petN, maxReach: 0.92 });
-        } else {
-          hands.setReachTarget(_petPt, { hand: "right", grip: "flat", normal: _petN, maxReach: 0.92 });
-        }
-      } else if (hands) {
-        hands.clearReachTarget();
+        if (petBone) petBone.getWorldPosition(_petProbe);
+        else _petProbe.copy(dog.position).addScaledVector(_petN.set(0, 1, 0), dogH * 0.68);
+        const forwardX = Math.sin(dog.rotation.y), forwardZ = Math.cos(dog.rotation.y);
+        const nearSide = Math.tanh((tpx * forwardZ - tpz * forwardX) * 3);
+        _petN.set(forwardZ * nearSide * 0.55, 1, -forwardX * nearSide * 0.55).normalize();
+        _petFingers.set(-tpx, 0, -tpz);
+        const stroke = petPulse > 0.05 ? Math.sin((1 - petPulse) * Math.PI * 2) * dogH * 0.13 : 0;
+        _petProbe.addScaledVector(_petN, dogH * (petBone?.name === "Head" ? 0.11 : 0.17));
+        _petProbe.x += stroke * forwardX;
+        _petProbe.z += stroke * forwardZ;
+        if (!hands._reach?.palm || _coatPoint.distanceToSquared(_petProbe) > 0.20) _coatPoint.copy(_petProbe);
+        else _coatPoint.lerp(_petProbe, 1 - Math.exp(-(dt || 0.016) * 21));
+        hands.setReachTarget(_coatPoint, { grip: "flat", normal: _petN, fingers: _petFingers,
+          palm: true, maxReach: 0.92 });
+        petAimActive = true;
+      } else {
+        petBone = null;
+        hands?.clearReachTarget();
       }
       // Character-driven hints: change as the player closes the distance.
       // No "click button" instructions — the player figures out the world
@@ -2595,11 +2481,11 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       // option and that it is optional. Touch devices say tap.
       const clickW = IS_COARSE_POINTER ? window.t("dc.tap", "tap") : window.t("dc.click", "click");
       if (sniffGreetT > 0 && !dogPlayerState.petted) {
-        return { gesture: wantsContact ? "touch" : "rest",
+        return { gesture: "rest",
           hint: window.tf("dc.hintSniff", "{dog} is sniffing hello — that's how dogs meet. Stay still, or {click} it to offer your hand.", { dog: dogName, click: clickW }) };
       }
       if (surf < PET_CONTACT_SURFACE) {
-        return { gesture: wantsContact ? "pet" : "rest",
+        return { gesture: "rest",
           hint: window.tf("dc.hintPet", "{dog} is right beside you · {click} to pet — only if you want to", { dog: dogName, click: clickW }) };
       }
       if (surf < PET_INVITE_SURFACE) {
@@ -2612,6 +2498,14 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
     // but our richer pickWorld() is bound directly to the canvas above. Keep
     // this as a no-op so we don't double-fire pet feedback.
     onClick(controls) {},
+    afterPose(_t, controls, dt) {
+      if (item?.state === "windup") tickWindup(dt);
+      else if (item?.state === "offer") tickOffer(dt);
+      if (!petAimActive || petRequestT <= 0 || !active?.hands?._reach?.contact) return;
+      const rig = controls.cameraMode === "tp" ? active.body : active.hands;
+      if (rig && rig.palmPoint(_palmPt).distanceTo(_coatPoint) < 0.105
+          && active.hands._reachStrength > 0.66) completePet();
+    },
     update(t, controls, dt) {
       if (controls) { dogsControls = controls; storedActiveControls = controls; }
       const d = dt || 0.016;
@@ -2806,18 +2700,9 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       }
       dogCtrl.update(t, d);
 
-      // Complete an invited pet only after the dog has actually reached the
-      // avatar. If either participant moves away, the request expires instead
-      // of producing a delayed, disembodied reward.
       if (petRequestT > 0) {
         petRequestT = Math.max(0, petRequestT - d);
-        const pp = controls && controls.position;
-        const inviteSurf = playerDogSurfaceDist(pp);
-        if (inviteSurf <= PET_CONTACT_SURFACE && dogCtrl.mood !== "aggressive") {
-          completePet();
-        } else if (inviteSurf > PET_INVITE_SURFACE + 0.8) {
-          petRequestT = 0;
-        }
+        if (playerDogSurfaceDist(controls?.position) > PET_INVITE_SURFACE + 0.8) petRequestT = 0;
       }
 
       // ---- Banana-walk second leg ----
@@ -2957,8 +2842,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         // not once it is IN the mouth: it is parented to the head bone then,
         // so its .position is bone-local and the head swung toward a
         // meaningless point for the whole carry.
-        if (item && item.mesh && item.mesh.parent === scene
-            && (item.state === "flying" || fetchPhase === "toItem")) {
+        if (item?.mesh.parent === scene
+            && (item.state === "flying" || item.state === "offer" || fetchPhase === "toItem")) {
           dogCtrl.lookAt3(item.mesh.position, 1);
         } else if (sniffGreetT > 0 && !dogPlayerState.petted) {
           // Investigate the offered fist (therapy tip) before full petting.
@@ -3321,26 +3206,22 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
         // afraid of dogs, contact is the biggest decision in the room; it has
         // to be theirs. So the body stays neutral until a click on the dog
         // (pet or invite) opens a short window of intent.
-        petIntentT = Math.max(0, petIntentT - d);
         // Holding a treat out is reaching for the dog by choice, too.
-        const wantsContact = petIntentT > 0 || petPulse > 0.05 || petRequestT > 0 || !!(item && item.state === "offer");
+        const wantsContact = (item?.state === "offer" || ((petPulse > 0.05 || petRequestT > 0)
+          && playerDogSurfaceDist(controls.position) <= PET_CONTACT_SURFACE))
+          && (controls.getWalkState()?.speedNorm || 0) < 0.46;
         if (active.body && active.body.setPosture && ((intensity === "barking" && barkState !== "settling") || !wantsContact)) {
           active.body.setPosture({ crouch: 0, reach: 0, lean: 0 });
           if (controls.setEyeDrop) controls.setEyeDrop(0);
         } else if (active.body && active.body.setPosture) {
-          // Crouch grows from 0 at 2.5m to 0.55 at 0.6m — deeper than before
-          // so the character actually gets down to dog height.
-          const crouch = Math.max(0, Math.min(0.55, (2.5 - playerDist) / 1.9));
+          // Bend low enough for the hand to reach a small dog's back.
+          const crouch = Math.max(0, Math.min(0.63, (2.5 - playerDist) / 1.9));
           // Extra squat while actively petting or when the dog has sat for you.
           const petCrouch = petPulse * 0.25 + (dogCtrl.state === "sit" ? 0.12 : 0);
-          const reach = playerDist < 1.6
-            ? 0.45 + petPulse * 0.55
-            : (playerDist < 2.5 ? 0.25 : 0);
-          const lean = playerDist < 1.6 ? 0.35 + petPulse * 0.20 : 0;
+          const lean = playerDist < 1.6 ? 0.46 + petPulse * 0.14 : 0;
           active.body.setPosture({
             crouch: Math.min(0.72, crouch + petCrouch),
-            reach,
-            reachHeight: dogCtrl.state === "sit" ? 0.38 : 0.22,  // higher for a sitting dog
+            reach: 0,
             lean,
             armSpread: 0,
           });
@@ -3983,11 +3864,8 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
       }
 
       // ---- Item physics + fetch state machine ----
-      // A treat held out: the dog comes in and takes it.
-      if (item && item.state === "offer") tickOffer(d, controls);
       // Windup phase: animate the item in the user's hand toward release
       if (item && item.state === "windup") {
-        tickWindup(d);
         // The BALL in your hand is dog language: a trusting dog that spots
         // the windup answers with a play-bow — chest down, rump up, tail
         // going — the species-universal "throw it!". Once per windup, only
@@ -4133,7 +4011,7 @@ function setupDogs(scene, camera, level, levelIdx, ctx) {
           // its real-world size instead of inheriting the rig's.
           carrier.updateWorldMatrix(true, false);
           const seat = new THREE.Vector3();
-          dog.userData.parts.mouth.getWorldPosition(seat);
+          (dog.userData.parts.muzzle || dog.userData.parts.mouth).getWorldPosition(seat);
           carrier.worldToLocal(seat);
           item.mesh.position.copy(seat);
           item.mesh.rotation.set(0, 0, 0);   // settle level in the mouth — no frozen mid-tumble pose

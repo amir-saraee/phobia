@@ -198,6 +198,9 @@ function setupDriving(scene, camera, level) {
   // The actual rotating bit
   const wheelGroup = new THREE.Group();
   wheelTilt.add(wheelGroup);
+  const wheelGrip = new THREE.Vector3();
+  const wheelNormal = new THREE.Vector3();
+  const wheelAcross = new THREE.Vector3();
   const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.025, 10, 28), wheelMat);
   wheelGroup.add(wheel);
   for (let a = 0; a < 3; a++) {
@@ -530,11 +533,16 @@ function setupDriving(scene, camera, level) {
     },
     hands: { sleeveColor: 0x2c2a2a },
     bloom: { strength: 0.25, threshold: 0.92 },
-    interact(controls) {
-      // Hint that the wheel is grabbable when looking at it
-      if (controls && controls.pitch < -0.2) {
-        return { gesture: "grab", hint: "drag the wheel to steer · brake / mirror buttons available" };
+    interact(controls, hands) {
+      if (dragging || controls?.pitch < -0.2) {
+        wheelGroup.localToWorld(wheelGrip.set(0, 0.06, 0.018));
+        wheelNormal.set(0, 0, 1).transformDirection(wheelGroup.matrixWorld);
+        wheelAcross.set(1, 0, 0).transformDirection(wheelGroup.matrixWorld);
+        hands.setReachTarget(wheelGrip, { hand: "both", grip: "wrap", normal: wheelNormal,
+          spread: 0.192, spreadAxis: wheelAcross, palm: true, maxReach: 0.78 });
+        return { gesture: "rest", hint: "drag the wheel to steer · brake / mirror buttons available" };
       }
+      hands.clearReachTarget();
       return { gesture: "rest" };
     },
     update(t, controls, dt) {

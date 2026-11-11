@@ -382,10 +382,10 @@ function setupFlying(scene, camera, level, levelIdx, ctx) {
         const trayDown = trayTargetAngle === 0 && Math.abs(trayPivot.rotation.x) < 0.1;
         if (wantGrip) {
           _armGripPt.set(0, -0.22, 0.15);
-          hands.setReachTarget(_armGripPt, { hand: "both", grip: "wrap", normal: _UP, spread: 0.55, maxReach: 0.72 });
+          hands.setReachTarget(_armGripPt, { hand: "both", grip: "wrap", normal: _UP, palm: true, spread: 0.55, maxReach: 0.72 });
         } else if (trayDown) {
-          _trayRestPt.set(0, -0.27, -0.95);
-          hands.setReachTarget(_trayRestPt, { hand: "both", grip: "flat", normal: _UP, spread: 0.14, maxReach: 0.95 });
+          trayPivot.localToWorld(_trayRestPt.set(0, 0.02, 0.35));
+          hands.setReachTarget(_trayRestPt, { hand: "both", grip: "flat", normal: _UP, palm: true, spread: 0.14, maxReach: 0.95 });
         } else {
           hands.clearReachTarget();
         }

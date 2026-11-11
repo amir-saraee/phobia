@@ -2330,6 +2330,7 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
       // that retreated left you at an invisible wall with the hold paused
       // and no way back within range. The snake's own guard keeps the gap.
       bounds: { minX: -3, maxX: 3, minZ: Math.min(-distance + 1.0, SNAKE_BOUNDS.minZ + 3.0), maxZ: 5 },
+      runSpeed: 2.05,
       speed: 1.2,
       lookSpeed: 0.0035,
       // Snake phobia is intimate — first-person locked (the hand-extend gesture
@@ -2603,11 +2604,11 @@ function setupSnakes(scene, camera, level, levelIdx, ctx) {
           // counts as touching anything.
           _snkFingers.set(-0.42, 0.38, -0.82).normalize().transformDirection(camera.matrixWorld);
           _snkUp.set(-0.10, 0.80, 0.55).normalize().transformDirection(camera.matrixWorld);
-          hh.setReachTarget(_snkReachW, { hand: "right", grip: "flat", normal: _snkUp, fingers: _snkFingers, maxReach: 0.72, curl: 0, contact: false });
-          hh.right.getWorldPosition(_snkPalm);
+          hh.setReachTarget(_snkReachW, { hand: "right", grip: "flat", normal: _snkUp, fingers: _snkFingers, maxReach: 0.72, curl: 0, palm: true, contact: false });
+          (controls?.cameraMode === "tp" && active.body ? active.body : hh).palmPoint(_snkPalm);
         } else {
           if (hh._reach) hh.clearReachTarget();
-          hh.right.getWorldPosition(_snkPalm);
+          (controls?.cameraMode === "tp" && active.body ? active.body : hh).palmPoint(_snkPalm);
         }
       } else {
         // Third person / no rig: an arm's length ahead of the eye.

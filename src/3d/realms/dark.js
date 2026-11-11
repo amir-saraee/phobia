@@ -582,6 +582,7 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
       mode: "walkable",
       initialPos: [0, 0, spawnZ], initialYaw: 0, initialPitch: -0.04,
       bounds: { minX: R.x0 + 0.35, maxX: R.x1 - 0.35, minZ: R.z0 + 0.35, maxZ: R.z1 - 0.35 },
+      runSpeed: 1.85,
       speed: 1.1, lookSpeed: 0.0035,
       cameraModeLocked: "fp",
     },
@@ -590,6 +591,34 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
     environment: false,
     surface: hall ? "soft" : "wood",
     groundY: -1,
+    afterPose() {
+      const hh = active?.hands;
+      if (!hh || hh.cameraMode !== "fp") return;
+      const wantTorch = flashlightHeld, wantMatch = !wantTorch && matchT > 0.05;
+      const hk = hh._holdK || 0, held = hh._holdLast && hh._holdLast.src;
+      // Match: at the pinch, once the fingers have closed on it.
+      if (wantMatch && held === MATCH_HOLD) {
+        hh.getPinchPoint(_pinch);
+        matchGroup.position.copy(_pinch);
+        matchGroup.visible = hk > 0.35;
+      } else if (matchGroup.visible && !wantMatch) matchGroup.visible = false;
+      // Torch: in the palm, along the knuckle line, lens out past the little finger.
+      const showTorch = held === TORCH_HOLD && hk > 0.25 && (wantTorch || hk > 0.5);
+      if (showTorch) {
+        torch.quaternion.copy(hh.right.quaternion);
+        torch.position.copy(_torchOff.set(0, -0.026, -0.036).applyQuaternion(hh.right.quaternion)).add(hh.right.position);
+      }
+      torch.visible = !!showTorch;
+      // The beam leaves the lens, not the eye: from the eye it lit the
+      // torch and the fist holding it to a white blob.
+      if (showTorch) {
+        flashlight.position.copy(_torchOff.set(0.094, 0, 0).applyQuaternion(torch.quaternion)).add(torch.position);
+        flashlight.target.position.set(flashlight.position.x * 0.25, -0.20, -2.2);
+      } else if (flashlight.intensity < 0.05) { flashlight.position.set(0, -0.05, 0); flashlight.target.position.set(0, -0.15, -1); }
+      const on = Math.min(1, flashlight.intensity / 14);
+      torch.userData.lens.material.color.setScalar(0.12 + 0.88 * on);
+      torch.userData.head.emissive.setRGB(0.03 + 0.20 * on, 0.03 + 0.18 * on, 0.035 + 0.13 * on);
+    },
     update(t, controls, dt) {
       const d = Math.min(0.1, dt || 0.016);
       clock += d;
@@ -618,29 +647,6 @@ function setupDark(scene, camera, level, levelIdx, ctx) {
           if (wantTorch) hh.setHold(TORCH_HOLD);
           else if (wantMatch) { MATCH_HOLD.pos[0] = 0.174 + strikeAnim * 0.05; MATCH_HOLD.pos[1] = -0.133 - strikeAnim * 0.05; hh.setHold(MATCH_HOLD); }
           else if (hh._hold) hh.clearHold();
-          const hk = hh._holdK || 0, held = hh._holdLast && hh._holdLast.src;
-          // Match: at the pinch, once the fingers have closed on it.
-          if (wantMatch && held === MATCH_HOLD) {
-            hh.getPinchPoint(_pinch);
-            matchGroup.position.copy(_pinch);
-            matchGroup.visible = hk > 0.35;
-          } else if (matchGroup.visible && !wantMatch) matchGroup.visible = false;
-          // Torch: in the palm, along the knuckle line, lens out past the little finger.
-          const showTorch = held === TORCH_HOLD && hk > 0.25 && (wantTorch || hk > 0.5);
-          if (showTorch) {
-            torch.quaternion.copy(hh.right.quaternion);
-            torch.position.copy(_torchOff.set(0, -0.026, -0.036).applyQuaternion(hh.right.quaternion)).add(hh.right.position);
-          }
-          torch.visible = !!showTorch;
-          // The beam leaves the lens, not the eye: from the eye it lit the
-          // torch and the fist holding it to a white blob.
-          if (showTorch) {
-            flashlight.position.copy(_torchOff.set(0.094, 0, 0).applyQuaternion(torch.quaternion)).add(torch.position);
-            flashlight.target.position.set(flashlight.position.x * 0.25, -0.20, -2.2);
-          } else if (flashlight.intensity < 0.05) { flashlight.position.set(0, -0.05, 0); flashlight.target.position.set(0, -0.15, -1); }
-          const on = Math.min(1, flashlight.intensity / 14);
-          torch.userData.lens.material.color.setScalar(0.12 + 0.88 * on);
-          torch.userData.head.emissive.setRGB(0.03 + 0.20 * on, 0.03 + 0.18 * on, 0.035 + 0.13 * on);
         } else {
           torch.visible = false;
           if (wantMatch) { matchGroup.position.set(0.15, -0.10, -0.40); matchGroup.visible = true; }

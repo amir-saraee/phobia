@@ -2,6 +2,7 @@
 
 import * as THREE from "three";
 import { Reflector } from "three/addons/objects/Reflector.js";
+import { active } from "../live.js";
 import { IS_LOW_POWER } from "../renderer.js";
 
 // ---------- Storms (porch / window looking out) ----------
@@ -304,6 +305,8 @@ function setupStorms(scene, camera, level) {
   camera.add(handMatch);
   if (!scene.children.includes(camera)) scene.add(camera);
 
+  const matchHold = { grip: "pinch", pos: [0.17, -0.15, -0.33], rot: [0.14, -0.12, -0.38] };
+
   function strikeMatch() {
     if (matchLit > 0) return;
     matchLit = 1.0;
@@ -429,7 +432,17 @@ function setupStorms(scene, camera, level) {
     // the whole sky into a white-out on each strike.
     bloom: { strength: 0.35, threshold: 0.78 },
     ssao: false,    // sky/rain dominate; AO would noise up the rain particles
+    afterPose() {
+      const hands = active?.hands;
+      if (matchLit > 0 && hands) {
+        hands.getPinchPoint(handMatch.position);
+        handMatch.visible = hands._holdK > 0.35;
+      }
+    },
     update(t, controls, dt) {
+      const hands = active?.hands;
+      if (matchLit > 0) hands?.setHold(matchHold);
+      else if (hands?._hold) hands.clearHold();
       if (controls) stormsControls = controls;
       const d = dt || 0.016;
       // Animate rain — falls fast AND is blown sideways by the storm wind

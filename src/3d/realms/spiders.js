@@ -808,6 +808,8 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
   // upright jar there stood half inside the concrete and covered only the top
   // half of the spider.
   const JAR_H = 0.85 * JAR_Y;
+  const jarGrip = new THREE.Vector3();
+  const jarNormal = new THREE.Vector3();
   function jarRest() {
     if (onWall) return { x: spider.position.x, y: spider.position.y, z: (B.wallZ ?? -2.6) + 0.004 };
     return { x: spider.position.x, y: -0.95, z: spider.position.z };
@@ -818,7 +820,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       jar.rotation.set(Math.PI / 2, 0, 0);    // local +y (open → closed) → world +z
       jar.position.set(rest.x, rest.y, rest.z + (1 - e) * 1.2);
     } else {
-      const yStart = ROOM.ceilY - JAR_H - 0.03;
+      const yStart = Math.min(ROOM.ceilY - JAR_H - 0.03, rest.y + 0.60);
       jar.rotation.set(0, 0, 0);
       jar.position.set(rest.x, yStart + (rest.y - yStart) * e, rest.z);
     }
@@ -1139,6 +1141,7 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
       initialYaw: 0,
       initialPitch: spiderPitch * 0.4,
       bounds: { minX: -3.6, maxX: 3.6, minZ: minZ, maxZ: 5.2 },
+      runSpeed: 2.2,
       speed: 1.4,
       lookSpeed: 0.0035,
       // First person on every rung now the spider is its real size: from
@@ -1171,7 +1174,14 @@ function setupSpiders(scene, camera, level, levelIdx, ctx) {
     messageQueue: true,
     surface: "hard",   // concrete cellar floor
     groundY: -1,       // feet + eye line anchored to the floor
-    interact(controls) {
+    interact(controls, hands) {
+      if (jar && (jarPhase === "falling" || jarPhase === "lifting")) {
+        jar.localToWorld(jarGrip.set(0, 0.85, 0));
+        if (Math.hypot(jarGrip.x - controls.position.x, jarGrip.z - controls.position.z) < 0.95) {
+          jarNormal.set(0, 1, 0).transformDirection(jar.matrixWorld);
+          hands.setReachTarget(jarGrip, { grip: "wrap", palm: true, normal: jarNormal, maxReach: 0.88 });
+        } else hands.clearReachTarget();
+      } else hands.clearReachTarget();
       if (scriptedGesture && performance.now() < scriptedGestureUntil) {
         return { gesture: scriptedGesture, hint: "" };
       }
