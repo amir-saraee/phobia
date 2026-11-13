@@ -1,25 +1,21 @@
-// buildDog(): the rigged GLTF dog with its photo coat, collar and fur shells.
+// buildDog(): rigged Quaternius dogs with breed-specific sculpting and coats.
 
 import * as THREE from "three";
 // SkeletonUtils.clone() correctly deep-clones a rigged/skinned mesh (bones +
 // skin bindings). A plain Object3D.clone() shares the skeleton and breaks
 // animation, so any model we instance from the GLTF cache must use this.
 import { clone as cloneSkinned } from "three/addons/utils/SkeletonUtils.js";
-import { loadGLTF, compileBeforeAdd, DOG_MODELS, DOG_COAT_MAPS, loadDogCoatTextures } from "./assets.js";
-import { sceneQuality, IS_MOBILE } from "./renderer.js";
-import { makeFurMaps, ensureBoxUV, geometryBox, applySidePhotoUVs, smoothCreaseNormals, applyCoatTint } from "./creature-kit.js";
+import { deinterleaveGeometry, mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { loadGLTF, compileBeforeAdd, DOG_MODELS } from "./assets.js";
+import { disposeObject, sceneQuality, IS_MOBILE } from "./renderer.js";
+import { DOG_COATS, smoothCreaseNormals } from "./creature-kit.js";
 import { DogLegRig, correctDogGaitClip, synthDogTrot } from "./dog-rig.js";
 
-// A pet dog wears a collar — and the collar is half the dog's SOUND (the tag
-// jingle that announces every trot and shake-off). Self-calibrating: measures
-// the neck's radial spread from the verts skinned to Neck1/Neck2 in bind pose,
-// sizes a leather ring + brass tag from it, and parents them to the neck bone
-// so they ride every animation. Bone-local units are raw GLTF units (the
-// model's scale applies above the bone), so measured fractions transfer
-// between breeds untouched.
+// Fit the leather collar to a posed neck cross-section. The tag rides the
+// neck bone through each clip, alongside the controller's jingle cues.
 function attachDogCollar(model, parts, rawH) {
   let gm = null;
-  model.traverse((o) => { if (!gm && o.isSkinnedMesh) gm = o; });
+  model.traverse((o) => { if (!gm && o.userData.dogCoat) gm = o; });
   if (!gm || !gm.skeleton || !(rawH > 0)) return;
   const bones = gm.skeleton.bones;
   const neck = bones.find((b) => b.name === "Neck1");
@@ -30,7 +26,7 @@ function attachDogCollar(model, parts, rawH) {
   // before the first render reads unset bone matrices (~2.3× too small),
   // so the "measured" collar drowned inside the ruff.
   const ringR = rawH * 0.149;
-  const tubeR = rawH * 0.018;
+  const tubeR = rawH * 0.012;
   const grp = new THREE.Group();
   const collar = new THREE.Mesh(
     new THREE.TorusGeometry(ringR, tubeR, 8, 22),
@@ -39,11 +35,6 @@ function attachDogCollar(model, parts, rawH) {
   collar.rotation.x = Math.PI / 2;        // hole along the bone's Y (neck axis)
   collar.position.y = rawH * 0.110;       // low on the neck, above the shoulders
   collar.castShadow = true;
-  // The collar hangs off Neck1, i.e. INSIDE the model — so the coat pass's
-  // model.traverse() would reach it. Leather and brass are not fur: without
-  // this flag the late coat upgrade forces the colour to white and stretches
-  // the whole breed photograph around the ring and the tag.
-  collar.userData.noCoat = true;
   grp.add(collar);
   const tag = new THREE.Mesh(
     new THREE.CylinderGeometry(tubeR * 2.3, tubeR * 2.3, tubeR * 0.8, 10),
@@ -52,16 +43,11 @@ function attachDogCollar(model, parts, rawH) {
   tag.rotation.x = Math.PI / 2;           // flat against the chest
   tag.position.set(0, collar.position.y - tubeR * 1.8, ringR * 1.0);
   tag.castShadow = true;
-  tag.userData.noCoat = true;
   grp.add(tag);
   neck.add(grp);
   parts.collar = grp;
-  // Fit to the measured neck once the dog is posed (a few frames in — the
-  // build-time probe reads unposed bones, see above). Neck1 doesn't run down
-  // the middle of every breed's neck: on the husky the ring, centred on the
-  // bone, hung a hand's width below the chin. Re-centre on the neck's cross
-  // section and size the ring to it (the shiba's tuned ring sits at 1.1× the
-  // section's median radius, so that's the target).
+  // Sample once after the posed bone matrices are ready. Recenter the ring
+  // because the neck bone can sit off-center inside the ruff.
   let frames = 0;
   collar.onBeforeRender = () => {
     if (++frames < 4) return;
@@ -84,7 +70,7 @@ function attachDogCollar(model, parts, rawH) {
       if (pts.length < 12) return;
       let cx = 0, cz = 0; pts.forEach((q) => { cx += q[0]; cz += q[1]; }); cx /= pts.length; cz /= pts.length;
       const rs = pts.map((q) => Math.hypot(q[0] - cx, q[1] - cz)).sort((a, b) => a - b);
-      const want = rs[Math.floor(rs.length / 2)] * 1.1;
+      const want = rs[Math.floor(rs.length / 2)] + tubeR * 0.35;
       const f = Math.max(0.6, Math.min(1.4, want / ringR));
       grp.position.x = cx; grp.position.z = cz;
       collar.scale.set(f, f, 1);
@@ -103,8 +89,10 @@ function attachDogCollar(model, parts, rawH) {
 // Sculpt in the shared bind space of the two bundled breeds. The same
 // displacement applies across material seams and to the eye and nose meshes,
 // so they remain seated in the head as the original skeleton animates.
-function sculptDogGeometry(geometry, breed) {
-  const source = geometry.getAttribute("position");
+function sculptDogGeometry(mesh, breed) {
+  const geometry = mesh.geometry;
+  const { position: source, skinIndex, skinWeight } = geometry.attributes;
+  const tailBones = mesh.skeleton.bones.map(bone => /^Tail[2-6]$/.test(bone.name));
   const positions = new Float32Array(source.count * 3);
   const husky = breed === "husky";
   const blend = THREE.MathUtils.smoothstep;
@@ -117,7 +105,11 @@ function sculptDogGeometry(geometry, breed) {
     // The husky has a longer muzzle and a less abrupt forehead transition.
     const head = blend(y, 2.05, 2.45) * blend(z, 1.28, 1.72);
     const muzzle = head * blend(z, husky ? 1.96 : 2.08, husky ? 2.40 : 2.48);
-    const cheek = head * (1 - blend(z, 1.65, 2.04)) * (1 - blend(y, 2.70, 2.92));
+    const cheek = head * (1 - blend(z, 1.60, 2.06)) * (1 - blend(y, 2.69, 2.92));
+    const bridge = head * blend(z, 1.65, 2.06) * blend(y, 2.56, 2.77);
+    const eyeSocket = blend(Math.abs(x), 0.10, 0.20)
+      * (1 - blend(Math.abs(y - 2.69), 0.03, 0.15))
+      * (1 - blend(Math.abs(z - (husky ? 1.96 : 2.09)), 0.07, 0.22));
     const ear = head * blend(y, 2.81, 3.16);
 
     // Give the rib cage more depth behind the shoulders and taper the
@@ -127,11 +119,18 @@ function sculptDogGeometry(geometry, breed) {
     const waist = trunk * blend(z, -1.27, -0.83) * (1 - blend(z, -0.62, 0.12));
     const underside = 1 - blend(y, 1.24, 1.84);
 
-    positions[3 * i] = x * (1 - 0.24 * muzzle + 0.12 * cheek
-      + (husky ? 0.07 : 0.18) * ear + 0.13 * ribs - 0.17 * waist);
-    positions[3 * i + 1] = y - 0.08 * muzzle + (husky ? 0.04 : 0.13) * ear
-      + underside * (0.18 * waist - 0.16 * ribs);
-    positions[3 * i + 2] = z + (husky ? 0.22 : 0.10) * muzzle - 0.08 * ear;
+    let tail = 0;
+    for (let k = 0; k < 4; k++) {
+      if (tailBones[skinIndex.getComponent(i, k)]) tail += skinWeight.getComponent(i, k);
+    }
+    // Keep the eye line and paw contacts fixed while changing the silhouette.
+    // A shiba's ruff and cheek are fuller, and the husky has a flatter stop.
+    positions[3 * i] = x * (1 - (husky ? 0.20 : 0.14) * muzzle
+      + (husky ? 0.14 : 0.30) * cheek * (1 - eyeSocket) + 0.06 * ear
+      + 0.15 * ribs - 0.18 * waist + tail * (husky ? 0.48 : 0.30));
+    positions[3 * i + 1] = y - 0.09 * muzzle - (husky ? 0.09 : 0.035) * bridge * (1 - eyeSocket)
+      + (husky ? -0.025 : 0.105) * ear + underside * (0.20 * waist - 0.16 * ribs);
+    positions[3 * i + 2] = z + (husky ? 0.24 : 0.06) * muzzle - 0.08 * ear;
   }
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.boundingBox = null;
@@ -213,8 +212,183 @@ function refineDogSurface(geometry) {
   geometry.computeBoundingSphere();
 }
 
+// Relax the coarse triangles in bind space before splitting them. A second,
+// negative pass recovers volume lost by the first. Keep the sole and facial
+// attachments fixed so animation contacts, eyes and nose stay registered.
+function roundDogCoat(geometry) {
+  geometry.deleteAttribute("normal");
+  const rounded = mergeVertices(geometry, 1e-5);
+  const pos = rounded.getAttribute("position");
+  const index = rounded.index.array;
+  const neighbours = Array.from({ length: pos.count }, () => new Set());
+  for (let i = 0; i < index.length; i += 3) {
+    const a = index[i], b = index[i + 1], c = index[i + 2];
+    neighbours[a].add(b).add(c);
+    neighbours[b].add(c).add(a);
+    neighbours[c].add(a).add(b);
+  }
+  const step = THREE.MathUtils.smoothstep;
+  const mask = Array.from({ length: pos.count }, (_, i) => {
+    const y = pos.getY(i), z = pos.getZ(i);
+    const paw = step(y, 0.006, 0.10);
+    const face = step(z, 1.48, 1.75) * step(y, 2.15, 2.42);
+    const ear = step(y, 2.80, 3.08) * step(z, 1.0, 1.6);
+    return paw * (1 - Math.max(face, ear));
+  });
+  const current = pos.array;
+  const previous = new Float32Array(current.length);
+  for (const amount of [0.53, -0.54, 0.31]) {
+    previous.set(current);
+    for (let i = 0; i < pos.count; i++) {
+      const adjacent = neighbours[i];
+      if (!adjacent.size || mask[i] === 0) continue;
+      const gain = amount * mask[i] / adjacent.size;
+      for (const j of adjacent) {
+        for (let axis = 0; axis < 3; axis++) {
+          current[i * 3 + axis] += gain * (previous[j * 3 + axis] - previous[i * 3 + axis]);
+        }
+      }
+    }
+  }
+  rounded.computeVertexNormals();
+  smoothCreaseNormals(rounded, 0.43);
+  geometry.dispose();
+  return rounded;
+}
+
+function isCoatMaterial(material, breed) {
+  return (breed === "husky" ? ["Material", "Material.001"] : ["Main", "Main_Light"]).includes(material.name);
+}
+
+// The source splits the light and dark coat into separate glTF primitives.
+// They share a bind transform and skeleton. Combining them before refinement
+// lets the rounded edge use normals from both sides of the old material seam.
+function mergeDogCoat(model, breed) {
+  const meshes = [];
+  model.traverse(o => { if (o.isSkinnedMesh && isCoatMaterial(o.material, breed)) meshes.push(o); });
+  const [first, ...rest] = meshes;
+  if (!rest.length || rest.some(o => o.parent !== first.parent || o.skeleton.bones.length !== first.skeleton.bones.length
+      || o.skeleton.bones.some((bone, i) => bone !== first.skeleton.bones[i]
+        || !o.skeleton.boneInverses[i].equals(first.skeleton.boneInverses[i]))
+      || !o.matrix.equals(first.matrix) || !o.bindMatrix.equals(first.bindMatrix))) return;
+  for (const mesh of meshes) deinterleaveGeometry(mesh.geometry);
+  const geometry = mergeGeometries(meshes.map(o => o.geometry));
+  if (!geometry) return;
+  for (const mesh of meshes) mesh.geometry.dispose();
+  first.geometry = geometry;
+  for (const mesh of rest) {
+    mesh.material.dispose();
+    if (mesh.skeleton !== first.skeleton) mesh.skeleton.dispose();
+    mesh.removeFromParent();
+  }
+}
+
+// Paint in bind space so marks wrap around the muzzle, chest and limbs.
+// Tail and ear weights isolate those parts even when they overlap the torso.
+function applyDogSurface(mesh, breed, coat, quality) {
+  const material = mesh.material;
+  const husky = breed === "husky";
+  material.metalness = 0;
+  if (!isCoatMaterial(material, breed)) {
+    const eye = material.name.startsWith("Eyes_") || ["Material.002", "Material.003"].includes(material.name);
+    material.roughness = eye ? 0.21 : 0.36;
+    material.envMapIntensity = eye ? 0.85 : 0.55;
+    if (material.name === "Eyes_White") material.color.setHex(0xa09788);
+    if (material.name === "Material.003") material.color.setHex(0x879fa9);
+    return;
+  }
+
+  const { position, skinIndex, skinWeight } = mesh.geometry.attributes;
+  const boneNames = mesh.skeleton.bones.map(bone => bone.name);
+  const base = new THREE.Color(coat.color);
+  const edge = new THREE.Color(husky ? 0x999087 : 0xd5a16a);
+  const cream = new THREE.Color(husky ? 0xe3ded4 : 0xf0d9b2);
+  const earLining = new THREE.Color(husky ? 0x8e7270 : 0xaf765e);
+  const color = new THREE.Color();
+  const colors = new Float32Array(position.count * 3);
+  const step = THREE.MathUtils.smoothstep;
+
+  for (let i = 0; i < position.count; i++) {
+    const x = Math.abs(position.getX(i));
+    const y = position.getY(i);
+    const z = position.getZ(i);
+    let tail = 0, ear = 0;
+    for (let k = 0; k < 4; k++) {
+      const bone = boneNames[skinIndex.getComponent(i, k)];
+      const weight = skinWeight.getComponent(i, k);
+      if (bone?.startsWith("Tail")) tail += weight;
+      if (bone?.startsWith("Ear")) ear += weight;
+    }
+    const face = step(z, 1.38, 1.86) * step(y, 2.08, 2.42);
+    const muzzle = face * step(z, husky ? 1.93 : 2.03, 2.28) * (1 - step(y, 2.62, 2.75));
+    const blaze = face * step(y, 2.59, 2.70) * (1 - step(y, 2.86, 2.98))
+      * (1 - step(x, 0.045, 0.13));
+    const brow = face * step(y, 2.76, 2.84) * (1 - step(y, 2.87, 2.99))
+      * step(x, 0.12, 0.20) * (1 - step(x, 0.26, 0.36));
+    const cheek = face * (1 - step(y, 2.43 + x * 0.27, 2.61 + x * 0.27));
+    const temple = face * step(x, 0.15, 0.26) * step(y, 2.56, 2.74);
+    const chin = face * (1 - step(y, 2.29, 2.45));
+    const bib = step(z, 0.77, 1.56) * (1 - step(x, 0.20, 0.46)) * step(y, 0.80, 1.68);
+    const socks = 1 - step(y, husky ? 0.52 : 0.28, husky ? 1.06 : 0.74);
+    const belly = (1 - step(y, 0.95, 1.43)) * (1 - step(x, 0.24, 0.45));
+    const light = Math.max(muzzle, cheek * 0.97, bib, socks, belly * 0.88,
+      husky ? Math.max(blaze, brow * 0.83) : blaze * 0.10);
+    const saddle = step(y, 1.25, 1.93);
+    color.copy(base).lerp(edge, (1 - saddle) * (husky ? 0.34 : 0.29));
+    color.multiplyScalar(1 - (husky ? 0.42 * temple : 0.14 * saddle) - 0.12 * chin);
+    const maskEdge = husky ? light * (1 - 0.48 * temple) : light;
+    color.lerp(cream, maskEdge * (1 - ear) * (1 - tail));
+    color.lerp(earLining, ear * face * step(y, 2.83, 3.04) * 0.48);
+    color.lerp(cream, tail * (husky ? 0.26 : 0.42) * step(y, 1.88, 2.68));
+    color.toArray(colors, i * 3);
+  }
+  mesh.geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  mesh.userData.dogCoat = true;
+  material.color.setRGB(1, 1, 1);
+  material.vertexColors = true;
+  material.roughness = 0.88;
+  material.envMapIntensity = 0.48;
+  if (quality === "low") return;
+
+  // Fine fur follows the bind pose. Attenuate it below pixel scale so it
+  // stays stable as the dog moves away from the camera.
+  material.onBeforeCompile = shader => {
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vCoatPoint;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvCoatPoint = position;");
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", `#include <common>
+varying vec3 vCoatPoint;
+float coatHash(vec3 p) { return fract(sin(dot(p, vec3(17.1, 53.7, 91.3))) * 43758.5453); }
+float coatNoise(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  vec4 a = vec4(coatHash(i), coatHash(i + vec3(1,0,0)), coatHash(i + vec3(0,1,0)), coatHash(i + vec3(1,1,0)));
+  vec4 b = vec4(coatHash(i + vec3(0,0,1)), coatHash(i + vec3(1,0,1)), coatHash(i + vec3(0,1,1)), coatHash(i + vec3(1,1,1)));
+  vec4 c = mix(a, b, f.z);
+  return mix(mix(c.x,c.y,f.x), mix(c.z,c.w,f.x), f.y);
+}`)
+      .replace("#include <color_fragment>", `#include <color_fragment>
+vec3 coatUV = vec3(vCoatPoint.x * 105.0, vCoatPoint.y * 85.0,
+  (vCoatPoint.z - vCoatPoint.y * 0.42) * 28.0);
+float fine = (coatNoise(coatUV) - 0.5) * (1.0 - smoothstep(0.35, 1.35, length(fwidth(coatUV))));
+float tufts = coatNoise(coatUV * vec3(0.12, 0.085, 0.21)) - 0.5;
+float guardHair = smoothstep(0.58, 0.86, coatNoise(coatUV * vec3(0.54, 0.58, 0.19)));
+float muzzle = smoothstep(1.82, 2.18, vCoatPoint.z);
+float whiskerPad = muzzle * exp(-pow((vCoatPoint.y - 2.52) / 0.094, 2.0))
+  * smoothstep(0.045, 0.12, abs(vCoatPoint.x));
+float pores = smoothstep(0.72, 0.9, coatNoise(coatUV * vec3(1.6, 1.3, 4.5)));
+float alongLip = smoothstep(1.82, 2.04, vCoatPoint.z) * (1.0 - smoothstep(2.40, 2.54, vCoatPoint.z));
+float lipY = 2.34 + 0.13 * (vCoatPoint.z - 2.1);
+float crease = alongLip * exp(-pow((vCoatPoint.y - lipY) / 0.018, 2.0));
+diffuseColor.rgb *= 1.0 + fine * 0.27 + tufts * 0.27 - guardHair * 0.13
+  - pores * whiskerPad * 0.31 - crease * 0.57;`);
+  };
+  material.customProgramCacheKey = () => "dogCoat";
+}
+
 function buildDog(opts = {}) {
-  const breed = opts.breed || "shiba";
+  const breed = opts.breed === "husky" ? "husky" : "shiba";
   const targetHeight = opts.targetHeight || 0.7;   // world height, feet→ears
   const dog = new THREE.Group();
   const parts = {};
@@ -229,7 +403,11 @@ function buildDog(opts = {}) {
   parts.jaw = mouth;        // legacy name the fetch state machine expects
   parts.mouth = mouth;
 
-  const url = DOG_MODELS[breed] || DOG_MODELS.shiba;
+  const url = DOG_MODELS[breed];
+  let savedCoat;
+  try { savedCoat = localStorage.getItem("fobia.coat.dog." + breed); } catch {}
+  const palette = DOG_COATS[breed];
+  const coat = palette.find(option => option.id === (opts.coat?.id ?? savedCoat)) ?? palette[0];
   loadGLTF(url).then((gltf) => {
     if (dog.userData.disposed) return;       // scene unmounted before load done
     const model = cloneSkinned(gltf.scene);
@@ -247,129 +425,15 @@ function buildDog(opts = {}) {
         o.frustumCulled = false;     // skinned bounds are unreliable once posed
       }
     });
-    // Coat tint only for legacy procedural maps. Photo-projected coats already
-    // carry the real breed colours — tinting them washes the photograph into
-    // a single HSL smear.
-    const coatIsPhoto = !!(DOG_COAT_MAPS[breed] && DOG_COAT_MAPS[breed].photo);
-    if (!coatIsPhoto) applyCoatTint(model, opts.coat);
-
-    // UVs: photo coats need side-projection registered to the dog silhouette;
-    // legacy coats keep box UVs for tiling strand maps.
-    //
-    // The box MUST come from the authored geometry, not Box3.setFromObject():
-    // on a SkinnedMesh that helper calls SkinnedMesh.computeBoundingBox(),
-    // which skins every vertex through bone matrices that have not been posed
-    // yet at build time. It came back ~2× too tall and half a body below the
-    // floor, so the side projection squeezed the whole dog into the top 40 %
-    // of the photo — i.e. the empty backdrop above the animal. Every breed
-    // rendered as one flat sheet of backdrop tan. (Same build-probe trap the
-    // collar sizing hit; see attachDogCollar.)
-    const rawBox = geometryBox(model);
-    const rawSize = Math.max(0.001, rawBox.max.y - rawBox.min.y);
+    const quality = opts.quality || sceneQuality();
+    model.updateMatrixWorld(true);
+    mergeDogCoat(model, breed);
     model.traverse((o) => {
-      if (o.isMesh && o.geometry) {
-        if (coatIsPhoto) applySidePhotoUVs(o.geometry, rawBox);
-        else ensureBoxUV(o.geometry, rawSize);
-        // Keep the original coat registration when the surface is sculpted.
-        sculptDogGeometry(o.geometry, breed);
-        refineDogSurface(o.geometry);
-      }
-    });
-
-    // Apply breed PBR coat maps (external textures) with procedural fur as
-    // fallback / micro-detail layer. Eyes/nose get a wet dark specular;
-    // coat stays matte dielectric. `mode`: "base" darkens + sets mats once;
-    // "upgrade" only swaps map slots so a late-arriving PNG never re-darkens.
-    const applyCoatMaterials = (coatMaps, mode = "base") => {
-      const lowQ = (typeof sceneQuality === "function" && sceneQuality() === "low");
-      const fur = (() => { try { return makeFurMaps(); } catch { return null; } })();
-      const photo = !!(coatMaps && coatMaps.photo) || coatIsPhoto;
-      const wrap = photo ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
-      const rep = photo ? 1.0 : 3.0;
-      model.traverse((o) => {
-        if (!o.isMesh || !o.material) return;
-        if (o.userData && o.userData.noCoat) return;   // collar, tag — not fur
-        const mats = Array.isArray(o.material) ? o.material : [o.material];
-        mats.forEach((m) => {
-          if (!m || !m.color) return;
-          const lum = 0.299 * m.color.r + 0.587 * m.color.g + 0.114 * m.color.b;
-          // The bundled Husky uses Blender's default material names.
-          const eye = m.name.startsWith("Eyes_")
-            || m.name === "Material.002" || m.name === "Material.003";
-          // Keep facial details and pads out of the projected coat maps.
-          if (eye || lum < 0.06) {
-            if (mode === "base") {
-              m.metalness = 0;
-              m.roughness = eye ? 0.16 : 0.38;
-              m.envMapIntensity = eye ? 0.85 : 0.5;
-              if (m.name === "Eyes_White" || m.name === "Material.003") {
-                m.color.setHex(0xd6cfc4);
-              }
-              if (m.clearcoat != null) {
-                m.clearcoat = eye ? 0.55 : 0.2;
-                m.clearcoatRoughness = eye ? 0.08 : 0.24;
-              }
-              m.needsUpdate = true;
-            }
-            return;
-          }
-          if (mode === "base") {
-            m.metalness = 0;
-            m.roughness = photo ? 0.82 : 0.88;
-            m.envMapIntensity = photo ? 0.55 : 0.42;
-            if (!photo) {
-              const darken = lum > 0.78 ? 0.66 : lum > 0.6 ? 0.76 : lum > 0.4 ? 0.86 : 0.95;
-              m.color.multiplyScalar(darken);
-            }
-          }
-          if (lum > 0.92) { m.needsUpdate = true; return; } // teeth / eye-whites
-          if (coatMaps && coatMaps.albedo && !lowQ) {
-            m.map = coatMaps.albedo.clone();
-            m.map.wrapS = m.map.wrapT = wrap;
-            m.map.repeat.set(rep, rep);
-            m.map.needsUpdate = true;
-            // Photo albedo carries the colour — multiply by near-white so the
-            // map is the look. Legacy maps still need a tint-through multiply.
-            if (!m.userData._coatAlbedoBoost) {
-              if (photo) {
-                m.color.setRGB(1, 1, 1);
-              } else {
-                m.color.multiplyScalar(0.55);
-                m.color.lerp(new THREE.Color(0xffffff), 0.35);
-              }
-              m.userData._coatAlbedoBoost = true;
-            }
-          }
-          const nrmSrc = (coatMaps && coatMaps.normal && !lowQ) ? coatMaps.normal : (fur && fur.normal);
-          const rghSrc = (coatMaps && coatMaps.roughness && !lowQ) ? coatMaps.roughness : (fur && fur.roughness);
-          if (nrmSrc) {
-            m.normalMap = nrmSrc.clone();
-            m.normalMap.wrapS = m.normalMap.wrapT = wrap;
-            m.normalMap.repeat.set(rep, rep);
-            m.normalMap.needsUpdate = true;
-            if (m.normalScale) m.normalScale.set(photo ? 0.38 : 0.75, photo ? 0.38 : 0.75);
-          }
-          if (rghSrc) {
-            m.roughnessMap = rghSrc.clone();
-            m.roughnessMap.wrapS = m.roughnessMap.wrapT = wrap;
-            m.roughnessMap.repeat.set(rep, rep);
-            m.roughnessMap.needsUpdate = true;
-          }
-          m.needsUpdate = true;
-        });
-      });
-    };
-    // Procedural maps immediately so the dog never flashes plastic while the
-    // breed PNGs stream in; then upgrade map slots when ready (no re-darken).
-    try { applyCoatMaterials(null, "base"); } catch (e) { console.warn("[dogs] fur maps:", e); }
-    // The low tier never applies the photo coat (see applyCoatMaterials) nor
-    // grows fur shells, so it doesn't download and decode the three maps.
-    const coatLanded = (sceneQuality() === "low" ? Promise.resolve(null) : loadDogCoatTextures(breed)).then((maps) => {
-      if (dog.userData.disposed || !maps) return;
-      try { applyCoatMaterials(maps, "upgrade"); } catch (e) { console.warn("[dogs] coat maps:", e); }
-      // Fur shells take their maps from the upgraded coat, so they're built
-      // only once it has landed (see addDogFurShells).
-      try { addDogFurShells(model, parts); } catch (e) { console.warn("[dogs] fur shells:", e); }
+      if (!o.isMesh) return;
+      sculptDogGeometry(o, breed);
+      if (isCoatMaterial(o.material, breed)) o.geometry = roundDogCoat(o.geometry);
+      if (quality !== "low") refineDogSurface(o.geometry);
+      applyDogSurface(o, breed, coat, quality);
     });
 
     // Animation: a named action map over the 12 clips the pack ships. Created
@@ -378,6 +442,14 @@ function buildDog(opts = {}) {
     parts.mixer = mixer;
     parts.actions = {};
     gltf.animations.forEach((clip) => { parts.actions[clip.name] = mixer.clipAction(clip); });
+    let previewAction = null;
+    parts.play = (name, fade, { timeScale = 1 } = {}) => {
+      const next = parts.actions[name];
+      if (!next || next === previewAction) return;
+      next.reset().setEffectiveTimeScale(timeScale).play();
+      if (previewAction) previewAction.crossFadeTo(next, fade, false);
+      previewAction = next;
+    };
     // Gait clips with their paw tracks made physically consistent
     // (correctDogGaitClip), plus the trot the pack doesn't ship (synthDogTrot,
     // built from the corrected walk). Once per loaded model, shared by every
@@ -533,14 +605,13 @@ function buildDog(opts = {}) {
 
     parts.model = model;
 
-    // Into the room once its programs are linked (compileBeforeAdd) — with the
-    // coat upgrade and fur shells in place when the maps are already here
-    // (they're prefetched), so the dog appears in the variant it keeps; a coat
-    // still downloading gets 1.5 s before the dog goes in without it.
-    Promise.race([coatLanded.catch(() => {}), new Promise((res) => setTimeout(res, 1500))])
-      .then(() => compileBeforeAdd(dog, model))
+    addDogFurShells(model, parts, quality, breed);
+    return compileBeforeAdd(dog, model)
       .then(() => {
-        if (dog.userData.disposed) return;
+        if (dog.userData.disposed) {
+          disposeObject(model);
+          return;
+        }
         try {
           dog.add(model);
           dog.userData.ready = true;
@@ -548,6 +619,7 @@ function buildDog(opts = {}) {
         } catch (e) { console.warn("[dogs] ready:", e); }
       });
   }).catch((err) => {
+    if (dog.userData.disposed) return;
     console.warn("[dogs] model load failed:", url, err);
     // Fallback so the room is never silently empty on a load failure. No
     // mixer/clips, so DogController.update() bails (it guards on parts.mixer) —
@@ -572,44 +644,24 @@ function buildDog(opts = {}) {
   return dog;
 }
 
-// ---------- Fur shells ----------
-// The coat is a photograph projected onto a low-poly body, so up close the
-// dog was a painted statue: a hard, perfectly smooth outline where a real dog
-// has a halo of hair catching the light. Shell texturing is the classic cure:
-// N copies of the coat mesh, each pushed a little further out along its
-// normals, each keeping only the strands that reach that high (a per-strand
-// random length, hashed from the bind-pose position so it is glued to the
-// skin under animation). Stacked, they read as fur — mostly at the
-// silhouette, where the eye grazes through all the layers at once.
-//
-// The shells share the coat's geometry, skeleton and maps (so they cost one
-// skinned draw each, no extra bone work), cast no shadow, stay out of SSAO,
-// and are hidden beyond a few metres where strands would only shimmer.
-// High tier 6 shells, medium 3 (none on phones), low none.
-function addDogFurShells(model, parts) {
-  const q = (typeof sceneQuality === "function") ? sceneQuality() : "high";
-  if (q === "low" || !model || parts.furShells) return;
-  // Phones on medium: none either. Each shell is a full extra skinned draw of
-  // the coat at the dog's screen size — on a phone GPU three of them cost
-  // more than the rest of the dog, for a halo a 6-inch screen barely shows.
-  if (q === "medium" && IS_MOBILE) return;
-  const N = q === "high" ? 6 : 3;
+// Shells share the coat's geometry and skeleton. Strands are hashed in
+// bind space and grow before skinning so they follow the animated surface.
+function addDogFurShells(model, parts, q, breed) {
+  if (q === "low" || (q === "medium" && IS_MOBILE)) return;
+  const N = q === "high" ? 4 : 2;
   const S = parts.modelScale || 1;
   const H = parts.height || 0.6;
   const sz = Math.sqrt(H / 0.56);
-  const furLen = 0.007 * sz;              // metres of fur at the outermost shell
+  const furLen = (breed === "husky" ? 0.014 : 0.009) * sz;              // metres of fur at the outermost shell
   const cell = 0.0021 * sz;               // strand spacing, metres
   const targets = [];
   model.traverse((o) => {
-    if (o.isSkinnedMesh && !o.userData.furShell && o.geometry
-        && o.geometry.attributes.position.count > 1000) targets.push(o);
+    if (o.userData.dogCoat) targets.push(o);
   });
   const shells = [];
   const fade = { value: 1 };
   for (const src of targets) {
-    const baseMat = Array.isArray(src.material) ? src.material[0] : src.material;
-    if (!baseMat || !baseMat.isMeshStandardMaterial || !baseMat.map) continue;
-    if (baseMat.name.startsWith("Eyes_") || ["Material.002", "Material.003"].includes(baseMat.name)) continue;
+    const baseMat = src.material;
     for (let i = 1; i <= N; i++) {
       const h = i / (N + 1);
       const mat = baseMat.clone();
@@ -624,11 +676,15 @@ function addDogFurShells(model, parts) {
         shader.vertexShader = shader.vertexShader
           .replace("#include <common>", `#include <common>
 uniform float uFurH; uniform float uFurLen; varying vec3 vFurP;`)
-          .replace("#include <skinning_vertex>", `#include <skinning_vertex>
+          .replace("#include <begin_vertex>", `#include <begin_vertex>
 // Short hair at the feet and muzzle, fuller coat around the ruff.
 float bodyFur = smoothstep(0.3, 1.0, position.y);
-float muzzleFur = 1.0 - 0.75 * smoothstep(1.8, 2.5, position.z);
-transformed += normalize(objectNormal) * (uFurH * uFurLen * mix(0.22, 1.0, bodyFur) * muzzleFur);
+float face = smoothstep(1.48, 1.88, position.z) * smoothstep(2.2, 2.5, position.y);
+float muzzleFur = 1.0 - 0.91 * face;
+float ruff = smoothstep(0.75, 1.4, position.z) * (1.0 - smoothstep(2.2, 2.75, position.y));
+muzzleFur *= 1.0 - 0.72 * smoothstep(2.76, 3.06, position.y) * smoothstep(0.9, 1.7, position.z);
+vec3 growth = normalize(normal + vec3(0.0, -0.18, -0.34));
+transformed += growth * (uFurH * uFurLen * mix(0.12, 0.76 + 0.50 * ruff, bodyFur) * muzzleFur);
 vFurP = position;`);
         shader.fragmentShader = shader.fragmentShader
           .replace("#include <common>", `#include <common>
@@ -645,7 +701,7 @@ float furHash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) 
   if (dot(f, f) > rad * rad) discard;
 }`)
           .replace("#include <map_fragment>", `#include <map_fragment>
-diffuseColor.rgb *= mix(0.84, 1.05, uFurH);`);
+diffuseColor.rgb *= mix(0.93, 1.05, uFurH);`);
       };
       mat.customProgramCacheKey = () => "dogFurShell";
       const shell = new THREE.SkinnedMesh(src.geometry, mat);
@@ -663,7 +719,6 @@ diffuseColor.rgb *= mix(0.84, 1.05, uFurH);`);
       // `visible` and noPick, and skins every triangle on the CPU to test a
       // SkinnedMesh — a tap at the dog cost ~5 ms per raycast with 6 shells.
       shell.raycast = () => {};
-      shell.userData.noCoat = true;
       shell.userData.ssaoSkip = true;
       src.parent.add(shell);
       shells.push(shell);

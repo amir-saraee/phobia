@@ -2,12 +2,11 @@
 // heroes, the traveler's room).
 
 import * as THREE from "three";
-import { compileAhead, DOG_MODELS, DOG_COAT_MAPS, loadDogCoatTextures, CREATURE_MODELS, buildCreature } from "./assets.js";
+import { compileAhead, CREATURE_MODELS, buildCreature } from "./assets.js";
 import { disposeObject, resolveQuality, syncFxLite, getRoomEnvMap, IS_MOBILE } from "./renderer.js";
 import { makeSoftSunbeam } from "./human-rig.js";
 import { BODY_TYPES_3D } from "./human-base.js";
 import { makeConcreteMaps, makeEarthMaps, makeGrassMaps, makePlankMaps, makePlasterMaps, makeRugMaps } from "./textures.js";
-import { applySidePhotoUVs } from "./creature-kit.js";
 import { buildDog } from "./dog-model.js";
 import { buildAvatarFigure, warmFigureCaches } from "./avatar.js";
 
@@ -67,7 +66,7 @@ const ShellScenes = (() => {
     const camera = new THREE.PerspectiveCamera(opts.fov || 34, w / h, 0.05, 80);
     // `retired`: objects swapped out of the scene (a re-dressed figure), freed
     // after the next draw — see tick.
-    const ctx = { container, renderer, scene, camera, raf: 0, disposed: false, onTick: null, elapsed: 0, retired: [] };
+    const ctx = { container, renderer, scene, camera, quality: tier, raf: 0, disposed: false, onTick: null, elapsed: 0, retired: [] };
     const ro = ("ResizeObserver" in window) ? new ResizeObserver(() => {
       const nw = container.clientWidth, nh = container.clientHeight;
       if (nw && nh && !ctx.disposed) {
@@ -162,6 +161,7 @@ const ShellScenes = (() => {
     if (ctx.io) { try { ctx.io.disconnect(); } catch {} }
     if (ctx.cleanupExtra) { try { ctx.cleanupExtra(); } catch {} }
     for (const o of ctx.retired.splice(0)) { try { disposeObject(o); } catch {} }
+    ctx.scene.traverse(o => { if (o.userData.ready === false) o.userData.disposed = true; });
     try { disposeObject(ctx.scene); } catch {}
     // Release the GL context now, not at the next GC: going map → realm →
     // map makes a fresh context each time, and browsers cap live contexts.
@@ -465,16 +465,14 @@ const ShellScenes = (() => {
     };
     (companions || []).forEach((breed, i) => {
       const spot = PAL_SPOTS[breed];
-      if (!spot || !DOG_MODELS[breed]) return;
+      if (!spot) return;
       try {
-        const dog = buildCreature(DOG_MODELS[breed], { targetSize: spot.size, axis: "max" });
+        const dog = buildDog({ breed, targetHeight: spot.size, quality: ctx.quality });
         dog.position.set(spot.pos[0], spot.pos[1], spot.pos[2]);
         dog.rotation.y = Math.atan2(spot.face[0] - spot.pos[0], spot.face[1] - spot.pos[2]);
         scene.add(dog);
         const pal = { dog, next: 5 + i * 3.5 + Math.random() * 3, low: true };
         dog.userData.onReady = () => {
-          try { applyVignetteCoat(dog, breed); } catch {}
-          dog.traverse((o) => { if (o.isMesh) { o.castShadow = true; } });
           const parts = dog.userData.parts;
           if (parts && parts.play) parts.play("Idle_2_HeadLow", 0.2);
           if (parts && parts.mixer) parts.mixer.update(0.05 + i * 0.7);
@@ -517,7 +515,7 @@ const ShellScenes = (() => {
         parts.mixer.update(dt);
         if (t > pal.next) {
           pal.low = !pal.low;
-          parts.play(pal.low ? "Idle_2_HeadLow" : "^Idle$", 0.8);
+          parts.play(pal.low ? "Idle_2_HeadLow" : "Idle", 0.8);
           pal.next = t + (pal.low ? 9 + Math.random() * 8 : 3 + Math.random() * 3);
         }
       }
@@ -875,73 +873,16 @@ const ShellScenes = (() => {
     camera.lookAt(0, 0.5, 0);
   }
 
-  // The realm hero loads the raw GLTF through buildCreature, so it never went
-  // through buildDog — which is where the photo-projected coat is applied. The
-  // result was a flat brown shiba on the ladder page above a photo-coated one
-  // in the scene: the storefront and the game looked like different products.
-  // Same side projection, same maps, minus the scene-only fur/tint layers.
-  function applyVignetteCoat(root, breed) {
-    const urls = DOG_COAT_MAPS[breed];
-    if (!urls || !urls.photo) return;
-    // The projection box must be in the MODEL's own space — the same space the
-    // scene dog measures in (geometryBox on the fresh, unparented clone).
-    // geometryBox(root) here came back in world space: scaled to the
-    // turntable's targetSize and rotated by wherever the spin happened to be,
-    // so the photo landed half off the dog — the grey "sweater" round the
-    // banner dog's middle and the white socks.
-    const model = (root.userData.parts && root.userData.parts.model) || root;
-    model.updateWorldMatrix(true, true);
-    const inv = model.matrixWorld.clone().invert();
-    const box = new THREE.Box3(), b = new THREE.Box3(), rel = new THREE.Matrix4();
-    model.traverse((o) => {
-      if (!o.isMesh || !o.geometry) return;
-      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
-      if (!o.geometry.boundingBox) return;
-      rel.multiplyMatrices(inv, o.matrixWorld);
-      box.union(b.copy(o.geometry.boundingBox).applyMatrix4(rel));
-    });
-    root.traverse((o) => {
-      if (o.isMesh && o.geometry) applySidePhotoUVs(o.geometry, box);
-    });
-    loadDogCoatTextures(breed).then((maps) => {
-      if (!maps || !root.parent) return;
-      root.traverse((o) => {
-        if (!o.isMesh || !o.material) return;
-        const mats = Array.isArray(o.material) ? o.material : [o.material];
-        mats.forEach((m) => {
-          if (!m || !m.color) return;
-          const lum = 0.299 * m.color.r + 0.587 * m.color.g + 0.114 * m.color.b;
-          if (lum < 0.06 || lum > 0.92) return;     // eyes / nose / teeth
-          if (maps.albedo) { m.map = maps.albedo; m.color.setRGB(1, 1, 1); }
-          if (maps.normal) m.normalMap = maps.normal;
-          if (maps.roughness) m.roughnessMap = maps.roughness;
-          m.vertexColors = false;
-          m.roughness = 0.82;
-          m.needsUpdate = true;
-        });
-      });
-      try { ctxRenderOnce(root); } catch {}
-    });
-  }
-  // The vignette renders on demand, so a late-arriving texture needs one more
-  // frame or the coat only appears after the user drags the turntable.
-  function ctxRenderOnce(node) {
-    let p = node;
-    while (p && !p.userData._vignetteCtx) p = p.parent;
-    const c = p && p.userData._vignetteCtx;
-    if (c) c.renderer.render(c.scene, c.camera);
-  }
-
   function creatureTurntable(ctx, url, opts) {
     creatureStage(ctx, opts);
     const holder = new THREE.Group();
-    holder.userData._vignetteCtx = ctx;
     ctx.scene.add(holder);
     if (opts.dress) { try { opts.dress(holder, ctx); } catch {} }
-    const creature = buildCreature(url, { targetSize: opts.targetSize, axis: opts.axis || "max" });
+    const creature = opts.breed
+      ? buildDog({ breed: opts.breed, targetHeight: opts.targetSize, quality: ctx.quality })
+      : buildCreature(url, { targetSize: opts.targetSize, axis: opts.axis || "max" });
     holder.add(creature);
     creature.userData.onReady = () => {
-      if (opts.coatBreed) { try { applyVignetteCoat(creature, opts.coatBreed); } catch {} }
       const parts = creature.userData.parts;
       if (parts && parts.play) parts.play(opts.clip || "idle", 0.2, { timeScale: opts.timeScale || 1 });
       // Frame by measured height so shiba / spider / snake all fill the stage.
@@ -964,8 +905,8 @@ const ShellScenes = (() => {
 
   // Per-realm set dressing: a couple of props that say "this is a place".
   function realmDog(ctx) {
-    creatureTurntable(ctx, DOG_MODELS.shiba, {
-      targetSize: 1.05, clip: "idle", spin: 0.3, ground: "planks", coatBreed: "shiba",
+    creatureTurntable(ctx, null, {
+      targetSize: 0.82, clip: "Idle", spin: 0.3, ground: "planks", breed: "shiba",
       dress(holder, c) {
         try {
           const rugMaps = makeRugMaps();
@@ -1385,11 +1326,11 @@ const ShellScenes = (() => {
       } catch { figure = null; }
     }
 
-    // Photo-coated dog in the yard — the fear lives in the world from beat one.
+    // Shiba in the yard — the fear lives in the world from beat one.
     let dog = null;
     try {
       if (typeof buildDog === "function") {
-        dog = buildDog({ breed: "shiba", targetHeight: 0.52, coat: 0xc4a574 });
+        dog = buildDog({ breed: "shiba", targetHeight: 0.52, quality: ctx.quality });
         dog.position.set(1.65, 0, 0.95);
         dog.rotation.y = -0.9;
         dog.userData.onReady = () => {

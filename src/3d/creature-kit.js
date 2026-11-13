@@ -182,51 +182,6 @@ function ensureBoxUV(geom, scaleRef) {
   geom.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
 }
 
-// Bind-pose bounds of everything renderable under `root`, taken from the
-// authored geometry only. Box3.setFromObject() cannot be used on a rig that
-// has not been posed: it routes SkinnedMesh through computeBoundingBox(),
-// which skins each vertex with bone matrices that are still unset this early.
-function geometryBox(root) {
-  const box = new THREE.Box3();
-  const b = new THREE.Box3();
-  root.updateWorldMatrix(false, true);
-  root.traverse((o) => {
-    if (!o.isMesh || !o.geometry) return;
-    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
-    if (!o.geometry.boundingBox) return;
-    b.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld);
-    box.union(b);
-  });
-  return box;
-}
-
-// Side-profile photo projection. The breed albedo is a cropped photograph of
-// the real dog (facing −Z in texture space = left). Map mesh length (Z) → U
-// and height (Y) → V so the flanks carry the photo; mirror across X so both
-// sides of the body show the same profile rather than a stretched underside.
-function applySidePhotoUVs(geom, box) {
-  if (!geom || !geom.attributes || !geom.attributes.position) return;
-  const pos = geom.attributes.position;
-  const min = box.min, max = box.max;
-  const sx = Math.max(1e-4, max.x - min.x);
-  const sy = Math.max(1e-4, max.y - min.y);
-  const sz = Math.max(1e-4, max.z - min.z);
-  const uv = new Float32Array(pos.count * 2);
-  // Quaternius dogs face +Z; the photo faces left (−X in image = nose).
-  // U increases toward the tail so the muzzle lands on the left of the photo.
-  for (let i = 0; i < pos.count; i++) {
-    const y = pos.getY(i), z = pos.getZ(i);
-    const u = 1 - (z - min.z) / sz;          // nose (+Z) → left of photo
-    // TextureLoader flipY: v=1 samples the top of the PNG (crown).
-    const v = (y - min.y) / sy;
-    uv[i * 2] = Math.max(0, Math.min(1, u));
-    uv[i * 2 + 1] = Math.max(0, Math.min(1, v));
-  }
-  geom.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
-  // Silence unused sx — kept so a future cylindrical blend can use lateral.
-  void sx;
-}
-
 // Angle-limited normal smoothing for flat-shaded GLTF creatures. These models
 // duplicate every vertex per triangle with per-face normals — each triangle a
 // hard plate. For every cluster of position-duplicate vertices, average the
@@ -282,37 +237,22 @@ function smoothCreaseNormals(geom, cosLimit = 0.5) {
   nor.needsUpdate = true;
 }
 
-// ---------- Dog (real rigged GLTF model) ----------
-// The dog is a Quaternius CC0 model (Shiba Inu for the small/calm rungs, Husky
-// for the larger/closer rungs) loaded through the shared GLTF cache and animated
-// with an AnimationMixer. buildDog() returns a Group SYNCHRONOUSLY so the scene
-// can position / parent it right away, then streams the skinned model in. Every
-// thing the scene relies on hangs off dog.userData.parts once the model lands.
-//
-// Forward convention: the dog Group's +Z is "forward" (the snout). The source
-// model already faces +Z, so no extra rotation is needed. This matches the
-// locomotion math used in setupDogs (yaw = atan2(dx, dz); forward = (sinθ, cosθ)).
-// Real coat colours for each breed. Applied as a hue/saturation shift that
-// PRESERVES each material's lightness, so the nose stays black and the teeth
-// stay white while the fur changes — a blanket tint turns the eyes brown.
+// Keep the stored coat IDs stable across visits. Colors are used as the
+// base of the breed markings in dog-model.js.
 const DOG_COATS = {
   shiba: [
-    { id: "red",     label: "red",        h: 0.055, s: 0.62, lMul: 1.00 },
-    { id: "cream",   label: "cream",      h: 0.095, s: 0.26, lMul: 1.10 },
-    { id: "sesame",  label: "sesame",     h: 0.065, s: 0.45, lMul: 0.86 },
-    { id: "blacktan",label: "black-and-tan", h: 0.075, s: 0.30, lMul: 0.62 },
+    { id: "red", color: 0xc27339 },
+    { id: "cream", color: 0xd8ae73 },
+    { id: "sesame", color: 0x9c6743 },
+    { id: "blacktan", color: 0x47352f },
   ],
   husky: [
-    { id: "grey",    label: "grey",       h: 0.60,  s: 0.06, lMul: 0.96 },
-    { id: "black",   label: "black-and-white", h: 0.62, s: 0.03, lMul: 0.74 },
-    { id: "copper",  label: "copper",     h: 0.048, s: 0.42, lMul: 0.94 },
-    { id: "agouti",  label: "agouti",     h: 0.085, s: 0.24, lMul: 0.80 },
+    { id: "grey", color: 0x55565b },
+    { id: "black", color: 0x303136 },
+    { id: "copper", color: 0x865441 },
+    { id: "agouti", color: 0x625a4f },
   ],
 };
-// A dog's coat is IDENTITY, not context — the ladder's fiction is that rung 2
-// is "the same small dog, closer now", and an animal that changes colour
-// between visits breaks that (and the per-breed trust model built on it). So
-// the coat is drawn once per breed per traveller and then kept.
 function coatFor(kind, pool) {
   const key = "fobia.coat." + kind;
   try {
@@ -368,4 +308,4 @@ const SNAKE_COATS = [
   { id: "sand",   h: 0.115, s: 0.30, lMul: 1.06 },
 ];
 
-export { makeScaleNormal, makeFurMaps, ensureBoxUV, geometryBox, applySidePhotoUVs, smoothCreaseNormals, DOG_COATS, coatFor, applyCoatTint, _hexMix, SPIDER_COATS, SNAKE_COATS };
+export { makeScaleNormal, makeFurMaps, ensureBoxUV, smoothCreaseNormals, DOG_COATS, coatFor, applyCoatTint, _hexMix, SPIDER_COATS, SNAKE_COATS };

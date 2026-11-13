@@ -6,6 +6,7 @@ const http = require('http');
 const puppeteer = require('puppeteer-core');
 const root = path.resolve(__dirname, '..');
 const out = process.argv[2] || '/tmp/fobia-dogs';
+const quality = process.env.DOG_QUALITY || 'high';
 const mime = { '.js': 'text/javascript', '.jpg': 'image/jpeg', '.png': 'image/png' };
 (async () => {
   fs.mkdirSync(out, { recursive: true });
@@ -34,8 +35,8 @@ const mime = { '.js': 'text/javascript', '.jpg': 'image/jpeg', '.png': 'image/pn
     page.on('pageerror', e => errors.push(String(e)));
     page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
-    await page.evaluate(async () => {
-      localStorage.setItem('fobia.quality', 'high');
+    await page.evaluate(async quality => {
+      localStorage.setItem('fobia.quality', quality);
       const THREE = await import('three');
       const { buildDog } = await import('/src/3d/dog-model.js');
       const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -58,9 +59,17 @@ const mime = { '.js': 'text/javascript', '.jpg': 'image/jpeg', '.png': 'image/pn
           dog.userData.onReady = () => { clearTimeout(timeout); resolve(); };
         });
         if (dog.userData.loadFailed) throw Error('Dog fallback used');
+        const coats = [];
+        dog.traverse(mesh => { if (mesh.userData.dogCoat) coats.push(mesh); });
+        if (coats.length !== 1 || !coats[0].geometry.hasAttribute('color')) {
+          throw Error(`${breed}: expected one skinned coat with bind-space markings`);
+        }
+        if (quality === 'low' && dog.userData.parts.furShells?.length) {
+          throw Error(`${breed}: fur shells enabled on low`);
+        }
         dog.visible = false;
       }
-    });
+    }, quality);
     for (const [index, breed] of ['shiba', 'husky'].entries()) {
       for (const view of ['three-quarter', 'side', 'front']) {
         const stats = await page.evaluate(({ index, view }) => {

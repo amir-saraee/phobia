@@ -289,6 +289,7 @@ function _sweep(sg, stations, radial) {
   };
   if (stations[0].cap) capEnd(0, -1);
   if (stations[stations.length - 1].cap) capEnd(stations.length - 1, 1);
+  return rings;
 }
 
 // ---- body-type proportion table ----------------------------------------

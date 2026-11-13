@@ -386,7 +386,8 @@ function buildHairCurtain(rc) {
     const p1 = col[KH];
     fallFrom.push(p1.y);
     const cu = 2 * u - 1;
-    const yEnd = endBase + 0.075 * H * cu * cu + 0.010 * Math.sin(u * 37.3) + 0.007 * Math.sin(u * 91.7);
+    const yEnd = endBase + 0.075 * H * cu * cu + 0.013 * Math.sin(u * 23.7)
+      + 0.005 * Math.sin(u * 77.3);
     // Leave the head along its own tangent, then fall.
     const tan = col[KH].clone().sub(col[KH - 1]).normalize();
     for (let r = 1; r <= KF; r++) {
@@ -394,12 +395,14 @@ function buildHairCurtain(rc) {
       const y = p1.y - (p1.y - yEnd) * t;
       const ease = Math.min(1, t * 3.2);
       const x = p1.x * (1 + 0.30 * Math.pow(t, 1.1)) + tan.x * 0.03 * (1 - ease);
-      let z = p1.z + tan.z * 0.05 * Math.min(1, t * 2.0) * (1 - 0.5 * t);
+      const wave = Math.sin(u * 31 + t * 4.6) * 0.0035 + Math.sin(u * 71 - t * 6.2) * 0.0019;
+      const z = p1.z + tan.z * 0.05 * Math.min(1, t * 2.0) * (1 - 0.5 * t)
+        + wave * Math.sin(Math.PI * t * 0.8);
       col.push(V(x, y, z));
     }
     // Drape over the body: clear the neck and back, then smooth the profile
     // so the hair lies on the shoulder blades instead of kinking round them.
-    const clr = 0.010 + 0.006 * scale;
+    const clr = 0.010 + scale * (0.007 + 0.003 * Math.sin(u * 31));
     for (let pass = 0; pass < 8; pass++) {
       for (let r = KH + 1; r <= KR; r++) {
         const zb = zBack(col[r].x, col[r].y);
@@ -500,7 +503,7 @@ function buildHairCurtain(rc) {
   const mat = hairMat.clone();
   mat.vertexColors = true;
   const strands = getHairStrandTex(9, 2.2);
-  if (strands) { mat.map = strands; mat.bumpMap = strands; mat.bumpScale = 1.4; }
+  if (strands) { mat.map = strands; mat.bumpMap = strands; mat.bumpScale = 0.0012; }
   const mesh = new THREE.SkinnedMesh(geo, mat);
   mesh.name = "hairCurtain";
   mesh.castShadow = true;
@@ -602,59 +605,38 @@ function buildHumanRig(o = {}) {
   // through the body remap.
   const SHY = armY;                                   // acromion
   const torso = [
-    // capH: the collar closes nearly flat, under the neck. A full dome here
-    // rose around the throat like a turtleneck once the cap stopped being
-    // back-face culled (see _sweep's capEnd).
-    // The crew neck: high at the nape, dipping ~5 cm at the front so the
-    // throat shows the way it does above a real tee. Level rings put the whole
-    // neckline up under the chin, which read as a turtleneck.
-    { ay: SHY + 0.080, rx: .0575, rz: .0560, w: [[bi(neck), .65], [bi(chest), .35]], mat: shirtTop, sq: 1, cap: 1, capH: 0.10, ymod: _crewDip(0.070) },
-    { ay: SHY + 0.062, rx: .0720, rz: .0700, w: [[bi(neck), .38], [bi(chest), .62]], mat: shirtTop, sq: .97, ymod: _crewDip(0.052) },
-    { ay: SHY + 0.040, rx: .1030, rz: .0870, w: [[bi(chest), 1]], mat: shirtTop, sq: .93, ymod: _crewDip(0.020) },
+    // Open neckline. The neck extends below the rim, including at the
+    // dipped front, so the trim can be seen against skin from above.
+    { ay: SHY + 0.080 * H, rx: .0575, rz: .0560, w: [[bi(neck), .65], [bi(chest), .35]],
+      mat: MAT.DARK, sq: 1, ymod: _crewDip(0.062) },
+    { ay: SHY + 0.072 * H, rx: .0650, rz: .0630, w: [[bi(neck), .52], [bi(chest), .48]],
+      mat: shirtTop, sq: .99, ymod: _crewDip(0.058) },
+    { ay: SHY + 0.058 * H, rx: .0760, rz: .0740, w: [[bi(neck), .38], [bi(chest), .62]],
+      mat: shirtTop, sq: .97, ymod: _crewDip(0.048) },
+    { ay: SHY + 0.040 * H, rx: .1030, rz: .0870, w: [[bi(chest), 1]],
+      mat: shirtTop, sq: .93, ymod: _crewDip(0.027) },
     // The acromion shelf stays WIDE up to just above the joint — that is what
     // the deltoid sits on. Narrowing it here (which the first attempt did) left
     // the arm cap protruding into thin air beside the neck.
     // Round through the shoulder band. `sq` squares the cross-section off, which
     // is right for a ribcage and wrong for a shoulder girdle — the corners were
     // reading as hard pointed edges where the sleeve met the yoke.
-    { ay: SHY + 0.018, rx: .1390, rz: .0955, w: [[bi(chest), 1]], mat: shirtTop, sq: .99 },
-    { ay: SHY - 0.010, rx: .1550, rz: .1030, w: [[bi(chest), 1]], mat: shirtTop, sq: .97 },
-    { ay: SHY - 0.055, rx: .1955, rz: .1130, w: [[bi(chest), 1]], mat: shirtTop, sq: .93 },
-    { ay: SHY - 0.090, rx: .1950, rz: .1160, w: [[bi(chest), .70], [bi(breath), .30]], mat: shirtTop, sq: sqT },
+    { ay: SHY + 0.018 * H, rx: .1390, rz: .0955, w: [[bi(chest), 1]], mat: shirtTop, sq: .99 },
+    { ay: SHY - 0.010 * H, rx: .1550, rz: .1030, w: [[bi(chest), 1]], mat: shirtTop, sq: .97 },
+    { ay: SHY - 0.055 * H, rx: .1955, rz: .1130, w: [[bi(chest), 1]], mat: shirtTop, sq: .93 },
+    { ay: SHY - 0.090 * H, rx: .1950, rz: .1160, w: [[bi(chest), .70], [bi(breath), .30]], mat: shirtTop, sq: sqT },
     { y: 1.150, rx: .1805, rz: .1195, w: [[bi(breath), 1]], mat: shirtTop, sq: sqT },
     { y: 1.078, rx: .1580, rz: .1090, w: [[bi(breath), .55], [bi(spine), .45]], mat: shirtTop, sq: sqT },
-    { y: 1.008, rx: .1415, rz: .0975, w: [[bi(spine), 1]], mat: shirtTop, sq: sqT },
-    { y: 0.952, rx: .1435, rz: .1005, w: [[bi(spine), .50], [bi(pelvis), .50]], mat: shirtTop, sq: sqT },
+    { y: 1.008, rx: .1515, rz: .1010, w: [[bi(spine), 1]], mat: shirtTop, sq: sqT },
+    { y: 0.952, rx: .1500, rz: .1030, w: [[bi(spine), .50], [bi(pelvis), .50]], mat: shirtTop, sq: sqT },
     // A tee hem hangs OVER the waistband. The pants stations used to be wider
     // than the shirt above them (.1690 against .1580), so the trousers stepped
     // out past the hem and the overhang shaded into a hard black ring right
     // across the hips. Carry the shirt down to its own slightly flared hem and
     // start the trousers just inside it, so the step goes the way cloth does.
     { y: 0.902, rx: .1620, rz: .1120, w: [[bi(pelvis), 1]], mat: shirtTop, sq: sqT },
-    { y: 0.878, rx: .1712, rz: .1188, w: [[bi(pelvis), 1]], mat: shirtTop, sq: sqT },
+    { y: 0.878, rx: .1700, rz: .1168, w: [[bi(pelvis), 1]], mat: shirtTop, sq: sqT },
     { y: 0.860, rx: .1668, rz: .1152, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
-    { y: 0.826, rx: .1700, rz: .1180, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
-    // Close the trunk NARROW and high. At .1420 the end cap was a disc wider
-    // than the gap between the thighs, hanging below the crotch — that pale
-    // wedge between the legs was this, seen from underneath. The first shrink
-    // (.0760 at y .762) still left the disc hanging ~2 cm proud of the inseam,
-    // where its down-facing normals catch the fill light and read as a pale
-    // wedge of skin between the trousers. Tuck it up INTO the thigh gap and
-    // narrow it to the inseam shadow's width.
-    //
-    // Two more things were still showing there. `_sweep` pushes a cap's pole
-    // out along the axis by 0.85 × the ring radius, so the .056 closing ring
-    // grew a 5.6 cm cone hanging down between the thighs — the pale triangle
-    // on the traveler page. And the block stepped from .164 to .112 in 6 mm
-    // while standing ~3 cm proud of the thighs' front (chestZ deepens the
-    // whole trunk): a shelf with a hard lower edge, like shorts over tights.
-    // So the lower block now draws in toward the thighs' own depth over
-    // 2.5 cm, and closes on a ring small enough that its pole is ~1 cm,
-    // high enough that the thighs' inner mass meets in front of it.
-    { y: 0.804, rx: .1560, rz: .1040, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
-    { y: 0.792, rx: .1180, rz: .0860, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
-    { y: 0.784, rx: .0620, rz: .0580, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT },
-    { y: 0.779, rx: .0180, rz: .0200, w: [[bi(pelvis), 1]], mat: MAT.PANTS, sq: sqT, cap: 1 },
   ];
   // Chest / hip widths diverge by body type; `k` is 1 at the shoulders, 0 at
   // the seat, so one lerp shapes the whole silhouette.
@@ -666,7 +648,7 @@ function buildHumanRig(o = {}) {
   // sections, so the hem still overhangs the waistband. Shared with the
   // outfit block's frontZ so pockets and zips ride on the cloth, not the skin.
   const waistPinchAt = (yAuth) => 1 - (1 - bt.waist) * 0.75 * Math.exp(-Math.pow((yAuth - 0.985) / 0.095, 2));
-  const clothPinchAt = (yAuth) => 1 - (1 - waistPinchAt(yAuth)) * 0.45;
+  const clothPinchAt = (yAuth) => 1 - (1 - waistPinchAt(yAuth)) * 0.35;
   const clothEaseAt = (yAuth) => {
     const drop = _hsat((1.212 - yAuth) / (1.212 - 0.878));
     const easeK = o.topStyle === "hoodie" ? 1.6 : (o.topStyle === "jacket" ? 1.25 : 1.0);
@@ -677,13 +659,13 @@ function buildHumanRig(o = {}) {
     // authored frame and need the remap. `k` (shoulder→seat blend) is judged in
     // the AUTHORED frame either way, so a re-authored station still gets the
     // body-type widths it should.
-    const yAuth = s.ay != null ? 1.28 + (s.ay - armY) : s.y;
+    const yAuth = s.ay != null ? 1.28 + (s.ay - armY) / H : s.y;
     const k = _hsat((yAuth - 0.80) / (1.29 - 0.80));
     // Dampened: stacking the raw hip factor on top of the seat factor pushed a
     // 36 cm hip out past 44 cm, which is what made the pelvis read as a block.
     const wide = SW * k + (1 + (HW - 1) * 0.55) * (1 - k);
     const seatK = 1 + (bt.seat - 1) * 0.5 * (1 - k) * (1 - k);
-    const isShirt = s.mat === shirtTop;
+    const isShirt = s.mat !== MAT.PANTS;
     const ease = isShirt ? clothEaseAt(yAuth) : 1;
     const pinch = isShirt ? clothPinchAt(yAuth) : waistPinchAt(yAuth);
     return {
@@ -692,9 +674,44 @@ function buildHumanRig(o = {}) {
       rz: s.rz * (0.94 + 0.06 * wide) * bt.chestZ * pinch * seatK * ease,
       w: s.w, mat: s.mat, sq: s.sq, cap: s.cap, capH: s.capH,
       ymod: s.ymod ? ((ang) => s.ymod(ang) * H) : null,
+      rmod: isShirt && yAuth < 1.17 ? (ang) => {
+        const fold = _sstep(1.17, 0.97, yAuth) * _sstep(0.87, 0.91, yAuth);
+        return 1 + 0.026 * fold * Math.sin(ang * 3 + yAuth * 67)
+          + 0.014 * fold * Math.sin(ang * 5 - yAuth * 43);
+      } : null,
     };
   });
-  _sweep(sg, torsoSt, RAD_T);
+  const torsoRings = _sweep(sg, torsoSt, RAD_T);
+  const waistRing = torsoRings.at(-1);
+  // A recessed backing closes the neckline when the first-person camera
+  // hides the neck. In third person it sits under the visible skin.
+  const neckline = torsoRings[0].map((i, k) => sg.vert(
+    sg.pos[3 * i], sg.pos[3 * i + 1], sg.pos[3 * i + 2], k / RAD_T, 0, torsoSt[0].w));
+  const collarBacking = sg.vert(0, SHY - 0.018 * H, 0, 0.5, 0, torsoSt[0].w);
+  for (let k = 0; k < RAD_T; k++) {
+    sg.tri(neckline[k], collarBacking, neckline[(k + 1) % RAD_T], MAT.SHIRT);
+  }
+  const innerSeam = new Map();
+  const waistFront = RAD_T / 4;
+  const waistBack = RAD_T * 3 / 4;
+  // The trousers branch at a shared inseam. Each thigh's outside half joins
+  // the waistband, and its inside half joins the same front-to-back arc.
+  function trouserTop(k, side) {
+    if (side > 0 ? k <= waistFront || k >= waistBack : k >= waistFront && k <= waistBack) {
+      return waistRing[k];
+    }
+    const key = side > 0 ? k : (RAD_T / 2 - k + RAD_T) % RAD_T;
+    if (!innerSeam.has(key)) {
+      const u = (key - waistFront) / (waistBack - waistFront);
+      const sag = Math.sin(Math.PI * u);
+      const waist = torsoSt.at(-1);
+      const hipWeight = 0.26 * sag;
+      innerSeam.set(key, sg.vert(0, stationY(0.860 - 0.097 * sag),
+        waist.rz * Math.cos(Math.PI * u), 0.5, u,
+        [[bi(pelvis), 1 - 2 * hipWeight], ...legBones.map(({ hp }) => [bi(hp), hipWeight])]));
+    }
+    return innerSeam.get(key);
+  }
 
   // Arms. The deltoid's first rings are weighted to the CHEST, so the shoulder
   // stays welded to the torso and stretches instead of hinging open.
@@ -765,28 +782,9 @@ function buildHumanRig(o = {}) {
     // (toward the other leg) is cos(ang) < 0 on the right leg, > 0 on the left.
     const inner = (a, p = 1.4) => (ang) => 1 + a * Math.pow(Math.max(0, -sx * Math.cos(ang)), p);
     const both = (f, g) => (ang) => f(ang) * g(ang);
-    // The hip junction. Torso and thigh are two tubes, so the thigh's top has
-    // to stay INSIDE the trousers block, under the shirt hem, in every pose.
-    // It used to start 9.6 cm above the hip joint (authored .888), above the
-    // hem (8.2 cm) and ~3 cm wider than the shirt there, with its capped top
-    // weighted 38 % to the thigh: the dark cap poked out at both hips even in
-    // the bind pose, and Idle_Loop's stance (thighs abducted 9° and 11–15°,
-    // one flexed ~23°) lifted it further — the "waistband flaps". Now the top
-    // ring is small and sits inside the block (authored .858), and the rings
-    // above the joint (.82) are pelvis-heavy, so under 15° of abduction the
-    // hip bulge rises ~1–2 cm and stays under the trousers' top edge.
-    //
-    // The adductors are INNER mass. Without them the thighs started 3.8 cm
-    // apart on the wider-hipped body types, and the torso's closing cap
-    // showed through the gap as a pale wedge at the crotch. Swelling the inner
-    // side of the upper thigh makes the two meet at the midline, then fades
-    // out by mid-thigh where a real thigh gap begins.
     const leg = [
-      { y: 0.858, z: 0, rx: .062, rz: .084, w: [[P, .80], [T, .20]], mat: MAT.PANTS, cap: 1, rmod: inner(.34) },
-      // Hamstring mass high on the back of the thigh, fading by mid-shaft.
-      { y: 0.842, z: 0, rx: .084, rz: .100, w: [[P, .55], [T, .45]], mat: MAT.PANTS, rmod: both(back(.045), inner(.34)) },
-      { y: 0.824, z: 0, rx: .102, rz: .110, w: [[P, .30], [T, .70]], mat: MAT.PANTS, rmod: both(back(.060), inner(.26)) },
-      { y: 0.792, z: 0, rx: .0995, rz: .107, w: [[P, .08], [T, .92]], mat: MAT.PANTS, rmod: both(back(.050), inner(.21)) },
+      { y: 0.797, z: 0, rx: .101, rz: .105, w: [[P, .28], [T, .72]], mat: MAT.PANTS,
+        rmod: back(.045), ymod: ang => -0.065 * H * Math.max(0, -sx * Math.cos(ang)) ** 1.5 },
       { y: 0.692, z: 0, rx: .0920, rz: .099, w: [[T, 1]], mat: MAT.PANTS, rmod: both(back(.034), inner(.06)) },
       { y: 0.582, z: 0, rx: .0820, rz: .089, w: [[T, 1]], mat: MAT.PANTS },
       { y: 0.492, z: .002, rx: .0730, rz: .079, w: [[T, 1]], mat: MAT.PANTS },
@@ -802,14 +800,18 @@ function buildHumanRig(o = {}) {
       // Below the belly the taper is fast, and the Achilles keeps a narrow
       // ridge at the back all the way down to the heel.
       { y: 0.188, z: -.001, rx: .0505, rz: .0552, w: [[S, 1]], mat: MAT.PANTS, rmod: back(.058) },
-      { y: 0.128, z: 0, rx: .0420, rz: .0448, w: [[S, .60], [A, .40]], mat: MAT.SHOE },
-      { y: 0.086, z: 0, rx: .0392, rz: .0428, w: [[A, 1]], mat: MAT.SHOE },
+      { y: 0.128, z: 0, rx: .0420, rz: .0448, w: [[S, .60], [A, .40]], mat: MAT.PANTS },
+      { y: 0.079, z: 0, rx: .0402, rz: .0438, w: [[A, 1]], mat: MAT.PANTS },
     ];
-    _sweep(sg, leg.map((s) => ({
+    const upperLeg = _sweep(sg, leg.map((s) => ({
       p: [sx * 0.10 * HW, stationY(s.y), s.z * H],
       rx: s.rx * LW * (0.66 + 0.34 * HW), rz: s.rz * LW * (0.66 + 0.34 * HW),
-      w: s.w, mat: s.mat, cap: s.cap, rmod: s.rmod,
-    })), RAD_L);
+      w: s.w, mat: s.mat, rmod: s.rmod, ymod: s.ymod,
+    })), RAD_T)[0];
+    for (let k = 0; k < RAD_T; k++) {
+      const next = (k + 1) % RAD_T;
+      sg.quad(trouserTop(k, sx), trouserTop(next, sx), upperLeg[next], upperLeg[k], MAT.PANTS);
+    }
 
     // Shoe — swept along +Z from heel to toe with a flat sole. Rigid to the
     // ankle, with a natural few-degrees out-toe baked into the geometry
@@ -830,7 +832,7 @@ function buildHumanRig(o = {}) {
       return {
         p: [ax + (lx * ct + lz * st), stationY((0.004 + s.r) * H), az + (-lx * st + lz * ct)],
         rx: s.r * H, rz: s.wdt * H * (0.6 + 0.4 * LW),
-        w: [[bi(g.an), 1]], mat: MAT.SHOE, sq: 0.70, cap: s.cap,
+        w: [[bi(g.an), 1]], mat: s.z >= .088 ? MAT.SOLE : MAT.SHOE, sq: 0.70, cap: s.cap,
       };
     }), RAD_L);
     // Rubber sole: a flat band around the bottom of the shoe, a few mm
@@ -847,7 +849,7 @@ function buildHumanRig(o = {}) {
   }
 
   const geo = sg.toGeometry();
-  blendSeamNormals(geo);   // soften where the swept tubes meet
+  blendSeamNormals(geo, 0.012);   // soften where the swept tubes meet
   const skinCol = new THREE.Color(o.skinColor ?? 0xd4a07a);
   const shirtCol = new THREE.Color(o.shirtColor ?? 0x2c9d96);
   const pantsCol = new THREE.Color(o.pantsColor ?? 0x2c3a52);
@@ -881,7 +883,7 @@ function buildHumanRig(o = {}) {
   const mSole = new THREE.MeshStandardMaterial({
     color: shoeCol.clone().lerp(new THREE.Color(0x8c8378), 0.35), roughness: 0.85, metalness: 0,
   });
-  const mDark = new THREE.MeshStandardMaterial({ color: shirtCol.clone().multiplyScalar(0.74), roughness: 0.95 });
+  const mDark = new THREE.MeshStandardMaterial({ color: shirtCol.clone().multiplyScalar(0.82), roughness: 0.95 });
   if (!o.lowDetail) {
     mSkin.bumpMap = surfaceDetail("skin", 5); mSkin.bumpScale = 0.00012;
     mSkin.addEventListener("dispose", () => mSkin.bumpMap.dispose());
@@ -901,6 +903,32 @@ function buildHumanRig(o = {}) {
   mesh.add(pelvis);
   const skeleton = new THREE.Skeleton(bones);
   mesh.bind(skeleton);
+
+  // The laces are rigid to the ankle, just like the upper and sole.
+  const laceMaterial = new THREE.MeshStandardMaterial({
+    color: shoeCol.clone().lerp(new THREE.Color(0x8b8173), 0.26), roughness: 0.9,
+  });
+  const lacePieces = [];
+  for (const z of [0.006, 0.029, 0.052, 0.075]) {
+    for (const side of [-1, 1]) {
+      const points = [
+        new THREE.Vector3(-0.025 * side, 0.067 - z * 0.09, z - 0.009),
+        new THREE.Vector3(0, 0.082 - z * 0.14, z),
+        new THREE.Vector3(0.025 * side, 0.065 - z * 0.14, z + 0.009),
+      ];
+      const lace = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 6, 0.0017, 4);
+      lacePieces.push(lace);
+    }
+  }
+  const laces = mergeGeometries(lacePieces);
+  for (const lace of lacePieces) lace.dispose();
+  for (const { an, side } of legBones) {
+    const shoeLaces = new THREE.Mesh(laces, laceMaterial);
+    shoeLaces.rotation.y = side * 0.09;
+    shoeLaces.position.y = -L.ankleY;
+    shoeLaces.scale.set(H * (0.6 + 0.4 * LW), stationY(0.04 * H) / 0.04, H);
+    an.add(shoeLaces);
+  }
 
   // ---------- outfit detailing ----------
   // Hoodie and jacket used to be visually identical after the rig rewrite —
@@ -1005,7 +1033,12 @@ function buildHumanRig(o = {}) {
       [1.410, .0505], [1.388, .0522], [1.366, .0552],
       [1.348, .0614], [1.334, .0702], [1.324, .0812],
     ];
-    for (const [wy, r] of prof) pts.push(new THREE.Vector2(r * H * LW, wy * H - L.neckY));
+    // Lathe rings run bottom to top for outward-facing normals. Extend the
+    // base under the open collar, where the skin is hidden by the shirt.
+    prof.push([1.307, .0710], [1.299, 0]);
+    for (const [wy, r] of prof.reverse()) {
+      pts.push(new THREE.Vector2(r * H * LW, wy * H - L.neckY));
+    }
     const neckMesh = new THREE.Mesh(new THREE.LatheGeometry(pts, 24), mSkin);
     neckMesh.castShadow = true;
     neckMesh.position.z = -0.004 * H;
@@ -1055,7 +1088,7 @@ function buildHumanRig(o = {}) {
     // (+0.92, 0, −0.38) on the +X hand, i.e. away from the body. Every
     // "paddle hands" note in the history was this.
     const hand = buildHand(-a.side, mSkin, mShirt, { scale: H * LW * HAND_SCALE, cuff: longSleeve });
-    hand.position.set(0, -0.012 * H, 0);
+    hand.position.set(0, -0.008 * H, 0);
     // A relaxed arm hangs in mid-pronation: palm toward the thigh, slightly
     // back, thumb forward, knuckles out. With the correct hand on each arm
     // that is +side·1.15: palm → (−0.91·side, 0, −0.41), thumb → forward.

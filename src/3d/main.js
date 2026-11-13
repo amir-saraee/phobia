@@ -6,8 +6,8 @@
 // them (ShellScenes), the character creator's turntable (AvatarPreview) and
 // the asset prefetch. The exposure engine (engine.js) and each realm's scene
 // code are fetched on demand — see mount() below.
-import { DOG_MODELS, DOG_COAT_MAPS, CREATURE_MODELS } from "./assets.js";
-import { resolveQuality, sceneQuality } from "./renderer.js";
+import { DOG_MODELS, CREATURE_MODELS } from "./assets.js";
+import { sceneQuality } from "./renderer.js";
 import { REALMS } from "./realms/index.js";
 import "./avatar.js";        // window.AvatarPreview
 import "./shell-scenes.js";  // window.ShellScenes
@@ -77,11 +77,7 @@ function unmount() {
 // the main thread is idle, and nothing at all on a data-saver or 2G
 // connection: the scene loads what it needs when it opens.
 //
-// Warmed, not parsed. This used to run both dogs' GLTFs through the loader
-// and decode all six coat maps — on the title screen, on a phone — for two
-// breeds when the next trial shows one. Now it is plain fetches for that
-// trial's breed (its coat too, except on the low tier, which never applies
-// it); the scene parses its one model when it mounts.
+// Warm the selected model in the HTTP cache. The scene parses it on mount.
 function warm(url) {
   try {
     fetch(url, { priority: "low" }).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => {});
@@ -107,8 +103,6 @@ function prefetch(opts = {}) {
           if (lv) breed = lv.breed || ((lv.size || 0) <= 0.5 ? "shiba" : "husky");
         } catch {}
         warm(DOG_MODELS[breed] || DOG_MODELS.shiba);
-        const coat = DOG_COAT_MAPS[breed];
-        if (coat && resolveQuality(false) !== "low") { warm(coat.albedo); warm(coat.normal); warm(coat.roughness); }
       }
       if (realm === "spiders") warm(CREATURE_MODELS.spider);
       if (realm === "snakes") warm(CREATURE_MODELS.snake);
